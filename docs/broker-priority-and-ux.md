@@ -56,6 +56,13 @@
 - 이 slice는 credential, broker request, live/current/freshness, public endpoint, persistence, realtime, adjustment event correctness, reconciliation, 또는 order capability를 증명하지 않는다. public market route는 계속 `local_fixture`/`sample`/`stale`다.
 - 실행 증거는 [`../gates/g4c-kiwoom-candle-contract.md`](../gates/g4c-kiwoom-candle-contract.md)에 기록한다.
 
+#### G4D price-adjustment consumer contract
+
+- provider-neutral `MarketDataCandles`는 `price_adjustment`를 필수로 하고 `unspecified`와 `provider_adjusted`만 허용한다.
+- 현재 공개 route는 local fixture 전용이므로 `price_adjustment=unspecified`만 반환하며 빈 값, `provider_adjusted`, 미지원 값은 500으로 fail-closed한다. Kiwoom K1을 공개 route에 연결했다는 뜻이 아니다.
+- Flutter는 local fixture가 sample·stale이고 source timestamp와 provenance issue를 갖춘 경우만 받으며 가격 기준을 쉬운 말로 표시한다. `provider_adjusted`도 공급자 요청 provenance일 뿐 “수정주가 검증 완료”로 표현하지 않는다.
+- 실행 증거는 [`../gates/g4d-market-data-price-adjustment.md`](../gates/g4d-market-data-price-adjustment.md)에 기록한다.
+
 ### K2 — 키움 모의주문
 
 - 주문 intent, pre-trade risk, durable idempotency key, broker submit, ack/fill/cancel/reject, reconciliation 순서를 하나의 상태 머신으로 검증한다.

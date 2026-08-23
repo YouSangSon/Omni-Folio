@@ -1,6 +1,6 @@
 # Omni Folio Execution Plan
 
-상태: G0·G1·G3 로컬 통과, G2 자동 접근성·reduced-motion 통과 및 native profile·screen-reader 증거 보강 중, G4A 키움 K0 합성 계약 통과, G4B local sample OHLCV 수직 슬라이스 통과, G4C K1 credential-free candle 합성 계약 통과
+상태: G0·G1·G3 로컬 통과, G2 자동 접근성·reduced-motion 통과 및 native profile·screen-reader 증거 보강 중, G4A 키움 K0 합성 계약 통과, G4B local sample OHLCV 수직 슬라이스 통과, G4C K1 credential-free candle 합성 계약 통과, G4D price-adjustment consumer contract 통과
 
 ## Now
 
@@ -17,6 +17,7 @@
 - [x] 키움 K0 read-only transport/normalization 합성 계약
 - [x] provider-neutral local fixture OHLCV API와 Flutter 종목 상세 price/volume chart·정확한 표·샘플 provenance
 - [x] K1 키움 `ka10080`/`ka10081` 합성 candle 계약 검증: KRX 6자리 symbol, 지원 interval, signed price magnitude·exact decimal OHLCV, pagination normalization/dedupe/conflict/cap 확인
+- [x] OpenAPI·HTTP·Flutter에 `price_adjustment` 필수 계약 연결: local fixture `unspecified` 고정, provider-adjusted 의미 보수적 표시, 잘못된 값 fail-closed
 - [ ] 키움 live/mock credential 검증, official timezone/freshness 관찰, known-good persistence, ledger reconciliation
 - [ ] 실제 키움 OHLCV를 local chart contract에 연결, 기간 선택·평균단가·체결 marker와 physical accessibility/performance budget
 - [ ] 키움 모의주문 상태 머신과 unknown-submit recovery

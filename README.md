@@ -118,7 +118,7 @@ Golden fixture의 기대값은 신규 3행, revision `rev_0000000003`, USD cash 
 curl -fsS 'http://127.0.0.1:8080/v1/market-data/candles?symbol=AAPL&interval=1d'
 ```
 
-응답은 canonical decimal string과 함께 `source=local_fixture`, `sample=true`, `state=stale`를 반환합니다. 보유 화면에서 AAPL을 열면 가격·거래량 chart, source/as-of, screen-reader summary와 정확한 OHLCV 표를 볼 수 있습니다. 이 fixture는 계약·UI 검증용이며 현재 시세나 투자 판단 자료가 아닙니다.
+응답은 canonical decimal string과 함께 `price_adjustment=unspecified`, `source=local_fixture`, `sample=true`, `state=stale`를 반환합니다. 보유 화면에서 AAPL을 열면 가격·거래량 chart, 가격 조정 기준, source/as-of, screen-reader summary와 정확한 OHLCV 표를 볼 수 있습니다. `unspecified`는 가격 조정 여부를 확인하지 못했다는 뜻입니다. 이 fixture는 계약·UI 검증용이며 현재 시세나 투자 판단 자료가 아닙니다.
 
 ### Research와 자동 개선
 

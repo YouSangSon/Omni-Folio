@@ -853,3 +853,14 @@ K1 moved one step past local fixtures without using credentials: Kiwoom daily `k
 - `go test -count=1 ./...`, `go test -race -count=1 ./...`, `make check`, and `make smoke` pass locally on 2026-08-24 KST.
 
 Still open: credentialed Kiwoom mock/production candles, official timezone/freshness confirmation, realtime WebSocket, cache/persistence, reconciliation, Flutter wiring from Kiwoom data, mock orders, and live-order gates.
+
+## 2026-08-24 G4D continuation: price-adjustment consumer contract
+
+K1 already preserved `provider_adjusted` internally, but the public candle response and Flutter model dropped the price basis. G4D closes only that consumer-contract gap without generalizing source/freshness or wiring Kiwoom credentials.
+
+- OpenAPI and HTTP require `price_adjustment` with only `unspecified` and `provider_adjusted` in the provider-neutral base contract.
+- The current public route remains local-fixture-only and pins `price_adjustment=unspecified`; empty, provider-adjusted, or unknown values from that port fail closed.
+- Flutter rejects missing/unknown values and requires the OpenAPI local-fixture subtype exactly: sample, unspecified adjustment, stale state, non-null source timestamp, and at least one provenance issue. It displays “조정 여부 확인 안 됨” or “공급자 조정 가격 · 조정 정확성 미검증” in asset metadata.
+- TDD checkpoints are `4e81f2b`/`0519d20` for the consumer field and `bebbfaa`/`41093c0` for strict local provenance. `make check`, `make smoke`, Go race, and the existing Kiwoom candle suite pass locally on 2026-08-24 KST.
+
+Still open: runtime Kiwoom market-data selection, credentialed mock/production observation, authoritative timezone/freshness, persistence/known-good retention, realtime, reconciliation, and corporate-action adjustment verification.

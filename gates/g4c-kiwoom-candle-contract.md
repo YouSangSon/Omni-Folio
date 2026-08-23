@@ -20,4 +20,4 @@ Scope: credential-free synthetic Kiwoom `POST /api/dostk/chart` contract for `ka
 
 Operational assumption: official candle documentation does not state timestamp timezone, so timestamps are interpreted as Asia/Seoul until real provider evidence changes it.
 
-This gate proves no credential, broker request, live/current/fresh data, public endpoint, persistence, adjustment-event correctness, realtime, reconciliation, or order capability. The public route remains `source=local_fixture`, `sample=true`, `state=stale`.
+This gate proves no credential, broker request, live/current/fresh data, public endpoint, persistence, adjustment-event correctness, realtime, reconciliation, or order capability. The public route remains `price_adjustment=unspecified`, `source=local_fixture`, `sample=true`, `state=stale`.

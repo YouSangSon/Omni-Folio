@@ -38,6 +38,7 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 - 자동매매는 `Universe → Signal/Alpha → PortfolioTarget → RiskAdjustedTarget → OrderIntent → Execution` 단계로 분리한다. 전략은 브로커 주문을 직접 만들거나 전송하지 않는다.
 - 백테스트 결과를 실전 기대수익으로 표시하지 않는다. 슬리피지, 수수료, 세금, 체결 지연, 데이터 지연, survivorship/lookahead bias를 검증 항목으로 둔다.
 - sample·synthetic·fixture 시장 데이터는 API의 machine-readable provenance와 화면의 명시적 문구로 실시간이 아님을 표시한다. 이를 live/current 데이터와 조용히 혼합하거나 실제 broker·market-data 증거로 계산하지 않는다.
+- 모든 OHLCV 응답은 `price_adjustment`를 포함한다. `unspecified`는 조정 여부 미확인, `provider_adjusted`는 공급자에게 조정 가격을 요청했다는 뜻으로만 사용하며 기업행사 반영 정확성·freshness·실시간성을 대신 증명하지 않는다.
 - 자동 개선은 versioned 전략과 선언된 유한 파라미터 공간만 탐색한다. 실행 중인 전략 소스의 자기 수정, `eval`/동적 코드 실행, LLM이 만든 코드를 검증 없이 실행하는 방식은 사용하지 않는다.
 - 각 실험은 불변 데이터 snapshot과 비용·지연 모델에서 시계열 순서를 보존한 train/validation/test 및 walk-forward 평가를 수행하고, 전략·파라미터·데이터·엔진·평가정책 버전과 산출물 hash를 남긴다.
 - 후보 선택은 단일 최고 수익률이 아니라 비용 후 수익, 최대 낙폭, 거래 수, turnover/capacity, 구간·시장 국면별 안정성, 기존 champion 대비 개선을 함께 본다. 반복 탐색으로 test set에 과적합하지 않도록 실험 예산과 최종 holdout을 분리한다.
@@ -208,7 +209,7 @@ Market data adapters
 - 입출금, 배당, 수수료, 세금, 환율, 분할이 포함된 골든 데이터에서 수량·현금·손익이 독립 계산과 일치한다.
 - 브로커 잔고와 원장 잔고의 차이가 화면에서 설명 가능하다.
 - 공급자 timeout, 429, token 만료, 부분 응답 후에도 기존 데이터가 보존되고 재시도가 안전하다.
-- 차트는 실제 데이터와 일치하며 모든 기간에서 빈 데이터·지연 데이터 상태를 처리한다.
+- 차트는 실제 데이터와 일치하고 가격 조정 기준을 표시하며 모든 기간에서 빈 데이터·지연 데이터 상태를 처리한다.
 - 모의주문에서 중복 요청, 부분체결, 취소, 거절, 재시작 복구가 검증된다.
 - 실전 주문 경로는 모의주문 검증과 별개로 보안·오주문 방지 체크를 통과한다.
 - 전략 백테스트는 수수료·슬리피지·지연·데이터 지연을 포함하고, lookahead bias를 막는 테스트가 있다.
