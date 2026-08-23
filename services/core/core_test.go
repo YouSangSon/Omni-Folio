@@ -260,7 +260,7 @@ func TestHealthAndReadinessAreSeparate(t *testing.T) {
 	if w := request("/readyz"); w.Code != http.StatusOK || w.Body.String() != "{\"status\":\"ok\"}\n" {
 		t.Fatalf("ready status=%d body=%s", w.Code, w.Body.String())
 	}
-	if _, err := svc.db.Exec(`UPDATE schema_migrations SET version=2`); err != nil {
+	if _, err := svc.db.Exec(`UPDATE schema_migrations SET version=3`); err != nil {
 		t.Fatal(err)
 	}
 	if w := request("/readyz"); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), `"code":"not_ready"`) {
