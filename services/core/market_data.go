@@ -15,8 +15,10 @@ import (
 )
 
 const (
-	maxMarketDataRows  = 500
-	maxMarketDataBytes = 1 << 20
+	maxMarketDataRows                    = 500
+	maxMarketDataBytes                   = 1 << 20
+	marketDataAdjustmentUnspecified      = "unspecified"
+	marketDataAdjustmentProviderAdjusted = "provider_adjusted"
 )
 
 var errMarketDataNotFound = errors.New("market data not found")
@@ -26,11 +28,12 @@ type MarketDataPort interface {
 }
 
 type MarketDataSeries struct {
-	Symbol   string
-	Venue    string
-	Timezone string
-	Interval string
-	Bars     []MarketDataBar
+	Symbol          string
+	Venue           string
+	Timezone        string
+	Interval        string
+	PriceAdjustment string
+	Bars            []MarketDataBar
 }
 
 type MarketDataBar struct {
@@ -79,7 +82,10 @@ func parseMarketDataFixture(source io.Reader) (MarketDataPort, error) {
 	if len(records)-1 > maxMarketDataRows {
 		return nil, fmt.Errorf("market fixture must not contain more than %d rows", maxMarketDataRows)
 	}
-	series := &MarketDataSeries{Symbol: records[1][1], Venue: records[1][2], Timezone: records[1][3], Interval: records[1][4]}
+	series := &MarketDataSeries{
+		Symbol: records[1][1], Venue: records[1][2], Timezone: records[1][3], Interval: records[1][4],
+		PriceAdjustment: marketDataAdjustmentUnspecified,
+	}
 	if series.Symbol == "" || series.Venue == "" || series.Timezone == "" || series.Interval == "" {
 		return nil, errors.New("market fixture symbol, venue, timezone, and interval are required")
 	}

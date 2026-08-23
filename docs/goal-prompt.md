@@ -147,9 +147,9 @@ Market data adapters
 
 ### Phase 2 — 첫 증권 API
 
-- 키움 REST API 국내주식 read-only 연결
+- 키움 REST API 국내주식 read-only 연결. K1은 먼저 credential-free 합성 `POST /api/dostk/chart` `ka10080`/`ka10081` 계약으로 일·분봉 정규화를 검증했으며, 이는 broker request나 live data 증명이 아니다.
 - 계좌번호, 계좌평가잔고, 미체결, 일·분봉, 실시간 체결·호가를 canonical contract로 정규화
-- provider가 권한 scope를 제공하면 read-only 최소 scope만 허용한다. 키움은 공식 OAuth 문서에서 scope를 확인하지 못했으므로 `ka00001`, `kt00018`, `ka10075` 고정 API-ID allowlist와 submit method·route 부재를 테스트로 강제한다.
+- provider가 권한 scope를 제공하면 read-only 최소 scope만 허용한다. 키움은 공식 OAuth 문서에서 scope를 확인하지 못했으므로 account read `ka00001`/`kt00018`/`ka10075`와 chart read `ka10080`/`ka10081`만 고정 API-ID·path allowlist로 허용하고, submit method·route 부재를 테스트로 강제한다.
 - 계좌, 거래, 잔고 pagination 동기화
 - rate limit, retry/backoff, token 갱신, freshness 상태
 - 브로커 잔고와 원장 잔고 reconciliation 화면

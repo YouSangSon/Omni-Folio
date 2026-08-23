@@ -30,6 +30,7 @@ const (
 	kiwoomMockBase       = "https://mockapi.kiwoom.com"
 	kiwoomTokenPath      = "/oauth2/token"
 	kiwoomAccountPath    = "/api/dostk/acnt"
+	kiwoomChartPath      = "/api/dostk/chart"
 	kiwoomCallTimeout    = 10 * time.Second
 	kiwoomTokenSkew      = 30 * time.Second
 	// ponytail: fixed cap and no 429/5xx retries until Kiwoom publishes usable
@@ -248,7 +249,7 @@ type kiwoomOpenOrdersResponse struct {
 }
 
 func (c *KiwoomClient) accountNumber(ctx context.Context) (string, error) {
-	page, err := c.accountPage(ctx, "ka00001", struct{}{}, "", "")
+	page, err := c.readPage(ctx, "ka00001", struct{}{}, "", "")
 	if err != nil {
 		return "", err
 	}
@@ -348,17 +349,24 @@ type kiwoomPage struct {
 }
 
 func (c *KiwoomClient) accountPages(ctx context.Context, apiID string, requestBody any, handle func([]byte) error) error {
+	return c.readPages(ctx, apiID, requestBody, func(body []byte) (bool, error) {
+		return false, handle(body)
+	})
+}
+
+func (c *KiwoomClient) readPages(ctx context.Context, apiID string, requestBody any, handle func([]byte) (bool, error)) error {
 	seen := make(map[string]struct{})
 	cont, next := "", ""
 	for pageNumber := 1; pageNumber <= kiwoomMaxPages; pageNumber++ {
-		page, err := c.accountPage(ctx, apiID, requestBody, cont, next)
+		page, err := c.readPage(ctx, apiID, requestBody, cont, next)
 		if err != nil {
 			return err
 		}
-		if err := handle(page.body); err != nil {
+		stop, err := handle(page.body)
+		if err != nil {
 			return err
 		}
-		if !page.continued {
+		if stop || !page.continued {
 			return nil
 		}
 		if pageNumber == kiwoomMaxPages {
@@ -373,8 +381,9 @@ func (c *KiwoomClient) accountPages(ctx context.Context, apiID string, requestBo
 	return &KiwoomError{Kind: "pagination_limit", APIID: apiID}
 }
 
-func (c *KiwoomClient) accountPage(ctx context.Context, apiID string, requestBody any, cont, next string) (kiwoomPage, error) {
-	if !kiwoomReadAPIAllowed(apiID) {
+func (c *KiwoomClient) readPage(ctx context.Context, apiID string, requestBody any, cont, next string) (kiwoomPage, error) {
+	path := kiwoomReadPath(apiID)
+	if path == "" {
 		return kiwoomPage{}, &KiwoomError{Kind: "api_not_allowed"}
 	}
 	payload, err := json.Marshal(requestBody)
@@ -395,7 +404,7 @@ func (c *KiwoomClient) accountPage(ctx context.Context, apiID string, requestBod
 			headers.Set("cont-yn", cont)
 			headers.Set("next-key", next)
 		}
-		response, body, err := c.roundTrip(ctx, kiwoomAccountPath, payload, headers)
+		response, body, err := c.roundTrip(ctx, path, payload, headers)
 		if err != nil {
 			return kiwoomPage{}, err
 		}
@@ -535,11 +544,17 @@ func kiwoomBaseURL(environment KiwoomEnvironment) string {
 }
 
 func kiwoomReadAPIAllowed(apiID string) bool {
+	return kiwoomReadPath(apiID) != ""
+}
+
+func kiwoomReadPath(apiID string) string {
 	switch apiID {
 	case "ka00001", "kt00018", "ka10075":
-		return true
+		return kiwoomAccountPath
+	case "ka10080", "ka10081":
+		return kiwoomChartPath
 	default:
-		return false
+		return ""
 	}
 }
 

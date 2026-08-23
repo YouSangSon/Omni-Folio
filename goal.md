@@ -16,6 +16,8 @@ Phase A는 asdf로 고정한 Flutter stable 하나로 iOS·Android·app-centric 
 
 실제 키움 OHLCV를 연결하기 전에는 provider-neutral local fixture로 API·chart·접근성·성능 계약을 검증한다. sample·synthetic·fixture 시세는 API와 화면에서 실시간이 아님을 명시하고 live/current 데이터와 혼합하거나 broker 연동 증거로 승격하지 않는다.
 
+K1은 credential-free synthetic `POST /api/dostk/chart`의 `ka10080`(분봉)·`ka10081`(일봉) 계약을 구현했다. KRX 여섯 자리 symbol과 `1d`, `1/3/5/10/15/30/45/60m`를 받아 signed price magnitude·exact decimal OHLCV·nonnegative volume을 정규화하고, descending page를 UTC ascending으로, identical overlap을 dedupe, conflicting overlap을 거절하며 newest 500개로 제한한다. `upd_stkpc_tp=1`은 내부 `provider_adjusted` provenance일 뿐이다. official candle timestamp timezone이 명시되지 않아 Asia/Seoul을 운영 가정으로 둔다. 이 계약은 credential, broker request, live/current/freshness, public endpoint, persistence, adjustment-event correctness, realtime, reconciliation 또는 order capability를 증명하지 않는다. 공개 route는 계속 `local_fixture`/`sample`/`stale`다.
+
 Flutter 제품 경험은 영웅문 화면을 재현하지 않는다. 토스증권에서 참고한 쉬운 용어, 한 화면 한 결정, 점진적 상세 공개, 국내·미국의 일관된 흐름, 명확한 주문 확인과 접근성을 Omni Folio 고유 디자인으로 구현한다. 상세한 공급자·UX 결정은 [`docs/broker-priority-and-ux.md`](docs/broker-priority-and-ux.md)를 따른다.
 
 PostgreSQL maintenance migration과 restore 증명 전에는 multi-replica 또는 Kubernetes를 도입하거나 manifest를 만들지 않는다. live 주문은 서버가 owner 승인 만료, broker/account/strategy allowlist, promotion evidence, healthy kill switch를 **매 주문** 검증할 때만 허용한다. 휴대폰 background는 cache refresh와 push 보조만 하며 주문·reconciliation·kill switch의 authority가 아니다.

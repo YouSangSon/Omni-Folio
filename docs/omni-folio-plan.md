@@ -79,6 +79,8 @@ Phase A 코어가 green이 된 뒤 같은 단계의 후속 slice에서 수동 �
 
 - 키움 REST API 국내주식 read-only adapter
 - `ka00001`, `kt00018`, `ka10075`, 일·분봉과 실시간 체결·호가의 canonical mapping
+- K1 synthetic candle boundary: `POST /api/dostk/chart`의 `ka10080`/`ka10081`, KRX 6자리 symbol, `1d`와 `1/3/5/10/15/30/45/60m`; 가격 부호는 magnitude로 정규화하고 decimal OHLCV와 nonnegative volume을 보존한다. page는 UTC ascending으로 정렬하고 동일 overlap은 dedupe, 값 충돌은 거절하며 newest 500개로 제한한다. `upd_stkpc_tp=1`은 내부 `provider_adjusted` provenance로만 노출한다.
+- official candle timestamp timezone은 명시되지 않아 Asia/Seoul을 운영 가정으로 사용한다. 이 합성 계약은 credential, broker request, current/fresh data, public route, persistence, adjustment-event correctness, realtime 또는 주문 capability를 증명하지 않는다.
 - 계좌, 거래, 잔고 동기화와 pagination/cursor
 - 단일 시장 데이터 provider의 EOD 가격, FX, 배당, 분할
 - provider rate limiter, retry/backoff, freshness state
@@ -839,3 +841,15 @@ The next product leaf was chosen as a credential-free provider-neutral OHLCV ver
 The first 500-row table implementation failed the emulator raster budget at `22.446 ms` p95. After lazy-row optimization and a harness assertion that proves bidirectional table scrolling, two metadata-complete Flutter 3.47.1 Android 16/API 36 emulator runs recorded 727 frames at build/raster/total-span `0.928/5.749/10.698 ms` and 728 frames at `1.158/16.623/20.632 ms`. The build and raster phases pass the 16.67 ms budget in both runs. Physical Android/iOS profile and manual VoiceOver/TalkBack remain open; emulator variance is not release proof.
 
 Deliberately deferred: real Kiwoom OHLCV/realtime, period switching, portfolio performance, average-cost and fill markers, cache/persistence, chart package, and broker-specific UI branches. Add them only after official/mock response observations preserve this canonical contract.
+
+## 2026-08-24 G4C continuation: synthetic Kiwoom daily/minute candle contract
+
+K1 moved one step past local fixtures without using credentials: Kiwoom daily `ka10081` and minute `ka10080` now share the existing OAuth/read transport and are bound to `POST /api/dostk/chart`. The public `/v1/market-data/candles` route remains local-fixture only, so no response is presented as live Kiwoom data.
+
+- The adapter requests adjusted prices with `upd_stkpc_tp=1`, accepts official minute intervals `1,3,5,10,15,30,45,60`, and keeps submit API IDs outside the read allowlist.
+- Provider dates/times are parsed as Korean market local time by operational assumption, then emitted as UTC RFC3339 bars with `Timezone=Asia/Seoul`, `Venue=XKRX`, and `PriceAdjustment=provider_adjusted`.
+- OHLC prices are exact positive canonical decimals after Kiwoom sign/magnitude normalization; volume is exact non-negative canonical decimal.
+- Pagination is bounded by the existing 32-page cap and the consumer-facing series is capped at the newest 500 bars. One bounded look-ahead page validates the cap boundary; exact duplicate timestamps collapse and conflicting duplicates fail closed.
+- `go test -count=1 ./...`, `go test -race -count=1 ./...`, `make check`, and `make smoke` pass locally on 2026-08-24 KST.
+
+Still open: credentialed Kiwoom mock/production candles, official timezone/freshness confirmation, realtime WebSocket, cache/persistence, reconciliation, Flutter wiring from Kiwoom data, mock orders, and live-order gates.

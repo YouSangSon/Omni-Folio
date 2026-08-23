@@ -38,7 +38,7 @@
 
 - Go 서버만 OAuth secret과 access token을 읽는다. 로컬은 OS keychain, cloud는 secret manager를 사용한다.
 - Flutter, Python, `.env`, Git, 로그, 오류 응답에는 app key, secret, token, 계좌 원문을 두지 않는다.
-- 키움 OAuth의 read-only scope는 공식 문서에서 확인되지 않았으므로 credential 이름만 믿지 않는다. 현재 프로세스는 `ka00001`, `kt00018`, `ka10075`만 허용하고 submit API와 route를 갖지 않는다.
+- 키움 OAuth의 read-only scope는 공식 문서에서 확인되지 않았으므로 credential 이름만 믿지 않는다. 현재 프로세스는 account read `ka00001`/`kt00018`/`ka10075`와 chart read `ka10080`/`ka10081`만 각각 고정 path로 허용하고 submit API와 route를 갖지 않는다.
 - provider별 capability, rate-limit, pagination/continuation, 오류 envelope, symbol/market mapping은 공식 예제를 복사하지 않은 합성 contract fixture로 검증한다.
 - 원본 금액·수량의 부호 규칙을 경계에서 canonical decimal string으로 변환한다.
 
@@ -47,6 +47,14 @@
 - 계좌번호 `ka00001`, 계좌평가잔고 `kt00018`, 미체결 `ka10075`를 canonical account/position/order-read model로 정규화한다.
 - 일봉 `ka10081`, 분봉 `ka10080`과 실시간 체결 `0B`, 우선호가 `0C`, 호가잔량 `0D`에 freshness, 재연결, 재구독 상태를 붙인다.
 - broker snapshot과 local ledger의 차이를 읽기 전용 reconciliation report로 보여 준다. 자동 보정하지 않는다.
+
+#### K1 candle synthetic contract
+
+- 구현 범위는 credential-free `POST /api/dostk/chart`의 `ka10080`/`ka10081` 합성 경계다. KRX 여섯 자리 symbol과 `1d`, `1/3/5/10/15/30/45/60m`만 받는다. 필드와 interval 기준은 현재 [키움 공식 chart 명세](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/main/kiwoom_docs/%EC%B0%A8%ED%8A%B8.md)에서 확인했다.
+- signed price는 magnitude로, price/OHLC는 exact decimal로, volume은 nonnegative decimal로 정규화한다. descending page는 UTC ascending으로 바꾸고, 같은 timestamp·같은 값 overlap은 dedupe하며 값 충돌은 거절한다. 반환은 newest 500개로 제한하되 cap 경계 overlap 검증을 위해 다음 한 page까지만 확인한다.
+- `upd_stkpc_tp=1`은 내부 `provider_adjusted` provenance이며 adjustment event의 정확성을 뜻하지 않는다. 공식 문서가 candle timestamp timezone을 정하지 않아 Asia/Seoul은 운영 가정일 뿐이다.
+- 이 slice는 credential, broker request, live/current/freshness, public endpoint, persistence, realtime, adjustment event correctness, reconciliation, 또는 order capability를 증명하지 않는다. public market route는 계속 `local_fixture`/`sample`/`stale`다.
+- 실행 증거는 [`../gates/g4c-kiwoom-candle-contract.md`](../gates/g4c-kiwoom-candle-contract.md)에 기록한다.
 
 ### K2 — 키움 모의주문
 

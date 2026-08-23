@@ -32,6 +32,8 @@
 
 사용자 결정에 따라 국내 MVP는 키움을 먼저 붙이고, 공통 모델과 키움 read-only·모의주문 gate가 안정된 뒤 토스증권을 두 번째로 추가한다. 두 API는 모두 공식 REST와 WebSocket 표면이 있으므로 비공식 reverse engineering은 사용하지 않는다. 상세 구현 순서와 최신 공식 source-of-truth는 [`broker-priority-and-ux.md`](broker-priority-and-ux.md)에 고정했다.
 
+K1 candle 작업은 공식 요청을 보내지 않는 합성 contract slice다. `ka10080`/`ka10081`의 timestamp timezone은 공식 문서에 명시되지 않아 Asia/Seoul을 운영 가정으로 둔다. 따라서 credential, live/current/freshness, adjustment event, realtime, persistence, public API 또는 주문 기능의 근거로 사용하지 않는다.
+
 ### 미국·글로벌 브로커와 데이터
 
 | 후보 | 강점 | 적합한 용도 | 주의점 |

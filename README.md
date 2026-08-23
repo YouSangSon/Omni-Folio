@@ -13,7 +13,7 @@
 | G1 로컬 원장 | 통과 | CSV preview → atomic apply → append-only ledger → snapshot/receipt → backup/restore |
 | G2 Flutter client | 부분 통과 | iOS·Android·web release build와 17개 자동 테스트 통과; chart 포함 Android emulator build/raster p95 2회 통과, physical-device·수동 screen-reader 및 test-instrumentation 격리 증거 남음 |
 | G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, paper-only result |
-| G4 broker·chart | 진행 중 | 키움 K0 HTTP/정규화 합성 계약과 local sample OHLCV/Flutter 종목 차트 통과; 실제 키움 시세·credential, persistence, reconciliation, physical profile·수동 screen reader, 실시간·모의주문 남음 |
+| G4 broker·chart | 진행 중 | K0 read 계약, local sample OHLCV/Flutter 차트, K1 credential-free 합성 `ka10080`/`ka10081` candle 계약 통과. 실제 키움 credentialed 시세·freshness, persistence, reconciliation, physical profile·수동 screen reader, 실시간·모의주문은 남는다. |
 
 세부 상태와 완료 조건은 [`PLAN.md`](PLAN.md)와 [`GATES.md`](GATES.md)에서 관리합니다.
 

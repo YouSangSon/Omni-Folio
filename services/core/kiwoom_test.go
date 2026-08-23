@@ -319,12 +319,15 @@ func TestKiwoomRejectsMockNXTAndNonReadAPIIDsBeforeNetwork(t *testing.T) {
 	})
 	client := newSyntheticKiwoomClient(t, KiwoomMock, transport)
 	assertKiwoomErrorKind(t, snapshotExchangeError(client, KiwoomNXT), "unsupported_mock_exchange")
-	_, err := client.accountPage(context.Background(), "kt10000", struct{}{}, "", "")
+	_, err := client.readPage(context.Background(), "kt10000", struct{}{}, "", "")
 	assertKiwoomErrorKind(t, err, "api_not_allowed")
-	for _, allowed := range []string{"ka00001", "kt00018", "ka10075"} {
+	for _, allowed := range []string{"ka00001", "kt00018", "ka10075", "ka10080", "ka10081"} {
 		if !kiwoomReadAPIAllowed(allowed) {
 			t.Fatalf("read API %s is missing from the closed allowlist", allowed)
 		}
+	}
+	if kiwoomReadPath("ka10080") != kiwoomChartPath || kiwoomReadPath("ka10081") != kiwoomChartPath || kiwoomReadPath("kt10000") != "" {
+		t.Fatal("Kiwoom read API IDs escaped their fixed path boundary")
 	}
 	for _, raw := range []string{"A111111", "J111111", "Q111111", "111111"} {
 		if symbol, ok := kiwoomStockCode(raw); !ok || symbol != "111111" {
