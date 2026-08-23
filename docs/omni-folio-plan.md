@@ -1,7 +1,7 @@
 <!-- /autoplan restore point: /Users/yousang/.gstack/projects/Omni-Folio/unknown-autoplan-restore-20260823-201622.md -->
 # Omni Folio 구현 계획 초안
 
-상태: 제품 전제 부분 확정, 실행 형태 D1 승인 대기
+상태: 제품 전제 부분 확정, D1 실행 게이트 위치 승인 대기
 기준일: 2026-08-23
 
 ## 목표
@@ -149,8 +149,9 @@ React를 선택하면 shadcn/ui와 Tailwind semantic token을 재사용한다. �
 
 ### 외부 검토 상태
 
-- 독립 CEO 검토: 완료
-- Codex CLI 검토: 작업공간이 Git 저장소가 아니므로 저장소 루트를 요구하는 표준 검토 명령은 실행하지 않음 (`subagent-only`)
+- 독립 reviewer CEO 검토: 완료 (`a37b30d`, read-only)
+- Codex CLI CEO 검토: 완료 (`a37b30d`, read-only)
+- 두 검토 모두 D1을 Phase A scaffold 선행조건이 아니라 무인 자동매매 진입조건으로 옮기라고 권고했다.
 
 ### 검토 결론
 
@@ -170,7 +171,7 @@ CSV import -> 중복 검토 -> 거래 원장 -> 보유/현금/손익 -> JSON bac
 
 ## `/autoplan` CEO 재검토: local-first 실행 경계
 
-판정: **D1 미결정. 제품 scaffold와 구현 전에 사용자 승인 필요.**
+판정: **D1 미결정. 두 독립 검토는 D1을 무인 자동매매 진입 게이트로 옮기고 로컬 read-only Phase A는 별도로 승인하라고 권고했다.**
 
 ### 시스템 감사
 
@@ -242,4 +243,31 @@ THIS PLAN
 
 아직 결정하지 않아도 되는 항목은 home server 대 VPS, 구체적인 원격 접속 방식, 실전 계좌·종목·자본·손실 한도다. 이 항목들은 각각 자동매매와 live 승격 직전의 별도 보안 게이트에서 결정한다.
 
-**UNRESOLVED D1:** 위 hybrid 전제를 제품 기준선으로 확정할지 사용자 답변이 필요하다. 답변 전에는 접근 방식을 계획에 확정하거나 제품 scaffold를 만들지 않는다. Git 저장소 초기화 같은 가역적인 프로젝트 관리 작업은 진행할 수 있다.
+### CEO 독립 시각 합의표
+
+| 검토 차원 | 독립 reviewer | Codex CLI | 합의 상태 |
+|---|---|---|---|
+| 제품 중심 | 설명 가능한 개인 원장 | owner-controlled reconciliation layer | **CONFIRMED** |
+| D1 위치 | Phase A를 막지 말고 자동화만 차단 | unattended paper/shadow 직전으로 이동 | **CONFIRMED** |
+| 첫 수직 슬라이스 | local import·원장·snapshot | import·차이 설명·수정·snapshot | **CONFIRMED** |
+| 실제 데이터 검증 | 명시된 전제와 fixture 필요 | 실제 명세·CSV/API 적합성 선검증 | **CONFIRMED** |
+| 자동매매 로드맵 | 단계적 목표로 유지 가능 | 별도 제품 결정으로 격리 권고 | **DISAGREE** |
+| 오픈소스 활용 | fixture·UX acceptance로 변환 | 실제 데이터 bake-off를 자체 개발 선행 게이트로 요구 | **DISAGREE** |
+
+### 합의된 보강 후보 — 아직 미반영
+
+다음 항목은 두 검토가 모두 필요하다고 봤지만 사용자 승인 전에는 목표나 범위에 확정하지 않는다.
+
+- 모든 평가액·손익·현금 숫자에서 원 거래, FX, 수수료, 세금, 기업행사, correction으로 drill-down하는 “왜 이 숫자인가” 흐름
+- Phase B read-only credential만 허용하고 주문 scope가 있는 credential은 명시적으로 거절하는 capability 검사와 테스트
+- `schema_migrations`, backup format version, 과거 backup restore 후 원장 재계산 golden test
+- 두 번째 live adapter를 조기에 만들지 않되, 서로 다른 두 브로커 CSV/응답 fixture로 canonical model을 Phase A에서 검증
+- Alpaca paper 결과는 KIS·키움 실전 안전성을 증명하지 않는다는 broker-specific promotion gate
+
+### User Challenge — 자동매매를 같은 제품 로드맵에 둘 것인가
+
+사용자가 정한 방향은 원장, 차트, 주문, 퀀트, paper/shadow/canary/live 자동매매를 하나의 확장 가능한 앱에서 단계적으로 제공하는 것이다. Codex CLI는 포트폴리오 기록 앱과 무인 자동매매 플랫폼의 행동·경쟁·실패 비용이 다르므로 자동매매를 별도 제품 결정으로 격리하라고 권고했다. 독립 reviewer는 공통 원장과 risk/execution 경계를 유지하면 같은 단계적 로드맵 안에 둘 수 있다고 봤다.
+
+사용자의 원래 방향을 기본값으로 유지한다. 자동매매는 목표에서 제거하지 않으며, 별도 제품으로 분리하려면 사용자의 명시적 승인이 필요하다.
+
+**UNRESOLVED D1:** 권장안은 실행 형태 결정을 Phase E의 무인 자동매매 진입 게이트로 옮기고, Phase A는 단일 로컬 SQLite·수동 실행·실제 주문 불가 조건으로 진행하는 것이다. 이 게이트 위치 변경과 local Phase A 착수에는 사용자 답변이 필요하다.
