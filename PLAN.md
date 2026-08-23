@@ -17,7 +17,8 @@
 - [ ] read-only broker adapter 하나와 reconciliation
 - [ ] OHLCV/portfolio chart와 accessibility/performance budget
 - [ ] paper order state machine과 unknown-submit recovery
-- [ ] strategy/risk/paper runner와 promotion evidence
+- [ ] deterministic strategy candidate search와 champion/challenger evidence
+- [ ] strategy/risk/paper runner와 자동 paper/shadow promotion evidence
 
 ## Later, only after gates
 

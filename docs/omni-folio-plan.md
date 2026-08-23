@@ -6,7 +6,7 @@
 
 ## 목표
 
-한국·미국 주식과 ETF를 여러 계좌에서 통합해 성과를 분석하고, 시세 차트, 단계적으로 안전한 주문 기능, 백테스트와 모의 자동매매를 제공하는 개인용 local-first 투자 앱을 만든다. 하나의 Flutter 코드베이스로 iOS·Android·app-centric web을 제공하고, 서버 artifact는 로컬 단독 실행과 사용자가 관리하는 단일 노드 클라우드 배포를 모두 지원한다.
+한국·미국 주식과 ETF를 여러 계좌에서 통합해 성과를 분석하고, 시세 차트, 단계적으로 안전한 주문 기능, 백테스트와 자동 개선되는 모의 자동매매를 제공하는 개인용 local-first 투자 앱을 만든다. 하나의 Flutter 코드베이스로 iOS·Android·app-centric web을 제공하고, 서버 artifact는 로컬 단독 실행과 사용자가 관리하는 단일 노드 클라우드 배포를 모두 지원한다.
 
 ## 전제
 
@@ -19,6 +19,7 @@
 7. `local-first`는 데이터 소유권과 로컬 실행 가능성을 뜻하며 laptop-only를 뜻하지 않는다.
 8. 첫 구현 lake는 로컬 SQLite와 수동 실행으로 시작하고, unattended paper/shadow/live는 owner-managed always-on host에서만 활성화한다.
 9. 클라이언트와 Python 연구 프로세스는 원장·주문 권한자가 아니다. broker credential과 order-submit 권한은 Go 실행 경계에만 둔다.
+10. 자동 개선은 versioned 후보와 파라미터를 평가하는 연구·페이퍼 루프이며, 실행 코드 자기 수정이나 자동 live 승격을 뜻하지 않는다.
 
 ## 성공 조건
 
@@ -28,6 +29,7 @@
 - 한 공급자가 실패해도 이미 받은 데이터는 보존되고 실패 범위와 마지막 갱신 시각이 보인다.
 - API 키와 계좌 식별자가 브라우저, 로그, export에 노출되지 않는다.
 - 전략은 백테스트와 paper trading에서 동일한 정의로 실행되고, 위험 한도와 kill switch를 우회하지 못한다.
+- 자동 개선 run은 재현 가능하고 시계열 holdout을 오염시키지 않으며, 검증 실패 후보가 champion이나 live 전략을 덮어쓰지 못한다.
 - 같은 Go OCI artifact가 local과 단일 노드 cloud 프로필에서 실행되고, Flutter iOS·Android·web 산출물이 같은 versioned contract를 사용한다.
 - backup/restore와 주문 차단형 rollback이 검증된다.
 
@@ -53,6 +55,8 @@ same market fixture
 - `infra`: 로컬 process와 OCI/Compose만, Kubernetes manifest는 만들지 않음
 
 상세 gate와 현재 상태는 [`GATES.md`](../GATES.md), [`PLAN.md`](../PLAN.md), [`docs/adr/0001-runtime-and-monorepo.md`](adr/0001-runtime-and-monorepo.md)를 따른다.
+
+Parallax, Mimir, akasha에서 가져올 패턴과 제외한 범위는 [`docs/reuse-audit.md`](reuse-audit.md)에 revision·license와 함께 기록한다. 현재 slice에는 기존 요구를 직접 닫는 loopback/readiness/no-lookahead 패턴만 적용하고 세 프로젝트의 프레임워크는 복제하지 않는다.
 
 ## 제품 범위
 
@@ -105,6 +109,10 @@ Phase A 코어가 green이 된 뒤 같은 단계의 후속 slice에서 수동 �
 - 기업행사, 수수료, 세금, 슬리피지, 부분체결, 데이터·주문 지연 모델
 - out-of-sample/walk-forward 검증과 survivorship/lookahead 방지 테스트
 - 전략·파라미터·데이터·엔진 버전을 고정하는 재현 가능한 run manifest
+- 유한한 후보 공간의 자동 탐색과 결정론적 champion/challenger 선택
+- 비용 후 수익·최대 낙폭·거래 수·turnover/capacity·구간 안정성을 함께 보는 versioned promotion policy
+- `research_candidate -> paper_candidate -> paper -> shadow` 자동 승격과 실패 시 이전 champion 또는 `no_strategy` 롤백
+- 최종 holdout과 실험 예산 분리; 동적 코드 실행·자기 수정·자동 canary/live 승격 금지
 - paper automation: signal -> portfolio construction -> risk guard -> paper order -> execution reconciliation
 - shadow mode: live market data와 실계좌 상태를 읽되 실제 주문 대신 의도 주문과 위험 판단만 기록
 - strategy signal -> pre-trade risk -> idempotency key -> broker submit -> execution ingest -> ledger reconciliation -> audit log
@@ -181,6 +189,7 @@ Flutter Material primitive와 semantic design token을 사용한다. 앱 전체�
 - Flutter iOS·Android·web build, compact/medium/expanded layout, keyboard-only, screen reader, reduced-motion, 200% text scale
 - provider timeout/429/partial response/stale data 복구
 - 백테스트 재현성, lookahead 방지, 수수료·슬리피지·지연 모델
+- 자동 후보 순위의 결정성, holdout 격리, 최소 데이터·거래 수, 과적합/성능 저하 시 승격 거절과 champion 롤백
 - 자동매매 위험 한도, stale data 차단, reconciliation mismatch 차단, kill switch
 - 두 runner 동시 기동, lease 상실, submit timeout, ack 전후 crash에서 중복 주문 방지와 fail-closed 복구
 - SQLite online backup의 off-volume restore, `integrity_check`, 이전 schema ledger golden test
@@ -196,7 +205,7 @@ Flutter Material primitive와 semantic design token을 사용한다. 앱 전체�
 - 옵션·선물·암호화폐
 - 다중 사용자 SaaS
 - LLM 투자 조언
-- 고급 최적화, HFT, order book 시뮬레이션
+- 무제한 black-box 최적화, 전략 코드 자기 수정, 자동 canary/live 승격, HFT, order book 시뮬레이션
 
 ## `/autoplan` Phase 1: CEO 전제 검토
 

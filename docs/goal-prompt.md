@@ -14,7 +14,8 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 6. 시장가·지정가 매수/매도, 주문 확인, 취소, 부분체결·체결·거절 추적
 7. 모의주문에서 검증한 뒤 사용자가 명시적으로 활성화하는 실전 주문
 8. 전략 연구, 백테스트, 모의 자동매매, 위험 한도, 지연·체결 품질 분석
-9. 충분히 검증된 전략만 별도 승인으로 활성화하는 제한적 실전 자동매매
+9. 제한된 후보 공간에서 전략·파라미터를 자동 탐색하고 검증·페이퍼 승격·롤백하는 지속 개선 루프
+10. 충분히 검증된 전략만 별도 승인으로 활성화하는 제한적 실전 자동매매
 
 첫 사용자는 앱 소유자 한 명이며 local-first를 우선한다. 여기서 local-first는 데이터 소유권과 로컬 단독 사용 가능성을 뜻하며 laptop-only를 뜻하지 않는다. 같은 코드와 데이터 계약으로 사용자가 관리하는 단일 노드 클라우드에도 배포할 수 있어야 한다. 옵션·선물·암호화폐, LLM 투자 추천, 다중 사용자 SaaS, 세금 신고서 생성은 제외한다. 자동매매는 핵심 확장 목표에 포함하되, 기본값은 연구·백테스트·paper trading이며 실전 자동매매는 명시적 승인 전까지 비활성화한다.
 
@@ -33,6 +34,11 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 - 실전 주문은 절대 자동 활성화하지 않는다. 모의투자 검증, 체결-원장 reconciliation, 실패 복구, 사용자 명시 승인 전에는 비활성 상태로 유지한다.
 - 자동매매는 `Universe → Signal/Alpha → PortfolioTarget → RiskAdjustedTarget → OrderIntent → Execution` 단계로 분리한다. 전략은 브로커 주문을 직접 만들거나 전송하지 않는다.
 - 백테스트 결과를 실전 기대수익으로 표시하지 않는다. 슬리피지, 수수료, 세금, 체결 지연, 데이터 지연, survivorship/lookahead bias를 검증 항목으로 둔다.
+- 자동 개선은 versioned 전략과 선언된 유한 파라미터 공간만 탐색한다. 실행 중인 전략 소스의 자기 수정, `eval`/동적 코드 실행, LLM이 만든 코드를 검증 없이 실행하는 방식은 사용하지 않는다.
+- 각 실험은 불변 데이터 snapshot과 비용·지연 모델에서 시계열 순서를 보존한 train/validation/test 및 walk-forward 평가를 수행하고, 전략·파라미터·데이터·엔진·평가정책 버전과 산출물 hash를 남긴다.
+- 후보 선택은 단일 최고 수익률이 아니라 비용 후 수익, 최대 낙폭, 거래 수, turnover/capacity, 구간·시장 국면별 안정성, 기존 champion 대비 개선을 함께 본다. 반복 탐색으로 test set에 과적합하지 않도록 실험 예산과 최종 holdout을 분리한다.
+- champion/challenger 승격은 `research_candidate → paper_candidate → paper → shadow`까지만 자동화할 수 있다. 데이터 오류, 성능 저하, paper/backtest 괴리, 위험 한도 위반이 생기면 자동 중지하고 직전 champion으로 롤백한다.
+- canary 또는 live로의 승격과 실제 자금 확대는 자동화하지 않는다. 별도 owner 승인, broker별 promotion evidence, reconciliation, healthy kill switch와 매 주문 risk gate를 요구한다.
 - live 전략은 paper trading에서 일정 기간 검증한 동일한 전략 정의와 동일한 주문 상태 머신만 사용한다. paper/live 환경, API key, 계좌, feature flag를 물리적으로 분리한다.
 - 자동매매 hot path는 p50/p95/p99 지연, 시장 데이터 freshness, queue depth, provider latency, 주문 접수/체결 지연, 실패·재시도 횟수를 측정한다.
 - 주문 hot path는 `market data event → freshness check → strategy signal → pre-trade risk → idempotency key → broker submit → ack/execution ingest → ledger reconciliation → audit log`로 고정한다.
@@ -164,6 +170,9 @@ Adapters
 - 백테스트: 과거 OHLCV 재생, 기업행사, 수수료·세금·슬리피지·부분체결·지연 모델, survivorship/lookahead 방지, out-of-sample·walk-forward 검증
 - 결과: CAGR, TWR/XIRR, max drawdown, Sharpe/Sortino, turnover, win rate, exposure, 거래별 감사 로그
 - 재현성: strategy/version, parameter hash, data snapshot, engine version, random seed, 실행 환경을 run manifest로 저장
+- 자동 개선: 선언된 유한 후보 공간을 정기적으로 평가하고 train/validation/test와 walk-forward gate를 통과한 하나의 challenger를 결정론적으로 선택
+- champion registry: 후보·평가정책·데이터 snapshot·산출물 hash·승격/거절 이유를 append-only로 보존하고 paper 성능 저하 시 직전 champion으로 롤백
+- 자동 승격 상한: research candidate에서 paper/shadow까지. canary/live 승격과 자금 확대는 owner 승인 없이 수행하지 않음
 - paper automation: 전략 신호를 포트폴리오 목표와 risk-adjusted target으로 변환한 뒤 공통 주문 pipeline이 paper order만 실행
 - owner-managed always-on host에서 DB lease/fencing으로 단일 runner만 활성화하고 중복 scheduler·중복 주문을 검증
 - kill switch: 수동 중지, 일일 손실, 연속 실패, stale data, reconciliation mismatch, provider 장애
@@ -195,6 +204,8 @@ Adapters
 - 모의주문에서 중복 요청, 부분체결, 취소, 거절, 재시작 복구가 검증된다.
 - 실전 주문 경로는 모의주문 검증과 별개로 보안·오주문 방지 체크를 통과한다.
 - 전략 백테스트는 수수료·슬리피지·지연·데이터 지연을 포함하고, lookahead bias를 막는 테스트가 있다.
+- 자동 개선은 같은 입력에서 같은 후보·순위·산출물 hash를 만들고, 부족한 데이터·최종 holdout 열람·paper gate 실패에서는 승격하지 않는다.
+- champion/challenger 이력은 재현 가능하며 candidate가 실패하면 신규 주문 없이 이전 champion 또는 `no_strategy`로 안전하게 롤백한다.
 - 동일한 전략 코드·clock 계약·포트폴리오 구성·리스크 코어가 backtest, paper, shadow, live에서 사용된다.
 - paper 자동매매는 신호 충돌과 자금 배분, 위험 차단, 주문 상태, 체결 reconciliation, restart recovery, kill switch가 검증된다.
 - 각 주문은 market event부터 broker ack/fill까지 UTC timestamp와 monotonic duration을 남기며 구간별 p50/p95/p99, freshness, queue depth를 확인할 수 있다.

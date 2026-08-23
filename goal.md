@@ -14,3 +14,5 @@
 Phase A는 Flutter 하나로 iOS·Android·app-centric web을 제공하고, Go 모듈러 모놀리스가 ledger/order/risk/broker authority를 소유한다. Python은 research/backtest 전용이며 broker credential이나 주문 제출 권한을 갖지 않는다. SQLite single-writer local에서 `CSV import → preview → idempotent apply → append-only ledger → holdings/cash/P&L → versioned backup/restore` 수직 슬라이스를 먼저 검증한다.
 
 PostgreSQL maintenance migration과 restore 증명 전에는 multi-replica 또는 Kubernetes를 도입하거나 manifest를 만들지 않는다. live 주문은 서버가 owner 승인 만료, broker/account/strategy allowlist, promotion evidence, healthy kill switch를 **매 주문** 검증할 때만 허용한다. 휴대폰 background는 cache refresh와 push 보조만 하며 주문·reconciliation·kill switch의 authority가 아니다.
+
+투자 알고리즘은 고정된 일회성 기능이 아니라 자동 개선 루프를 갖는다. Python 연구 프로세스가 versioned 전략과 제한된 파라미터 후보를 자동 생성하고, 불변 데이터 snapshot에서 비용·지연을 포함한 시계열 분할과 walk-forward 검증을 수행해 champion/challenger evidence를 만든다. 검증 통과 후보는 자동으로 `research_candidate → paper_candidate → paper → shadow`까지만 승격하거나 실패 시 이전 champion으로 되돌린다. 실행 중인 전략 코드를 자기 수정하거나 생성 코드를 바로 실행하지 않으며, 실제 자금의 canary/live 승격은 자동화하지 않고 별도 owner 승인과 Go risk/execution gate를 요구한다.

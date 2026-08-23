@@ -102,7 +102,15 @@ clock + event replay <- audit/run manifest <- execution <- order intent
 
 최소 전략 API는 universe selection, `on_bar`/signal, portfolio construction, risk limits로 시작한다. 전략은 credential과 broker SDK에 접근하지 않는다. 첫 백테스트는 일봉/분봉 OHLCV 재생, 기업행사, 수수료, 세금, 슬리피지, 부분체결, 지연, 거래 정지/stale data를 모델링하고 strategy/version, parameter hash, data snapshot, engine version을 run manifest에 남긴다. tick replay, order book queue position, colocated latency, cross-venue smart routing은 데이터와 실제 필요가 생길 때까지 제외한다.
 
-실전 자동매매 활성화 조건은 paper → shadow → 소액 canary 결과, 동일 전략·포트폴리오·리스크 코어, 주문 idempotency, 체결-원장 reconciliation, 가격·주문·익스포저·손실 한도, 허용 종목 목록, 전략과 독립된 kill switch, stale data/clock drift/provider 장애 차단, 사용자 명시 승인이다. [Alpaca paper trading](https://docs.alpaca.markets/us/v1.4.2/docs/paper-trading)은 paper가 시장 충격, 주문 queue 위치, latency slippage 등을 완전히 재현하지 못한다고 명시하므로 paper 성과만으로 live를 승인하지 않는다.
+실전 자동매매 활성화 조건은 paper → shadow → 소액 canary 결과, 동일 전략·포트폴리오·리스크 코어, 주문 idempotency, 체결-원장 reconciliation, 가격·주문·익스포저·손실 한도, 허용 종목 목록, 전략과 독립된 kill switch, stale data/clock drift/provider 장애 차단, 사용자 명시 승인이다. [Alpaca paper trading](https://docs.alpaca.markets/us/docs/paper-trading)은 paper가 시장 충격, 주문 queue 위치, latency slippage 등을 완전히 재현하지 못한다고 명시하므로 paper 성과만으로 live를 승인하지 않는다.
+
+### 자동 전략 개선 루프
+
+자동 개선은 “최근 백테스트 1등을 실전에 반영”하는 기능이 아니다. QuantConnect의 공식 [walk-forward optimization 문서](https://www.quantconnect.com/docs/v2/writing-algorithms/optimization/walk-forward-optimization)는 최근 trailing window로 파라미터를 주기적으로 조정하는 방법과 함께, 갱신이 너무 잦으면 과적합 위험이 커지는 trade-off를 설명한다. [파라미터 최적화 문서](https://www.quantconnect.com/docs/v2/writing-algorithms/optimization/parameters)도 최적화에 사용한 기간을 다시 test로 쓰면 lookahead가 유입된다고 경고한다. Bailey 등 연구는 시도한 전략 구성이 많아질수록 높은 backtest 성과가 우연히 만들어질 가능성이 커진다는 문제를 보인다. ([SSRN 논문](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2308659))
+
+따라서 첫 구현은 설명 가능한 SMA crossover의 작은 유한 grid만 사용한다. 불변 데이터 snapshot을 시간 순서대로 train/validation/final holdout으로 나누고, 신호 다음 bar부터만 체결 가능하게 한다. 후보 순위는 validation까지만 사용하며 final holdout은 승격 gate로만 사용한다. 수수료·세금·슬리피지·지연 후 수익, 최대 낙폭, 최소 거래 수, turnover/capacity와 기존 champion 또는 단순 benchmark를 함께 비교하고, 같은 입력은 같은 winner와 artifact hash를 내야 한다.
+
+자동화 범위는 후보 생성, 평가, `paper_candidate`, paper/shadow 성능 감시와 rollback이다. 전략 소스를 스스로 고치거나 생성 코드를 동적으로 실행하지 않는다. FINRA도 자동 투자 도구의 가정과 한계를 이해하고 성과 보장을 경계하라고 안내하며, 2025년 auto-trading 안내에서는 검증되지 않은 수익성·AI 주장을 특히 경고한다. ([자동 투자 도구 안내](https://www.finra.org/investors/alerts/automated-investment-tools), [auto-trading 위험 안내](https://www.finra.org/investors/insights/auto-trading-unregistered-entities)) Omni Folio는 이를 제품 문구와 승격 정책에 반영해 수익을 약속하지 않고 canary/live 승격은 owner 승인과 공통 risk gate 밖에서 자동화하지 않는다.
 
 ## 3. 틀리면 안 되는 계산 로직
 
