@@ -97,6 +97,8 @@ MarketCandles marketCandles({
   bool sample = true,
   String priceAdjustment = 'unspecified',
   String source = 'local_fixture',
+  String? sourceAsOf = '2026-08-22T20:00:00Z',
+  bool includeIssues = true,
 }) => MarketCandles.fromJson({
   'symbol': 'AAPL',
   'venue': 'XNAS',
@@ -106,11 +108,20 @@ MarketCandles marketCandles({
   'source': source,
   'sample': sample,
   'state': state,
-  'source_as_of': '2026-08-22T20:00:00Z',
+  'source_as_of': sourceAsOf,
   'fetched_at': '2026-08-24T03:00:00Z',
-  'issues': state == 'partial'
+  'issues': !includeIssues
+      ? const []
+      : state == 'partial'
       ? [
           {'code': 'missing_session', 'message': '일부 세션이 없습니다.'},
+        ]
+      : source == 'local_fixture'
+      ? [
+          {
+            'code': 'sample_data',
+            'message': 'market data is a local sample and not live',
+          },
         ]
       : const [],
   'bars': state == 'empty'
@@ -217,6 +228,9 @@ void main() {
       () => marketCandles(priceAdjustment: 'provider_adjusted'),
       throwsFormatException,
     );
+    expect(() => marketCandles(state: 'success'), throwsFormatException);
+    expect(() => marketCandles(sourceAsOf: null), throwsFormatException);
+    expect(() => marketCandles(includeIssues: false), throwsFormatException);
     final providerCandles = MarketCandles.fromJson({
       'symbol': 'AAPL',
       'venue': 'XNAS',
@@ -251,10 +265,15 @@ void main() {
         'price_adjustment': 'unspecified',
         'source': 'local_fixture',
         'sample': false,
-        'state': 'success',
-        'source_as_of': null,
+        'state': 'stale',
+        'source_as_of': '2026-08-22T20:00:00Z',
         'fetched_at': '2026-08-24T03:00:00Z',
-        'issues': const [],
+        'issues': const [
+          {
+            'code': 'sample_data',
+            'message': 'market data is a local sample and not live',
+          },
+        ],
         'bars': [
           {
             'at': '2026-08-22T20:00:00Z',
@@ -309,10 +328,15 @@ void main() {
         'price_adjustment': 'unspecified',
         'source': 'local_fixture',
         'sample': true,
-        'state': 'success',
-        'source_as_of': null,
+        'state': 'stale',
+        'source_as_of': '2026-08-22T20:00:00Z',
         'fetched_at': '2026-08-24T03:00:00Z',
-        'issues': const [],
+        'issues': const [
+          {
+            'code': 'sample_data',
+            'message': 'market data is a local sample and not live',
+          },
+        ],
         'bars': [
           {
             'at': '2026-08-22T20:00:00Z',
@@ -421,10 +445,15 @@ void main() {
             'price_adjustment': 'unspecified',
             'source': 'local_fixture',
             'sample': true,
-            'state': 'success',
-            'source_as_of': null,
+            'state': 'stale',
+            'source_as_of': '2026-08-22T20:00:00Z',
             'fetched_at': '2026-08-24T03:00:00Z',
-            'issues': const [],
+            'issues': const [
+              {
+                'code': 'sample_data',
+                'message': 'market data is a local sample and not live',
+              },
+            ],
             'bars': [
               {
                 'at': '2026-08-22T20:00:00Z',
