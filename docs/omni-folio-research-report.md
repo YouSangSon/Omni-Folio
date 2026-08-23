@@ -197,7 +197,7 @@ Settings
 - 차트: 성과/벤치마크는 line, 자산배분은 bar 또는 5개 이하 donut, drawdown은 area, 종목 상세만 candlestick
 - 모든 차트에 요약 문장과 표 대안을 제공
 
-React 웹으로 구현한다면 [shadcn/ui](https://ui.shadcn.com/docs)를 복사 가능한 접근성 primitive로 쓰고 Tailwind semantic token으로 테마를 관리한다. 차트 hover 정보는 키보드 focus/tap으로도 접근 가능해야 하며, 실시간 갱신에는 pause가 있어야 한다.
+기존 React/PWA + shadcn/Tailwind 권장은 **superseded**다. Flutter 하나로 iOS·Android·app-centric web을 제공하고, Flutter theme extension의 semantic token·Noto Sans KR/system font·tabular number를 사용한다. 차트의 선택 정보는 touch, keyboard, screen reader로 동등하게 접근 가능해야 하며 실시간 갱신에는 pause가 있어야 한다.
 
 ### 핵심 상태
 
@@ -212,28 +212,38 @@ React 웹으로 구현한다면 [shadcn/ui](https://ui.shadcn.com/docs)를 복�
 ## 5. 추천 MVP 아키텍처
 
 ```text
-Responsive PWA
-  └─ UI + server API
-       ├─ canonical ledger (SQLite/Postgres)
-       ├─ portfolio calculator
-       ├─ import pipeline
-       ├─ broker adapters: KIS first, Alpaca paper later
-       ├─ market-data adapter: one provider first
-       ├─ strategy/portfolio/risk core
-       ├─ backtest + paper/shadow runner
-       ├─ execution log + reconciliation
-       └─ scheduled sync + freshness/latency monitor
+Flutter client (iOS / Android / app-centric web)
+  └─ versioned HTTP/SSE API; local read cache only
+       └─ Go modular monolith
+            ├─ canonical ledger (SQLite single writer → PostgreSQL)
+            ├─ portfolio calculator / import pipeline
+            ├─ broker adapters: KIS first, Alpaca paper later
+            ├─ market-data adapter: one provider first
+            ├─ strategy/portfolio/risk/order authority
+            ├─ execution log + reconciliation
+            └─ scheduled sync + freshness/latency monitor
+
+Python research/backtest
+  └─ versioned signal/target and reproducible artifacts only
+     (no broker credential, operating DB write, or broker order submit)
 ```
 
-개인 한 명이 쓰는 첫 버전은 SQLite로 충분하다. 별도 마이크로서비스, Kafka, Redis, 플러그인 SDK는 필요 없다. 서버 배포가 필요해지는 시점에 Postgres로 옮기고, 실시간 호가가 실제 사용성에 필요하다고 측정될 때 WebSocket을 추가한다.
+개인 한 명이 쓰는 첫 버전은 SQLite single-writer local로 충분하다. 별도 마이크로서비스, Kafka, Redis, 플러그인 SDK는 필요 없다. 두 번째 replica, 독립 확장, HA/PITR, 높은 동시 쓰기 또는 Kubernetes 전에 maintenance window에서 SQLite → PostgreSQL migration과 restore drill을 통과한다. 그 전에는 Kubernetes manifest도 만들지 않는다.
 
-브라우저에는 증권사 App Secret을 두지 않는다. 서버 또는 OS keychain에 저장하고 로그·오류·export에서 마스킹한다. 실거래를 추가할 때는 별도 주문 권한, paper/live 환경의 명시적 분리, 사용자 확인, idempotency key, 체결 이벤트 reconciliation이 선행되어야 한다.
+클라이언트에는 증권사 App Secret을 두지 않는다. 서버 또는 OS keychain에 저장하고 로그·오류·export에서 마스킹한다. 앱 background는 cache refresh와 push 보조만 하며 order submit, reconciliation, kill switch의 authority가 아니다. 실거래마다 서버는 만료 있는 owner 승인, broker/account/strategy allowlist, promotion evidence, healthy kill switch와 idempotency/reconciliation 조건을 재검증한다.
 
 자동매매를 추가할 때는 전략·포트폴리오 구성·리스크·주문 실행을 분리한다. 주문 hot path는 `market data event → freshness check → strategy signal → portfolio target → pre-trade risk → idempotency key → broker submit → ack/execution ingest → ledger reconciliation → audit log`로 측정한다. source/provider/ingest/decision/risk/send/ack/fill UTC timestamp와 monotonic duration을 남겨 구간별 p50/p95/p99, freshness, queue depth를 본다. 시장 데이터 snapshot과 대체된 signal은 병합할 수 있지만 order/ack/fill/cancel/reject 이벤트는 유실하면 안 된다.
 
 필수 제한은 price collar, max order quantity/value, gross/net exposure, max position/open orders/daily loss/order rate, trading hours, stale-data block, clock-drift block, reconciliation/provider 장애 차단, 전략 프로세스와 독립된 kill switch다. [FIA 자동매매 시스템 가이드](https://www.fia.org/sites/default/files/2020-03/Guide%20to%20the%20Development%20and%20Operation%20of%20Automated%20Trading%20Systems%20%28March%202015%29.pdf)도 pre-trade controls, market-data reasonability, kill switch, cancel-on-disconnect, reconciliation, audit trail을 핵심 통제로 다룬다.
 
 소매 브로커 API에서는 고정된 밀리초 SLA나 HFT를 약속하지 않는다. [IBKR Web API](https://www.interactivebrokers.com/campus/ibkr-api-page/web-api-trading/)처럼 세션과 pacing 제한이 있고, [Alpaca order updates](https://docs.alpaca.markets/us/docs/websocket-streaming)는 비동기 fill/partial fill/cancel/reject 이벤트를 스트리밍한다. 초기 목표는 EOD·분봉 전략이며 실제 측정 뒤 전략별 `max_data_age`, `max_decision_time`, `max_ack_wait`을 정한다. 국내 구현은 [KIS 공식 저장소](https://github.com/koreainvestment/open-trading-api)의 REST/WebSocket, 모의·실전 분리, strategy builder/LEAN backtester 사례를 참고하되 호출 제한과 약관은 구현 직전 포털에서 다시 확인한다.
+
+### Runtime 선택
+
+- **기본:** Flutter client + Go modular monolith + Python research/backtest. Go가 원장·주문·risk·broker authority의 단일 owner다.
+- **Java/Kotlin/JVM 대안:** broker SDK, 팀 역량 또는 기존 JVM estate가 확실히 우세할 때만 같은 authority 경계를 유지하며 재평가한다.
+- **Rust:** Go profile에서 CPU/GC tail bottleneck이 실제로 확인된 좁은 component에만 사용한다.
+- **Python-only:** research 속도와 별개로 broker credential과 order submit authority가 흩어지므로 비권장한다.
 
 ## 6. 단계별 범위
 
@@ -253,7 +263,7 @@ Responsive PWA
 - paper → shadow → 소액 canary → limited live 자동매매
 - 워치리스트와 알림
 - 배당 캘린더, 리밸런싱 제안
-- 오프라인/PWA polish
+- Flutter offline read-cache polish
 
 ### 명시적으로 제외
 

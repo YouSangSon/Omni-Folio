@@ -1,0 +1,45 @@
+# Omni Folio Gates
+
+## Goal
+
+iOS·Android·web에서 사용할 수 있고 local/single-node에서 시작해 검증 후 PostgreSQL·Kubernetes로 승격 가능한 개인용 멀티 증권 앱을 만든다. 원장, 주문, 백테스트, 자동매매는 정확성·복구·fail-closed 증거 없이는 다음 단계로 넘어가지 않는다.
+
+## Gate tree
+
+```text
+G0 architecture and contracts
+├─ G0.1 runtime/state authority ADR
+├─ G0.2 OpenAPI and cross-runtime decimal contract
+└─ G0.3 runnable monorepo commands
+   |
+G1 ledger vertical slice
+├─ G1.1 migrate + canonical transaction
+├─ G1.2 CSV preview + idempotent atomic apply
+├─ G1.3 FIFO snapshot + provenance
+└─ G1.4 backup + verified restore
+   |
+G2 client vertical slice
+├─ G2.1 Flutter iOS/Android/web build
+├─ G2.2 trust status + import preview/apply receipt
+└─ G2.3 accessibility + frame budget
+   |
+G3 research vertical slice
+├─ G3.1 deterministic run manifest
+├─ G3.2 fee/slippage/lookahead fixtures
+└─ G3.3 no credential/order permission proof
+   |
+G4 broker read-only -> charts -> paper order
+   |
+G5 paper -> shadow -> canary -> limited live
+   |
+G6 PostgreSQL and Kubernetes promotion
+```
+
+## Root completion evidence
+
+- `make check` 또는 동등한 단일 명령이 각 활성 서브프로젝트의 format, lint, unit, contract test를 실행한다.
+- 동일 fixture의 decimal·ID·timestamp가 Flutter, Go, Python contract test에서 일치한다.
+- local 검증, broker sandbox, live readiness, 실제 운영 증거를 따로 보고한다.
+- external deploy, credential, live 주문, push는 명시 승인 없이는 실행하지 않는다.
+
+세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.

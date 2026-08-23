@@ -1,12 +1,12 @@
-<!-- /autoplan restore point: /Users/yousang/.gstack/projects/Omni-Folio/unknown-autoplan-restore-20260823-201622.md -->
+<!-- /autoplan restore point: /Users/yousang/.gstack/projects/Omni-Folio/main-autoplan-restore-20260823-223923.md -->
 # Omni Folio 구현 계획 초안
 
-상태: 제품 전제와 staged hybrid/cloud-ready 아키텍처 승인 완료, Phase A 실행 계획 수립 중
+상태: Flutter/Go/Python 모노레포 경계 승인 완료, G0-G3 첫 수직 슬라이스 구현 중
 기준일: 2026-08-23
 
 ## 목표
 
-한국·미국 주식과 ETF를 여러 계좌에서 통합해 성과를 분석하고, 시세 차트, 단계적으로 안전한 주문 기능, 백테스트와 모의 자동매매를 제공하는 개인용 local-first 투자 앱을 만든다. 로컬 단독 사용을 유지하면서 동일 artifact를 사용자가 관리하는 단일 노드 클라우드에 배포할 수 있어야 한다.
+한국·미국 주식과 ETF를 여러 계좌에서 통합해 성과를 분석하고, 시세 차트, 단계적으로 안전한 주문 기능, 백테스트와 모의 자동매매를 제공하는 개인용 local-first 투자 앱을 만든다. 하나의 Flutter 코드베이스로 iOS·Android·app-centric web을 제공하고, 서버 artifact는 로컬 단독 실행과 사용자가 관리하는 단일 노드 클라우드 배포를 모두 지원한다.
 
 ## 전제
 
@@ -17,7 +17,8 @@
 5. 정확성, 개인정보 보호, 복구 가능성을 실시간성보다 우선한다.
 6. 자동매매는 기본적으로 연구·백테스트·paper trading이며, 실전 자동매매는 별도 승인과 위험 한도 없이는 활성화하지 않는다.
 7. `local-first`는 데이터 소유권과 로컬 실행 가능성을 뜻하며 laptop-only를 뜻하지 않는다.
-8. Phase A는 로컬 SQLite와 수동 실행으로 시작하고, unattended paper/shadow/live는 owner-managed always-on host에서만 활성화한다.
+8. 첫 구현 lake는 로컬 SQLite와 수동 실행으로 시작하고, unattended paper/shadow/live는 owner-managed always-on host에서만 활성화한다.
+9. 클라이언트와 Python 연구 프로세스는 원장·주문 권한자가 아니다. broker credential과 order-submit 권한은 Go 실행 경계에만 둔다.
 
 ## 성공 조건
 
@@ -27,20 +28,45 @@
 - 한 공급자가 실패해도 이미 받은 데이터는 보존되고 실패 범위와 마지막 갱신 시각이 보인다.
 - API 키와 계좌 식별자가 브라우저, 로그, export에 노출되지 않는다.
 - 전략은 백테스트와 paper trading에서 동일한 정의로 실행되고, 위험 한도와 kill switch를 우회하지 못한다.
-- 같은 artifact가 local과 단일 노드 cloud 프로필에서 실행되고, backup/restore와 주문 차단형 rollback이 검증된다.
+- 같은 Go OCI artifact가 local과 단일 노드 cloud 프로필에서 실행되고, Flutter iOS·Android·web 산출물이 같은 versioned contract를 사용한다.
+- backup/restore와 주문 차단형 rollback이 검증된다.
+
+## 현재 구현 lake: G0-G3
+
+기존 Phase A-C의 순차 UI 가정은 모바일 요구가 확정되기 전 기록이다. 현재는 전체 제품을 미리 scaffold하지 않고 다음 한 흐름만 end-to-end로 만든다.
+
+```text
+contracts fixture
+  -> Go CSV preview
+  -> idempotent atomic apply
+  -> ledger snapshot + receipt
+  -> Flutter trust/import 화면
+
+same market fixture
+  -> Python deterministic backtest manifest
+```
+
+- `apps/client`: Flutter iOS·Android·web 최소 앱
+- `services/core`: Go API와 SQLite 원장
+- `services/research`: Python CLI 백테스트
+- `contracts`: OpenAPI·JSON Schema·공통 fixture
+- `infra`: 로컬 process와 OCI/Compose만, Kubernetes manifest는 만들지 않음
+
+상세 gate와 현재 상태는 [`GATES.md`](../GATES.md), [`PLAN.md`](../PLAN.md), [`docs/adr/0001-runtime-and-monorepo.md`](adr/0001-runtime-and-monorepo.md)를 따른다.
 
 ## 제품 범위
 
 ### Phase A: 계산 가능한 로컬 원장
 
-- SQLite schema: accounts, instruments, transactions, lots, prices, fx_rates, corporate_actions, sync_runs, schema_migrations
-- Decimal money math와 기준 통화
-- CSV/manual import: parse, normalize, preview, confirm, apply
+- SQLite schema: accounts, instruments, transactions, import_runs, schema_migrations
+- Decimal money math, KRW 기본 기준 통화, 거래 원 통화 보존
+- CSV import: parse, normalize, preview token, confirm, atomic apply receipt
 - 중복 방지와 append-only correction
-- FIFO와 이동평균 원가
-- TWR, XIRR, realized/unrealized P&L, drawdown
-- versioned JSON/CSV export와 backup/restore, 이전 backup restore golden test
+- FIFO 보유 수량, 현금, 실현 손익과 구조화된 계산 provenance
+- versioned JSON backup, temp DB restore, 이전 backup restore golden test
 - 서로 다른 두 브로커 CSV/응답 fixture로 canonical model 검증; 두 번째 live adapter는 구현하지 않음
+
+Phase A 코어가 green이 된 뒤 같은 단계의 후속 slice에서 수동 입력, prices/fx_rates/corporate_actions, 미실현 손익, TWR/XIRR, benchmark, drawdown, 이동평균 원가, CSV export를 하나씩 추가한다. 이 후속 항목을 현재 코어 구현에 미리 scaffold하지 않는다.
 
 ### Phase B: 첫 API 어댑터
 
@@ -103,33 +129,30 @@
 ## 아키텍처
 
 ```text
-Web/PWA
-  |
-Server API (`api`, local/cloud 동일 image)
-  ├─ Ledger + read models
-  ├─ Portfolio calculator
-  ├─ Import pipeline
-  ├─ Broker adapters
-  ├─ Market-data adapters
-  ├─ Research/data catalog + backtester
-  ├─ Strategy + portfolio construction
-  ├─ Risk + execution
-  └─ Read models + command endpoints
+apps/client (Flutter: iOS / Android / web)
        |
-  SQLite on durable volume
+       | versioned HTTP/SSE; canonical decimal strings
+       v
+services/core (Go modular monolith)
+  ledger | import | portfolio | broker | order | risk
+       |
+       +-- SQLite single writer: local/single-node
+       +-- PostgreSQL: before multi-replica/Kubernetes
 
-Same image, separate roles only when their phase starts
-  ├─ `worker`: restart-safe scheduled sync
-  ├─ `runner`: strategy loop
-  ├─ DB lease/fencing: singleton ownership
-  └─ execution gateway: order credential owner
+services/research (Python batch/CLI)
+  backtest | analysis | reproducible artifacts
+  no broker credential | no order submit | no operational DB writes
+
+Later roles from the same Go codebase
+  worker | runner | execution-gateway
+  DB claim/lease/fencing remains authoritative
 ```
 
-초기에는 배포 가능한 모듈러 모놀리스와 하나의 데이터베이스를 사용한다. broker adapter와 market-data adapter만 외부 인터페이스 경계로 두고 backtest/paper/shadow/live는 같은 전략·포트폴리오·리스크 코어와 교체 가능한 clock/data/execution adapter를 사용한다. 주문 command와 ack/fill/cancel/reject는 append-only execution log에 저장한다. 실전 자동매매 전에는 runner만 UI/API와 별도 프로세스로 격리하고 broker credential은 runner가 아닌 execution gateway만 읽는다. plugin SDK, message broker, Redis, microservice, HFT용 분산 실행 엔진은 만들지 않는다.
+초기에는 Go 모듈러 모놀리스와 하나의 데이터베이스를 사용한다. Flutter와 Python은 wire contract만 공유하고 Go 내부 package나 운영 DB에 직접 의존하지 않는다. broker adapter와 market-data adapter만 외부 인터페이스 경계로 두며 주문 command와 ack/fill/cancel/reject는 append-only execution log에 저장한다. Python 전략은 versioned signal/target만 만들고 모든 pre-trade risk와 broker submit은 Go 경계를 통과한다. 실전 자동매매 전에는 execution gateway만 live credential을 읽는다. plugin SDK, message broker, Redis, microservice, HFT용 분산 실행 엔진은 만들지 않는다.
 
 ### 클라우드 준비 계약
 
-- local과 cloud는 같은 저장소와 pinned non-root OCI image를 사용한다. Phase A는 `api`와 `migrate`만 사용하고, 해당 단계가 시작될 때 `worker`, `runner`, `execution-gateway` command를 같은 image에 추가한다.
+- local과 cloud는 같은 저장소와 pinned non-root Go OCI image를 사용한다. Flutter native/web은 별도 서명·배포 산출물이다. 첫 lake는 `api`와 `migrate`만 사용하고, 해당 단계가 시작될 때 `worker`, `runner`, `execution-gateway` command를 같은 Go image에 추가한다.
 - local 프로필은 loopback + SQLite + OS keychain이다. 첫 cloud 프로필은 TLS + owner 인증 + secret manager + 단일 API replica + single-writer provider-managed block volume(RWO)의 SQLite다. 이는 stateful single-node 프로필이며 무중단 교체·scale-out·자동 failover를 보장하지 않는다.
 - container filesystem은 임시 파일만 허용한다. SQLite를 ephemeral disk, NFS형 공유 volume, 다중 writer에 두지 않는다. backup은 SQLite online backup API 또는 동등한 일관된 snapshot으로 off-volume에 암호화 저장하고 restore 후 `integrity_check`와 ledger golden test를 통과한다.
 - 두 번째 API replica, API/worker 독립 확장, 무중단 교체, 다중 노드 failover, 높은 동시 쓰기, managed point-in-time recovery가 필요해지면 PostgreSQL로 먼저 승격한다. SQLite export → PostgreSQL import 후 row count, checksum, ledger invariant를 검증하고 SQLite 상태에서는 scale-out을 지원한다고 주장하지 않는다.
@@ -141,9 +164,11 @@ Same image, separate roles only when their phase starts
 
 ## UI 구조
 
-데스크톱은 sidebar + main content, 모바일은 4개 이하 top-level navigation을 사용한다. Overview의 첫 화면에는 total value, invested capital, cash, TWR, XIRR, benchmark delta, freshness를 보여준다. 자동매매 단계에는 Strategy Lab, Backtests, Automation/Risk를 추가하고 현재 실행 모드, 전략 버전, 위험 한도 사용량, 마지막 신호·주문·체결, data freshness, kill switch를 한 화면에서 확인하게 한다. 상승/하락은 색만 사용하지 않고 부호와 텍스트를 함께 쓴다.
+데스크톱 sidebar와 모바일 navigation은 `Home / Holdings / Activity / Data` 네 영역을 공유한다. Activity 아래에 Transactions와 Import Review를, Data 아래에 Connections, Export, Backup/Restore를 둔다. Asset Detail과 `계산 근거 보기`는 contextual route이며 Settings는 보조 경로다. 아직 활성화되지 않은 broker, 성과 지표, 주문, 자동화 메뉴는 placeholder로 노출하지 않는다.
 
-React를 선택하면 shadcn/ui와 Tailwind semantic token을 재사용한다. 앱 전체를 dark-only로 만들지 않으며 Noto Sans KR/시스템 글꼴과 tabular numbers를 사용한다.
+Home의 첫 화면은 “얼마 벌었나?”보다 “현재 데이터가 믿을 만한가?”에 먼저 답한다. 검증·freshness 상태, 해결할 문제, 보유/현금 snapshot, 최근 import, 최근 verified backup 순서로 보여주고 TWR/XIRR/benchmark는 해당 데이터와 계산이 실제로 준비된 뒤 추가한다. 자동매매 단계에는 Strategy Lab, Backtests, Automation/Risk를 capability gate 뒤에 추가하고 현재 실행 모드, 전략 버전, 위험 한도 사용량, 마지막 신호·주문·체결, data freshness, kill switch를 한 화면에서 확인하게 한다. 상승/하락은 색만 사용하지 않고 부호와 텍스트를 함께 쓴다.
+
+Flutter Material primitive와 semantic design token을 사용한다. 앱 전체를 dark-only로 만들지 않으며 Noto Sans KR/시스템 글꼴, tabular numbers, 48dp touch target, 명시적인 focus/semantic label을 사용한다. 대량 CSV 변환과 시계열 downsampling은 서버가 수행하고 Flutter web main thread에 올리지 않는다.
 
 ## 검증
 
@@ -153,7 +178,7 @@ React를 선택하면 shadcn/ui와 Tailwind semantic token을 재사용한다. �
 - Portfolio Performance 및 Excel XIRR 교차 검증
 - adapter contract test와 녹화 fixture
 - API 키 redaction, credential scope 거절, read-only/paper/live secret 분리 test
-- 375/768/1024/1440px, keyboard-only, reduced-motion, 200% zoom
+- Flutter iOS·Android·web build, compact/medium/expanded layout, keyboard-only, screen reader, reduced-motion, 200% text scale
 - provider timeout/429/partial response/stale data 복구
 - 백테스트 재현성, lookahead 방지, 수수료·슬리피지·지연 모델
 - 자동매매 위험 한도, stale data 차단, reconciliation mismatch 차단, kill switch
@@ -299,3 +324,464 @@ THIS PLAN
 사용자의 원래 방향을 기본값으로 유지한다. 자동매매는 목표에서 제거하지 않으며, 별도 제품으로 분리하려면 사용자의 명시적 승인이 필요하다.
 
 **CONFIRMED D1:** 단계적 hybrid를 사용한다. Phase A는 단일 로컬 SQLite·수동 실행·실제 주문 및 live-capable credential 불가 조건으로 진행한다. 동일 artifact의 단일 노드 cloud 배포 경로는 유지하되, unattended paper/shadow/live는 owner-managed always-on host, 인증·TLS·secret manager·durable backup·singleton runner gate를 통과해야 한다. 구체적인 cloud vendor와 home server/VPS 선택은 배포 직전 결정한다.
+
+## `/autoplan` Phase 1 최종 종합: 현재 구현 lake
+
+모드: **SELECTIVE_EXPANSION**. 앞선 Codex CLI 검토와 최신 독립 reviewer 검토를 종합한다. 사용자의 제품 방향 승인과 자동 진행 지시로 Phase A 전제는 모두 닫혔다.
+
+### 0A-0F 전제·대안·시간축 결정
+
+| 항목 | 검토 결과 | 결정 |
+|---|---|---|
+| 실제 문제 | 여러 API 연결 자체가 아니라 거래·현금·손익의 설명 가능성과 안전한 자동화 경계 | 거래 원장을 source of truth로 유지 |
+| 현재 자산 | 목표·계획·조사 문서만 있고 제품 코드는 없음 | 내부 코드를 재사용한다고 가정하지 않음 |
+| 12개월 목표 | 개인 원장 → read-only 연동·차트 → paper/shadow → gated live | 로드맵은 유지하되 지금은 Phase A만 구현 |
+| 구현 대안 | 원장 코어만, 최소 UI 포함, cloud scaffold 우선 | 원장 코어를 먼저 완성하고 UI는 그 위에 얹음 |
+| Hour 1-3 | schema, 거래 의미, Decimal, import/apply가 가장 큰 모호성 | FIFO와 단일 기준 통화 계약부터 고정 |
+| Hour 4+ | restore·오류·중복·골든 fixture가 구현 완료를 좌우 | 원자적 apply와 검증 후 restore를 ship gate로 둠 |
+
+```text
+CURRENT                 PHASE A                         12-MONTH IDEAL
+docs only  ──>  CSV preview/apply ──> ledger  ──>  broker-neutral private app
+                 │                    │               + reproducible research
+                 └─ backup/restore    └─ explainable  + gated automation
+```
+
+현재 lake는 아래 한 줄이다.
+
+```text
+CSV import -> normalize/preview -> idempotent apply -> append-only ledger
+           -> FIFO holdings/cash/P&L -> versioned backup/verified restore
+```
+
+Phase A에서는 `worker`, `runner`, execution gateway, broker credential, cloud runtime을 만들지 않는다. cloud-ready는 영속 상태·migration·backup 경계를 잘못 굳히지 않기 위한 계약으로만 남긴다.
+
+### 시스템·데이터·상태·오류·배포·복구 흐름
+
+```text
+[CSV/manual input]
+        |
+  parse + validate -- nil/empty/malformed --> visible preview error, no write
+        |
+    normalize ------ unknown instrument ---> unresolved row, no write
+        |
+      preview ------- cancel/duplicate -----> no write
+        |
+ atomic SQLite apply -- lock/invariant -----> bounded failure + rollback
+        |
+ deterministic replay
+        |
+ holdings + cash + realized P&L + backup
+```
+
+```text
+ImportRun
+NEW -> PARSED -> PREVIEWED -> APPLYING -> APPLIED -> RECONCILED
+ |        |          |          |
+ +------> FAILED <---+----------+
+                     +-> CANCELLED
+
+FAILED/CANCELLED -> APPLYING 은 새 run 없이 금지한다.
+APPLIED transaction은 수정하지 않고 correction transaction을 append한다.
+```
+
+```text
+local rollout:
+migrate -> tests -> import fixture -> invariant check -> backup
+        -> restore into temp DB -> integrity_check -> snapshot compare
+
+rollback:
+stop writes -> preserve current backup -> verify last good backup in temp DB
+            -> replace only after integrity + ledger checks -> restart
+```
+
+### Sections 1-11 결정
+
+| 검토 차원 | 결론 | Phase A 조치 |
+|---|---|---|
+| 1 Architecture | 단일 프로세스·SQLite가 한 사용자에게 충분함 | 미래 역할과 provider interface를 scaffold하지 않음 |
+| 2 Error/rescue | 부분 원장 반영이 최악의 실패 | import 전체를 한 transaction으로 적용 |
+| 3 Security | 외부 credential은 없지만 import/restore가 trust boundary | 입력 크기·형식·Decimal 범위·backup version 검증 |
+| 4 Data/interaction | empty, invalid, duplicate, correction, double submit을 구분해야 함 | preview 결과와 idempotency key를 명시 |
+| 5 Code quality | 두 번째 구현 전 추상화가 가장 큰 코드 부채 | stdlib와 실제 함수 경계만 사용 |
+| 6 Tests | happy path만으로 원장 신뢰를 증명할 수 없음 | duplicate, rollback, golden math, restore test 필수 |
+| 7 Performance | 현재 위험은 지연보다 불필요한 복잡성 | 전체 replay로 시작하고 거래 수가 병목일 때 측정 |
+| 8 Observability | 잘못된 숫자를 재구성할 수 있어야 함 | import run 상태·건수·오류 종류를 저장 |
+| 9 Deployment | Phase A 배포는 local migrate/run뿐 | cloud image·Kubernetes는 구현하지 않음 |
+| 10 Trajectory | 핵심 플랫폼 자산은 adapter가 아니라 deterministic ledger | canonical transaction과 snapshot을 안정화 |
+| 11 UX | 고급 차트보다 import 신뢰와 숫자 설명이 선행 | Phase C 설계에 preview·오류·drill-down 계약 전달 |
+
+### Error & Rescue Registry
+
+| Codepath | 실패 | 구조화된 결과 | 복구 |
+|---|---|---|---|
+| CSV parse | 빈 파일, encoding, 필수 열 누락 | import validation error | mutation 없음, 행/열 표시 |
+| Decimal/date normalize | 잘못된 값·범위 | row error | preview 차단 |
+| Reference normalize | 알 수 없는 account/instrument | unresolved row | mapping 후 새 preview |
+| Import apply | 같은 run 재적용 | duplicate/no-op | unique key로 멱등 처리 |
+| Import apply | DB lock·constraint·invariant | failed run | 전체 rollback |
+| Ledger replay | 음수 lot·SELL 초과 | invariant error | snapshot 생성 차단 |
+| Backup | write 실패 | backup failure | 기존 backup을 덮어쓰지 않음 |
+| Restore | checksum/version/integrity 불일치 | restore validation error | active DB 교체 금지 |
+| Broker/order | timeout·unknown ack | Phase B/D 이후 | 현재 코드 경로 없음 |
+
+### Failure Modes Registry
+
+| Failure mode | Phase A rescue | Test | Gap |
+|---|---|---|---|
+| malformed/empty CSV | no write + diagnostic | required | 없음 |
+| double submit/duplicate row | unique idempotency key | required | 없음 |
+| crash/invariant during apply | transaction rollback | required | 없음 |
+| precision/rounding drift | `Decimal`, canonical text storage | required | 없음 |
+| SELL exceeds FIFO lots | reject whole import | required | 없음 |
+| corrupt/old backup | temp restore + version/integrity check | required | 없음 |
+| destructive active-DB restore | verified atomic replacement only | required | 없음 |
+| broker timeout/order unknown | later reconciliation state | deferred | Phase B/D |
+| dual automation runner | fencing token | deferred | Phase E |
+
+### Phase A NOT in scope
+
+- 브로커 API, market data, credential 저장
+- React 화면, 차트, 주문 티켓
+- TWR/XIRR/benchmark/drawdown과 이동평균 원가
+- paper/shadow/live, 전략 엔진, scheduled worker
+- cloud 배포·image publish, PostgreSQL, Redis/Kafka/Kubernetes. 이 초기 기록의 OCI blanket 제외는 현재 G0의 단일 local Go image smoke로 superseded됐다.
+- CSV spreadsheet export; 이 기능을 추가할 때 formula-injection 방어도 함께 추가
+
+### Phase A 구현 작업
+
+- **P1 Ledger schema:** versioned SQLite schema와 canonical transaction 계약
+- **P1 Import:** parse/normalize/preview/apply와 file·row 멱등성
+- **P1 Calculator:** FIFO holdings, cash, realized P&L, invariant
+- **P1 Recovery:** versioned JSON backup, temp DB restore, integrity/snapshot comparison
+- **P2 Diagnostics:** import run의 건수·상태·구조화된 오류
+
+### CEO dual voices — consensus
+
+| Dimension | 독립 reviewer | Codex CLI | Consensus |
+|---|---|---|---|
+| Premises valid? | 원장 중심·단계적 hybrid 타당 | 타당 | CONFIRMED |
+| Right problem? | 설명 가능한 reconciliation layer | 같은 판단 | CONFIRMED |
+| Scope calibrated? | 같은 앱의 후속 automation 허용 | 별도 제품 결정 권고 | DISAGREE → 사용자 방향으로 해결 |
+| Alternatives explored? | core-first/minimal UI/cloud-first 비교 | local/hybrid/server-first 비교 | CONFIRMED |
+| Market/competitive risks? | fixture와 검증 계약 우선 | 실제 데이터 bake-off 우선 | CONFIRMED |
+| Six-month trajectory? | deterministic ledger 선행 | ledger 선행 | CONFIRMED |
+
+### CEO 완료 요약
+
+| 항목 | 결과 |
+|---|---|
+| 모드 | SELECTIVE_EXPANSION |
+| 독립 시각 | 이전 Codex CLI + 최신 독립 reviewer 완료 |
+| 합의 | 5/6 cross-voice 확인; 1개 범위 이견은 사용자 방향으로 종결 |
+| 현재 lake | Phase A 원장·import·계산·복구 |
+| critical gaps | 위 구현 작업과 test gate로 전환, 미해결 결정 0 |
+| 범위 추가 | 설명 가능성·과거 backup 복구·두 provider fixture 계약만 수용 |
+| 범위 유예 | 모든 broker/cloud/order/automation 구현 |
+
+> **Phase 1 complete.** Codex: 5 concerns. Independent reviewer: 7 implementation findings. Consensus: 5/6 confirmed, 1 disagreement resolved by the user, 0 unresolved. Passing to Phase 2.
+
+## `/autoplan` Phase 2: Design 검토
+
+분류: **APP UI**. docs-only 상태이고 `DESIGN.md`, UI component, 승인 mockup은 아직 없다. 초기 완성도는 5.5/10이었다. 디자인 binary가 없고 Phase A가 UI 구현을 포함하지 않으므로 mockup과 최종 token은 Phase C 진입 시 실제 fixture로 만든다.
+
+### 이미 존재하는 디자인 계약
+
+- Phase C 화면 목록, desktop sidebar와 mobile 4개 이하 navigation
+- loading/empty/error/partial/stale/success vocabulary
+- keyboard, reduced-motion, 200% zoom, light/dark, 비색상 손익 표시 원칙
+- import/restore의 안전한 domain 상태와 `왜 이 숫자인가` 목표
+- Minimal/Swiss 계열의 차분한 APP UI 방향과 Noto Sans KR/tabular number 기준
+
+### Pass 1 — Information Architecture: 6/10 → 10/10
+
+```text
+Home              Holdings           Activity              Data
+├─ trust status   └─ Asset Detail    ├─ Transactions       ├─ Connections
+├─ next problem       └─ 근거 보기   └─ Import Review      ├─ Export
+├─ snapshot                                                   └─ Backup / Restore
+├─ recent import
+└─ verified backup
+
+Settings = 보조 경로
+Research / Orders / Automation = 해당 capability가 시작될 때만 추가
+```
+
+첫 viewport의 우선순위는 (1) 검증·freshness, (2) 해결할 문제, (3) 보유/현금 snapshot이다. metric card 7개나 미래 기능을 먼저 노출하지 않는다. 모든 재무 숫자의 `계산 근거 보기`는 desktop side panel, mobile full route로 연다.
+
+### Pass 2 — Interaction State Coverage: 5/10 → 10/10
+
+| Feature | Loading | Empty | Error | Success | Partial | Stale |
+|---|---|---|---|---|---|---|
+| Home | 최초에만 layout-stable skeleton | import 한 가지 CTA와 preview 무변경 안내 | 안전하게 남은 데이터와 복구 행동 | 검증 시각·snapshot·최근 receipt | 알려진 값과 누락 범위를 함께 표시 | price/FX `as_of`와 영향 범위 |
+| Import preview | filename, parse progress, `aria-busy`; 아직 write 없음 | 빈 파일과 새 거래 0건을 구분 | 행·열 원인, confirm disabled | 신규·중복·차단 건수와 before/after | preview에서는 허용: 유효·중복·오류·미해결 분류 | file hash/schema/mapping/ledger revision이 바뀌면 재-preview |
+| Import apply | submit lock, run ID, atomic 안내 | duplicate-only면 `변경 없음` | `아무것도 기록되지 않음`, 새 run으로 재시도 | 적용·제외 건수, invariant, 영향 거래 receipt | **금지**: 부분 mutation은 defect | preview token 불일치 시 apply 거절 |
+| Backup | snapshot→verify 단계, 기존 backup 유지 | verified backup 없음 + 생성 CTA | 실패 candidate 폐기, 기존 backup 유지 | 시각·version·checksum·size·검증 receipt | **금지** | 마지막 backup 이후 변경 수와 age |
+| Restore | temp DB의 checksum→version→integrity→snapshot | 호환 backup 없음 | active DB를 교체하지 않았음을 명시 | 복원 거래/계정 수와 검증 receipt | **금지** | 현재 변경보다 오래된 backup임을 경고 |
+| 계산 근거 | 현재 값은 유지하고 provenance만 load | 0은 contributor 0 허용; non-zero 무근거는 trust error | 값 유지, 근거 unavailable과 diagnostic ID | 시점·범위·통화·수식·event·FX·수수료·세금·rounding | known contribution과 unresolved residual 분리 | provider와 `as_of` 표시 |
+
+`partial preview`는 유효하지만 `partial apply/backup/restore`는 허용하지 않는다. 오류는 원인뿐 아니라 무엇이 보존됐고 다음에 무엇을 하면 되는지 말한다. 완료는 toast 하나가 아니라 감사 가능한 receipt다.
+
+### Pass 3 — User Journey & Emotional Arc: 5/10 → 9/10
+
+| Step | User action | 감정 목표 | 제품의 답 |
+|---|---|---|---|
+| 1 | 빈 앱 진입 | 막막함 → 방향 | `거래 가져오기` 하나와 preview는 안전하다는 안내 |
+| 2 | 파일 선택 | 경계 | 파일·계좌·기간과 read-only parse 표시 |
+| 3 | preview 검토 | 의심 | 반영/중복/매핑/오류/충돌 및 숫자 변화 |
+| 4 | 문제 해결 | 통제 | 행별 원인·행동, 진행 상태 보존 |
+| 5 | apply | 불안 | stale guard, double-submit 차단, atomicity |
+| 6 | receipt 확인 | 안도 | exact counts, invariant, affected records |
+| 7 | backup/restore | 높은 불안 | active data 보존과 검증 단계, 복구 receipt |
+| 8 | 숫자 검증 | 회의 | 생성 문구가 아닌 deterministic provenance |
+
+5초에는 `내 데이터의 상태와 live 비활성`을, 5분에는 import/apply와 verified backup 한 번을, 5년에는 correction/migration까지 감사 가능한 이력을 제공한다.
+
+### Pass 4 — AI Slop Risk: 7/10 → 9/10
+
+- table-led personal ledger를 사용하고 stacked card mosaic를 만들지 않는다.
+- Home은 balance/trust anchor 하나, compact metric row 하나, 준비됐을 때 performance chart 하나만 둔다.
+- thin divider와 restrained elevation을 사용한다. decorative gradient, glass, colored icon circle, bubbly radius, ornamental icon, confidence score를 만들지 않는다.
+- blue는 action, green/red는 의미 상태에만 사용하며 항상 부호·텍스트를 병기한다.
+- 조회는 mobile-first지만 대량 import review는 desktop-optimized라고 정직하게 선언한다.
+
+#### Dual-voice litmus scorecard
+
+| Litmus | 독립 reviewer | Codex CLI | Consensus / fix |
+|---|---|---|---|
+| 첫 화면에서 제품이 명확한가 | Partial | No | trust-and-action-first로 수정 |
+| 강한 visual anchor가 하나인가 | No | No | validation status + snapshot anchor |
+| 제목만 훑어도 이해되는가 | Partial | Partial | utility heading 사용 |
+| 각 section의 일이 하나인가 | Yes | 개선 필요 | one-job sections 유지 |
+| card가 실제로 필요한가 | 대부분 No | No | table/layout 우선 |
+| motion이 hierarchy를 돕는가 | 불명확 | 최소화 | 상태 변화에만 사용 |
+| shadow 없이도 premium인가 | Yes | Yes | type·spacing·data clarity로 해결 |
+
+7/7 방향 합의. navigation에서 `Data`를 top-level로 둘지 `Settings` 아래에 둘지 taste 차이가 있었고, 현재 제품의 import/recovery 비중을 근거로 `Data` top-level을 채택했다.
+
+### Pass 5 — Design System Alignment: 3/10 → 8/10
+
+Phase C 진입 전 `DESIGN.md`와 실제 화면 variant를 만든다. 지금은 semantic token 계약만 둔다: `surface`, `text`, `muted`, `border`, `action`, `success`, `warning`, `danger`, `focus`, `stale`. light/dark를 함께 검증하고 raw hex를 component에 넣지 않는다. Noto Sans KR 또는 검증된 한국어 UI typeface와 tabular number를 사용한다. shadcn/ui는 React를 실제로 선택했을 때 접근성 primitive로 재사용하고 사전 설치하지 않는다.
+
+로컬 UI 검색이 제안한 marketing pattern과 dark-only 금융 palette는 개인 원장 APP UI와 맞지 않아 채택하지 않았다. 그 결과 중 Minimal/Swiss, 낮은 motion, data density 원칙만 사용한다.
+
+### Pass 6 — Responsive & Accessibility: 6/10 → 9/10
+
+- 375px: `Home/Holdings/Activity/Data` bottom nav, 단일 열, import/restore와 근거 보기는 full route
+- 768px: navigation rail/drawer; 두 pane의 label과 focus가 유지될 때만 split view
+- 1024px+: persistent sidebar와 main workspace
+- 1440px+: financial table 폭을 확장하고 marketing-style narrow container를 피함
+- mobile transaction/import row는 symbol/name, value, status/action을 먼저 보여주고 세부 필드는 row detail로 이동
+- semantic table, caption, row/column header, `aria-sort`, visible focus, skip/main landmark, dialog focus return
+- 최소 44×44 CSS px touch target, body 4.5:1, UI component 3:1, 200% zoom에서 기능 손실 없음
+- failed form은 focusable error summary와 field-linked inline error를 함께 사용
+- chart는 같은 기간·범위의 text summary와 table을 제공하고 hover-only disclosure를 금지
+- 완료·차단처럼 중요한 상태만 live region으로 알리고 계속 변하는 가격을 읽어주지 않음
+
+### Pass 7 — Design Decisions
+
+| 결정 | 결과 |
+|---|---|
+| preview invalidation | file hash + schema + mapping/config + ledger revision을 token에 포함 |
+| restore safety | temp DB 검증 + pre-restore recovery point + 명시적 replace confirmation |
+| number explanation | 생성 문자열이 아니라 structured provenance/equation |
+| navigation | `Home/Holdings/Activity/Data`; contextual detail; Settings 보조 |
+| exact tokens/components | Phase C 진입까지 유예 |
+| visual mockups | Phase A/B fixture가 준비되고 design binary를 쓸 수 있을 때 생성 |
+
+미해결 결정은 없다. 뒤의 두 항목은 진입 조건이 명시된 의도적 유예다.
+
+### Design NOT in scope
+
+- Phase A의 React screen, chart, navigation, theme 구현
+- frontend stack이 생기기 전 component 설치
+- broker/order/automation UI와 disabled placeholder
+- marketing page, onboarding tour, 장식 animation
+- 실제 fixture가 없는 조기 mockup과 최종 palette 고정
+
+### Design 구현 작업
+
+- **P1 Import contract:** preview token, row classification, before/after, apply receipt를 domain output으로 제공
+- **P1 Recovery contract:** 검증 단계와 backup/restore receipt를 구조화
+- **P1 Explainability:** snapshot 각 값의 structured provenance를 보존
+- **P2 Phase C entry gate:** IA, viewport, keyboard, screen-reader acceptance를 적용
+- **P3 Visual system:** Phase C 진입 때 `DESIGN.md`와 실제 fixture 기반 variant 생성
+
+### Design 완료 요약
+
+| 항목 | 결과 |
+|---|---|
+| System audit | APP UI, docs-only, no DESIGN.md/components |
+| Initial → reviewed | 5.5/10 → 9/10 contract completeness |
+| Pass 1 IA | 6 → 10 |
+| Pass 2 States | 5 → 10 |
+| Pass 3 Journey | 5 → 9 |
+| Pass 4 AI slop | 7 → 9 |
+| Pass 5 Design system | 3 → 8; exact visual system deferred to Phase C |
+| Pass 6 Responsive/a11y | 6 → 9 |
+| Pass 7 Decisions | 4 resolved, 2 intentionally deferred, 0 unresolved |
+| Dual voices | Codex 8 findings, independent reviewer 5 tasks; 7/7 litmus direction aligned |
+| Approved mockups | 0; tool unavailable and Phase A has no UI |
+
+> **Phase 2 complete.** Codex: 8 concerns. Independent design reviewer: 5 implementation findings. Consensus: 7/7 litmus directions confirmed, 1 navigation taste difference auto-resolved, 0 unresolved. Passing to Phase 3.
+
+## `/autoplan` Phase 3: Engineering 검토
+
+모드: **SCOPE_REDUCED**. 사용자가 이미 “추천대로 진행하되 확장 가능한 mobile/backend/backtest/cloud 하위 프로젝트를 실제로 만들라”고 승인했으므로 가역적인 권고는 자동 채택했다. 구현 lake는 네 runtime을 늘어놓는 대신 다음 한 수직 흐름으로 제한한다.
+
+```text
+CSV fixture
+  -> Go preview/apply transaction
+  -> SQLite ledger/FIFO snapshot/receipt
+  -> Flutter trust/import presentation
+
+market fixture
+  -> Python deterministic run manifest
+
+Go binary
+  -> local process + one non-root OCI smoke
+```
+
+Python G3와 local OCI를 이번 lake에서 자르자는 독립 검토 의견은 채택하지 않았다. 둘 다 사용자가 명시한 하위 프로젝트와 cloud-ready 구조의 최소 실행 증거이고, Python은 stdlib CLI 하나, OCI는 Go image 하나로 상한을 고정했다. broker SDK, live order, Kubernetes, queue, 여러 서비스는 포함하지 않는다.
+
+### What already exists
+
+- 제품·안전 목표와 단계적 trading promotion 계약
+- Flutter/Go/Python state-authority ADR와 semantic design contract
+- OpenAPI, import/FIFO golden fixture, backtest manifest fixture
+- gate tree와 첫 lake acceptance
+
+재사용 대상은 SQLite transaction, Go standard HTTP/profiling, Python `Decimal`/stdlib, Flutter Material/accessibility primitive다. framework-level event store, plugin SDK, shared domain library는 새로 만들지 않는다.
+
+### Architecture findings and resolutions
+
+| # | Finding | Confidence | Resolution |
+|---|---|---:|---|
+| 1 | preview가 file hash와 ledger revision만 묶어 schema/mapping 변경을 놓침 | 9/10 | `schema_version`, `mapping_version`, `preview_fingerprint`를 required contract로 추가 |
+| 2 | unknown account/instrument를 표현할 `unresolved` row가 없음 | 9/10 | structured resolution과 `unresolved` status 추가 |
+| 3 | backup/restore가 G1 gate지만 manifest/receipt fixture가 없음 | 9/10 | API endpoint 대신 versioned CLI manifest와 invalid candidate fixture 추가 |
+| 4 | local OCI가 current lake와 과거 Phase A NOT-in-scope에 동시에 존재 | 9/10 | current G0의 단일 local image smoke가 과거 blanket 제외를 supersede |
+| 5 | G3에 shared market fixture/run schema가 없음 | 9/10 | 하나의 deterministic partial-fill fixture와 JSON Schema 추가 |
+| 6 | first launch가 검증 timestamp를 거짓으로 만들어야 함 | 7/10 | `never_verified`와 nullable `last_verified_at` 추가 |
+| 7 | CSV request 상한이 없음 | 7/10 | 1 MiB/10,000 row hard limit을 계약과 서버에 동일 적용 |
+| 8 | chart 없는 단계에서 chart frame budget을 요구 | 7/10 | G2는 import/list budget만, chart budget은 G4로 이동 |
+| 9 | generated Flutter counter는 제품 gate 증거가 아님 | 10/10 | scaffold는 중간 상태로만 취급하고 trust/import widget과 tests로 교체 |
+
+### Code-quality decision
+
+- Go는 하나의 binary와 한 DB connection owner로 시작한다. 아직 없는 broker/order interface, repository factory, event bus는 만들지 않는다.
+- Decimal은 JSON/SQLite canonical text와 exact arithmetic만 허용하고 `float64` 경로를 테스트로 차단한다.
+- Flutter는 API client 한 개와 화면에 필요한 immutable model만 둔다. generic state framework, router package, chart package는 추가하지 않는다.
+- Python은 CLI/library 같은 함수 경계만 두고 network/service/queue/DB abstraction을 만들지 않는다.
+- 모든 오류는 stable code, 원인, 사용자가 취할 다음 행동을 제공하고 ledger mutation은 transaction 밖으로 새지 않는다.
+
+### Test coverage diagram
+
+```text
+CODE PATHS                                      USER FLOWS
+[ ] CSV body limit/header parse                 [ ] status -> trust banner
+ ├─ [ ] canonical decimal/RFC3339               [ ] paste/select CSV -> preview
+ ├─ [ ] new/duplicate/error/unresolved           ├─ [ ] invalid rows -> repair guidance
+ └─ [ ] fingerprint + revision                  └─ [ ] can_apply -> explicit confirm
+[ ] apply transaction [-> integration]             ├─ [ ] receipt success
+ ├─ [ ] replay same key                            ├─ [ ] key conflict/stale preview
+ ├─ [ ] key different payload                      └─ [ ] refresh failure retains known data
+ ├─ [ ] stale preview
+ └─ [ ] rollback on invariant
+[ ] FIFO projection
+ ├─ [ ] deposit/buy/sell/fee allocation
+ ├─ [ ] oversell rejection
+ └─ [ ] cash/holding/P&L/provenance
+[ ] backup candidate [-> integration]
+ ├─ [ ] consistent snapshot + hash
+ ├─ [ ] version/integrity/golden verify
+ └─ [ ] corrupt/old candidate never replaces active DB
+[ ] Python simulation
+ ├─ [ ] no-lookahead delayed fill
+ ├─ [ ] participation partial fill
+ └─ [ ] fee/tax/slippage + deterministic manifest
+```
+
+최소 테스트 계획 artifact는 `~/.gstack/projects/Omni-Folio/yousang-main-eng-review-test-plan-20260823-231517.md`에 저장했다. 완료 시 각 `[ ]`는 실제 test file/command 증거로 교체한다.
+
+### Failure modes
+
+| Path | Production failure | Required rescue | User result |
+|---|---|---|---|
+| preview | mapping/schema 변경 뒤 오래된 preview apply | fingerprint/revision conflict | 새 preview 안내, no write |
+| apply | double tap/concurrent retry | DB unique receipt + one transaction | 원 receipt 또는 409, duplicate 없음 |
+| ledger | oversell/decimal drift | exact arithmetic + invariant rollback | 행 오류와 no partial mutation |
+| backup | corrupt candidate/중단된 copy | temp restore + hash/integrity/golden verify | active DB 유지 |
+| client | refresh timeout | known-good snapshot 유지 + stale timestamp | retry 가능, blank screen 없음 |
+| research | 미래 bar 사용 또는 delayed fill 누락 | event-time test와 golden manifest | run 실패, 결과 publish 안 함 |
+| OCI | volume 누락/read-only path | startup fail-fast와 health smoke | ledger를 ephemeral disk에 만들지 않음 |
+
+critical silent gap은 contract 보강 뒤 0개다.
+
+### Performance review
+
+- import 기준: 1 MiB/10,000 rows hard cap 안에서 preview/apply p50/p95, peak RSS, DB growth를 기록한다.
+- read 기준: 100/1,000/10,000 ledger events에서 snapshot p50/p95를 측정한다.
+- Flutter 기준: representative import/list fixture의 60 Hz p95 frame budget을 profile mode에서 기록한다. chart는 아직 측정하지 않는다.
+- Python 기준: 같은 bars/request에서 deterministic output을 우선하고 벡터화 dependency는 stdlib가 측정상 한계일 때만 추가한다.
+- 고정 latency SLA나 cache/Redis를 먼저 약속하지 않는다. broker/order hot path가 생긴 뒤 구간별 p50/p95/p99 예산을 둔다.
+
+### Engineering NOT in scope
+
+- broker credential, adapter, market feed, order submit과 live capability
+- chart package와 대량 tick pipeline
+- PostgreSQL dual-write/migration 구현, Kubernetes/Helm
+- Redis, Kafka/NATS, Temporal, service mesh, microservice 분리
+- JVM/Rust subproject. JVM-only SDK 또는 measured Go CPU/GC p99 failure가 생길 때 ADR을 재검토
+- app-store signing/publish와 외부 cloud deploy
+
+### Parallelization
+
+| Lane | Modules | Depends on |
+|---|---|---|
+| A | `contracts/` | ADR/gates |
+| B | `services/core/` | A |
+| C | `apps/client/` | A |
+| D | `services/research/` | A G3 fixture |
+| E | root commands + `infra/` | B-D runnable commands |
+
+A를 먼저 고정한 뒤 B/C/D를 병렬로 실행하고 E가 실제 명령을 통합한다. 각 lane은 다른 directory를 소유하며 root integration만 마지막에 수행한다.
+
+### Implementation Tasks
+
+- [ ] **T1 (P1, human: ~4h / CC: ~25min)** — contracts — preview/recovery/backtest 계약 보강
+  - Surfaced by: architecture findings 1-8
+  - Files: `contracts/**`, `gates/**`
+  - Verify: JSON parse, fixture hash/Decimal assertions, `git diff --check`
+- [ ] **T2 (P1, human: ~3d / CC: ~90min)** — Go core — atomic import와 exact FIFO/restore 구현
+  - Surfaced by: code/test/failure-mode review
+  - Files: `services/core/**`
+  - Verify: `go test ./... && go vet ./...`
+- [ ] **T3 (P1, human: ~2d / CC: ~60min)** — Flutter — counter scaffold를 trust/import vertical slice로 교체
+  - Surfaced by: architecture finding 9 and G2
+  - Files: `apps/client/**`
+  - Verify: `flutter analyze && flutter test && flutter build web --release`
+- [ ] **T4 (P2, human: ~1d / CC: ~45min)** — Python research — deterministic delayed/partial-fill manifest 구현
+  - Surfaced by: architecture finding 5 and G3
+  - Files: `services/research/**`
+  - Verify: `python -m unittest discover -s tests`
+- [ ] **T5 (P2, human: ~1d / CC: ~40min)** — local delivery — root check와 non-root OCI smoke
+  - Surfaced by: scope/distribution review
+  - Files: `README.md`, `Makefile`, `.gitignore`, `.env.example`, `infra/**`
+  - Verify: `make check && make smoke`
+
+### Engineering completion summary
+
+- Step 0 Scope Challenge: first vertical slice로 축소, explicit subprojects는 최소 runnable proof로 유지
+- Architecture Review: 7 contract/scope issues accepted and resolved in the plan
+- Code Quality Review: 4 runtime-specific simplicity rules
+- Test Review: diagram produced, 22 paths/flows scheduled
+- Performance Review: 4 bounded budgets, premature cache/distribution cut
+- NOT in scope: written
+- What already exists: written
+- Failure modes: 0 accepted silent critical gaps
+- Outside voice: independent reviewer ran; 9 findings, 8 durable plan changes and 1 transient scaffold finding
+- Parallelization: 5 lanes, B/C/D parallel after A, E sequential
+- Unresolved decisions: 0
+
+> **Phase 3 plan review complete.** Implementation evidence is still pending; plan correctness is clear enough to execute.

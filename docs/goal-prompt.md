@@ -26,8 +26,10 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 - 거래 원장을 source of truth로 삼고 잔고·손익·성과는 원장에서 결정적으로 계산한다.
 - 금액·수량 계산은 부동소수점이 아닌 Decimal을 사용한다.
 - import와 주문 요청은 멱등성을 보장하고, 정정은 원본 삭제보다 append-only correction을 우선한다.
-- API 키와 계좌 식별자는 서버 측 안전한 저장소에만 두며 브라우저, 로그, export, 오류 메시지에 노출하지 않는다.
-- 배포 가능한 모듈러 모놀리스와 SQLite로 시작한다. 로컬과 클라우드는 같은 코드와 OCI image를 사용하고 설정·secret·영속 저장소만 실행 프로필로 바꾼다. 측정된 필요가 생기기 전에는 microservice, Redis, message broker, 동적 plugin SDK를 추가하지 않는다.
+- 클라이언트는 Flutter 하나로 iOS·Android·app-centric web을 제공한다. 이전 React/PWA 권장은 **superseded**이며 새 React 화면을 추가하지 않는다.
+- Go 모듈러 모놀리스가 ledger, order, risk, broker credential과 broker submit authority를 소유한다. Python은 research/backtest와 재현 가능한 산출물만 담당하며 broker credential, 운영 DB 쓰기, order-submit 권한을 갖지 않는다.
+- API 키와 계좌 식별자는 서버 측 안전한 저장소에만 두며 클라이언트, 로그, export, 오류 메시지에 노출하지 않는다.
+- 배포 가능한 Go 모듈러 모놀리스와 SQLite single-writer local로 시작한다. 로컬과 단일 노드 클라우드는 같은 OCI image를 사용하고 설정·secret·영속 저장소만 실행 프로필으로 바꾼다. 측정된 필요가 생기기 전에는 microservice, Redis, message broker, 동적 plugin SDK를 추가하지 않는다.
 - 실전 주문은 절대 자동 활성화하지 않는다. 모의투자 검증, 체결-원장 reconciliation, 실패 복구, 사용자 명시 승인 전에는 비활성 상태로 유지한다.
 - 자동매매는 `Universe → Signal/Alpha → PortfolioTarget → RiskAdjustedTarget → OrderIntent → Execution` 단계로 분리한다. 전략은 브로커 주문을 직접 만들거나 전송하지 않는다.
 - 백테스트 결과를 실전 기대수익으로 표시하지 않는다. 슬리피지, 수수료, 세금, 체결 지연, 데이터 지연, survivorship/lookahead bias를 검증 항목으로 둔다.
@@ -37,6 +39,8 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 - 전략 승격은 `paper → shadow live market data → 소액 canary → limited live` 순서로만 허용한다. shadow mode는 실시간 데이터와 실계좌 상태를 읽되 실제 주문 대신 의도 주문과 위험 판단만 기록한다.
 - 시스템 clock drift가 기준을 넘거나 시장 데이터가 stale이면 자동주문을 막는다. 큐가 밀리면 오래된 signal을 늦게 주문하지 않고 버리거나 최신 signal로 병합한다.
 - 초기 latency tier는 EOD·분봉 전략이다. 고정된 밀리초 SLA를 먼저 약속하지 말고 실제 p95/p99 측정 뒤 전략별 `max_data_age`, `max_decision_time`, `max_ack_wait` 예산을 정한다. sub-ms HFT, co-location, exchange direct market access는 범위 밖이다.
+- `live-enabled`는 앱 토글, 환경변수, runner 시작만으로 활성화할 수 없다. 서버는 만료 있는 owner 승인, broker/account/strategy allowlist, 해당 broker의 promotion evidence, healthy kill switch를 매 주문 직전에 모두 검증하고 하나라도 없으면 fail-closed한다.
+- 휴대폰 background task는 opportunistic cache refresh와 push 보조만 한다. 주문 제출, token renewal, reconciliation, runner, kill switch는 always-on 서버 authority에서만 실행한다.
 - 외부 계좌 주문, 배포, credential 변경, push는 사용자의 명시적 승인 없이 실행하지 않는다.
 
 ## 확장 가능한 아키텍처 기준
@@ -44,22 +48,23 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 확장성은 처음부터 분산 시스템을 만드는 것이 아니라, 새 공급자를 추가할 때 검증된 코어를 수정하지 않는 것으로 정의한다.
 
 ```text
-Web / Mobile UI
+Flutter client (iOS / Android / app-centric web)
        |
-Application use cases
+versioned HTTP/SSE contract; decimal strings
        |
-Domain modules
+Go modular monolith
   ├─ instruments
   ├─ ledger & portfolio
   ├─ market data
   ├─ orders & executions
-  ├─ research & data catalog
   ├─ strategy & portfolio construction
-  ├─ backtesting & simulation
   ├─ risk & automation
   └─ watchlists & alerts
        |
-Ports
+       +── research signal/target ingress ← Python research/backtest
+       |                                  (no broker credential or order submit)
+       |
+Go ports
   ├─ BrokerPort
   └─ MarketDataPort
        |
@@ -75,11 +80,12 @@ Adapters
 - 첫 cloud 프로필은 TLS와 owner 인증, secret manager 주입, 단일 API replica, single-writer provider-managed block volume(RWO)의 SQLite, 암호화된 정기 backup과 restore drill을 요구한다. ephemeral filesystem이나 NFS형 공유·다중 writer volume에 SQLite를 두지 않는다. 이 프로필은 stateful single-node이며 무중단 교체, scale-out, 자동 failover를 보장하지 않는다.
 - 애플리케이션의 영속 상태는 데이터베이스와 versioned backup에만 두고 container filesystem은 임시 파일 외에는 사용하지 않는다.
 - SQLite backup은 online backup API 또는 동등한 transaction-consistent snapshot으로 off-volume에 저장한다. 실행 중 DB 파일의 단순 복사나 같은 volume의 복사본은 backup으로 인정하지 않으며, restore 후 `integrity_check`와 ledger golden test를 통과해야 한다.
-- 두 번째 API replica, API/worker 독립 확장, 무중단 교체, 다중 노드 failover, 높은 동시 쓰기 또는 managed point-in-time recovery가 필요해지면 먼저 PostgreSQL로 승격한다. SQLite export → PostgreSQL import 후 row count, checksum, ledger invariant를 검증하고 SQLite 상태에서 scale-out을 지원한다고 주장하지 않는다.
+- 두 번째 API replica, API/worker 독립 확장, 무중단 교체, 다중 노드 failover, 높은 동시 쓰기, managed point-in-time recovery 또는 Kubernetes가 필요해지면 먼저 maintenance window에서 PostgreSQL로 승격한다. SQLite export → PostgreSQL import 후 row count, checksum, ledger invariant, order sequence와 restore를 검증하고 SQLite 상태에서 scale-out을 지원한다고 주장하지 않는다.
 - schema migration은 startup side effect가 아니라 명시적인 `migrate` 단계로 실행한다. 배포 전 off-volume backup, schema compatibility check, migration 후 ledger golden test, restore 검증을 통과해야 한다.
 - liveness는 프로세스 생존만, readiness는 DB 연결·schema version·필수 설정만 확인한다. 브로커 장애는 전체 API를 죽이지 않고 provider별 degraded/freshness 상태로 노출한다.
 - HTTP 요청보다 오래 살거나 재시작 복구가 필요한 scheduled sync는 그 요구가 생기는 Phase B부터 `worker` 역할로 분리한다. unattended sync와 paper/shadow/live runner는 owner-managed always-on host에서만 실행한다. runner는 DB lease와 fencing token으로 계좌·전략별 단일 active instance만 허용하고 lease를 잃으면 신규 주문을 fail-closed한다.
 - cloud rollout과 rollback 중에는 신규 주문을 먼저 차단하고, 미체결 주문과 broker 상태를 reconciliation한 뒤 runner lease를 넘긴다. 되돌릴 수 없는 migration은 자동 downgrade하지 않고 backup restore 또는 forward-fix 절차를 사용한다.
+- PostgreSQL migration·restore drill, stateless API와 DB lease/fencing, OCI hardening/probe/resource 검증, 독립 scaling load evidence, rollout/rollback·secret/RBAC 경계가 모두 증명되기 전에는 Kubernetes manifest를 생성하지 않는다.
 
 - 도메인 모듈은 공급자 SDK, HTTP 응답 타입, UI 프레임워크를 직접 참조하지 않는다.
 - 각 브로커 응답은 canonical account, instrument, transaction, position, order, execution 모델로 정규화한다.
@@ -99,7 +105,7 @@ Adapters
 - 새 알고리즘은 versioned strategy manifest, 전략 모듈, contract/backtest fixture만 추가해 등록할 수 있어야 하며 주문·원장·브로커 코어에 전략별 분기를 추가하지 않는다.
 - 인터페이스는 `BrokerPort`와 `MarketDataPort`처럼 실제 교체 지점에만 만든다. 단일 구현 내부에는 불필요한 factory나 추상화를 만들지 않는다.
 - SQLite schema, backup format, API 계약에는 명시적인 migration/version 정책을 둬 데이터와 클라이언트를 깨지 않고 확장한다.
-- PostgreSQL 승격, 별도 runner process, 모바일 클라이언트가 실제로 필요해질 때 현재 모듈 경계와 골든 테스트를 유지한 채 분리할 수 있어야 한다.
+- Java/Kotlin/JVM은 broker SDK 또는 팀·기존 JVM estate가 우세할 때만 Go의 대안으로 재평가한다. Rust는 profiling으로 Go CPU/GC tail bottleneck이 확인된 좁은 component에만 고려하며, Python-only runtime은 주문 authority를 분산하므로 채택하지 않는다.
 
 ## 진행 중 개선 원칙
 
@@ -136,7 +142,7 @@ Adapters
 
 ### Phase 3 — 핵심 UI와 차트
 
-- Overview, Holdings, Asset Detail, Transactions, Import Review, Connections/Settings
+- Flutter Overview, Holdings, Asset Detail, Transactions, Import Review, Connections/Settings
 - 포트폴리오 가치·손익·현금·성과 추이
 - 종목 OHLCV, 거래량, 기간 선택, 평균단가와 매매 마커
 - light/dark theme, 모바일 대응, 키보드 탐색, 200% 확대, reduced-motion
@@ -167,7 +173,7 @@ Adapters
 
 ### Phase 6 — 제한적 실전 자동매매
 
-- 실전 주문 권한은 기본 비활성이고 전략별·계좌별·종목별로 별도 승인한다.
+- 실전 주문 권한은 기본 비활성이고 만료 있는 owner 승인 및 broker·계좌·전략·종목 allowlist를 별도 발급한다. 이 계약과 promotion evidence, healthy kill switch는 매 주문 서버 측에서 재검증한다.
 - paper → shadow → 소액 canary → limited live 순서와 각 단계의 자동 중지 기준을 통과한 전략만 승격한다.
 - paper/live parity 리포트, reconciliation 통과, 위험 한도, 롤백 절차, 독립 kill switch, 알림 채널이 준비된 전략만 활성화한다.
 - 최초 실전 자동매매는 소액, 지정가, 허용 종목 목록, 장중 수동 모니터링과 fail-closed runner를 조건으로 한다.
@@ -198,6 +204,7 @@ Adapters
 - 실전 자동매매는 기본 비활성이고, paper/live parity와 사용자 승인 없이는 어떤 경로에서도 주문을 낼 수 없다.
 - API 키 redaction 테스트와 핵심 원장·주문 테스트가 통과한다.
 - read-only, paper, live credential이 별도 secret과 권한으로 분리되고 허용되지 않은 scope가 fail-closed한다.
+- Python research와 Flutter client가 broker credential, 운영 DB write, broker submit 경로를 갖지 않으며 live order gate가 매 주문 검증된다.
 - 두 번째 브로커는 새 adapter와 공통 contract test 추가만으로 연결할 수 있고 원장·성과·차트·주문 코어의 공급자별 분기가 늘어나지 않는다.
 - 지원 화면 크기와 키보드·접근성 검증이 통과한다.
 - 동일 image의 local/cloud smoke test, health/readiness, migration, 암호화 backup/restore, 주문 차단형 rollback rehearsal이 통과한다.

@@ -1,6 +1,6 @@
 # Omni Folio Goal
 
-정식 목표와 제품·안전·아키텍처 계약은 [`docs/goal-prompt.md`](docs/goal-prompt.md)를 따른다. 구현자는 작업을 시작하기 전에 해당 문서와 [`docs/omni-folio-plan.md`](docs/omni-folio-plan.md), [`docs/omni-folio-research-report.md`](docs/omni-folio-research-report.md)를 읽는다.
+정식 목표와 제품·안전·아키텍처 계약은 [`docs/goal-prompt.md`](docs/goal-prompt.md)를 따른다. 구현자는 작업을 시작하기 전에 해당 문서와 [`docs/omni-folio-plan.md`](docs/omni-folio-plan.md), [`docs/omni-folio-research-report.md`](docs/omni-folio-research-report.md), [`DESIGN.md`](DESIGN.md)를 읽는다.
 
 ## 실행 권한
 
@@ -11,4 +11,6 @@
 
 ## 현재 권장 경로
 
-Phase A는 단일 사용자·로컬 SQLite 기반의 배포 가능한 모듈러 모놀리스로 시작한다. `CSV import → preview → idempotent apply → append-only ledger → holdings/cash/P&L → versioned backup/restore` 수직 슬라이스를 먼저 검증하고, 미래 단계의 worker·runner·execution gateway는 해당 단계가 시작될 때만 추가한다.
+Phase A는 Flutter 하나로 iOS·Android·app-centric web을 제공하고, Go 모듈러 모놀리스가 ledger/order/risk/broker authority를 소유한다. Python은 research/backtest 전용이며 broker credential이나 주문 제출 권한을 갖지 않는다. SQLite single-writer local에서 `CSV import → preview → idempotent apply → append-only ledger → holdings/cash/P&L → versioned backup/restore` 수직 슬라이스를 먼저 검증한다.
+
+PostgreSQL maintenance migration과 restore 증명 전에는 multi-replica 또는 Kubernetes를 도입하거나 manifest를 만들지 않는다. live 주문은 서버가 owner 승인 만료, broker/account/strategy allowlist, promotion evidence, healthy kill switch를 **매 주문** 검증할 때만 허용한다. 휴대폰 background는 cache refresh와 push 보조만 하며 주문·reconciliation·kill switch의 authority가 아니다.
