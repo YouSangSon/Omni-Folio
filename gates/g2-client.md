@@ -10,4 +10,7 @@
 
 ## Evidence
 
-- Pending widget/integration tests and profile report.
+- 2026-08-24 `flutter analyze` and 7 tests pass, including malformed financial JSON fail-closed, retained/retry error state, atomic apply receipt, preview invalidation, and a 320×480 surface at 200% text.
+- Release builds pass for web, iOS without codesigning (`Runner.app`, 16.4 MB), and Android (`app-release.apk`, 49.5 MB).
+- Playwright at 390×844 and desktop reaches `/v1/status`, `/v1/portfolio/snapshot`, preview and apply with HTTP 200 and zero console errors. Screenshot: `output/playwright/omni-overview-mobile-toss-inspired.png` (local ignored evidence).
+- **Gate remains open:** representative profile-mode p95 frame timing, manual VoiceOver/TalkBack or equivalent screen-reader pass, and reduced-motion verification are not yet recorded.

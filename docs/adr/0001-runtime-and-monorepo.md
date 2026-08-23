@@ -33,11 +33,15 @@ infra
   local process/OCI first; Kubernetes only after its entry gate
 ```
 
+Provider order is Kiwoom first and Toss Securities second. Kiwoom read-only and mock-order recovery establish the canonical broker contract before the Toss adapter is added. Flutter follows a Toss-inspired plain-language interaction model without copying Toss trade dress; provider TR codes and raw errors remain inside Go adapters. See [`../broker-priority-and-ux.md`](../broker-priority-and-ux.md).
+
 ### Client: Flutter
 
-Flutter 하나로 iOS, Android, app-centric web을 제공한다. 현재 UI 코드가 없으므로 React 자산을 폐기하는 비용이 없다. 서버가 대량 CSV, 시계열 downsampling, 계산을 맡고 클라이언트는 화면에 필요한 read model만 받는다. 이 경계는 Flutter web에서 isolate가 없는 제약도 피한다.
+Flutter 하나로 iOS, Android, app-centric web을 제공한다. 현재 `apps/client`는 이 결정에 맞춰 trust/import 수직 슬라이스로 구현 중이므로 React/Next.js로 전환하면 제품 화면을 재작성해야 한다. 서버가 대량 CSV, 시계열 downsampling, 계산을 맡고 클라이언트는 화면에 필요한 read model만 받는다. 이 경계는 Flutter web에서 isolate가 없는 제약도 피한다.
 
 Flutter는 공식적으로 iOS, Android, web 배포를 지원하며 app-centric web 경험에 적합하다고 설명한다. 큰 목록은 lazy builder를 사용하고 release/profile mode에서 60Hz 16ms, 120Hz 8ms frame budget을 실제 fixture로 측정한다. ([supported platforms](https://docs.flutter.dev/reference/supported-platforms), [web FAQ](https://docs.flutter.dev/platform-integration/web/faq), [performance](https://docs.flutter.dev/perf/best-practices))
+
+공개 리서치·문서형 콘텐츠나 SEO가 제품 요구가 되면 Next.js를 별도 web surface로 검토한다. 그 전에는 같은 제품 화면을 React와 Flutter로 중복 구현하지 않는다. Flutter stable은 프로젝트 루트 `.tool-versions`로 고정한다.
 
 ### Execution and API core: Go
 

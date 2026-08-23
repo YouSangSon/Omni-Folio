@@ -13,4 +13,7 @@
 
 ## Evidence
 
-- Pending deterministic CLI test and manifest.
+- 2026-08-24 13 Python tests pass without third-party runtime dependencies, network access, broker credential surface, operational DB writes, or order-submit permission.
+- The backtest golden manifest covers delayed next-eligible-bar fills, fee, tax, slippage, participation-based partial fills, canonical decimals, and zero lookahead violations.
+- The improvement runner uses two expanding walk-forward folds and one final holdout, finite SMA candidates, a buy-and-hold baseline, deterministic selection/hash, and fails closed on short folds, zero delay, failed validation/holdout/baseline gates.
+- Fixture result: `strategy-improvement-result.v1`, policy `sma-expanding-walk-forward.v1`, target `paper_candidate`, SHA-256 `bf00a8e0d6c59a58f53e7dbe772ad6d235f385ebf4341aa4f451774a9a935513`. This is research evidence, not expected return or live authorization.

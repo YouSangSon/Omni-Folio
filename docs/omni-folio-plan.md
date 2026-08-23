@@ -1,8 +1,7 @@
-<!-- /autoplan restore point: /Users/yousang/.gstack/projects/Omni-Folio/main-autoplan-restore-20260823-223923.md -->
-# Omni Folio 구현 계획 초안
+# Omni Folio 구현 계획
 
-상태: Flutter/Go/Python 모노레포 경계 승인 완료, G0-G3 첫 수직 슬라이스 구현 중
-기준일: 2026-08-23
+상태: G0·G1·G3 로컬 통과, G2 build/widget/browser 증거 확보 및 profile/screen-reader 증거 보강 중
+기준일: 2026-08-24
 
 ## 목표
 
@@ -20,6 +19,8 @@
 8. 첫 구현 lake는 로컬 SQLite와 수동 실행으로 시작하고, unattended paper/shadow/live는 owner-managed always-on host에서만 활성화한다.
 9. 클라이언트와 Python 연구 프로세스는 원장·주문 권한자가 아니다. broker credential과 order-submit 권한은 Go 실행 경계에만 둔다.
 10. 자동 개선은 versioned 후보와 파라미터를 평가하는 연구·페이퍼 루프이며, 실행 코드 자기 수정이나 자동 live 승격을 뜻하지 않는다.
+11. 신뢰할 수 있는 라이브러리는 검증 후 사용한다. 의존성 수를 목표로 줄이지 않고 핵심 결과의 재현성·license·보안·업데이트 비용을 기준으로 선택한다.
+12. 첫 브로커는 키움, 두 번째 브로커는 토스증권이다. 제품 UX는 토스의 쉬운 흐름을 원칙으로 참고하되 화면·상표를 복제하지 않는다.
 
 ## 성공 조건
 
@@ -56,6 +57,8 @@ same market fixture
 
 상세 gate와 현재 상태는 [`GATES.md`](../GATES.md), [`PLAN.md`](../PLAN.md), [`docs/adr/0001-runtime-and-monorepo.md`](adr/0001-runtime-and-monorepo.md)를 따른다.
 
+키움·토스의 공식 API 기준선, 구현 순서, Toss-inspired UX 경계는 [`docs/broker-priority-and-ux.md`](broker-priority-and-ux.md)를 따른다.
+
 Parallax, Mimir, akasha에서 가져올 패턴과 제외한 범위는 [`docs/reuse-audit.md`](reuse-audit.md)에 revision·license와 함께 기록한다. 현재 slice에는 기존 요구를 직접 닫는 loopback/readiness/no-lookahead 패턴만 적용하고 세 프로젝트의 프레임워크는 복제하지 않는다.
 
 ## 제품 범위
@@ -74,7 +77,8 @@ Phase A 코어가 green이 된 뒤 같은 단계의 후속 slice에서 수동 �
 
 ### Phase B: 첫 API 어댑터
 
-- KIS 또는 키움 read-only adapter 하나
+- 키움 REST API 국내주식 read-only adapter
+- `ka00001`, `kt00018`, `ka10075`, 일·분봉과 실시간 체결·호가의 canonical mapping
 - 계좌, 거래, 잔고 동기화와 pagination/cursor
 - 단일 시장 데이터 provider의 EOD 가격, FX, 배당, 분할
 - provider rate limiter, retry/backoff, freshness state
@@ -98,7 +102,7 @@ Phase A 코어가 green이 된 뒤 같은 단계의 후속 slice에서 수동 �
 - 종목 상세의 매수/매도 티켓
 - 시장가·지정가, 수량·예상 금액·수수료 확인
 - 주문 접수·부분체결·체결·취소·거절 상태
-- Alpaca paper trading 또는 국내 증권사 모의투자 환경
+- 키움 모의투자 환경
 - 주문 이벤트와 거래 원장 reconciliation
 
 ### Phase E: 전략 연구와 모의 자동매매
@@ -126,9 +130,9 @@ Phase A 코어가 green이 된 뒤 같은 단계의 후속 slice에서 수동 �
 
 ### Phase F: 제한된 실전 자동매매와 확장
 
-- 두 번째 국내 브로커
+- 토스증권 Open API read-only를 두 번째 브로커로 추가
 - 워치리스트와 가격 알림
-- 검증 완료 후 KIS/키움 실전 주문 또는 IBKR read-only
+- 검증 완료 후 키움 제한적 실전 주문 또는 IBKR read-only
 - paper -> shadow -> 소액 canary -> limited live 승격과 사용자 승인
 - 실전 전략 runner를 UI/API와 별도 프로세스로 격리
 - broker별 credential·계좌·capability·promotion gate를 분리하고 다른 broker의 paper 결과를 실전 안전성 증명으로 재사용하지 않음
@@ -172,11 +176,11 @@ Later roles from the same Go codebase
 
 ## UI 구조
 
-데스크톱 sidebar와 모바일 navigation은 `Home / Holdings / Activity / Data` 네 영역을 공유한다. Activity 아래에 Transactions와 Import Review를, Data 아래에 Connections, Export, Backup/Restore를 둔다. Asset Detail과 `계산 근거 보기`는 contextual route이며 Settings는 보조 경로다. 아직 활성화되지 않은 broker, 성과 지표, 주문, 자동화 메뉴는 placeholder로 노출하지 않는다.
+데스크톱 sidebar와 모바일 navigation은 `Home / Holdings / History / Connections` 네 영역을 공유한다. History 아래에 Transactions와 Import Review를, Connections 아래에 broker 연결, Export, Backup/Restore를 둔다. Asset Detail과 `계산 근거 보기`는 contextual route이며 Settings는 보조 경로다. 아직 활성화되지 않은 broker, 성과 지표, 주문, 자동화 메뉴는 placeholder로 노출하지 않는다.
 
 Home의 첫 화면은 “얼마 벌었나?”보다 “현재 데이터가 믿을 만한가?”에 먼저 답한다. 검증·freshness 상태, 해결할 문제, 보유/현금 snapshot, 최근 import, 최근 verified backup 순서로 보여주고 TWR/XIRR/benchmark는 해당 데이터와 계산이 실제로 준비된 뒤 추가한다. 자동매매 단계에는 Strategy Lab, Backtests, Automation/Risk를 capability gate 뒤에 추가하고 현재 실행 모드, 전략 버전, 위험 한도 사용량, 마지막 신호·주문·체결, data freshness, kill switch를 한 화면에서 확인하게 한다. 상승/하락은 색만 사용하지 않고 부호와 텍스트를 함께 쓴다.
 
-Flutter Material primitive와 semantic design token을 사용한다. 앱 전체를 dark-only로 만들지 않으며 Noto Sans KR/시스템 글꼴, tabular numbers, 48dp touch target, 명시적인 focus/semantic label을 사용한다. 대량 CSV 변환과 시계열 downsampling은 서버가 수행하고 Flutter web main thread에 올리지 않는다.
+Flutter Material primitive와 semantic design token을 사용한다. 토스증권에서 쉬운 용어, 한 화면 한 결정, 점진적 상세 공개, 강한 숫자 위계, 국내·미국의 일관된 흐름을 참고하되 trade dress·브랜드 자산·정확한 layout과 motion은 복제하지 않는다. 앱 전체를 dark-only로 만들지 않으며 Noto Sans KR/시스템 글꼴, tabular numbers, 48dp touch target, 명시적인 focus/semantic label을 사용한다. 대량 CSV 변환과 시계열 downsampling은 서버가 수행하고 Flutter web main thread에 올리지 않는다.
 
 ## 검증
 
@@ -225,11 +229,11 @@ Flutter Material primitive와 semantic design token을 사용한다. 앱 전체�
 CSV import -> 중복 검토 -> 거래 원장 -> 보유/현금/손익 -> JSON backup/restore
 ```
 
-이 접근에서는 FIFO 하나만 먼저 지원하고, 브로커 API 자동 동기화·TWR·벤치마크·drawdown·이동평균 원가는 원장 검증 뒤로 미룬다. 반대로 자동 동기화가 제품의 필수 가치라면 Phase A에 KIS 또는 키움 read-only adapter 하나를 포함해야 한다.
+이 접근에서는 FIFO 하나만 먼저 지원하고, 브로커 API 자동 동기화·TWR·벤치마크·drawdown·이동평균 원가는 원장 검증 뒤로 미룬다. 검토 당시 첫 브로커 후보는 KIS/키움으로 열어 뒀으며, 2026-08-24 사용자 결정으로 키움이 첫 어댑터가 됐다.
 
 ### 사용자 확인 결과
 
-후속 대화에서 제품 방향은 개인용이지만 확장 가능한 멀티 증권사 투자·퀀트 앱으로 확정됐다. Phase A에서 원장을 검증한 뒤 Phase B의 KIS 또는 키움 read-only 연동을 초기 제품 범위에 포함하며, 주문과 자동매매는 paper → shadow → canary → limited live 순서로 확장한다.
+후속 대화에서 제품 방향은 개인용이지만 확장 가능한 멀티 증권사 투자·퀀트 앱으로 확정됐다. Phase A에서 원장을 검증한 뒤 Phase B는 키움 read-only와 키움 모의주문을 진행하고, 그 다음 토스증권 Open API를 두 번째 어댑터로 추가한다. 주문과 자동매매는 paper → shadow → canary → limited live 순서로 확장한다.
 
 ## `/autoplan` CEO 재검토: local-first 실행 경계
 
@@ -237,9 +241,9 @@ CSV import -> 중복 검토 -> 거래 원장 -> 보유/현금/손익 -> JSON bac
 
 ### 시스템 감사
 
-- 현재 작업공간은 `main` 브랜치의 Git 저장소이며 계획 기준선 커밋이 있다. 제품 코드는 아직 없다.
-- 현재 제품 자산은 `docs/goal-prompt.md`, 이 계획, 조사 보고서뿐이다.
-- 기존 코드, 마이그레이션, 테스트, `TODOS.md`, 디자인 시스템은 아직 없으므로 재사용 가능한 내부 구현은 없다.
+- 이 CEO 검토 당시 작업공간은 `main` 브랜치의 Git 저장소이고 제품 코드는 없었다. 현재는 첫 수직 슬라이스가 구현되어 이 상태 기록을 supersede한다.
+- 이 CEO 검토 시점의 제품 자산은 `docs/goal-prompt.md`, 이 계획, 조사 보고서뿐이었다.
+- 검토 시점에는 코드, 마이그레이션, 테스트, `TODOS.md`, 디자인 시스템이 없어 재사용 가능한 내부 구현도 없었다. 현재 첫 수직 슬라이스 상태는 문서 상단과 Phase 3 evidence가 우선한다.
 - 따라서 지금 가장 값싼 수정은 잘못된 런타임 전제를 코드로 굳히지 않는 것이다.
 
 ### 전제 도전
@@ -451,7 +455,7 @@ stop writes -> preserve current backup -> verify last good backup in temp DB
 ### Phase A NOT in scope
 
 - 브로커 API, market data, credential 저장
-- React 화면, 차트, 주문 티켓
+- Flutter 화면 이후의 차트, 주문 티켓
 - TWR/XIRR/benchmark/drawdown과 이동평균 원가
 - paper/shadow/live, 전략 엔진, scheduled worker
 - cloud 배포·image publish, PostgreSQL, Redis/Kafka/Kubernetes. 이 초기 기록의 OCI blanket 제외는 현재 G0의 단일 local Go image smoke로 superseded됐다.
@@ -488,11 +492,11 @@ stop writes -> preserve current backup -> verify last good backup in temp DB
 | 범위 추가 | 설명 가능성·과거 backup 복구·두 provider fixture 계약만 수용 |
 | 범위 유예 | 모든 broker/cloud/order/automation 구현 |
 
-> **Phase 1 complete.** Codex: 5 concerns. Independent reviewer: 7 implementation findings. Consensus: 5/6 confirmed, 1 disagreement resolved by the user, 0 unresolved. Passing to Phase 2.
+> **Phase 1 plan review complete.** Codex: 5 concerns. Independent reviewer: 7 implementation findings. Consensus: 5/6 confirmed, 1 disagreement resolved by the user, 0 unresolved. Passing to Phase 2 review.
 
 ## `/autoplan` Phase 2: Design 검토
 
-분류: **APP UI**. docs-only 상태이고 `DESIGN.md`, UI component, 승인 mockup은 아직 없다. 초기 완성도는 5.5/10이었다. 디자인 binary가 없고 Phase A가 UI 구현을 포함하지 않으므로 mockup과 최종 token은 Phase C 진입 시 실제 fixture로 만든다.
+분류: **APP UI**. 이 검토를 시작한 시점에는 docs-only였고 `DESIGN.md`와 UI component가 없었다. 현재는 `DESIGN.md`, semantic token, Flutter trust/import 화면과 실제 mobile/desktop browser screenshot이 존재한다. 아래 점수는 사전 설계 검토 기록이며 현재 구현 증거는 완료 요약에서 별도로 갱신한다.
 
 ### 이미 존재하는 디자인 계약
 
@@ -505,7 +509,7 @@ stop writes -> preserve current backup -> verify last good backup in temp DB
 ### Pass 1 — Information Architecture: 6/10 → 10/10
 
 ```text
-Home              Holdings           Activity              Data
+Home              Holdings           History               Connections
 ├─ trust status   └─ Asset Detail    ├─ Transactions       ├─ Connections
 ├─ next problem       └─ 근거 보기   └─ Import Review      ├─ Export
 ├─ snapshot                                                   └─ Backup / Restore
@@ -566,17 +570,17 @@ Research / Orders / Automation = 해당 capability가 시작될 때만 추가
 | motion이 hierarchy를 돕는가 | 불명확 | 최소화 | 상태 변화에만 사용 |
 | shadow 없이도 premium인가 | Yes | Yes | type·spacing·data clarity로 해결 |
 
-7/7 방향 합의. navigation에서 `Data`를 top-level로 둘지 `Settings` 아래에 둘지 taste 차이가 있었고, 현재 제품의 import/recovery 비중을 근거로 `Data` top-level을 채택했다.
+7/7 방향 합의. navigation에서 연결·복구를 top-level로 둘지 Settings 아래에 둘지 taste 차이가 있었고, 현재 제품의 import/recovery 비중을 근거로 `Connections` top-level을 채택했다.
 
 ### Pass 5 — Design System Alignment: 3/10 → 8/10
 
-Phase C 진입 전 `DESIGN.md`와 실제 화면 variant를 만든다. 지금은 semantic token 계약만 둔다: `surface`, `text`, `muted`, `border`, `action`, `success`, `warning`, `danger`, `focus`, `stale`. light/dark를 함께 검증하고 raw hex를 component에 넣지 않는다. Noto Sans KR 또는 검증된 한국어 UI typeface와 tabular number를 사용한다. shadcn/ui는 React를 실제로 선택했을 때 접근성 primitive로 재사용하고 사전 설치하지 않는다.
+`DESIGN.md`, `design-system/omni-folio/MASTER.md`, Flutter light/dark theme에 `surface`, `text`, `muted`, `action`, `success`, `warning`, `danger`, `focus`, `stale` 의미를 반영했다. Noto Sans KR/시스템 글꼴과 tabular number를 사용하며 React/shadcn은 설치하지 않았다.
 
 로컬 UI 검색이 제안한 marketing pattern과 dark-only 금융 palette는 개인 원장 APP UI와 맞지 않아 채택하지 않았다. 그 결과 중 Minimal/Swiss, 낮은 motion, data density 원칙만 사용한다.
 
 ### Pass 6 — Responsive & Accessibility: 6/10 → 9/10
 
-- 375px: `Home/Holdings/Activity/Data` bottom nav, 단일 열, import/restore와 근거 보기는 full route
+- 375px: `Home/Holdings/History/Connections` bottom nav, 단일 열, import/restore와 근거 보기는 full route
 - 768px: navigation rail/drawer; 두 pane의 label과 focus가 유지될 때만 split view
 - 1024px+: persistent sidebar와 main workspace
 - 1440px+: financial table 폭을 확장하고 marketing-style narrow container를 피함
@@ -594,15 +598,15 @@ Phase C 진입 전 `DESIGN.md`와 실제 화면 variant를 만든다. 지금은 
 | preview invalidation | file hash + schema + mapping/config + ledger revision을 token에 포함 |
 | restore safety | temp DB 검증 + pre-restore recovery point + 명시적 replace confirmation |
 | number explanation | 생성 문자열이 아니라 structured provenance/equation |
-| navigation | `Home/Holdings/Activity/Data`; contextual detail; Settings 보조 |
-| exact tokens/components | Phase C 진입까지 유예 |
-| visual mockups | Phase A/B fixture가 준비되고 design binary를 쓸 수 있을 때 생성 |
+| navigation | `Home/Holdings/History/Connections`; contextual detail; Settings 보조 |
+| exact tokens/components | semantic theme와 최소 Flutter components로 구현 |
+| visual evidence | 390×844 mobile 및 desktop browser screenshot 생성 |
 
-미해결 결정은 없다. 뒤의 두 항목은 진입 조건이 명시된 의도적 유예다.
+미해결 디자인 결정은 없다. profile p95와 수동 assistive-technology 검증은 G2 release evidence로 남아 있다.
 
 ### Design NOT in scope
 
-- Phase A의 React screen, chart, navigation, theme 구현
+- Phase A 밖의 chart, 주문, 자동화 UI 구현
 - frontend stack이 생기기 전 component 설치
 - broker/order/automation UI와 disabled placeholder
 - marketing page, onboarding tour, 장식 animation
@@ -613,26 +617,26 @@ Phase C 진입 전 `DESIGN.md`와 실제 화면 variant를 만든다. 지금은 
 - **P1 Import contract:** preview token, row classification, before/after, apply receipt를 domain output으로 제공
 - **P1 Recovery contract:** 검증 단계와 backup/restore receipt를 구조화
 - **P1 Explainability:** snapshot 각 값의 structured provenance를 보존
-- **P2 Phase C entry gate:** IA, viewport, keyboard, screen-reader acceptance를 적용
-- **P3 Visual system:** Phase C 진입 때 `DESIGN.md`와 실제 fixture 기반 variant 생성
+- **P2 Phase C entry gate:** IA, viewport, keyboard, screen-reader acceptance를 적용; profile/screen-reader 수동 증거는 G2 잔여 항목
+- **P3 Visual system:** `DESIGN.md`, semantic tokens와 실제 fixture 기반 Flutter variant 생성 완료
 
 ### Design 완료 요약
 
 | 항목 | 결과 |
 |---|---|
-| System audit | APP UI, docs-only, no DESIGN.md/components |
+| System audit | 사전에는 docs-only; 현재 `DESIGN.md`, token, Flutter components 존재 |
 | Initial → reviewed | 5.5/10 → 9/10 contract completeness |
 | Pass 1 IA | 6 → 10 |
 | Pass 2 States | 5 → 10 |
 | Pass 3 Journey | 5 → 9 |
 | Pass 4 AI slop | 7 → 9 |
-| Pass 5 Design system | 3 → 8; exact visual system deferred to Phase C |
+| Pass 5 Design system | 3 → 8; semantic theme와 실제 Flutter 화면 구현 |
 | Pass 6 Responsive/a11y | 6 → 9 |
 | Pass 7 Decisions | 4 resolved, 2 intentionally deferred, 0 unresolved |
 | Dual voices | Codex 8 findings, independent reviewer 5 tasks; 7/7 litmus direction aligned |
-| Approved mockups | 0; tool unavailable and Phase A has no UI |
+| Visual evidence | mobile/desktop browser screenshot, widget tests, iOS/Android/web builds |
 
-> **Phase 2 complete.** Codex: 8 concerns. Independent design reviewer: 5 implementation findings. Consensus: 7/7 litmus directions confirmed, 1 navigation taste difference auto-resolved, 0 unresolved. Passing to Phase 3.
+> **Phase 2 design review complete.** Codex: 8 concerns. Independent design reviewer: 5 implementation findings. Consensus: 7/7 litmus directions confirmed, 1 navigation taste difference auto-resolved, 0 unresolved. Current UI implements the reviewed first slice; G2 profile/screen-reader evidence remains a release gate, not a design decision.
 
 ## `/autoplan` Phase 3: Engineering 검토
 
@@ -688,30 +692,30 @@ Python G3와 local OCI를 이번 lake에서 자르자는 독립 검토 의견은
 
 ```text
 CODE PATHS                                      USER FLOWS
-[ ] CSV body limit/header parse                 [ ] status -> trust banner
- ├─ [ ] canonical decimal/RFC3339               [ ] paste/select CSV -> preview
- ├─ [ ] new/duplicate/error/unresolved           ├─ [ ] invalid rows -> repair guidance
- └─ [ ] fingerprint + revision                  └─ [ ] can_apply -> explicit confirm
-[ ] apply transaction [-> integration]             ├─ [ ] receipt success
- ├─ [ ] replay same key                            ├─ [ ] key conflict/stale preview
- ├─ [ ] key different payload                      └─ [ ] refresh failure retains known data
- ├─ [ ] stale preview
- └─ [ ] rollback on invariant
-[ ] FIFO projection
- ├─ [ ] deposit/buy/sell/fee allocation
- ├─ [ ] oversell rejection
- └─ [ ] cash/holding/P&L/provenance
-[ ] backup candidate [-> integration]
- ├─ [ ] consistent snapshot + hash
- ├─ [ ] version/integrity/golden verify
- └─ [ ] corrupt/old candidate never replaces active DB
-[ ] Python simulation
- ├─ [ ] no-lookahead delayed fill
- ├─ [ ] participation partial fill
- └─ [ ] fee/tax/slippage + deterministic manifest
+[x] CSV body limit/header parse                 [x] status -> trust banner
+ ├─ [x] canonical decimal/RFC3339               [x] paste/select CSV -> preview
+ ├─ [x] new/duplicate/error/unresolved           ├─ [x] invalid rows -> repair guidance
+ └─ [x] fingerprint + revision                  └─ [x] can_apply -> explicit confirm
+[x] apply transaction [-> integration]             ├─ [x] receipt success
+ ├─ [x] replay same key                            ├─ [x] key conflict/stale preview
+ ├─ [x] key different payload                      └─ [x] refresh failure retains known data
+ ├─ [x] stale preview
+ └─ [x] rollback on invariant
+[x] FIFO projection
+ ├─ [x] deposit/buy/sell/fee allocation
+ ├─ [x] oversell rejection
+ └─ [x] cash/holding/P&L/provenance
+[x] backup candidate [-> integration]
+ ├─ [x] consistent snapshot + hash
+ ├─ [x] version/integrity/golden verify
+ └─ [x] corrupt/old candidate never replaces active DB
+[x] Python simulation
+ ├─ [x] no-lookahead delayed fill
+ ├─ [x] participation partial fill
+ └─ [x] fee/tax/slippage + deterministic manifest
 ```
 
-최소 테스트 계획 artifact는 `~/.gstack/projects/Omni-Folio/yousang-main-eng-review-test-plan-20260823-231517.md`에 저장했다. 완료 시 각 `[ ]`는 실제 test file/command 증거로 교체한다.
+최소 테스트 계획은 아래 Implementation Tasks와 executable check에 통합했으며, 완료 항목은 실제 test file과 command 증거로 갱신했다.
 
 ### Failure modes
 
@@ -758,23 +762,23 @@ A를 먼저 고정한 뒤 B/C/D를 병렬로 실행하고 E가 실제 명령을 
 
 ### Implementation Tasks
 
-- [ ] **T1 (P1, human: ~4h / CC: ~25min)** — contracts — preview/recovery/backtest 계약 보강
+- [x] **T1 (P1, human: ~4h / CC: ~25min)** — contracts — preview/recovery/backtest 계약 보강
   - Surfaced by: architecture findings 1-8
   - Files: `contracts/**`, `gates/**`
   - Verify: JSON parse, fixture hash/Decimal assertions, `git diff --check`
-- [ ] **T2 (P1, human: ~3d / CC: ~90min)** — Go core — atomic import와 exact FIFO/restore 구현
+- [x] **T2 (P1, human: ~3d / CC: ~90min)** — Go core — atomic import와 exact FIFO/restore 구현
   - Surfaced by: code/test/failure-mode review
   - Files: `services/core/**`
   - Verify: `go test ./... && go vet ./...`
-- [ ] **T3 (P1, human: ~2d / CC: ~60min)** — Flutter — counter scaffold를 trust/import vertical slice로 교체
+- [x] **T3 (P1, human: ~2d / CC: ~60min)** — Flutter — counter scaffold를 trust/import vertical slice로 교체
   - Surfaced by: architecture finding 9 and G2
   - Files: `apps/client/**`
   - Verify: `flutter analyze && flutter test && flutter build web --release`
-- [ ] **T4 (P2, human: ~1d / CC: ~45min)** — Python research — deterministic delayed/partial-fill manifest 구현
+- [x] **T4 (P2, human: ~1d / CC: ~45min)** — Python research — deterministic delayed/partial-fill manifest 구현
   - Surfaced by: architecture finding 5 and G3
   - Files: `services/research/**`
   - Verify: `python -m unittest discover -s tests`
-- [ ] **T5 (P2, human: ~1d / CC: ~40min)** — local delivery — root check와 non-root OCI smoke
+- [x] **T5 (P2, human: ~1d / CC: ~40min)** — local delivery — root check와 non-root OCI smoke
   - Surfaced by: scope/distribution review
   - Files: `README.md`, `Makefile`, `.gitignore`, `.env.example`, `infra/**`
   - Verify: `make check && make smoke`
@@ -793,4 +797,30 @@ A를 먼저 고정한 뒤 B/C/D를 병렬로 실행하고 E가 실제 명령을 
 - Parallelization: 5 lanes, B/C/D parallel after A, E sequential
 - Unresolved decisions: 0
 
-> **Phase 3 plan review complete.** Implementation evidence is still pending; plan correctness is clear enough to execute.
+> **Phase 3 plan and first-slice implementation complete.** `make check`, `make smoke`, Go race/build, Flutter web/iOS/Android release builds, deterministic improvement run, Playwright API/UI flow, and isolated non-root/read-only Compose readiness all passed on 2026-08-24. G2 remains open only for profile p95 and manual assistive-technology/reduced-motion evidence.
+
+## `/autoplan` Phase 4: Developer Experience 검토
+
+새 사용자가 README만 따라가도 동일한 수직 슬라이스를 실행할 수 있는지, 명령·버전·환경변수·컨테이너 설명이 실제 파일과 일치하는지 검토했다. 독립 reviewer가 발견한 custom API port 불일치와 중복 asdf pin을 수정했고, Flutter 기본 scaffold 이름과 사용하지 않는 아이콘 의존성을 제거했다.
+
+- `README.md`의 custom-port 예시는 core bind address와 client `API_URL`을 같은 값으로 사용한다.
+- `.tool-versions`는 Flutter 3.47.1 stable, Go 1.24.5, Python 3.14.5를 한 번씩 고정한다.
+- `.env.example`은 secret이 아닌 로컬 reference만 포함하며 Make가 암묵적으로 source하지 않음을 설명한다.
+- Compose는 root context를 `.dockerignore`로 제한하고 non-root, read-only, capability drop, loopback port, one-shot migration과 readiness를 실제로 통과했다.
+- 독립 DX reviewer 재검증에서 나온 3개 finding을 2026-08-24에 모두 수정했다.
+
+> **Phase 4 DX review complete.** 독립 reviewer 3개 실질 finding을 모두 수정했고 명령 진실성·secret 경계·gate 정직성에 미해결 blocker가 없다.
+
+## GSTACK REVIEW REPORT
+
+| Phase | Result | Durable decision or evidence |
+|---|---|---|
+| CEO | PASS | 개인용 local-first 원장 앱에서 시작해 paper/shadow를 자동화 상한으로 두고 live는 owner 승인으로 제한 |
+| Design | PASS WITH RELEASE EVIDENCE OPEN | Flutter 단일 client, Toss-inspired plain-language UX, 실제 mobile/desktop 화면과 200% text test; profile/screen-reader/reduced-motion 증거는 G2에 남김 |
+| Engineering | PASS | Go exact ledger/import/restore, Flutter trust/import, Python deterministic backtest와 expanding walk-forward, versioned contracts가 root check/smoke 통과 |
+| DX | PASS | pinned asdf, five-minute README, isolated hardened Compose readiness, custom-port 명령 일치 |
+| Broker decision | PASS | 키움 read-only·차트·실시간·모의주문을 첫 gate로, 토스증권 Open API를 두 번째 adapter이자 UX reference로 고정 |
+
+미해결 제품·아키텍처·구현 결정은 없다. 다음 작업은 결정이 아니라 [`gates/g4-broker.md`](../gates/g4-broker.md)의 키움 read-only 실행과 G2의 남은 수동 release evidence다. 실전 주문, credential 등록, 외부 배포와 push는 이 보고서로 승인되지 않는다.
+
+NO UNRESOLVED DECISIONS

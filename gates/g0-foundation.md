@@ -9,4 +9,6 @@
 
 ## Evidence
 
-- Pending implementation and `make check` output.
+- 2026-08-24 `make check`: Go format/vet/test, Flutter format/analyze/7 widget-unit tests, Python compile/13 tests, 15 JSON contracts parsed.
+- `apps/client`, `services/core`, `services/research`, `contracts`, `infra` are independently runnable through the root `Makefile`.
+- Flutter and Python boundary tests use wire fixtures only; neither imports Go packages nor opens the operational SQLite DB.

@@ -22,15 +22,18 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 ## 반드시 지킬 원칙
 
 - 현재 작업공간과 `docs/omni-folio-research-report.md`, `docs/omni-folio-plan.md`를 먼저 읽고 현재 상태를 기준으로 작업한다.
-- 최종 목표는 여러 증권사 지원이지만 첫 어댑터는 KIS 또는 키움 REST API 하나만 끝까지 완성한다. 공통 원장과 첫 어댑터가 검증된 뒤 두 번째 증권사를 추가한다.
+- 최종 목표는 여러 증권사 지원이지만 첫 어댑터는 **키움 REST API**로 고정한다. 국내주식 read-only, 차트·실시간, 키움 모의주문을 순서대로 완성한 뒤 **토스증권 Open API**를 두 번째 어댑터로 추가한다.
 - 브로커 어댑터와 시장 데이터 어댑터를 분리한다.
 - 거래 원장을 source of truth로 삼고 잔고·손익·성과는 원장에서 결정적으로 계산한다.
 - 금액·수량 계산은 부동소수점이 아닌 Decimal을 사용한다.
 - import와 주문 요청은 멱등성을 보장하고, 정정은 원본 삭제보다 append-only correction을 우선한다.
-- 클라이언트는 Flutter 하나로 iOS·Android·app-centric web을 제공한다. 이전 React/PWA 권장은 **superseded**이며 새 React 화면을 추가하지 않는다.
+- 클라이언트는 asdf로 stable 버전을 고정한 Flutter 하나로 iOS·Android·app-centric web을 제공한다. 공개 리서치·문서형 콘텐츠나 SEO 요구가 실제로 생길 때만 Next.js를 별도 web surface로 추가하며 Flutter 제품 화면을 중복 구현하지 않는다. 이전 React/PWA 우선 권장은 **superseded**다.
+- Flutter UX는 영웅문을 복제하지 않는다. 토스증권에서 참고한 쉬운 용어, 한 화면 한 결정, 점진적 상세 공개, 국내·미국의 일관된 흐름, 읽기 쉬운 차트, 명확한 주문 확인과 접근성을 Omni Folio 고유 디자인으로 구현한다.
 - Go 모듈러 모놀리스가 ledger, order, risk, broker credential과 broker submit authority를 소유한다. Python은 research/backtest와 재현 가능한 산출물만 담당하며 broker credential, 운영 DB 쓰기, order-submit 권한을 갖지 않는다.
 - API 키와 계좌 식별자는 서버 측 안전한 저장소에만 두며 클라이언트, 로그, export, 오류 메시지에 노출하지 않는다.
 - 배포 가능한 Go 모듈러 모놀리스와 SQLite single-writer local로 시작한다. 로컬과 단일 노드 클라우드는 같은 OCI image를 사용하고 설정·secret·영속 저장소만 실행 프로필으로 바꾼다. 측정된 필요가 생기기 전에는 microservice, Redis, message broker, 동적 plugin SDK를 추가하지 않는다.
+- 신뢰할 수 있는 프레임워크·라이브러리는 회피하지 않는다. 직접 구현보다 정확성·성능·유지보수성이 나을 때 채택하되 공식 저장소의 활성도, license, 보안 이력, release 고정·lockfile, 공급망 검사와 Omni Folio 골든 fixture 교차검증을 통과해야 한다.
+- 새 의존성은 기능별로 하나의 주 구현만 선택한다. 백테스트·차트·Decimal처럼 핵심 결과를 만드는 라이브러리는 입력 snapshot과 버전을 manifest에 남기고 reference fixture와 결과가 어긋나면 승격을 차단한다.
 - 실전 주문은 절대 자동 활성화하지 않는다. 모의투자 검증, 체결-원장 reconciliation, 실패 복구, 사용자 명시 승인 전에는 비활성 상태로 유지한다.
 - 자동매매는 `Universe → Signal/Alpha → PortfolioTarget → RiskAdjustedTarget → OrderIntent → Execution` 단계로 분리한다. 전략은 브로커 주문을 직접 만들거나 전송하지 않는다.
 - 백테스트 결과를 실전 기대수익으로 표시하지 않는다. 슬리피지, 수수료, 세금, 체결 지연, 데이터 지연, survivorship/lookahead bias를 검증 항목으로 둔다.
@@ -75,7 +78,9 @@ Go ports
   └─ MarketDataPort
        |
 Adapters
-  ├─ KIS / Kiwoom / Alpaca / IBKR
+  ├─ Kiwoom first / Toss Securities second
+  └─ later only when needed: Alpaca / IBKR
+Market data adapters
   └─ broker feed / external market-data provider
 ```
 
@@ -140,7 +145,8 @@ Adapters
 
 ### Phase 2 — 첫 증권 API
 
-- KIS 또는 키움 read-only 연결
+- 키움 REST API 국내주식 read-only 연결
+- 계좌번호, 계좌평가잔고, 미체결, 일·분봉, 실시간 체결·호가를 canonical contract로 정규화
 - read-only scope credential만 허용하고 주문 scope credential은 이 단계에서 명시적으로 거절
 - 계좌, 거래, 잔고 pagination 동기화
 - rate limit, retry/backoff, token 갱신, freshness 상태
@@ -157,7 +163,7 @@ Adapters
 
 ### Phase 4 — 주문
 
-- 이 단계는 증권사 모의투자 또는 Alpaca paper trading만 구현한다. 실전 주문 credential과 live broker submit은 Phase 6의 broker별 promotion gate 전까지 코드 경로와 설정에서 비활성화한다.
+- 이 단계는 키움 모의투자 주문만 먼저 구현한다. 실전 주문 credential과 live broker submit은 Phase 6의 broker별 promotion gate 전까지 코드 경로와 설정에서 비활성화한다.
 - 시장가·지정가, 매수·매도, 수량·예상금액·수수료 확인
 - idempotency key와 중복 주문 방지
 - 접수, 미체결, 부분체결, 체결, 취소, 정정, 거절 상태 머신
@@ -189,7 +195,7 @@ Adapters
 
 ### Phase 7 — 멀티 증권사 확장
 
-- 두 번째 국내 증권사 어댑터
+- 토스증권 Open API read-only를 두 번째 어댑터로 추가하고, 공식 별도 sandbox가 확인되지 않으면 주문은 shadow intent까지만 검증
 - 필요하면 Alpaca 또는 IBKR read-only/주문 연동
 - 워치리스트, 가격 알림, 배당 캘린더, 벤치마크 비교
 

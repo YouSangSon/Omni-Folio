@@ -1,6 +1,6 @@
 # Omni Folio: 개인 주식 앱 레퍼런스 조사
 
-조사일: 2026-08-23 KST
+조사일: 2026-08-23 KST, broker/UX 결정 갱신 2026-08-24 KST
 판정: **GO, 첫 릴리스는 주문·자동매매 없는 읽기 전용 포트폴리오 MVP로 시작**
 신뢰도: 높음. 공식 문서와 공식 GitHub 저장소를 우선했고, 가격과 호출 제한은 변경될 수 있으므로 구현 직전에 다시 확인해야 한다.
 
@@ -16,7 +16,7 @@
 - 데이터 공급자 추상화: [OpenBB](https://github.com/OpenBB-finance/OpenBB)
 - 위험지표 검증: [QuantStats](https://github.com/ranaroussi/quantstats)
 - 퀀트 엔진 구조: [LEAN Algorithm Framework](https://www.quantconnect.com/docs/v2/writing-algorithms/algorithm-framework/overview)와 [NautilusTrader Architecture](https://nautilustrader.io/docs/latest/concepts/architecture/)
-- 국내 브로커 1순위: [한국투자증권 Open API](https://apiportal.koreainvestment.com/) 또는 [키움 REST API](https://openapi.kiwoom.com/guide/apiguide?dummyVal=0)
+- 첫 브로커: [키움 REST API](https://openapi.kiwoom.com/guide/apiguide), 두 번째 브로커: [토스증권 Open API](https://developers.tossinvest.com/docs)
 - 미국 종이매매/주문 실험: [Alpaca Trading API](https://docs.alpaca.markets/us/docs/trading-api)
 
 ## 1. 증권사와 시장 데이터 API
@@ -27,9 +27,10 @@
 |---|---|---:|---|
 | [한국투자증권 KIS](https://apiportal.koreainvestment.com/) | 국내·해외 주식, REST, WebSocket, 모의·실전 키, 공식 [Python 샘플](https://github.com/koreainvestment/open-trading-api) | **높음** | 토큰, TR별 요청 형식, 호출 제한을 중앙에서 제어해야 한다. 신규 고객 호출 제한 공지가 있으므로 배포 직전 재확인한다. |
 | [키움 REST API](https://openapi.kiwoom.com/guide/apiguide?dummyVal=0) | OAuth, 국내·미국 주식, 계좌·시세·차트·주문·실시간, 모의 도메인, 공식 [CLI/샘플](https://github.com/Kiwoom-Securities/Kiwoom-REST-API) | **높음** | 허용 IP와 운영/모의 키 분리. 기존 Windows OCX가 아니라 REST API를 선택한다. |
+| [토스증권 Open API](https://developers.tossinvest.com/docs) | OAuth, 국내·미국 통합 REST, 계좌·시세·캔들·주문·조건주문, 공식 [WebSocket AsyncAPI](https://openapi.tossinvest.com/openapi-docs/latest/asyncapi.json) | **높음** | 허용 IP와 계좌 헤더가 필요하다. 공식 별도 주문 sandbox는 확인하지 못했으므로 두 번째 read-only 어댑터로 시작한다. |
 | [LS증권 OPEN API](https://openapi.ls-sec.co.kr/howto-use) | 계좌별 App Key/Secret, 모의·실전, REST와 별도 WebSocket | 중간 | XingAPI 사용 신청이 선행되고 최대 계좌 수 등 계정 제약을 확인해야 한다. |
 
-국내 MVP는 KIS 또는 키움 하나만 먼저 붙인다. 둘을 동시에 붙여도 사용자 가치는 거의 늘지 않지만 인증·종목 코드·오류 처리 표면은 두 배가 된다. 두 번째 증권사는 공통 모델과 첫 어댑터가 안정된 뒤 추가한다.
+사용자 결정에 따라 국내 MVP는 키움을 먼저 붙이고, 공통 모델과 키움 read-only·모의주문 gate가 안정된 뒤 토스증권을 두 번째로 추가한다. 두 API는 모두 공식 REST와 WebSocket 표면이 있으므로 비공식 reverse engineering은 사용하지 않는다. 상세 구현 순서와 최신 공식 source-of-truth는 [`broker-priority-and-ux.md`](broker-priority-and-ux.md)에 고정했다.
 
 ### 미국·글로벌 브로커와 데이터
 
@@ -108,7 +109,7 @@ clock + event replay <- audit/run manifest <- execution <- order intent
 
 자동 개선은 “최근 백테스트 1등을 실전에 반영”하는 기능이 아니다. QuantConnect의 공식 [walk-forward optimization 문서](https://www.quantconnect.com/docs/v2/writing-algorithms/optimization/walk-forward-optimization)는 최근 trailing window로 파라미터를 주기적으로 조정하는 방법과 함께, 갱신이 너무 잦으면 과적합 위험이 커지는 trade-off를 설명한다. [파라미터 최적화 문서](https://www.quantconnect.com/docs/v2/writing-algorithms/optimization/parameters)도 최적화에 사용한 기간을 다시 test로 쓰면 lookahead가 유입된다고 경고한다. Bailey 등 연구는 시도한 전략 구성이 많아질수록 높은 backtest 성과가 우연히 만들어질 가능성이 커진다는 문제를 보인다. ([SSRN 논문](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2308659))
 
-따라서 첫 구현은 설명 가능한 SMA crossover의 작은 유한 grid만 사용한다. 불변 데이터 snapshot을 시간 순서대로 train/validation/final holdout으로 나누고, 신호 다음 bar부터만 체결 가능하게 한다. 후보 순위는 validation까지만 사용하며 final holdout은 승격 gate로만 사용한다. 수수료·세금·슬리피지·지연 후 수익, 최대 낙폭, 최소 거래 수, turnover/capacity와 기존 champion 또는 단순 benchmark를 함께 비교하고, 같은 입력은 같은 winner와 artifact hash를 내야 한다.
+따라서 첫 구현은 설명 가능한 SMA crossover의 작은 유한 grid만 사용한다. 불변 데이터 snapshot의 pre-holdout 구간에서 expanding walk-forward fold를 만들고 각 fold의 학습 구간으로 후보를 선택한 뒤 다음 구간에서 out-of-sample 평가한다. 최종 후보도 pre-holdout만으로 선택하며 final holdout은 마지막 승격 gate에서 한 번만 연다. 신호 다음 bar부터만 체결 가능하게 하고 수수료·세금·슬리피지·지연 후 수익, 최대 낙폭, 최소 거래 수, turnover/capacity와 기존 champion 또는 단순 benchmark를 함께 비교한다. 같은 입력은 같은 winner와 artifact hash를 내야 한다.
 
 자동화 범위는 후보 생성, 평가, `paper_candidate`, paper/shadow 성능 감시와 rollback이다. 전략 소스를 스스로 고치거나 생성 코드를 동적으로 실행하지 않는다. FINRA도 자동 투자 도구의 가정과 한계를 이해하고 성과 보장을 경계하라고 안내하며, 2025년 auto-trading 안내에서는 검증되지 않은 수익성·AI 주장을 특히 경고한다. ([자동 투자 도구 안내](https://www.finra.org/investors/alerts/automated-investment-tools), [auto-trading 위험 안내](https://www.finra.org/investors/insights/auto-trading-unregistered-entities)) Omni Folio는 이를 제품 문구와 승격 정책에 반영해 수익을 약속하지 않고 canary/live 승격은 owner 승인과 공통 risk gate 밖에서 자동화하지 않는다.
 
@@ -225,7 +226,7 @@ Flutter client (iOS / Android / app-centric web)
        └─ Go modular monolith
             ├─ canonical ledger (SQLite single writer → PostgreSQL)
             ├─ portfolio calculator / import pipeline
-            ├─ broker adapters: KIS first, Alpaca paper later
+            ├─ broker adapters: Kiwoom first, Toss Securities second
             ├─ market-data adapter: one provider first
             ├─ strategy/portfolio/risk/order authority
             ├─ execution log + reconciliation
@@ -244,7 +245,7 @@ Python research/backtest
 
 필수 제한은 price collar, max order quantity/value, gross/net exposure, max position/open orders/daily loss/order rate, trading hours, stale-data block, clock-drift block, reconciliation/provider 장애 차단, 전략 프로세스와 독립된 kill switch다. [FIA 자동매매 시스템 가이드](https://www.fia.org/sites/default/files/2020-03/Guide%20to%20the%20Development%20and%20Operation%20of%20Automated%20Trading%20Systems%20%28March%202015%29.pdf)도 pre-trade controls, market-data reasonability, kill switch, cancel-on-disconnect, reconciliation, audit trail을 핵심 통제로 다룬다.
 
-소매 브로커 API에서는 고정된 밀리초 SLA나 HFT를 약속하지 않는다. [IBKR Web API](https://www.interactivebrokers.com/campus/ibkr-api-page/web-api-trading/)처럼 세션과 pacing 제한이 있고, [Alpaca order updates](https://docs.alpaca.markets/us/docs/websocket-streaming)는 비동기 fill/partial fill/cancel/reject 이벤트를 스트리밍한다. 초기 목표는 EOD·분봉 전략이며 실제 측정 뒤 전략별 `max_data_age`, `max_decision_time`, `max_ack_wait`을 정한다. 국내 구현은 [KIS 공식 저장소](https://github.com/koreainvestment/open-trading-api)의 REST/WebSocket, 모의·실전 분리, strategy builder/LEAN backtester 사례를 참고하되 호출 제한과 약관은 구현 직전 포털에서 다시 확인한다.
+소매 브로커 API에서는 고정된 밀리초 SLA나 HFT를 약속하지 않는다. 키움은 공식 안내상 국내 주문·조회가 계좌/토큰당 각 초당 5회이고 세션당 실시간 종목 수도 제한하며, 토스는 API 그룹별 rate-limit과 응답 헤더를 런타임 기준으로 사용한다. 초기 목표는 EOD·분봉 전략이며 실제 측정 뒤 전략별 `max_data_age`, `max_decision_time`, `max_ack_wait`을 정한다. 키움의 운영/모의 분리와 토스의 REST/OpenAPI·WebSocket/AsyncAPI 계약은 구현 직전 공식 포털에서 다시 확인한다.
 
 ### Runtime 선택
 
@@ -257,7 +258,7 @@ Python research/backtest
 
 ### MVP
 
-- KIS 또는 키움 한 곳의 읽기 전용 계좌/거래 동기화
+- 키움의 읽기 전용 계좌/거래 동기화
 - CSV/manual import와 preview
 - 보유, 현금, FIFO/평균단가, 배당, 수수료, 분할
 - TWR, XIRR, 벤치마크, 최대 낙폭
@@ -266,7 +267,7 @@ Python research/backtest
 
 ### 다음 단계
 
-- 두 번째 국내 증권사
+- 토스증권 Open API read-only 어댑터
 - Alpaca paper trading 또는 IBKR read-only
 - paper → shadow → 소액 canary → limited live 자동매매
 - 워치리스트와 알림
