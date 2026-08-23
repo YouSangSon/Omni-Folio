@@ -158,20 +158,21 @@ type PortfolioSnapshot struct {
 }
 
 type BackupManifest struct {
-	FormatVersion          string              `json:"format_version"`
-	SchemaVersion          string              `json:"schema_version"`
-	CreatedAt              string              `json:"created_at"`
-	SourceLedgerRevision   string              `json:"source_ledger_revision"`
-	OrderStateSHA256       string              `json:"order_state_sha256"`
-	OrderCount             int                 `json:"order_count"`
-	OrderEventCount        int                 `json:"order_event_count"`
-	BrokerStateSHA256      string              `json:"broker_state_sha256"`
-	BrokerSnapshotCount    int                 `json:"broker_snapshot_count"`
-	DBSHA256               string              `json:"db_sha256"`
-	SizeBytes              int64               `json:"size_bytes"`
-	ExpectedSnapshotSHA256 string              `json:"expected_snapshot_sha256"`
-	Encryption             BackupEncryption    `json:"encryption"`
-	VerificationReceipt    VerificationReceipt `json:"verification_receipt"`
+	FormatVersion             string              `json:"format_version"`
+	SchemaVersion             string              `json:"schema_version"`
+	CreatedAt                 string              `json:"created_at"`
+	SourceLedgerRevision      string              `json:"source_ledger_revision"`
+	OrderStateSHA256          string              `json:"order_state_sha256"`
+	OrderCount                int                 `json:"order_count"`
+	OrderEventCount           int                 `json:"order_event_count"`
+	BrokerStateSHA256         string              `json:"broker_state_sha256"`
+	BrokerSnapshotCount       int                 `json:"broker_snapshot_count"`
+	BrokerReconciliationCount int                 `json:"broker_reconciliation_count"`
+	DBSHA256                  string              `json:"db_sha256"`
+	SizeBytes                 int64               `json:"size_bytes"`
+	ExpectedSnapshotSHA256    string              `json:"expected_snapshot_sha256"`
+	Encryption                BackupEncryption    `json:"encryption"`
+	VerificationReceipt       VerificationReceipt `json:"verification_receipt"`
 }
 
 type BackupEncryption struct {
@@ -207,7 +208,7 @@ func openDB(path string) (*sql.DB, error) {
 	if path == "" {
 		return nil, errors.New("database path is required")
 	}
-	db, err := sql.Open("sqlite3", path+"?_busy_timeout=5000&_foreign_keys=on")
+	db, err := sql.Open("sqlite3", path+"?_busy_timeout=5000&_foreign_keys=on&_txlock=immediate")
 	if err != nil {
 		return nil, err
 	}
@@ -1044,7 +1045,8 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 		FormatVersion: "omni-folio-backup.v3", SchemaVersion: "omni-folio.sqlite.v3", CreatedAt: createdAt.Format(time.RFC3339Nano),
 		SourceLedgerRevision: revision(sourceRevision), OrderStateSHA256: sourceOrders.SHA256, OrderCount: sourceOrders.Orders,
 		OrderEventCount: sourceOrders.Events, BrokerStateSHA256: sourceBroker.SHA256, BrokerSnapshotCount: sourceBroker.Snapshots,
-		DBSHA256: dbSHA, SizeBytes: size, ExpectedSnapshotSHA256: snapshotSHA,
+		BrokerReconciliationCount: sourceBroker.Reconciliations,
+		DBSHA256:                  dbSHA, SizeBytes: size, ExpectedSnapshotSHA256: snapshotSHA,
 		Encryption: BackupEncryption{Encrypted: false, Algorithm: "none"},
 		VerificationReceipt: VerificationReceipt{
 			ReceiptID: id("backup_verification"), CandidateID: id("restore_candidate"), VerifiedAt: verifiedAt.Format(time.RFC3339Nano),
@@ -1131,7 +1133,7 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	if err := requireSchema(db); err != nil {
 		return fmt.Errorf("restore schema: %w", err)
 	}
-	for _, table := range []string{"order_idempotency", "order_events", "broker_snapshots"} {
+	for _, table := range []string{"order_idempotency", "order_events", "broker_snapshots", "broker_snapshot_reconciliations"} {
 		var strict int
 		if err := db.QueryRow(`SELECT strict FROM pragma_table_list WHERE schema='main' AND type='table' AND name=?`, table).Scan(&strict); err != nil {
 			return fmt.Errorf("restore order table %s: %w", table, err)
@@ -1151,6 +1153,8 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		{"order_events", []string{"provider_execution_ref"}, "u"},
 		{"broker_snapshots", []string{"snapshot_id"}, "u"},
 		{"broker_snapshots", []string{"provider", "environment", "exchange", "account_ref", "fetched_at"}, "u"},
+		{"broker_snapshot_reconciliations", []string{"reconciliation_id"}, "u"},
+		{"broker_snapshot_reconciliations", []string{"snapshot_id", "ledger_account_id", "ledger_revision"}, "u"},
 	} {
 		ok, err := hasUniqueIndex(db, unique.table, unique.columns, unique.origin)
 		if err != nil {
@@ -1160,7 +1164,7 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 			return fmt.Errorf("restore order table %s lacks required unique columns %s", unique.table, strings.Join(unique.columns, ","))
 		}
 	}
-	for _, table := range []string{"order_events", "broker_snapshots"} {
+	for _, table := range []string{"order_events", "broker_snapshots", "broker_snapshot_reconciliations"} {
 		var sequenceType string
 		var sequencePK, primaryKeyColumns, primaryKeyIndexes int
 		if err := db.QueryRow(`SELECT type, pk FROM pragma_table_info(?) WHERE name='sequence'`, table).Scan(&sequenceType, &sequencePK); err != nil {
@@ -1183,6 +1187,12 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	if foreignKeys != 1 || matchingForeignKeys != 1 {
 		return errors.New("restore order events lack the required order foreign key")
 	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM("table"='broker_snapshots' AND "from"='snapshot_id' AND "to"='snapshot_id'), 0) FROM pragma_foreign_key_list(?)`, "broker_snapshot_reconciliations").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore broker reconciliation foreign key: %w", err)
+	}
+	if foreignKeys != 1 || matchingForeignKeys != 1 {
+		return errors.New("restore broker reconciliations lack the required snapshot foreign key")
+	}
 	foreignKeyRows, err := db.Query(`PRAGMA foreign_key_check`)
 	if err != nil {
 		return err
@@ -1198,15 +1208,20 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	if err := foreignKeyRows.Close(); err != nil {
 		return err
 	}
-	required := map[string][2]string{
-		"order_idempotency_no_update": {"order_idempotency", "before update on order_idempotency"},
-		"order_idempotency_no_delete": {"order_idempotency", "before delete on order_idempotency"},
-		"order_events_no_update":      {"order_events", "before update on order_events"},
-		"order_events_no_delete":      {"order_events", "before delete on order_events"},
-		"broker_snapshots_no_update":  {"broker_snapshots", "before update on broker_snapshots"},
-		"broker_snapshots_no_delete":  {"broker_snapshots", "before delete on broker_snapshots"},
-		"events_no_update":            {"events", "before update on events"},
-		"events_no_delete":            {"events", "before delete on events"},
+	required := map[string]struct {
+		table     string
+		operation string
+	}{
+		"order_idempotency_no_update":               {"order_idempotency", "update"},
+		"order_idempotency_no_delete":               {"order_idempotency", "delete"},
+		"order_events_no_update":                    {"order_events", "update"},
+		"order_events_no_delete":                    {"order_events", "delete"},
+		"broker_snapshots_no_update":                {"broker_snapshots", "update"},
+		"broker_snapshots_no_delete":                {"broker_snapshots", "delete"},
+		"broker_snapshot_reconciliations_no_update": {"broker_snapshot_reconciliations", "update"},
+		"broker_snapshot_reconciliations_no_delete": {"broker_snapshot_reconciliations", "delete"},
+		"events_no_update":                          {"events", "update"},
+		"events_no_delete":                          {"events", "delete"},
 	}
 	rows, err := db.Query(`SELECT name, tbl_name, sql FROM sqlite_master WHERE type='trigger'`)
 	if err != nil {
@@ -1220,8 +1235,9 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		}
 		expected, ok := required[name]
 		normalized := strings.ToLower(strings.Join(strings.Fields(definition), " "))
-		if ok && expected[0] == table && strings.Contains(normalized, expected[1]) &&
-			strings.Contains(normalized, "raise(abort") && strings.Contains(normalized, table+" is insert-only") {
+		expectedSQL := fmt.Sprintf("create trigger %s before %s on %s begin select raise(abort, '%s is insert-only'); end",
+			name, expected.operation, expected.table, expected.table)
+		if ok && expected.table == table && normalized == expectedSQL {
 			delete(required, name)
 		}
 	}
@@ -1337,7 +1353,7 @@ func verifyManifest(path, goldenPath, manifestPath string) error {
 		return err
 	}
 	if manifest.BrokerStateSHA256 != broker.SHA256 || receipt.CandidateBrokerStateSHA256 != broker.SHA256 ||
-		manifest.BrokerSnapshotCount != broker.Snapshots {
+		manifest.BrokerSnapshotCount != broker.Snapshots || manifest.BrokerReconciliationCount != broker.Reconciliations {
 		return errors.New("backup broker recovery proof mismatch")
 	}
 	db, err := openExistingDB(path)

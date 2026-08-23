@@ -21,7 +21,7 @@
 - [x] G4E/K2A 내부 합성 주문 상태 로그: LIMIT/KRW/KRX, risk verdict ordering, durable unknown submit, 계좌 단위 신규 submit 차단, 알려진 주문 cancel 허용, 현재 schema/backup v3의 주문 로그 복구 증명
 - [x] G4F/K2B0 내부 합성 known-order reconciliation: 이미 ACK된 provider order ref만 완전한 execution lookup으로 원자 반영하고 lookup-only `SUBMIT_UNKNOWN` 결합 금지
 - [x] G4G/K2B1 내부 합성 `kt00009` 날짜 지정 체결 스캔: terminal pagination, 엄격한 주식/체결 정규화, date/account/environment 별도 alias, naive execution clock과 불완전성 보존
-- [x] G4H credential-free known-good broker snapshot: complete KRX snapshot만 SQLite에 원자 저장, replay/conflict, ledger revision별 종목 수량 diff, 실패 시 이전 known-good 보존, insert-only ledger와 schema/backup v3 복구 증명
+- [x] G4H credential-free known-good broker snapshot: complete KRX raw snapshot과 ledger revision별 reconciliation을 SQLite에 원자 저장, replay/conflict, 종목 수량 diff, 실패 시 이전 known-good 보존, insert-only ledger/broker state와 schema/backup v3 복구 증명
 - [ ] 키움 live/mock credential 검증, official timezone/freshness 관찰, known-good scheduling, credentialed ledger reconciliation
 - [ ] 실제 키움 OHLCV를 local chart contract에 연결, 기간 선택·평균단가·체결 marker와 physical accessibility/performance budget
 - [ ] K2B 키움 모의주문 broker submit/query transport, credentialed mock 관찰, 안전한 unknown-submit correlation, public route/UI, 실제 risk policy·fencing, 시장가·정정, 체결-원장 reconciliation

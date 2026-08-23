@@ -906,9 +906,9 @@ Still open for K2B: credentialed mock observations, authoritative empty/result/t
 G4H persists only the existing all-or-nothing synthetic Kiwoom account snapshot. It creates no broker runtime, scheduler, public route, Flutter capability or order authority.
 
 - `KiwoomSnapshot` now carries explicit `complete=true`; persistence revalidates provider/environment/exchange/account identity, canonical UTC and exact decimals, unique ascending KRX positions and open orders.
-- One SQLite transaction reads the current ledger revision and KRX/KRW quantities for `account-main`, computes deterministic per-symbol `broker - ledger` quantities with exact rational arithmetic, and inserts one canonical hash-bound record.
-- Exact replay returns the same record. A changed payload at the same fetched-at, incomplete snapshot, invalid generated ID or corrupt durable hash fails closed without replacing the latest fetched known-good record.
-- Migration v3 makes ledger events and broker snapshots insert-only. Backup v3 preserves existing order recovery proofs and adds broker-state digest/count, strict schema/index/rowid/trigger checks and restored latest-record verification.
-- TDD tests cover idempotency, conflicts, last-known-good retention, arithmetic, DB mutation attempts, runtime/recovery corruption rejection, manifest tampering and missing-trigger restore rejection.
+- One SQLite transaction reads the current ledger revision and KRX/KRW quantities for `account-main`, computes deterministic per-symbol `broker - ledger` quantities with exact rational arithmetic, and stores raw snapshot identity separately from the ledger-revision reconciliation record.
+- Exact replay of the same raw snapshot and ledger revision returns the same reconciliation. A later ledger revision appends a new reconciliation without duplicating or mutating the raw snapshot. A changed payload at the same fetched-at, incomplete snapshot, invalid generated ID or corrupt durable hash fails closed without replacing the latest fetched known-good record.
+- Migration v3 makes ledger events, broker snapshots and broker reconciliations insert-only. Backup v3 preserves existing order recovery proofs and adds broker-state digest/count, strict schema/index/rowid/trigger checks and restored latest-record verification.
+- TDD tests cover idempotency, concurrent replay, conflicts, last-known-good retention, arithmetic, DB mutation attempts, runtime/recovery corruption rejection, manifest tampering and weak-trigger restore rejection.
 
 Still open: credentialed Kiwoom observation, scheduled sync, official freshness/timezone/retention, cash/valuation/open-order/full execution reconciliation, known-good API/UI, risk reservations/kill switch/lease-fencing, paper runner and all live-money paths.

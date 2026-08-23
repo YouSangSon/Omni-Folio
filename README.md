@@ -133,14 +133,14 @@ K2B0는 속성·시간이 같은 주문이 보여도 주문번호 없는 `SUBMIT
 
 ### Credential-free known-good broker snapshot
 
-G4H는 기존 합성 `KiwoomSnapshot` 중 `complete=true`인 KRX snapshot만 Go 내부 SQLite에 원자 저장합니다. 같은 account/environment/exchange/fetched-at와 같은 payload는 같은 record를 반환하고, payload 충돌이나 불완전 snapshot은 이전 known-good를 바꾸지 않습니다. 저장 시점 ledger revision의 KRX/KRW 종목 수량과 broker 수량 차이를 exact decimal로 함께 고정합니다.
+G4H는 기존 합성 `KiwoomSnapshot` 중 `complete=true`인 KRX snapshot만 Go 내부 SQLite에 원자 저장합니다. 같은 account/environment/exchange/fetched-at와 같은 payload는 raw snapshot을 중복 저장하지 않고, ledger revision별 reconciliation record를 별도로 남깁니다. payload 충돌이나 불완전 snapshot은 이전 known-good를 바꾸지 않습니다. 저장 시점 ledger revision의 KRX/KRW 종목 수량과 broker 수량 차이를 exact decimal로 고정합니다.
 
 ```sh
 cd services/core
 go test -run '^TestG4H' -count=1 ./...
 ```
 
-schema/backup v3는 ledger event와 broker snapshot을 insert-only로 보호하고 주문·broker state digest/count와 replay 가능한 canonical record를 restore 후보에서 검증합니다. 이 leaf는 credential, broker request, scheduling, 공식 freshness/timezone, 현금·평가금액 reconciliation, public API/UI, risk approval 또는 live readiness를 증명하지 않습니다.
+schema/backup v3는 ledger event, raw broker snapshot, revisioned broker reconciliation을 insert-only로 보호하고 주문·broker state digest/count와 replay 가능한 canonical record를 restore 후보에서 검증합니다. 이 leaf는 credential, broker request, scheduling, 공식 freshness/timezone, 현금·평가금액 reconciliation, public API/UI, risk approval 또는 live readiness를 증명하지 않습니다.
 
 ### Research와 자동 개선
 

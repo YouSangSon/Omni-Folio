@@ -66,9 +66,9 @@
 #### G4H known-good snapshot persistence
 
 - 기존 credential-free 합성 `KiwoomSnapshot` 중 `complete=true`인 KRX/KRW 결과만 identity, canonical UTC/decimal, unique ascending position/open-order 계약을 다시 검증해 Go/SQLite에 저장한다.
-- 한 transaction에서 현재 ledger revision과 `account-main`의 KRX/KRW 종목 수량을 읽고 snapshot과 `broker - ledger` exact quantity diff를 함께 insert한다. 이는 비교 evidence이며 원장을 자동 보정하지 않는다.
-- 같은 fetched-at와 같은 payload replay는 같은 record를 반환한다. payload 충돌, 불완전 snapshot, 잘못된 generated ID는 전체 거절하고 최근 fetched-at의 known-good를 유지한다.
-- schema/backup v3는 ledger event와 broker snapshot을 insert-only로 보호하고 broker state digest/count, canonical row hash와 restore schema/trigger를 검증한다.
+- 한 transaction에서 현재 ledger revision과 `account-main`의 KRX/KRW 종목 수량을 읽고 raw snapshot과 `broker - ledger` exact quantity diff reconciliation을 분리 insert한다. 이는 비교 evidence이며 원장을 자동 보정하지 않는다.
+- 같은 fetched-at와 같은 payload는 raw snapshot을 중복 저장하지 않는다. 같은 raw snapshot·같은 ledger revision replay는 같은 reconciliation을 반환하고, ledger revision이 바뀌면 새 reconciliation만 append한다. payload 충돌, 불완전 snapshot, 잘못된 generated ID는 전체 거절하고 최근 fetched-at의 known-good를 유지한다.
+- schema/backup v3는 ledger event, broker snapshot, broker reconciliation을 insert-only로 보호하고 broker state digest/count, canonical row hash와 restore schema/trigger를 검증한다.
 - credential, 실제 broker request, scheduling, freshness/timezone, 현금·평가금액 reconciliation, public API/UI 또는 risk authority는 증명하지 않는다. 실행 증거는 [`../gates/g4h-kiwoom-known-good-snapshot.md`](../gates/g4h-kiwoom-known-good-snapshot.md)에 기록한다.
 
 ### K2A — 내부 합성 주문 상태 로그

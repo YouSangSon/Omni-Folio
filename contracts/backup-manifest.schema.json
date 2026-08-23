@@ -5,7 +5,7 @@
   "description": "CLI contract for a separately restored schema-v3 backup candidate. Schema validity never authorizes replacing the active DB: database, ledger snapshot, replayable order state, and known-good broker snapshot proofs must match and verification_receipt must be verified and eligible_for_activation before replacement.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["format_version", "schema_version", "created_at", "source_ledger_revision", "order_state_sha256", "order_count", "order_event_count", "broker_state_sha256", "broker_snapshot_count", "db_sha256", "size_bytes", "expected_snapshot_sha256", "encryption", "verification_receipt"],
+  "required": ["format_version", "schema_version", "created_at", "source_ledger_revision", "order_state_sha256", "order_count", "order_event_count", "broker_state_sha256", "broker_snapshot_count", "broker_reconciliation_count", "db_sha256", "size_bytes", "expected_snapshot_sha256", "encryption", "verification_receipt"],
   "properties": {
     "format_version": {
       "const": "omni-folio-backup.v3"
@@ -36,6 +36,11 @@
       "$ref": "#/$defs/sha256"
     },
     "broker_snapshot_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "broker_reconciliation_count": {
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991

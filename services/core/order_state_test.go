@@ -330,7 +330,7 @@ func TestSchemaMigratesV1ToV3AndReadinessRequiresV3(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM events WHERE event_id='preserved'`).Scan(&preserved); err != nil || preserved != 1 {
 		t.Fatalf("v1 data was not preserved: count=%d err=%v", preserved, err)
 	}
-	for _, table := range []string{"order_idempotency", "order_events", "broker_snapshots"} {
+	for _, table := range []string{"order_idempotency", "order_events", "broker_snapshots", "broker_snapshot_reconciliations"} {
 		var exists int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&exists); err != nil || exists != 1 {
 			t.Fatalf("migration did not create %s: exists=%d err=%v", table, exists, err)

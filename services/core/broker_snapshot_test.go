@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -23,7 +25,7 @@ func TestG4HKnownGoodSnapshotPersistsAndDiffsLedger(t *testing.T) {
 		{Symbol: "000660", BrokerQuantity: "2", LedgerQuantity: "0", Difference: "2", Match: false},
 		{Symbol: "005930", BrokerQuantity: "10", LedgerQuantity: "7", Difference: "3", Match: false},
 	}
-	if first.SnapshotID == "" || first.SnapshotSHA256 == "" || first.LedgerRevision != "rev_0000000002" ||
+	if first.SnapshotID == "" || first.ReconciliationID == "" || first.SnapshotSHA256 == "" || first.LedgerRevision != "rev_0000000002" ||
 		first.AllPositionsMatch || !reflect.DeepEqual(first.PositionDifferences, wantDiffs) {
 		t.Fatalf("unexpected reconciliation: %+v", first)
 	}
@@ -32,14 +34,39 @@ func TestG4HKnownGoodSnapshotPersistsAndDiffsLedger(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(first, replayed) {
 		t.Fatalf("idempotent replay changed result: first=%+v replay=%+v err=%v", first, replayed, err)
 	}
-	var count int
-	if err := svc.db.QueryRow(`SELECT COUNT(*) FROM broker_snapshots`).Scan(&count); err != nil || count != 1 {
-		t.Fatalf("replay created duplicate snapshots: count=%d err=%v", count, err)
+	var snapshots, reconciliations int
+	if err := svc.db.QueryRow(`SELECT COUNT(*) FROM broker_snapshots`).Scan(&snapshots); err != nil || snapshots != 1 {
+		t.Fatalf("replay created duplicate snapshots: count=%d err=%v", snapshots, err)
+	}
+	if err := svc.db.QueryRow(`SELECT COUNT(*) FROM broker_snapshot_reconciliations`).Scan(&reconciliations); err != nil || reconciliations != 1 {
+		t.Fatalf("replay created duplicate reconciliations: count=%d err=%v", reconciliations, err)
+	}
+
+	advanceKRXLedger(t, svc)
+	refreshed, err := svc.recordKiwoomSnapshot(ctx, "account-main", snapshot)
+	wantRefreshedDiffs := []BrokerPositionDifference{
+		{Symbol: "000660", BrokerQuantity: "2", LedgerQuantity: "0", Difference: "2", Match: false},
+		{Symbol: "005930", BrokerQuantity: "10", LedgerQuantity: "10", Difference: "0", Match: true},
+	}
+	if err != nil || refreshed.SnapshotID != first.SnapshotID || refreshed.ReconciliationID == first.ReconciliationID ||
+		refreshed.LedgerRevision != "rev_0000000003" || refreshed.AllPositionsMatch ||
+		!reflect.DeepEqual(refreshed.PositionDifferences, wantRefreshedDiffs) {
+		t.Fatalf("ledger revision did not create a fresh reconciliation: first=%+v refreshed=%+v err=%v", first, refreshed, err)
+	}
+	if err := svc.db.QueryRow(`SELECT COUNT(*) FROM broker_snapshots`).Scan(&snapshots); err != nil || snapshots != 1 {
+		t.Fatalf("ledger refresh duplicated raw snapshot: count=%d err=%v", snapshots, err)
+	}
+	if err := svc.db.QueryRow(`SELECT COUNT(*) FROM broker_snapshot_reconciliations`).Scan(&reconciliations); err != nil || reconciliations != 2 {
+		t.Fatalf("ledger refresh did not append reconciliation: count=%d err=%v", reconciliations, err)
+	}
+	replayed, err = svc.recordKiwoomSnapshot(ctx, "account-main", snapshot)
+	if err != nil || !reflect.DeepEqual(refreshed, replayed) {
+		t.Fatalf("same snapshot and ledger revision changed result: refreshed=%+v replay=%+v err=%v", refreshed, replayed, err)
 	}
 
 	latest, err := svc.latestKiwoomSnapshot(ctx, KiwoomMock, KiwoomKRX, snapshot.AccountRef)
-	if err != nil || !reflect.DeepEqual(first, latest) {
-		t.Fatalf("latest known-good snapshot differs: got=%+v err=%v", latest, err)
+	if err != nil || !reflect.DeepEqual(refreshed, latest) {
+		t.Fatalf("latest known-good reconciliation differs: got=%+v err=%v", latest, err)
 	}
 
 	conflict := *snapshot
@@ -61,8 +88,51 @@ func TestG4HKnownGoodSnapshotPersistsAndDiffsLedger(t *testing.T) {
 		t.Fatal("snapshot with an invalid generated ID was persisted")
 	}
 	latest, err = svc.latestKiwoomSnapshot(ctx, KiwoomMock, KiwoomKRX, snapshot.AccountRef)
-	if err != nil || !reflect.DeepEqual(first, latest) {
+	if err != nil || !reflect.DeepEqual(refreshed, latest) {
 		t.Fatalf("failed sync replaced last known-good: got=%+v err=%v", latest, err)
+	}
+	if err := svc.db.QueryRow(`SELECT COUNT(*) FROM broker_snapshots`).Scan(&snapshots); err != nil || snapshots != 1 {
+		t.Fatalf("failed sync mutated raw snapshots: count=%d err=%v", snapshots, err)
+	}
+	if err := svc.db.QueryRow(`SELECT COUNT(*) FROM broker_snapshot_reconciliations`).Scan(&reconciliations); err != nil || reconciliations != 2 {
+		t.Fatalf("failed sync mutated reconciliations: count=%d err=%v", reconciliations, err)
+	}
+}
+
+func TestG4HConcurrentReplayAcrossSQLiteHandles(t *testing.T) {
+	svc, path := testService(t, nil, nil)
+	seedKRXLedger(t, svc)
+	secondDB, err := openExistingDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = secondDB.Close() })
+	second := newService(secondDB, func() time.Time { return mustTime("2026-01-10T15:01:01Z") }, func(prefix string) string { return prefix + "_parallel_second" })
+	snapshot := g4hSnapshot("2026-01-10T15:00:59Z")
+
+	start := make(chan struct{})
+	results := make([]*BrokerKnownGoodSnapshot, 2)
+	errs := make([]error, 2)
+	var wg sync.WaitGroup
+	for i, service := range []*Service{svc, second} {
+		wg.Add(1)
+		go func(index int, service *Service) {
+			defer wg.Done()
+			<-start
+			results[index], errs[index] = service.recordKiwoomSnapshot(context.Background(), "account-main", snapshot)
+		}(i, service)
+	}
+	close(start)
+	wg.Wait()
+	if errs[0] != nil || errs[1] != nil || !reflect.DeepEqual(results[0], results[1]) {
+		t.Fatalf("concurrent replay diverged: first=%+v second=%+v errors=%v", results[0], results[1], errs)
+	}
+	var snapshots, reconciliations int
+	if err := svc.db.QueryRow(`SELECT COUNT(*) FROM broker_snapshots`).Scan(&snapshots); err != nil || snapshots != 1 {
+		t.Fatalf("concurrent replay duplicated snapshots: count=%d err=%v", snapshots, err)
+	}
+	if err := svc.db.QueryRow(`SELECT COUNT(*) FROM broker_snapshot_reconciliations`).Scan(&reconciliations); err != nil || reconciliations != 1 {
+		t.Fatalf("concurrent replay duplicated reconciliations: count=%d err=%v", reconciliations, err)
 	}
 }
 
@@ -76,6 +146,8 @@ func TestG4HSnapshotRowsAndLedgerEventsAreInsertOnly(t *testing.T) {
 	for _, statement := range []string{
 		`UPDATE broker_snapshots SET snapshot_id=snapshot_id WHERE snapshot_id='` + stored.SnapshotID + `'`,
 		`DELETE FROM broker_snapshots WHERE snapshot_id='` + stored.SnapshotID + `'`,
+		`UPDATE broker_snapshot_reconciliations SET reconciliation_id=reconciliation_id WHERE reconciliation_id='` + stored.ReconciliationID + `'`,
+		`DELETE FROM broker_snapshot_reconciliations WHERE reconciliation_id='` + stored.ReconciliationID + `'`,
 		`UPDATE events SET event_id=event_id WHERE account_id='account-main'`,
 		`DELETE FROM events WHERE account_id='account-main'`,
 	} {
@@ -86,10 +158,10 @@ func TestG4HSnapshotRowsAndLedgerEventsAreInsertOnly(t *testing.T) {
 	if _, err := proveBrokerRecovery(context.Background(), svc.db); err != nil {
 		t.Fatal("insert-only checks damaged broker recovery:", err)
 	}
-	if _, err := svc.db.Exec(`DROP TRIGGER broker_snapshots_no_update`); err != nil {
+	if _, err := svc.db.Exec(`DROP TRIGGER broker_snapshot_reconciliations_no_update`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.db.Exec(`UPDATE broker_snapshots SET record_sha256=? WHERE snapshot_id=?`, strings.Repeat("0", 64), stored.SnapshotID); err != nil {
+	if _, err := svc.db.Exec(`UPDATE broker_snapshot_reconciliations SET record_sha256=? WHERE reconciliation_id=?`, strings.Repeat("0", 64), stored.ReconciliationID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.latestKiwoomSnapshot(context.Background(), KiwoomMock, KiwoomKRX, stored.AccountRef); err == nil {
@@ -118,7 +190,7 @@ func TestG4HBackupRestoresBrokerSnapshotProof(t *testing.T) {
 		t.Fatal(err)
 	}
 	if manifest.FormatVersion != "omni-folio-backup.v3" || manifest.SchemaVersion != "omni-folio.sqlite.v3" ||
-		manifest.BrokerSnapshotCount != 1 || manifest.BrokerStateSHA256 == "" ||
+		manifest.BrokerSnapshotCount != 1 || manifest.BrokerReconciliationCount != 1 || manifest.BrokerStateSHA256 == "" ||
 		manifest.VerificationReceipt.BrokerStateCheck != "ok" ||
 		manifest.VerificationReceipt.CandidateBrokerStateSHA256 != manifest.BrokerStateSHA256 {
 		t.Fatalf("backup omitted broker snapshot recovery proof: %+v", manifest)
@@ -149,7 +221,12 @@ func TestG4HBackupRestoresBrokerSnapshotProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := candidate.Exec(`DROP TRIGGER broker_snapshots_no_delete`); err != nil {
+	if _, err := candidate.Exec(`DROP TRIGGER broker_snapshot_reconciliations_no_delete`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := candidate.Exec(`CREATE TRIGGER broker_snapshot_reconciliations_no_delete
+		BEFORE DELETE ON broker_snapshot_reconciliations WHEN 0
+		BEGIN SELECT RAISE(ABORT, 'broker_snapshot_reconciliations is insert-only'); END`); err != nil {
 		t.Fatal(err)
 	}
 	if err := candidate.Close(); err != nil {
@@ -170,11 +247,79 @@ func TestG4HBrokerRecoveryRejectsCorruptRows(t *testing.T) {
 	if _, err := svc.db.Exec(`DROP TRIGGER broker_snapshots_no_update`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.db.Exec(`UPDATE broker_snapshots SET record_sha256=? WHERE snapshot_id=?`, strings.Repeat("0", 64), stored.SnapshotID); err != nil {
+	if _, err := svc.db.Exec(`UPDATE broker_snapshots SET snapshot_sha256=? WHERE snapshot_id=?`, strings.Repeat("0", 64), stored.SnapshotID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := proveBrokerRecovery(context.Background(), svc.db); err == nil {
 		t.Fatal("broker snapshot with a mismatched durable hash was certified")
+	}
+}
+
+func TestG4HLatestRejectsReconciliationMetadataMismatch(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	seedKRXLedger(t, svc)
+	stored, err := svc.recordKiwoomSnapshot(context.Background(), "account-main", g4hSnapshot("2026-01-10T15:00:59Z"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.db.Exec(`DROP TRIGGER broker_snapshot_reconciliations_no_update`); err != nil {
+		t.Fatal(err)
+	}
+	var raw string
+	if err := svc.db.QueryRow(`SELECT record_json FROM broker_snapshot_reconciliations WHERE reconciliation_id=?`, stored.ReconciliationID).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var record brokerReconciliationRecord
+	if err := json.Unmarshal([]byte(raw), &record); err != nil {
+		t.Fatal(err)
+	}
+	record.SnapshotID = "broker_snapshot_different"
+	encoded, hash, err := orderJSONHash(&record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.db.Exec(`UPDATE broker_snapshot_reconciliations SET record_sha256=?,record_json=? WHERE reconciliation_id=?`, hash, string(encoded), stored.ReconciliationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.latestKiwoomSnapshot(context.Background(), KiwoomMock, KiwoomKRX, stored.AccountRef); err == nil {
+		t.Fatal("latest snapshot accepted reconciliation JSON bound to another snapshot")
+	}
+}
+
+func TestG4HBrokerRecoveryRejectsSnapshotWithoutReconciliation(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	seedKRXLedger(t, svc)
+	stored, err := svc.recordKiwoomSnapshot(context.Background(), "account-main", g4hSnapshot("2026-01-10T15:00:59Z"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.db.Exec(`DROP TRIGGER broker_snapshot_reconciliations_no_delete`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.db.Exec(`DELETE FROM broker_snapshot_reconciliations WHERE reconciliation_id=?`, stored.ReconciliationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := proveBrokerRecovery(context.Background(), svc.db); err == nil {
+		t.Fatal("broker recovery certified a snapshot without reconciliation evidence")
+	}
+}
+
+func advanceKRXLedger(t *testing.T, svc *Service) {
+	t.Helper()
+	tx, err := svc.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT INTO events(event_id,source_event_id,account_id,type,occurred_at,instrument_id,symbol,quantity,price,fee,currency,amount,receipt_id,recorded_at)
+		VALUES('g4h-buy-more','buy-005930-more','account-main','BUY','2026-01-03T00:00:00Z','instrument_005930','005930','3','1000','0','KRW','-3000','g4h-receipt-2','2026-01-10T15:00:30Z')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`UPDATE ledger_meta SET revision=3,recorded_at='2026-01-10T15:00:30Z' WHERE singleton=1`); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
 	}
 }
 
