@@ -1,0 +1,27 @@
+.DS_Store
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+secrets/
+
+# Local financial data and SQLite runtime files
+data/
+backups/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+coverage/
