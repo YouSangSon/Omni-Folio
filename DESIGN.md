@@ -4,7 +4,9 @@ This is the product-facing design contract for the Flutter client. [`design-syst
 
 ## Direction
 
-Omni Folio is a personal multi-broker portfolio app, not a marketing site or trading terminal. The experience is mobile-first, dense-but-calm, and trust-first: before performance, show whether the data is fresh, complete, and recoverable. Flutter is the single client for iOS, Android, and app-centric web; the earlier React/PWA recommendation is superseded.
+Omni Folio is a personal multi-broker portfolio app, not a marketing site or trading terminal. The experience is mobile-first, calm, and trust-first: before performance, show whether the data is fresh, complete, and recoverable. Flutter is the single client for iOS, Android, and app-centric web; the earlier React/PWA recommendation is superseded.
+
+The interaction model is Toss-inspired, not a copy of Toss Securities. Use plain language, one primary decision per screen, strong numeric hierarchy, progressive disclosure, and the same mental model for Korean and US stocks. Do not copy Toss trade dress, brand assets, exact layouts, or motion. Kiwoom is the first execution provider and Toss Securities is the second planned provider; provider-specific TR codes and raw errors stay out of the primary UI.
 
 Use Noto Sans KR or the platform system sans-serif, tabular figures for financial values, and light/dark themes with semantic tokens. Never use Caveat, Quicksand, scroll storytelling, hover-only affordances, or animation needed to understand data.
 
@@ -18,7 +20,7 @@ Data           broker connections → export → backup/restore
 Contextual     order review, chart detail, settings
 ```
 
-Mobile has four persistent destinations: Overview, Holdings, Activity, Data. Desktop may render the same hierarchy in a sidebar. Do not show disabled future features merely to advertise them.
+Mobile has four persistent destinations: Home, Holdings, History, Connections. Desktop may render the same hierarchy in a sidebar. Do not show disabled future features merely to advertise them. Use user language first and place ledger revisions, provider request IDs, and raw diagnostics behind a details action.
 
 ## Required screens
 

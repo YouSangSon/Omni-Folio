@@ -5,19 +5,20 @@ Flutter app UI의 기본 계약이다. 페이지별 문서는 이 계약을 좁�
 ## Product posture
 
 - Mobile-first, trust-first: 수익보다 데이터 freshness, 오류 범위, 복구 행동을 먼저 보인다.
-- Dense-but-calm: 작은 화면에서는 한 가지 결정을 위한 정보만, 넓은 화면에서는 같은 정보의 표·차트 병치를 제공한다.
+- Calm and progressive: 작은 화면에서는 한 가지 결정을 위한 정보만, 넓은 화면에서는 같은 정보의 표·차트 병치를 제공한다.
+- Toss-inspired, not copied: 쉬운 말, 강한 숫자 위계, 점진적 상세 공개와 짧은 주문 확인 흐름을 쓰되 브랜드·화면·motion을 복제하지 않는다.
 - Flutter iOS/Android/app-centric web의 동일한 semantic token과 widget state를 사용한다.
 
 ## Semantic tokens
 
 | Token | Light | Dark | Purpose |
 |---|---|---|---|
-| `surface.canvas` | `#F8FAFC` | `#0F172A` | page background |
-| `surface.raised` | `#FFFFFF` | `#162033` | cards, sheets |
-| `content.primary` | `#0F172A` | `#F8FAFC` | primary text |
-| `content.secondary` | `#475569` | `#CBD5E1` | metadata |
-| `border.subtle` | `#CBD5E1` | `#334155` | grouping |
-| `action.primary` | `#1D4ED8` | `#60A5FA` | primary action/focus |
+| `surface.canvas` | `#F2F4F6` | `#17171C` | page background |
+| `surface.raised` | `#FFFFFF` | `#202027` | cards, sheets |
+| `content.primary` | `#191F28` | `#F2F4F6` | primary text |
+| `content.secondary` | `#6B7684` | `#B0B8C1` | metadata |
+| `border.subtle` | `#D1D6DB` | `#3A3A43` | grouping |
+| `action.primary` | `#2563EB` | `#60A5FA` | primary action/focus |
 | `status.positive` | `#047857` | `#34D399` | gain/healthy |
 | `status.negative` | `#B91C1C` | `#FCA5A5` | loss/blocking |
 | `status.warning` | `#A16207` | `#FCD34D` | stale/attention |
@@ -30,14 +31,14 @@ Status color never carries meaning alone: include sign, text, icon, and where re
 - Font: Noto Sans KR when bundled/available; otherwise platform system sans-serif. No Caveat or Quicksand.
 - Numbers: use tabular figures for price, quantity, percentage, date/time, and all ledger columns.
 - Type scale: 12 metadata, 14 body, 16 control, 20 section, 28 portfolio value. Default body/control text is at least 16 logical px.
-- Spacing scale: 4, 8, 12, 16, 24, 32. Radius: 8 controls, 12 cards/sheets. Use border and surface contrast before elevation; no decorative shadows.
+- Spacing scale: 4, 8, 12, 16, 24, 32. Radius: 12 controls, 16 cards/sheets. Use surface contrast and only necessary borders before elevation; no decorative shadows.
 - Targets are at least 48×48 logical px, which also clears the 44pt iOS floor. Touch, mouse, keyboard, and assistive-technology activation must reach the same action; hover may supplement but never reveal required information or controls.
 - Visible focus, logical focus order, semantic labels, screen-reader summary for charts, 200% text zoom, and reduced motion are release requirements.
 - Motion is optional feedback only: no scroll narrative, auto-play, layout shift, or animation needed to understand data. `reduce motion` renders the final state immediately.
 
 ## Navigation and screen states
 
-Mobile uses a bottom navigation for Overview, Holdings, Activity, and Data. Desktop may use a sidebar with the same destinations. Asset detail, import review, and order review are contextual routes; an unavailable capability is not shown as a teaser.
+Mobile uses a bottom navigation for Home, Holdings, History, and Connections. Desktop may use a sidebar with the same destinations. Asset detail, import review, and order review are contextual routes; an unavailable capability is not shown as a teaser.
 
 | Screen | First question answered | Required content |
 |---|---|---|
