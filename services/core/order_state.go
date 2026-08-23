@@ -226,16 +226,26 @@ func (s *Service) appendOrderEvent(ctx context.Context, event OrderEvent) (*Orde
 	if err := validateOrderEvent(event); err != nil {
 		return nil, err
 	}
-	eventJSON, eventSHA, err := orderJSONHash(event)
-	if err != nil {
-		return nil, err
-	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
+	next, err := appendOrderEventTx(ctx, tx, event, s.now().UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return next, nil
+}
 
+func appendOrderEventTx(ctx context.Context, tx *sql.Tx, event OrderEvent, recordedAt string) (*OrderState, error) {
+	eventJSON, eventSHA, err := orderJSONHash(event)
+	if err != nil {
+		return nil, err
+	}
 	var priorSHA string
 	err = tx.QueryRowContext(ctx, `SELECT event_sha256 FROM order_events WHERE event_id=?`, event.EventID).Scan(&priorSHA)
 	if err == nil {
@@ -293,12 +303,8 @@ func (s *Service) appendOrderEvent(ctx context.Context, event OrderEvent) (*Orde
 	if err != nil {
 		return nil, err
 	}
-	recordedAt := s.now().UTC().Format(time.RFC3339Nano)
 	if _, err := tx.ExecContext(ctx, `INSERT INTO order_events(event_id,event_sha256,order_id,event_type,source,provider_order_ref,provider_execution_ref,event_json,recorded_at) VALUES(?,?,?,?,?,?,?,?,?)`,
 		event.EventID, eventSHA, event.OrderID, event.Type, event.Source, nullable(event.ProviderOrderRef), nullable(event.ProviderExecutionRef), string(eventJSON), recordedAt); err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return next, nil
@@ -309,16 +315,9 @@ func (s *Service) loadOrderState(ctx context.Context, orderID string) (*OrderSta
 }
 
 func loadOrderStateFrom(ctx context.Context, q orderQuerier, orderID string) (*OrderState, error) {
-	var intentJSON string
-	if err := q.QueryRowContext(ctx, `SELECT intent_json FROM order_idempotency WHERE order_id=?`, orderID).Scan(&intentJSON); err != nil {
+	intent, err := loadOrderIntentFrom(ctx, q, orderID)
+	if err != nil {
 		return nil, err
-	}
-	var intent OrderIntent
-	if err := json.Unmarshal([]byte(intentJSON), &intent); err != nil {
-		return nil, err
-	}
-	if err := validateOrderIntent(intent); err != nil {
-		return nil, fmt.Errorf("stored order intent is invalid: %w", err)
 	}
 	state := newOrderState(orderID, intent)
 	rows, err := q.QueryContext(ctx, `SELECT event_json FROM order_events WHERE order_id=? ORDER BY sequence`, orderID)
@@ -355,6 +354,21 @@ func loadOrderStateFrom(ctx context.Context, q orderQuerier, orderID string) (*O
 		return nil, errors.New("order has no recorded intent event")
 	}
 	return state, nil
+}
+
+func loadOrderIntentFrom(ctx context.Context, q orderQuerier, orderID string) (OrderIntent, error) {
+	var intentJSON string
+	if err := q.QueryRowContext(ctx, `SELECT intent_json FROM order_idempotency WHERE order_id=?`, orderID).Scan(&intentJSON); err != nil {
+		return OrderIntent{}, err
+	}
+	var intent OrderIntent
+	if err := json.Unmarshal([]byte(intentJSON), &intent); err != nil {
+		return OrderIntent{}, err
+	}
+	if err := validateOrderIntent(intent); err != nil {
+		return OrderIntent{}, fmt.Errorf("stored order intent is invalid: %w", err)
+	}
+	return intent, nil
 }
 
 func newOrderState(orderID string, intent OrderIntent) *OrderState {
