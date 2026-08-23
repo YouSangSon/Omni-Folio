@@ -37,6 +37,7 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 - 실전 주문은 절대 자동 활성화하지 않는다. 모의투자 검증, 체결-원장 reconciliation, 실패 복구, 사용자 명시 승인 전에는 비활성 상태로 유지한다.
 - 자동매매는 `Universe → Signal/Alpha → PortfolioTarget → RiskAdjustedTarget → OrderIntent → Execution` 단계로 분리한다. 전략은 브로커 주문을 직접 만들거나 전송하지 않는다.
 - 백테스트 결과를 실전 기대수익으로 표시하지 않는다. 슬리피지, 수수료, 세금, 체결 지연, 데이터 지연, survivorship/lookahead bias를 검증 항목으로 둔다.
+- sample·synthetic·fixture 시장 데이터는 API의 machine-readable provenance와 화면의 명시적 문구로 실시간이 아님을 표시한다. 이를 live/current 데이터와 조용히 혼합하거나 실제 broker·market-data 증거로 계산하지 않는다.
 - 자동 개선은 versioned 전략과 선언된 유한 파라미터 공간만 탐색한다. 실행 중인 전략 소스의 자기 수정, `eval`/동적 코드 실행, LLM이 만든 코드를 검증 없이 실행하는 방식은 사용하지 않는다.
 - 각 실험은 불변 데이터 snapshot과 비용·지연 모델에서 시계열 순서를 보존한 train/validation/test 및 walk-forward 평가를 수행하고, 전략·파라미터·데이터·엔진·평가정책 버전과 산출물 hash를 남긴다.
 - 후보 선택은 단일 최고 수익률이 아니라 비용 후 수익, 최대 낙폭, 거래 수, turnover/capacity, 구간·시장 국면별 안정성, 기존 champion 대비 개선을 함께 본다. 반복 탐색으로 test set에 과적합하지 않도록 실험 예산과 최종 holdout을 분리한다.

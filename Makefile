@@ -15,6 +15,7 @@ FLUTTER_WEB_HOST ?= localhost
 FLUTTER_WEB_PORT ?= 8081
 WEB_ORIGIN ?= http://$(FLUTTER_WEB_HOST):$(FLUTTER_WEB_PORT)
 RESEARCH_PYTHONPATH ?= $(ROOT)/services/research
+MARKET_FIXTURE ?= $(ROOT)/contracts/fixtures/market-bars.csv
 
 .PHONY: bootstrap format format-check lint test contract-check check run-core run-client run-research run-improvement smoke
 
@@ -50,7 +51,7 @@ check: format-check lint test contract-check
 run-core:
 	mkdir -p "$(dir $(DB_PATH))"
 	cd services/core && "$(GO)" run . migrate -db "$(DB_PATH)"
-	cd services/core && "$(GO)" run . serve -db "$(DB_PATH)" -addr "$(CORE_ADDR)" -allow-origin "$(WEB_ORIGIN)"
+	cd services/core && "$(GO)" run . serve -db "$(DB_PATH)" -addr "$(CORE_ADDR)" -allow-origin "$(WEB_ORIGIN)" -market-fixture "$(MARKET_FIXTURE)"
 
 run-client:
 	cd apps/client && "$(FLUTTER)" run -d "$(FLUTTER_DEVICE)" --web-hostname "$(FLUTTER_WEB_HOST)" --web-port "$(FLUTTER_WEB_PORT)" --dart-define=OMNI_API_URL="$(API_URL)"
@@ -79,7 +80,7 @@ smoke:
 	log="$$smoke_dir/core.log"; \
 	(cd services/core && "$(GO)" build -o "$$bin" .); \
 	"$$bin" migrate -db "$$db"; \
-	"$$bin" serve -db "$$db" -addr 127.0.0.1:18080 >"$$log" 2>&1 & \
+	"$$bin" serve -db "$$db" -addr 127.0.0.1:18080 -market-fixture "$(MARKET_FIXTURE)" >"$$log" 2>&1 & \
 	pid=$$!; \
 	ready=0; \
 	for _ in $$(seq 1 30); do \
@@ -96,4 +97,6 @@ smoke:
 	"$(PYTHON)" -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["applied_rows"] == 3 and d["ledger_revision_after"] == "rev_0000000003"' "$$apply_json"; \
 	snapshot_json="$$(curl --fail --silent http://127.0.0.1:18080/v1/portfolio/snapshot)"; \
 	"$(PYTHON)" -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["ledger_revision"] == "rev_0000000003" and d["live_enabled"] is False and d["cash"][0]["amount"] == "778"' "$$snapshot_json"; \
-	printf '%s\n' 'smoke: health, status, preview, apply, snapshot OK'
+	market_json="$$(curl --fail --silent 'http://127.0.0.1:18080/v1/market-data/candles?symbol=AAPL&interval=1d')"; \
+	"$(PYTHON)" -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["symbol"] == "AAPL" and d["source"] == "local_fixture" and d["sample"] is True and d["state"] == "stale" and d["issues"][0]["code"] == "sample_data" and len(d["bars"]) == 6 and d["bars"][0]["open"] == "10" and d["bars"][-1]["close"] == "16"' "$$market_json"; \
+	printf '%s\n' 'smoke: health, status, preview, apply, snapshot, market data OK'

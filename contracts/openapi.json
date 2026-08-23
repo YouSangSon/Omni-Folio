@@ -3,7 +3,7 @@
   "info": {
     "title": "Omni-Folio Core API",
     "version": "0.1.0",
-    "description": "Minimal cross-runtime contract for trust status, CSV import, and the deterministic portfolio snapshot. JSON decimals are canonical strings; IDs are opaque strings."
+    "description": "Minimal cross-runtime contract for trust status, CSV import, deterministic portfolio snapshots, and explicitly labeled sample market data. JSON decimals are canonical strings; IDs are opaque strings."
   },
   "paths": {
     "/healthz": {
@@ -93,6 +93,70 @@
                       "issues": []
                     }
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/market-data/candles": {
+      "get": {
+        "operationId": "getMarketDataCandles",
+        "description": "Returns explicitly configured local-fixture OHLCV data only. It never represents live or broker data. symbol and interval must each appear exactly once; unknown query parameters are rejected.",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "required": true,
+            "schema": {"type": "string", "minLength": 1}
+          },
+          {
+            "name": "interval",
+            "in": "query",
+            "required": true,
+            "schema": {"type": "string", "minLength": 1}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Local sample bars. source=local_fixture, sample=true, and state=stale are contractual disclosures, not live-market freshness claims.",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/LocalFixtureMarketDataCandles"}
+              }
+            }
+          },
+          "400": {"$ref": "#/components/responses/BadRequest"},
+          "404": {
+            "description": "The configured local fixture has no matching symbol and interval.",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Error"},
+                "examples": {
+                  "market_data_not_found": {"value": {"code": "market_data_not_found", "message": "market data was not found"}}
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The configured market-data adapter violated the normalized-series contract.",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Error"},
+                "examples": {
+                  "internal_error": {"value": {"code": "internal_error", "message": "internal server error"}}
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No market-data fixture was configured at service startup.",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Error"},
+                "examples": {
+                  "market_data_unavailable": {"value": {"code": "market_data_unavailable", "message": "market data is unavailable"}}
                 }
               }
             }
@@ -292,6 +356,60 @@
             }
           }
         }
+      },
+      "MarketDataCandle": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["at", "open", "high", "low", "close", "volume"],
+        "properties": {
+          "at": {"type": "string", "format": "date-time"},
+          "open": {"$ref": "#/components/schemas/Decimal"},
+          "high": {"$ref": "#/components/schemas/Decimal"},
+          "low": {"$ref": "#/components/schemas/Decimal"},
+          "close": {"$ref": "#/components/schemas/Decimal"},
+          "volume": {"$ref": "#/components/schemas/Decimal"}
+        }
+      },
+      "MarketDataCandles": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["symbol", "venue", "timezone", "interval", "source", "sample", "state", "source_as_of", "fetched_at", "issues", "bars"],
+        "properties": {
+          "symbol": {"type": "string", "minLength": 1},
+          "venue": {"type": "string", "minLength": 1},
+          "timezone": {"type": "string", "minLength": 1},
+          "interval": {"type": "string", "minLength": 1},
+          "source": {"type": "string", "minLength": 1},
+          "sample": {"type": "boolean"},
+          "state": {"type": "string", "enum": ["empty", "partial", "stale", "success"]},
+          "source_as_of": {"type": ["string", "null"], "format": "date-time"},
+          "fetched_at": {"type": "string", "format": "date-time"},
+          "issues": {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/Error"}
+          },
+          "bars": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {"$ref": "#/components/schemas/MarketDataCandle"}
+          }
+        }
+      },
+      "LocalFixtureMarketDataCandles": {
+        "allOf": [
+          {"$ref": "#/components/schemas/MarketDataCandles"},
+          {
+            "type": "object",
+            "properties": {
+              "source": {"const": "local_fixture"},
+              "sample": {"const": true},
+              "state": {"const": "stale"},
+              "source_as_of": {"type": "string", "format": "date-time"},
+              "issues": {"type": "array", "minItems": 1, "items": {"$ref": "#/components/schemas/Error"}},
+              "bars": {"type": "array", "minItems": 1, "maxItems": 500, "items": {"$ref": "#/components/schemas/MarketDataCandle"}}
+            }
+          }
+        ]
       },
       "Error": {
         "type": "object",

@@ -7,6 +7,7 @@ import 'models.dart';
 abstract interface class OmniApi {
   Future<ServiceStatus> status();
   Future<PortfolioSnapshot> snapshot();
+  Future<MarketCandles> candles(String symbol);
   Future<ImportPreview> preview(String csv);
   Future<ApplyReceipt> apply(String previewId, String idempotencyKey);
 }
@@ -33,6 +34,10 @@ class RestOmniApi implements OmniApi {
   final String baseUrl;
 
   Uri _uri(String path) => Uri.parse('$baseUrl$path');
+
+  Uri _marketCandlesUri(String symbol) => _uri(
+    '/v1/market-data/candles',
+  ).replace(queryParameters: {'symbol': symbol, 'interval': '1d'});
 
   Future<Json> _get(String path) async {
     try {
@@ -85,6 +90,22 @@ class RestOmniApi implements OmniApi {
   @override
   Future<PortfolioSnapshot> snapshot() async =>
       PortfolioSnapshot.fromJson(await _get('/v1/portfolio/snapshot'));
+
+  @override
+  Future<MarketCandles> candles(String symbol) async {
+    if (symbol.isEmpty) throw const ApiException('종목 코드가 필요합니다.');
+    try {
+      final response = await _client.get(_marketCandlesUri(symbol));
+      final candles = MarketCandles.fromJson(_object(response));
+      if (candles.symbol != symbol || candles.interval != '1d') {
+        throw const FormatException('Market response does not match request');
+      }
+      return candles;
+    } catch (error) {
+      if (error is ApiException || error is FormatException) rethrow;
+      throw const ApiException(apiConnectionError);
+    }
+  }
 
   @override
   Future<ImportPreview> preview(String csv) async {

@@ -825,3 +825,17 @@ A를 먼저 고정한 뒤 B/C/D를 병렬로 실행하고 E가 실제 명령을 
 미해결 제품·아키텍처·구현 결정은 없다. 다음 작업은 결정이 아니라 [`gates/g4-broker.md`](../gates/g4-broker.md)의 키움 read-only 실행과 G2의 남은 수동 release evidence다. 실전 주문, credential 등록, 외부 배포와 push는 이 보고서로 승인되지 않는다.
 
 NO UNRESOLVED DECISIONS
+
+## 2026-08-24 G4B continuation: local sample OHLCV contract and chart
+
+The next product leaf was chosen as a credential-free provider-neutral OHLCV vertical slice before real Kiwoom candle transport. This fixes the consumer contract without guessing provider pagination, timezone, adjustment, minute-unit, or realtime semantics. The earlier Phase A statements that charts and broker work were out of scope remain historical scope records; this continuation supersedes them for G4B only.
+
+- Go exposes `GET /v1/market-data/candles?symbol=AAPL&interval=1d` only when an explicit local fixture path is configured. Absent data fails with `503`; unknown series with `404`; malformed, oversized, unordered, inconsistent, or non-canonical data fails at startup.
+- OpenAPI separates a provider-neutral `MarketDataCandles` state contract from the local-fixture response subtype. The local endpoint always reports `source=local_fixture`, `sample=true`, `state=stale` and a non-live issue.
+- Flutter opens asset detail from holdings and renders a horizontally scrollable static price/volume candle surface using native `CustomPainter`. Exact values stay strings; doubles are limited to finite paint geometry. The text alternative is a horizontally scrollable, vertically lazy 500-row surface with header and cell semantics.
+- Sample provenance is visible and machine-readable. Fixture values cannot count as current prices, broker evidence, reconciliation, strategy promotion data, or live readiness.
+- `make check`, `make smoke`, Go race, Flutter web/Android/iOS release builds, and 17 Flutter tests pass locally. No runtime dependency was added.
+
+The first 500-row table implementation failed the emulator raster budget at `22.446 ms` p95. After lazy-row optimization and a harness assertion that proves bidirectional table scrolling, two metadata-complete Flutter 3.47.1 Android 16/API 36 emulator runs recorded 727 frames at build/raster/total-span `0.928/5.749/10.698 ms` and 728 frames at `1.158/16.623/20.632 ms`. The build and raster phases pass the 16.67 ms budget in both runs. Physical Android/iOS profile and manual VoiceOver/TalkBack remain open; emulator variance is not release proof.
+
+Deliberately deferred: real Kiwoom OHLCV/realtime, period switching, portfolio performance, average-cost and fill markers, cache/persistence, chart package, and broker-specific UI branches. Add them only after official/mock response observations preserve this canonical contract.

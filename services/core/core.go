@@ -42,10 +42,11 @@ var migrationFiles embed.FS
 var decimalPattern = regexp.MustCompile(`^(?:0|-?(?:[1-9][0-9]*(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9]))$`)
 
 type Service struct {
-	db  *sql.DB
-	now func() time.Time
-	id  func(string) string
-	ttl time.Duration
+	db         *sql.DB
+	now        func() time.Time
+	id         func(string) string
+	ttl        time.Duration
+	marketData MarketDataPort
 }
 
 type APIError struct {
@@ -285,6 +286,7 @@ func (s *Service) routes() http.Handler {
 	})
 	mux.HandleFunc("GET /readyz", s.handleReady)
 	mux.HandleFunc("GET /v1/status", s.handleStatus)
+	mux.HandleFunc("GET /v1/market-data/candles", s.handleMarketDataCandles)
 	mux.HandleFunc("POST /v1/imports/preview", s.handlePreview)
 	mux.HandleFunc("POST /v1/imports/apply", s.handleApply)
 	mux.HandleFunc("GET /v1/portfolio/snapshot", s.handleSnapshot)

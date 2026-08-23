@@ -11,9 +11,9 @@
 |---|---|---|
 | G0 아키텍처·계약 | 통과 | versioned OpenAPI/JSON Schema, runtime ADR, root commands |
 | G1 로컬 원장 | 통과 | CSV preview → atomic apply → append-only ledger → snapshot/receipt → backup/restore |
-| G2 Flutter client | 부분 통과 | iOS·Android·web release build와 10개 자동 테스트 통과; semantics·touch target·light/dark contrast·reduced motion 자동 증거 확보, Android emulator raster budget 실패와 physical-device·수동 screen-reader 증거 남음 |
+| G2 Flutter client | 부분 통과 | iOS·Android·web release build와 17개 자동 테스트 통과; chart 포함 Android emulator build/raster p95 2회 통과, physical-device·수동 screen-reader 및 test-instrumentation 격리 증거 남음 |
 | G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, paper-only result |
-| G4 broker | 진행 중 | 키움 K0 HTTP/정규화 합성 계약 통과; live credential, persistence, reconciliation, 차트·실시간, 모의주문 남음 |
+| G4 broker·chart | 진행 중 | 키움 K0 HTTP/정규화 합성 계약과 local sample OHLCV/Flutter 종목 차트 통과; 실제 키움 시세·credential, persistence, reconciliation, physical profile·수동 screen reader, 실시간·모의주문 남음 |
 
 세부 상태와 완료 조건은 [`PLAN.md`](PLAN.md)와 [`GATES.md`](GATES.md)에서 관리합니다.
 
@@ -56,7 +56,7 @@ make check
 make smoke
 ```
 
-`make smoke`는 임시 SQLite 파일에서 health, readiness, CSV preview, atomic apply, snapshot을 확인하고 종료할 때 데이터를 제거합니다.
+`make smoke`는 임시 SQLite 파일에서 health, readiness, CSV preview, atomic apply, snapshot, local sample OHLCV를 확인하고 종료할 때 데이터를 제거합니다.
 
 ### 앱 실행
 
@@ -75,6 +75,8 @@ make run-client
 - API: `http://127.0.0.1:8080`
 - Flutter web: `http://localhost:8081`
 - local DB: `data/omni-folio.db`
+
+`make run-core`는 `contracts/fixtures/market-bars.csv`를 명시적으로 전달하므로 AAPL 보유 항목에서 샘플 종목 차트를 확인할 수 있습니다. 화면과 API 모두 이를 `샘플 데이터 · 실시간 아님`으로 표시합니다. fixture 없이 fail-closed 동작을 확인하려면 `make run-core MARKET_FIXTURE=`를 사용합니다.
 
 다른 API 포트를 사용할 때는 core와 client를 함께 바꿉니다.
 
@@ -110,6 +112,14 @@ rm -f "$preview_file"
 
 Golden fixture의 기대값은 신규 3행, revision `rev_0000000003`, USD cash `778`, AAPL 6주, cost basis `300.6`입니다. 동적 ID와 timestamp는 매 실행마다 달라집니다.
 
+### Local sample OHLCV chart
+
+```sh
+curl -fsS 'http://127.0.0.1:8080/v1/market-data/candles?symbol=AAPL&interval=1d'
+```
+
+응답은 canonical decimal string과 함께 `source=local_fixture`, `sample=true`, `state=stale`를 반환합니다. 보유 화면에서 AAPL을 열면 가격·거래량 chart, source/as-of, screen-reader summary와 정확한 OHLCV 표를 볼 수 있습니다. 이 fixture는 계약·UI 검증용이며 현재 시세나 투자 판단 자료가 아닙니다.
+
 ### Research와 자동 개선
 
 ```sh
@@ -127,8 +137,8 @@ make format           Go/Dart format 적용
 make lint             Go vet, Flutter analyze, Python compile 검사
 make test             Go, Flutter, Python 단위 테스트
 make check            format, lint, test, JSON contract 검사
-make smoke            임시 DB 기반 HTTP 수직 슬라이스 검사
-make run-core         migrate 후 local Go API 실행
+make smoke            임시 DB 기반 ledger·local market HTTP 수직 슬라이스 검사
+make run-core         migrate 후 local Go API와 명시적 sample market fixture 실행
 make run-client       Flutter web client 실행
 make run-research     deterministic backtest fixture 실행
 make run-improvement  walk-forward strategy fixture 실행

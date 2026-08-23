@@ -43,6 +43,7 @@ void main() {
     await Future<void>.delayed(const Duration(seconds: 2));
 
     final timings = <FrameTiming>[];
+    var tableScrollExercised = false;
     final collectTimings = timings.addAll;
     binding.addTimingsCallback(collectTimings);
     try {
@@ -62,6 +63,47 @@ void main() {
       await tester.pumpAndSettle();
       await tester.fling(find.byType(ListView), const Offset(0, 1200), 2400);
       await tester.pumpAndSettle();
+      await tester.tap(find.text('KRX000'));
+      await tester.pumpAndSettle();
+      expect(find.text('시세 차트'), findsOneWidget);
+      await tester.drag(find.byType(ListView).last, const Offset(0, -600));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('정확한 OHLCV 표 보기'));
+      await tester.pumpAndSettle();
+      expect(find.text('OHLCV 표'), findsOneWidget);
+      final tableRows = find.byKey(const Key('ohlcv-table-rows'));
+      await tester.ensureVisible(tableRows);
+      await tester.pumpAndSettle();
+      final tableScrollable = find.descendant(
+        of: tableRows,
+        matching: find.byType(Scrollable),
+      );
+      expect(tableScrollable, findsOneWidget);
+      final tableState = tester.state<ScrollableState>(tableScrollable);
+      final origin = tester.getTopLeft(tableRows);
+      final size = tester.getSize(tableRows);
+      final viewSize = tester.view.physicalSize / tester.view.devicePixelRatio;
+      final start = Offset(
+        origin.dx < 0 ? 24 : origin.dx + 24,
+        origin.dy + size.height / 2,
+      );
+      expect(start.dx, inInclusiveRange(0, viewSize.width));
+      expect(start.dy, inInclusiveRange(0, viewSize.height));
+      final localStart = tester
+          .renderObject<RenderBox>(tableRows)
+          .globalToLocal(start);
+      expect(localStart.dx, inInclusiveRange(0, size.width));
+      expect(localStart.dy, inInclusiveRange(0, size.height));
+      final before = tableState.position.pixels;
+      await tester.flingFrom(start, const Offset(0, -800), 2400);
+      await tester.pumpAndSettle();
+      final forwardPixels = tableState.position.pixels;
+      expect(forwardPixels, greaterThan(before));
+      await tester.flingFrom(start, const Offset(0, 800), 2400);
+      await tester.pumpAndSettle();
+      expect(tableState.position.pixels, lessThan(forwardPixels));
+      expect(tableState.position.pixels, greaterThanOrEqualTo(before));
+      tableScrollExercised = true;
       await Future<void>.delayed(const Duration(seconds: 2));
     } finally {
       binding.removeTimingsCallback(collectTimings);
@@ -84,8 +126,10 @@ void main() {
             '${logicalSize.width.toStringAsFixed(2)}x'
             '${logicalSize.height.toStringAsFixed(2)}',
         'device_pixel_ratio': view.devicePixelRatio,
-        'fixture': '120 holdings list scroll plus import screen transition',
+        'fixture':
+            '120 holdings list scroll plus import screen transition plus 500-bar asset chart and exact table',
         'network_db_excluded': true,
+        'table_scroll_exercised': tableScrollExercised,
         'sample_count': timings.length,
         'p95_build_ms': p95BuildMs,
         'p95_raster_ms': p95RasterMs,
@@ -131,6 +175,39 @@ class _ProfileApi implements OmniApi {
     ),
     realizedPnl: const [Money('KRW', '12500')],
   );
+  final _candles = MarketCandles.fromJson({
+    'symbol': 'KRX000',
+    'venue': 'KRX',
+    'timezone': 'Asia/Seoul',
+    'interval': '1d',
+    'source': 'local_fixture',
+    'sample': true,
+    'state': 'stale',
+    'source_as_of': '2025-05-14T00:00:00.000Z',
+    'fetched_at': '2026-08-24T03:00:00Z',
+    'issues': const [
+      {
+        'code': 'sample_data',
+        'message': 'market data is a local sample and not live',
+      },
+    ],
+    'bars': List.generate(500, (index) {
+      final at = DateTime.utc(
+        2024,
+        1,
+        1,
+      ).add(Duration(days: index)).toIso8601String();
+      final open = 100000 + index;
+      return {
+        'at': at,
+        'open': '$open',
+        'high': '${open + 500}',
+        'low': '${open - 500}',
+        'close': '${open + 100}',
+        'volume': '${1000 + index}',
+      };
+    }, growable: false),
+  });
   @override
   Future<ApplyReceipt> apply(String previewId, String idempotencyKey) =>
       throw UnsupportedError('Not part of the G2 frame fixture.');
@@ -138,6 +215,9 @@ class _ProfileApi implements OmniApi {
   @override
   Future<ImportPreview> preview(String csv) =>
       throw UnsupportedError('Not part of the G2 frame fixture.');
+
+  @override
+  Future<MarketCandles> candles(String symbol) async => _candles;
 
   @override
   Future<PortfolioSnapshot> snapshot() async => _snapshot;

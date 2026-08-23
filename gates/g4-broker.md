@@ -18,4 +18,6 @@
 
 ## Evidence
 
-- Not active. Official contract baseline and UX boundary are recorded in `docs/broker-priority-and-ux.md`; no credential or broker request has been made.
+- G4A passes synthetic Kiwoom K0 transport/normalization tests only; no credential or broker request has been made.
+- G4B has a provider-neutral local-fixture OHLCV API and Flutter asset-detail chart with explicit sample provenance, exact decimal strings, price/volume, non-color candle cues, state handling, screen-reader summary, and a lazy exact-data table. Automated checks and two metadata-complete Android-emulator profile runs pass after optimization.
+- G4 remains open: real Kiwoom candle/realtime behavior, known-good persistence, ledger reconciliation, physical-device profile, manual VoiceOver/TalkBack, mock orders, and every live-order gate are unproven.

@@ -14,6 +14,8 @@
 
 Phase A는 asdf로 고정한 Flutter stable 하나로 iOS·Android·app-centric web을 제공하고, Go 모듈러 모놀리스가 ledger/order/risk/broker authority를 소유한다. Python은 research/backtest 전용이며 broker credential이나 주문 제출 권한을 갖지 않는다. SQLite single-writer local에서 `CSV import → preview → idempotent apply → append-only ledger → holdings/cash/P&L → versioned backup/restore` 수직 슬라이스를 먼저 검증한다. 첫 브로커는 키움 REST API이고 `read-only → 차트·실시간 → 모의주문` 순서로 완성한다. 키움 계약이 통과한 뒤 토스증권 Open API를 두 번째 어댑터로 추가한다. 공개 리서치·문서형 콘텐츠나 SEO가 실제 요구될 때만 Next.js를 별도 web surface로 추가하며, Flutter 제품 화면을 React로 중복 구현하지 않는다.
 
+실제 키움 OHLCV를 연결하기 전에는 provider-neutral local fixture로 API·chart·접근성·성능 계약을 검증한다. sample·synthetic·fixture 시세는 API와 화면에서 실시간이 아님을 명시하고 live/current 데이터와 혼합하거나 broker 연동 증거로 승격하지 않는다.
+
 Flutter 제품 경험은 영웅문 화면을 재현하지 않는다. 토스증권에서 참고한 쉬운 용어, 한 화면 한 결정, 점진적 상세 공개, 국내·미국의 일관된 흐름, 명확한 주문 확인과 접근성을 Omni Folio 고유 디자인으로 구현한다. 상세한 공급자·UX 결정은 [`docs/broker-priority-and-ux.md`](docs/broker-priority-and-ux.md)를 따른다.
 
 PostgreSQL maintenance migration과 restore 증명 전에는 multi-replica 또는 Kubernetes를 도입하거나 manifest를 만들지 않는다. live 주문은 서버가 owner 승인 만료, broker/account/strategy allowlist, promotion evidence, healthy kill switch를 **매 주문** 검증할 때만 허용한다. 휴대폰 background는 cache refresh와 push 보조만 하며 주문·reconciliation·kill switch의 authority가 아니다.

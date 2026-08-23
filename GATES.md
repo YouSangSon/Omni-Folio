@@ -30,6 +30,7 @@ G3 research vertical slice
    |
 G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4A Kiwoom K0 read contract
+├─ G4B provider-neutral local sample OHLCV and asset-detail chart
 └─ then Toss Securities read-only as the second adapter
    |
 G5 paper -> shadow -> canary -> limited live

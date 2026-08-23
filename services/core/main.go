@@ -38,6 +38,7 @@ func run(args []string) error {
 		dbPath := fs.String("db", "omni-folio.db", "SQLite database path")
 		addr := fs.String("addr", "127.0.0.1:8080", "listen address")
 		allowOrigin := fs.String("allow-origin", "", "exact browser origin allowed for local development")
+		marketFixture := fs.String("market-fixture", "", "optional local market-data CSV fixture path")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -53,6 +54,13 @@ func run(args []string) error {
 			return err
 		}
 		svc := newService(db, time.Now, randomID)
+		if *marketFixture != "" {
+			marketData, err := loadMarketDataFixture(*marketFixture)
+			if err != nil {
+				return err
+			}
+			svc.marketData = marketData
+		}
 		srv := &http.Server{
 			Addr:              *addr,
 			Handler:           withCORS(svc.routes(), *allowOrigin),
