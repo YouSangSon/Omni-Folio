@@ -1,10 +1,24 @@
+# OS and editor files
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+*.swp
 
 # Secrets and local configuration
 .env
 .env.*
 !.env.example
 secrets/
+credentials/
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.mobileprovision
 
 # Local financial data and SQLite runtime files
 data/
@@ -14,14 +28,50 @@ backups/
 *.db-wal
 *.sqlite
 *.sqlite3
+*.csv.tmp
+
+# Logs and temporary runtime files
+*.log
+*.pid
+.cache/
+tmp/
 
 # Python
 .venv/
 __pycache__/
+*.py[cod]
+*.egg-info/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
 
 # Node
 node_modules/
 dist/
 coverage/
+.playwright-cli/
+.next/
+*.tsbuildinfo
+
+# Go
+bin/
+omni-core
+/services/core/core
+*.test
+*.out
+*.prof
+
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+build/
+
+# Local QA artifacts
+/output/

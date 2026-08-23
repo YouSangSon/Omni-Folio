@@ -1,0 +1,39 @@
+services:
+  migrate:
+    build:
+      context: ..
+      dockerfile: infra/core.Dockerfile
+    command: ["migrate", "-db", "/data/omni-folio.db"]
+    volumes:
+      - omni_folio_data:/data
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp
+
+  core:
+    build:
+      context: ..
+      dockerfile: infra/core.Dockerfile
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${OMNI_CORE_PORT:-8080}:8080"
+    volumes:
+      - omni_folio_data:/data
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8080/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 2s
+
+volumes:
+  omni_folio_data:
