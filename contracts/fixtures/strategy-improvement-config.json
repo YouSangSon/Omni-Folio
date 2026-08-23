@@ -1,0 +1,38 @@
+{
+  "schema_version": "strategy-improvement.v1",
+  "experiment_id": "sma-grid-fixture-001",
+  "data": {
+    "version": "sma-fixture-v1"
+  },
+  "strategy": {
+    "name": "long_only_sma_crossover",
+    "version": "1.0.0",
+    "quantity": "10",
+    "fast_windows": [2, 3],
+    "slow_windows": [5, 6]
+  },
+  "execution": {
+    "starting_cash": "10000",
+    "fee": "1",
+    "tax": "0.001",
+    "slippage_bps": "10",
+    "delay_bars": "1",
+    "max_participation": "0.5",
+    "signal_price": "bar_close",
+    "fill_price": "next_eligible_bar_open"
+  },
+  "splits": {
+    "train_bars": 30,
+    "validation_bars": 60,
+    "holdout_bars": 30,
+    "minimum_fold_bars": 30
+  },
+  "promotion": {
+    "baseline": "buy_and_hold",
+    "minimum_validation_after_cost_return": "-1",
+    "minimum_validation_trade_count": 1,
+    "minimum_holdout_after_cost_return": "-1",
+    "maximum_holdout_max_drawdown": "1",
+    "minimum_holdout_trade_count": 1
+  }
+}

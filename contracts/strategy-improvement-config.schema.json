@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omni-folio.local/contracts/strategy-improvement-config.v1.schema.json",
+  "title": "Omni-Folio Strategy Improvement Config v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "experiment_id", "data", "strategy", "execution", "splits", "promotion"],
+  "properties": {
+    "schema_version": { "const": "strategy-improvement.v1" },
+    "experiment_id": { "type": "string", "minLength": 1 },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version"],
+      "properties": { "version": { "type": "string", "minLength": 1 } }
+    },
+    "strategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "quantity", "fast_windows", "slow_windows"],
+      "properties": {
+        "name": { "const": "long_only_sma_crossover" },
+        "version": { "type": "string", "minLength": 1 },
+        "quantity": { "$ref": "#/$defs/decimal" },
+        "fast_windows": { "$ref": "#/$defs/window_list" },
+        "slow_windows": { "$ref": "#/$defs/window_list" }
+      }
+    },
+    "execution": { "$ref": "#/$defs/execution" },
+    "splits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["train_bars", "validation_bars", "holdout_bars", "minimum_fold_bars"],
+      "properties": {
+        "train_bars": { "type": "integer", "minimum": 30 },
+        "validation_bars": { "type": "integer", "minimum": 60 },
+        "holdout_bars": { "type": "integer", "minimum": 30 },
+        "minimum_fold_bars": { "type": "integer", "minimum": 30 }
+      }
+    },
+    "promotion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baseline",
+        "minimum_validation_after_cost_return",
+        "minimum_validation_trade_count",
+        "minimum_holdout_after_cost_return",
+        "maximum_holdout_max_drawdown",
+        "minimum_holdout_trade_count"
+      ],
+      "properties": {
+        "baseline": { "const": "buy_and_hold" },
+        "minimum_validation_after_cost_return": { "$ref": "#/$defs/decimal" },
+        "minimum_validation_trade_count": { "type": "integer", "minimum": 1 },
+        "minimum_holdout_after_cost_return": { "$ref": "#/$defs/decimal" },
+        "maximum_holdout_max_drawdown": { "$ref": "#/$defs/decimal" },
+        "minimum_holdout_trade_count": { "type": "integer", "minimum": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "decimal": {
+      "type": "string",
+      "pattern": "^(?:0|-?(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$"
+    },
+    "window_list": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": { "type": "integer", "minimum": 1 }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["starting_cash", "fee", "tax", "slippage_bps", "delay_bars", "max_participation", "signal_price", "fill_price"],
+      "properties": {
+        "starting_cash": { "$ref": "#/$defs/decimal" },
+        "fee": { "$ref": "#/$defs/decimal" },
+        "tax": { "$ref": "#/$defs/decimal" },
+        "slippage_bps": { "$ref": "#/$defs/decimal" },
+        "delay_bars": { "$ref": "#/$defs/decimal" },
+        "max_participation": { "$ref": "#/$defs/decimal" },
+        "signal_price": { "const": "bar_close" },
+        "fill_price": { "const": "next_eligible_bar_open" }
+      }
+    }
+  }
+}
