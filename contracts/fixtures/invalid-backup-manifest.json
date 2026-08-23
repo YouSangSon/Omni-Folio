@@ -1,8 +1,11 @@
 {
-  "format_version": "omni-folio-backup.v1",
-  "schema_version": "ledger.v1",
+  "format_version": "omni-folio-backup.v2",
+  "schema_version": "omni-folio.sqlite.v2",
   "created_at": "2026-01-10T15:02:00Z",
   "source_ledger_revision": "rev_0000000003",
+  "order_state_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "order_count": 0,
+  "order_event_count": 0,
   "db_sha256": "0d69e050f60b02661311a08d5fa676a5915f99d045785c80b30a372c60773ff4",
   "size_bytes": 4096,
   "expected_snapshot_sha256": "5ea9adadccabf2fcad839ce4df13c2c55053ffb8b7087f2277db92c321ddfd44",
@@ -17,8 +20,10 @@
     "status": "rejected",
     "integrity_check": "ok",
     "golden_snapshot_check": "failed",
+    "order_state_check": "ok",
     "candidate_db_sha256": "0d69e050f60b02661311a08d5fa676a5915f99d045785c80b30a372c60773ff4",
     "candidate_snapshot_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "candidate_order_state_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "eligible_for_activation": false,
     "errors": [
       "snapshot_hash_mismatch"

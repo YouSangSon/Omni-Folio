@@ -31,6 +31,7 @@ import (
 const (
 	maxBodyBytes  = 1 << 20
 	maxImportRows = 10_000
+	latestSchema  = 2
 	zeroTime      = "1970-01-01T00:00:00Z"
 	csvSchema     = "omni-folio.csv.v1"
 	mappingSchema = "canonical-transaction.v1"
@@ -161,6 +162,9 @@ type BackupManifest struct {
 	SchemaVersion          string              `json:"schema_version"`
 	CreatedAt              string              `json:"created_at"`
 	SourceLedgerRevision   string              `json:"source_ledger_revision"`
+	OrderStateSHA256       string              `json:"order_state_sha256"`
+	OrderCount             int                 `json:"order_count"`
+	OrderEventCount        int                 `json:"order_event_count"`
 	DBSHA256               string              `json:"db_sha256"`
 	SizeBytes              int64               `json:"size_bytes"`
 	ExpectedSnapshotSHA256 string              `json:"expected_snapshot_sha256"`
@@ -174,16 +178,18 @@ type BackupEncryption struct {
 }
 
 type VerificationReceipt struct {
-	ReceiptID               string   `json:"receipt_id"`
-	CandidateID             string   `json:"candidate_id"`
-	VerifiedAt              string   `json:"verified_at"`
-	Status                  string   `json:"status"`
-	IntegrityCheck          string   `json:"integrity_check"`
-	GoldenSnapshotCheck     string   `json:"golden_snapshot_check"`
-	CandidateDBSHA256       string   `json:"candidate_db_sha256"`
-	CandidateSnapshotSHA256 string   `json:"candidate_snapshot_sha256"`
-	EligibleForActivation   bool     `json:"eligible_for_activation"`
-	Errors                  []string `json:"errors"`
+	ReceiptID                 string   `json:"receipt_id"`
+	CandidateID               string   `json:"candidate_id"`
+	VerifiedAt                string   `json:"verified_at"`
+	Status                    string   `json:"status"`
+	IntegrityCheck            string   `json:"integrity_check"`
+	GoldenSnapshotCheck       string   `json:"golden_snapshot_check"`
+	OrderStateCheck           string   `json:"order_state_check"`
+	CandidateDBSHA256         string   `json:"candidate_db_sha256"`
+	CandidateSnapshotSHA256   string   `json:"candidate_snapshot_sha256"`
+	CandidateOrderStateSHA256 string   `json:"candidate_order_state_sha256"`
+	EligibleForActivation     bool     `json:"eligible_for_activation"`
+	Errors                    []string `json:"errors"`
 }
 
 type appError struct {
@@ -222,12 +228,12 @@ func openExistingDB(path string) (*sql.DB, error) {
 }
 
 func requireSchema(db *sql.DB) error {
-	var version int
-	if err := db.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&version); err != nil {
+	var first, latest, count int
+	if err := db.QueryRow(`SELECT COALESCE(MIN(version), 0), COALESCE(MAX(version), 0), COUNT(*) FROM schema_migrations`).Scan(&first, &latest, &count); err != nil {
 		return fmt.Errorf("database is not migrated; run migrate first: %w", err)
 	}
-	if version != 1 {
-		return fmt.Errorf("unsupported schema version %d", version)
+	if first != 1 || latest != latestSchema || count != latestSchema {
+		return fmt.Errorf("unsupported schema history %d..%d (%d migrations)", first, latest, count)
 	}
 	return nil
 }
@@ -237,32 +243,39 @@ func migrate(db *sql.DB) error {
 	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='schema_migrations'`).Scan(&exists); err != nil {
 		return err
 	}
+	current := 0
 	if exists != 0 {
-		var version int
-		if err := db.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&version); err != nil {
+		var first, count int
+		if err := db.QueryRow(`SELECT COALESCE(MIN(version), 0), COALESCE(MAX(version), 0), COUNT(*) FROM schema_migrations`).Scan(&first, &current, &count); err != nil {
 			return err
 		}
-		if version != 1 {
-			return fmt.Errorf("unsupported schema version %d", version)
+		if first != 1 || current > latestSchema || count != current {
+			return fmt.Errorf("unsupported schema version %d", current)
 		}
-		return nil
 	}
-	script, err := migrationFiles.ReadFile("migrations/001_init.sql")
-	if err != nil {
-		return err
+	files := []string{"001_init.sql", "002_orders.sql"}
+	for version := current + 1; version <= latestSchema; version++ {
+		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
+		if err != nil {
+			return err
+		}
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(string(script)); err != nil {
+			tx.Rollback()
+			return err
+		}
+		if _, err := tx.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)`, version, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+			tx.Rollback()
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
 	}
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if _, err := tx.Exec(string(script)); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(1, ?)`, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return nil
 }
 
 func newService(db *sql.DB, now func() time.Time, id func(string) string) *Service {
@@ -294,13 +307,8 @@ func (s *Service) routes() http.Handler {
 }
 
 func (s *Service) handleReady(w http.ResponseWriter, r *http.Request) {
-	var version int
-	if err := s.db.QueryRowContext(r.Context(), `SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&version); err != nil {
+	if err := requireSchema(s.db); err != nil {
 		writeError(w, readinessError(err))
-		return
-	}
-	if version != 1 {
-		writeError(w, readinessError(fmt.Errorf("unsupported schema version %d", version)))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -992,13 +1000,21 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err := db.QueryRow(`SELECT revision FROM ledger_meta WHERE singleton=1`).Scan(&sourceRevision); err != nil {
 		return nil, err
 	}
+	sourceOrders, err := proveOrderRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source order recovery proof: %w", err)
+	}
 	createdAt := now().UTC()
 	quoted := strings.ReplaceAll(out, "'", "''")
 	if _, err := db.Exec(`VACUUM INTO '` + quoted + `'`); err != nil {
 		return nil, fmt.Errorf("consistent backup: %w", err)
 	}
-	if err := verifyRestore(out, golden); err != nil {
+	candidateOrders, err := verifyRestoreProof(out, golden)
+	if err != nil {
 		return nil, err
+	}
+	if sourceOrders != candidateOrders {
+		return nil, errors.New("backup order recovery proof does not match source")
 	}
 	dbSHA, size, err := hashFile(out)
 	if err != nil {
@@ -1010,13 +1026,14 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	}
 	verifiedAt := now().UTC()
 	manifest := &BackupManifest{
-		FormatVersion: "omni-folio-backup.v1", SchemaVersion: "ledger.v1", CreatedAt: createdAt.Format(time.RFC3339Nano),
-		SourceLedgerRevision: revision(sourceRevision), DBSHA256: dbSHA, SizeBytes: size, ExpectedSnapshotSHA256: snapshotSHA,
+		FormatVersion: "omni-folio-backup.v2", SchemaVersion: "omni-folio.sqlite.v2", CreatedAt: createdAt.Format(time.RFC3339Nano),
+		SourceLedgerRevision: revision(sourceRevision), OrderStateSHA256: sourceOrders.SHA256, OrderCount: sourceOrders.Orders,
+		OrderEventCount: sourceOrders.Events, DBSHA256: dbSHA, SizeBytes: size, ExpectedSnapshotSHA256: snapshotSHA,
 		Encryption: BackupEncryption{Encrypted: false, Algorithm: "none"},
 		VerificationReceipt: VerificationReceipt{
 			ReceiptID: id("backup_verification"), CandidateID: id("restore_candidate"), VerifiedAt: verifiedAt.Format(time.RFC3339Nano),
-			Status: "verified", IntegrityCheck: "ok", GoldenSnapshotCheck: "ok", CandidateDBSHA256: dbSHA,
-			CandidateSnapshotSHA256: snapshotSHA, EligibleForActivation: true, Errors: []string{},
+			Status: "verified", IntegrityCheck: "ok", GoldenSnapshotCheck: "ok", OrderStateCheck: "ok", CandidateDBSHA256: dbSHA,
+			CandidateSnapshotSHA256: snapshotSHA, CandidateOrderStateSHA256: candidateOrders.SHA256, EligibleForActivation: true, Errors: []string{},
 		},
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
@@ -1031,38 +1048,206 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 }
 
 func verifyRestore(path, goldenPath string) error {
+	_, err := verifyRestoreProof(path, goldenPath)
+	return err
+}
+
+func verifyRestoreProof(path, goldenPath string) (orderRecoveryProof, error) {
 	db, err := openExistingDB(path)
 	if err != nil {
-		return err
+		return orderRecoveryProof{}, err
 	}
 	defer db.Close()
 	var integrity string
 	if err := db.QueryRow(`PRAGMA integrity_check`).Scan(&integrity); err != nil {
-		return err
+		return orderRecoveryProof{}, err
 	}
 	if integrity != "ok" {
-		return fmt.Errorf("integrity_check: %s", integrity)
+		return orderRecoveryProof{}, fmt.Errorf("integrity_check: %s", integrity)
+	}
+	if err := requireOrderRestoreSchema(db); err != nil {
+		return orderRecoveryProof{}, err
 	}
 	actual, err := snapshotFrom(context.Background(), db)
 	if err != nil {
-		return err
+		return orderRecoveryProof{}, err
 	}
 	goldenBytes, err := os.ReadFile(goldenPath)
 	if err != nil {
-		return err
+		return orderRecoveryProof{}, err
 	}
 	var golden PortfolioSnapshot
 	dec := json.NewDecoder(bytes.NewReader(goldenBytes))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&golden); err != nil {
-		return fmt.Errorf("golden snapshot: %w", err)
+		return orderRecoveryProof{}, fmt.Errorf("golden snapshot: %w", err)
 	}
 	actualJSON, _ := json.Marshal(actual)
 	goldenJSON, _ := json.Marshal(&golden)
 	if !bytes.Equal(actualJSON, goldenJSON) {
-		return fmt.Errorf("restored snapshot does not match golden: got %s", actualJSON)
+		return orderRecoveryProof{}, fmt.Errorf("restored snapshot does not match golden: got %s", actualJSON)
+	}
+	proof, err := proveOrderRecovery(context.Background(), db)
+	if err != nil {
+		return orderRecoveryProof{}, fmt.Errorf("candidate order recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func requireOrderRestoreSchema(db *sql.DB) error {
+	if err := requireSchema(db); err != nil {
+		return fmt.Errorf("restore schema: %w", err)
+	}
+	for _, table := range []string{"order_idempotency", "order_events"} {
+		var strict int
+		if err := db.QueryRow(`SELECT strict FROM pragma_table_list WHERE schema='main' AND type='table' AND name=?`, table).Scan(&strict); err != nil {
+			return fmt.Errorf("restore order table %s: %w", table, err)
+		}
+		if strict != 1 {
+			return fmt.Errorf("restore order table %s is not strict", table)
+		}
+	}
+	for _, unique := range []struct {
+		table   string
+		columns []string
+		origin  string
+	}{
+		{"order_idempotency", []string{"provider", "mode", "account_ref", "client_order_id"}, "pk"},
+		{"order_idempotency", []string{"order_id"}, "u"},
+		{"order_events", []string{"event_id"}, "u"},
+		{"order_events", []string{"provider_execution_ref"}, "u"},
+	} {
+		ok, err := hasUniqueIndex(db, unique.table, unique.columns, unique.origin)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("restore order table %s lacks required unique columns %s", unique.table, strings.Join(unique.columns, ","))
+		}
+	}
+	var sequenceType string
+	var sequencePK, primaryKeyColumns, primaryKeyIndexes int
+	if err := db.QueryRow(`SELECT type, pk FROM pragma_table_info(?) WHERE name='sequence'`, "order_events").Scan(&sequenceType, &sequencePK); err != nil {
+		return fmt.Errorf("restore order event sequence: %w", err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE pk>0`, "order_events").Scan(&primaryKeyColumns); err != nil {
+		return fmt.Errorf("restore order event primary key: %w", err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_index_list(?) WHERE origin='pk'`, "order_events").Scan(&primaryKeyIndexes); err != nil {
+		return fmt.Errorf("restore order event primary-key index: %w", err)
+	}
+	if !strings.EqualFold(sequenceType, "INTEGER") || sequencePK != 1 || primaryKeyColumns != 1 || primaryKeyIndexes != 0 {
+		return errors.New("restore order event sequence is not the integer primary key")
+	}
+	var foreignKeys, matchingForeignKeys int
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM("table"='order_idempotency' AND "from"='order_id' AND "to"='order_id'), 0) FROM pragma_foreign_key_list(?)`, "order_events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore order foreign key: %w", err)
+	}
+	if foreignKeys != 1 || matchingForeignKeys != 1 {
+		return errors.New("restore order events lack the required order foreign key")
+	}
+	foreignKeyRows, err := db.Query(`PRAGMA foreign_key_check`)
+	if err != nil {
+		return err
+	}
+	if foreignKeyRows.Next() {
+		foreignKeyRows.Close()
+		return errors.New("restore candidate has broken foreign keys")
+	}
+	if err := foreignKeyRows.Err(); err != nil {
+		foreignKeyRows.Close()
+		return err
+	}
+	if err := foreignKeyRows.Close(); err != nil {
+		return err
+	}
+	required := map[string][2]string{
+		"order_idempotency_no_update": {"order_idempotency", "before update on order_idempotency"},
+		"order_idempotency_no_delete": {"order_idempotency", "before delete on order_idempotency"},
+		"order_events_no_update":      {"order_events", "before update on order_events"},
+		"order_events_no_delete":      {"order_events", "before delete on order_events"},
+	}
+	rows, err := db.Query(`SELECT name, tbl_name, sql FROM sqlite_master WHERE type='trigger'`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name, table, definition string
+		if err := rows.Scan(&name, &table, &definition); err != nil {
+			return err
+		}
+		expected, ok := required[name]
+		normalized := strings.ToLower(strings.Join(strings.Fields(definition), " "))
+		if ok && expected[0] == table && strings.Contains(normalized, expected[1]) &&
+			strings.Contains(normalized, "raise(abort") && strings.Contains(normalized, table+" is insert-only") {
+			delete(required, name)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(required) != 0 {
+		return errors.New("restore candidate is missing insert-only order triggers")
 	}
 	return nil
+}
+
+func hasUniqueIndex(db *sql.DB, table string, expected []string, origin string) (bool, error) {
+	rows, err := db.Query(`SELECT name FROM pragma_index_list(?) WHERE "unique"=1 AND partial=0 AND origin=?`, table, origin)
+	if err != nil {
+		return false, err
+	}
+	var indexes []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return false, err
+		}
+		indexes = append(indexes, name)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return false, err
+	}
+	if err := rows.Close(); err != nil {
+		return false, err
+	}
+	for _, index := range indexes {
+		columnRows, err := db.Query(`SELECT name FROM pragma_index_info(?) ORDER BY seqno`, index)
+		if err != nil {
+			return false, err
+		}
+		var columns []string
+		for columnRows.Next() {
+			var column sql.NullString
+			if err := columnRows.Scan(&column); err != nil {
+				columnRows.Close()
+				return false, err
+			}
+			if column.Valid {
+				columns = append(columns, column.String)
+			}
+		}
+		if err := columnRows.Err(); err != nil {
+			columnRows.Close()
+			return false, err
+		}
+		if err := columnRows.Close(); err != nil {
+			return false, err
+		}
+		if len(columns) == len(expected) {
+			matches := true
+			for i := range columns {
+				matches = matches && columns[i] == expected[i]
+			}
+			if matches {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func verifyManifest(path, goldenPath, manifestPath string) error {
@@ -1076,12 +1261,12 @@ func verifyManifest(path, goldenPath, manifestPath string) error {
 	if err := dec.Decode(&manifest); err != nil {
 		return fmt.Errorf("backup manifest: %w", err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v1" || manifest.SchemaVersion != "ledger.v1" ||
+	if manifest.FormatVersion != "omni-folio-backup.v2" || manifest.SchemaVersion != "omni-folio.sqlite.v2" ||
 		manifest.Encryption.Encrypted || manifest.Encryption.Algorithm != "none" {
 		return errors.New("unsupported backup manifest version or encryption")
 	}
 	receipt := manifest.VerificationReceipt
-	if receipt.Status != "verified" || receipt.IntegrityCheck != "ok" || receipt.GoldenSnapshotCheck != "ok" || !receipt.EligibleForActivation || len(receipt.Errors) != 0 {
+	if receipt.Status != "verified" || receipt.IntegrityCheck != "ok" || receipt.GoldenSnapshotCheck != "ok" || receipt.OrderStateCheck != "ok" || !receipt.EligibleForActivation || len(receipt.Errors) != 0 {
 		return errors.New("backup manifest is not eligible for activation")
 	}
 	dbSHA, size, err := hashFile(path)
@@ -1098,8 +1283,13 @@ func verifyManifest(path, goldenPath, manifestPath string) error {
 	if manifest.ExpectedSnapshotSHA256 != snapshotSHA || receipt.CandidateSnapshotSHA256 != snapshotSHA {
 		return errors.New("backup snapshot hash mismatch")
 	}
-	if err := verifyRestore(path, goldenPath); err != nil {
+	orders, err := verifyRestoreProof(path, goldenPath)
+	if err != nil {
 		return err
+	}
+	if manifest.OrderStateSHA256 != orders.SHA256 || receipt.CandidateOrderStateSHA256 != orders.SHA256 ||
+		manifest.OrderCount != orders.Orders || manifest.OrderEventCount != orders.Events {
+		return errors.New("backup order recovery proof mismatch")
 	}
 	db, err := openExistingDB(path)
 	if err != nil {

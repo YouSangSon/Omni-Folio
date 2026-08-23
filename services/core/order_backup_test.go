@@ -106,6 +106,128 @@ func TestK2ARestoreRejectsMissingOrderSchemaOrProtection(t *testing.T) {
 	}
 }
 
+func TestK2ABackupRejectsCorruptOrderRows(t *testing.T) {
+	t.Run("missing order storage", func(t *testing.T) {
+		db, err := openDB(filepath.Join(t.TempDir(), "unmigrated.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		if _, err := proveOrderRecovery(context.Background(), db); err == nil {
+			t.Fatal("database without order storage was certified")
+		}
+	})
+
+	t.Run("malformed intent", func(t *testing.T) {
+		svc, _ := testService(t, nil, nil)
+		if _, err := svc.db.Exec(`INSERT INTO order_idempotency(provider,mode,account_ref,client_order_id,request_sha256,order_id,intent_json,recorded_at) VALUES(?,?,?,?,?,?,?,?)`,
+			"kiwoom", "synthetic", k2aAccountRef, "client-malformed-intent", strings.Repeat("0", 64), "order_malformed_intent", "{", "2026-01-10T15:00:00Z"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := proveOrderRecovery(context.Background(), svc.db); err == nil {
+			t.Fatal("malformed durable order intent was certified")
+		}
+	})
+
+	t.Run("intent hash mismatch", func(t *testing.T) {
+		svc, _ := testService(t, nil, nil)
+		intent := k2aIntent("client-corrupt-intent")
+		intentJSON, _, err := orderJSONHash(intent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.db.Exec(`INSERT INTO order_idempotency(provider,mode,account_ref,client_order_id,request_sha256,order_id,intent_json,recorded_at) VALUES(?,?,?,?,?,?,?,?)`,
+			intent.Provider, intent.Mode, intent.AccountRef, intent.ClientOrderID, strings.Repeat("0", 64), "order_corrupt_intent", string(intentJSON), "2026-01-10T15:00:00Z"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := proveOrderRecovery(context.Background(), svc.db); err == nil {
+			t.Fatal("order intent with a mismatched durable hash was certified")
+		}
+	})
+
+	t.Run("orphan event", func(t *testing.T) {
+		svc, _ := testService(t, nil, nil)
+		event := k2aEvent("orphan-event", "order_orphan", "INTENT_RECORDED")
+		eventJSON, eventSHA, err := orderJSONHash(event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.db.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.db.Exec(`INSERT INTO order_events(event_id,event_sha256,order_id,event_type,source,event_json,recorded_at) VALUES(?,?,?,?,?,?,?)`,
+			event.EventID, eventSHA, event.OrderID, event.Type, event.Source, string(eventJSON), "2026-01-10T15:00:00Z"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.db.Exec(`PRAGMA foreign_keys=ON`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := proveOrderRecovery(context.Background(), svc.db); err == nil {
+			t.Fatal("order event without a durable intent was certified")
+		}
+	})
+
+	t.Run("event hash mismatch", func(t *testing.T) {
+		svc, _ := testService(t, nil, nil)
+		state := mustRecordK2AOrder(t, svc, "client-corrupt-event")
+		if _, err := svc.db.Exec(`DROP TRIGGER order_events_no_update`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.db.Exec(`UPDATE order_events SET event_sha256=? WHERE order_id=?`, strings.Repeat("0", 64), state.OrderID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := proveOrderRecovery(context.Background(), svc.db); err == nil {
+			t.Fatal("order event with a mismatched durable hash was certified")
+		}
+	})
+
+	t.Run("malformed event", func(t *testing.T) {
+		svc, _ := testService(t, nil, nil)
+		state := mustRecordK2AOrder(t, svc, "client-malformed-event")
+		if _, err := svc.db.Exec(`DROP TRIGGER order_events_no_update`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.db.Exec(`UPDATE order_events SET event_json='{' WHERE order_id=?`, state.OrderID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := proveOrderRecovery(context.Background(), svc.db); err == nil {
+			t.Fatal("malformed durable order event was certified")
+		}
+	})
+
+	t.Run("missing event storage", func(t *testing.T) {
+		svc, _ := testService(t, nil, nil)
+		for _, name := range []string{"order_events_no_update", "order_events_no_delete"} {
+			if _, err := svc.db.Exec(`DROP TRIGGER ` + name); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := svc.db.Exec(`DROP TABLE order_events`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := proveOrderRecovery(context.Background(), svc.db); err == nil {
+			t.Fatal("database without order event storage was certified")
+		}
+	})
+
+	t.Run("invalid event replay", func(t *testing.T) {
+		svc, _ := testService(t, nil, nil)
+		state := mustRecordK2AOrder(t, svc, "client-invalid-replay")
+		event := k2aEvent("duplicate-intent-event", state.OrderID, "INTENT_RECORDED")
+		eventJSON, eventSHA, err := orderJSONHash(event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.db.Exec(`INSERT INTO order_events(event_id,event_sha256,order_id,event_type,source,event_json,recorded_at) VALUES(?,?,?,?,?,?,?)`,
+			event.EventID, eventSHA, event.OrderID, event.Type, event.Source, string(eventJSON), "2026-01-10T15:00:00Z"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := proveOrderRecovery(context.Background(), svc.db); err == nil {
+			t.Fatal("non-replayable order event sequence was certified")
+		}
+	})
+}
+
 func writeCurrentSnapshot(t *testing.T, db queryer) string {
 	t.Helper()
 	snapshot, err := snapshotFrom(context.Background(), db)

@@ -260,7 +260,16 @@ func TestHealthAndReadinessAreSeparate(t *testing.T) {
 	if w := request("/readyz"); w.Code != http.StatusOK || w.Body.String() != "{\"status\":\"ok\"}\n" {
 		t.Fatalf("ready status=%d body=%s", w.Code, w.Body.String())
 	}
-	if _, err := svc.db.Exec(`UPDATE schema_migrations SET version=3`); err != nil {
+	if _, err := svc.db.Exec(`DELETE FROM schema_migrations WHERE version=1`); err != nil {
+		t.Fatal(err)
+	}
+	if w := request("/readyz"); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), `"code":"not_ready"`) {
+		t.Fatalf("readiness accepted an incomplete migration history: status=%d body=%s", w.Code, w.Body.String())
+	}
+	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(1, ?)`, "2026-01-10T15:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(3, ?)`, "2026-01-10T15:01:00Z"); err != nil {
 		t.Fatal(err)
 	}
 	if w := request("/readyz"); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), `"code":"not_ready"`) {

@@ -38,11 +38,19 @@ func TestK2AIntentValidationAndClientOrderIdempotency(t *testing.T) {
 	if _, err := svc.recordOrderIntent(ctx, conflict); err == nil {
 		t.Fatal("same client_order_id with a different intent was accepted")
 	}
+	sell := k2aIntent("client-order-sell")
+	sell.Side = "SELL"
+	sell.LimitPrice = "1000.5"
+	if state, err := svc.recordOrderIntent(ctx, sell); err != nil || state.Status != "RECORDED" {
+		t.Fatalf("valid exact-decimal sell intent was rejected: state=%+v err=%v", state, err)
+	}
 
 	tests := []struct {
 		name   string
 		mutate func(*OrderIntent)
 	}{
+		{"empty client order ID", func(v *OrderIntent) { v.ClientOrderID = "" }},
+		{"spaced client order ID", func(v *OrderIntent) { v.ClientOrderID = "bad id" }},
 		{"raw account reference", func(v *OrderIntent) { v.AccountRef = "9876543210" }},
 		{"wrong provider", func(v *OrderIntent) { v.Provider = "other" }},
 		{"non synthetic mode", func(v *OrderIntent) { v.Mode = "mock" }},
@@ -103,9 +111,8 @@ func TestK2ARiskGateAndExplicitUnknownRecovery(t *testing.T) {
 	if _, err := svc.appendOrderEvent(ctx, k2aEvent("blocked-submit", blocked.OrderID, "SUBMIT_DISPATCHED")); err == nil {
 		t.Fatal("account-wide dispatch block did not hold while another submit was unknown")
 	}
-	if _, err := svc.appendOrderEvent(ctx, k2aEvent("blocked-cancel", openBeforeUnknown.OrderID, "CANCEL_DISPATCHED")); err == nil {
-		t.Fatal("account-wide cancel block did not hold while another submit was unknown")
-	}
+	mustAppendK2AEvent(t, svc, k2aEvent("risk-reducing-cancel", openBeforeUnknown.OrderID, "CANCEL_DISPATCHED"), "CANCEL_UNKNOWN")
+	mustAppendK2AEvent(t, svc, k2aEvent("risk-reducing-cancel-ack", openBeforeUnknown.OrderID, "CANCEL_ACKNOWLEDGED"), "CANCELED")
 
 	if err := svc.db.Close(); err != nil {
 		t.Fatal(err)
@@ -183,12 +190,20 @@ func TestK2APartialFillCancelRaceLateFillAndOverfill(t *testing.T) {
 	rejectAck := k2aEvent("cancel-reject-submit-ack", rejectState.OrderID, "SUBMIT_ACKNOWLEDGED")
 	rejectAck.ProviderOrderRef = "kiwoom_order_JJJJJJJJJJJJJJJJJJJJJJJJ"
 	mustAppendK2AEvent(t, svc, rejectAck, "OPEN")
-	mustAppendK2AEvent(t, svc, k2aFill("cancel-reject-fill", rejectState.OrderID, "kiwoom_execution_KKKKKKKKKKKKKKKKKKKKKKKK", "2", "999"), "PARTIALLY_FILLED")
+	rejectFill := k2aFill("cancel-reject-fill", rejectState.OrderID, "kiwoom_execution_KKKKKKKKKKKKKKKKKKKKKKKK", "2", "999")
+	rejectFill.ProviderOrderRef = rejectAck.ProviderOrderRef
+	mustAppendK2AEvent(t, svc, rejectFill, "PARTIALLY_FILLED")
 	mustAppendK2AEvent(t, svc, k2aEvent("cancel-reject-dispatch", rejectState.OrderID, "CANCEL_DISPATCHED"), "CANCEL_UNKNOWN")
 	restored := mustAppendK2AEvent(t, svc, k2aEvent("cancel-rejected", rejectState.OrderID, "CANCEL_REJECTED"), "PARTIALLY_FILLED")
 	if restored.FilledQuantity != "2" {
 		t.Fatalf("cancel rejection lost fill state: %+v", restored)
 	}
+	unfilled := mustReadyAndDispatchK2AOrder(t, svc, "client-unfilled-cancel-reject", "unfilled-cancel-reject")
+	unfilledAck := k2aEvent("unfilled-cancel-reject-ack", unfilled.OrderID, "SUBMIT_ACKNOWLEDGED")
+	unfilledAck.ProviderOrderRef = "kiwoom_order_QQQQQQQQQQQQQQQQQQQQQQQQ"
+	mustAppendK2AEvent(t, svc, unfilledAck, "OPEN")
+	mustAppendK2AEvent(t, svc, k2aEvent("unfilled-cancel-dispatch", unfilled.OrderID, "CANCEL_DISPATCHED"), "CANCEL_UNKNOWN")
+	mustAppendK2AEvent(t, svc, k2aEvent("unfilled-cancel-rejected", unfilled.OrderID, "CANCEL_REJECTED"), "OPEN")
 }
 
 func TestK2AEventAndProviderExecutionIdempotencyConflicts(t *testing.T) {
@@ -201,9 +216,20 @@ func TestK2AEventAndProviderExecutionIdempotencyConflicts(t *testing.T) {
 	if _, err := svc.appendOrderEvent(ctx, rawAck); err == nil {
 		t.Fatal("raw provider order ID was accepted")
 	}
+	invalidSource := k2aEvent("invalid-source", state.OrderID, "SUBMIT_ACKNOWLEDGED")
+	invalidSource.Source = "provider"
+	invalidSource.ProviderOrderRef = k2aOrderRef
+	if _, err := svc.appendOrderEvent(ctx, invalidSource); err == nil {
+		t.Fatal("unsupported event provenance was accepted")
+	}
 	ack := k2aEvent("provider-order-ack", state.OrderID, "SUBMIT_ACKNOWLEDGED")
 	ack.ProviderOrderRef = k2aOrderRef
 	mustAppendK2AEvent(t, svc, ack, "OPEN")
+	wrongOrderRef := k2aFill("changed-provider-order", state.OrderID, "kiwoom_execution_RRRRRRRRRRRRRRRRRRRRRRRR", "1", "1000")
+	wrongOrderRef.ProviderOrderRef = "kiwoom_order_SSSSSSSSSSSSSSSSSSSSSSSS"
+	if _, err := svc.appendOrderEvent(ctx, wrongOrderRef); err == nil {
+		t.Fatal("a fill changed the order's provider reference")
+	}
 	conflictingOrder := mustReadyAndDispatchK2AOrder(t, svc, "client-provider-ref-conflict", "provider-ref-conflict")
 	conflictingAck := k2aEvent("provider-ref-conflict-ack", conflictingOrder.OrderID, "SUBMIT_ACKNOWLEDGED")
 	conflictingAck.ProviderOrderRef = k2aOrderRef
