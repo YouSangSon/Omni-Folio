@@ -549,7 +549,7 @@ func kiwoomReadAPIAllowed(apiID string) bool {
 
 func kiwoomReadPath(apiID string) string {
 	switch apiID {
-	case "ka00001", "kt00018", "ka10075":
+	case "ka00001", "kt00018", "ka10075", "kt00009":
 		return kiwoomAccountPath
 	case "ka10080", "ka10081":
 		return kiwoomChartPath
@@ -572,7 +572,10 @@ func kiwoomHTTPError(apiID string, status int) error {
 }
 
 func kiwoomCheckResult(apiID string, result kiwoomResult) error {
-	if result.ReturnCode == nil || *result.ReturnCode == 0 {
+	if result.ReturnCode == nil {
+		return &KiwoomError{Kind: "invalid_response", APIID: apiID}
+	}
+	if *result.ReturnCode == 0 {
 		return nil
 	}
 	code := *result.ReturnCode
