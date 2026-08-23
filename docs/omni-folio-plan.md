@@ -911,4 +911,4 @@ G4H persists only the existing all-or-nothing synthetic Kiwoom account snapshot.
 - Migration v3 makes ledger events, broker snapshots and broker reconciliations insert-only. Backup v3 preserves existing order recovery proofs and adds broker-state digest/count, strict schema/index/rowid/trigger checks and restored latest-record verification.
 - TDD tests cover idempotency, concurrent replay, conflicts, last-known-good retention, arithmetic, DB mutation attempts, runtime/recovery corruption rejection, manifest tampering and weak-trigger restore rejection.
 
-Still open: credentialed Kiwoom observation, scheduled sync, official freshness/timezone/retention, cash/valuation/open-order/full execution reconciliation, known-good API/UI, risk reservations/kill switch/lease-fencing, paper runner and all live-money paths.
+Still open: credentialed Kiwoom observation and scheduled known-good refresh, official freshness/timezone/retention, cash/valuation/open-order/full execution reconciliation, known-good API/UI, risk reservations/kill switch/lease-fencing, paper runner and all live-money paths.

@@ -14,7 +14,7 @@
 - `TestG4HConcurrentReplayAcrossSQLiteHandles`는 두 SQLite handle의 동시 replay가 raw snapshot/reconciliation을 중복 생성하지 않음을 검증한다.
 - `TestG4HSnapshotRowsAndLedgerEventsAreInsertOnly`는 DB mutation 차단을 검증한다.
 - `TestG4HBackupRestoresBrokerSnapshotProof`는 schema/backup v3 broker digest/count, restored projection, manifest tampering과 약한 trigger rejection을 검증한다.
-- `TestG4HBrokerRecoveryRejectsCorruptRows`는 runtime/recovery hash mismatch 거절을 검증한다.
+- `TestG4HBrokerRecoveryRejectsCorruptRows`, `TestG4HLatestRejectsReconciliationMetadataMismatch`, `TestG4HBrokerRecoveryRejectsSnapshotWithoutReconciliation`은 hash/metadata 불일치와 reconciliation 없는 raw snapshot의 runtime/recovery 거절을 검증한다.
 - 2026-08-24 KST에 `go test -run 'TestG4H|TestK2ABackup|TestSchema|TestHealth|TestRestore' -count=1 -v`, `make check`, `make smoke`, `cd services/core && go test -race ./... -count=1`, `git diff --check`, secret-pattern scan을 통과했다.
 
 ## Not proven
