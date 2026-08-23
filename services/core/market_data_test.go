@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -28,7 +30,7 @@ func TestMarketDataCandlesFixtureResponseIsExact(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
-	const want = "{\"symbol\":\"AAPL\",\"venue\":\"XNAS\",\"timezone\":\"America/New_York\",\"interval\":\"1d\",\"source\":\"local_fixture\",\"sample\":true,\"state\":\"stale\",\"source_as_of\":\"2026-01-07T00:00:00Z\",\"fetched_at\":\"2026-01-10T15:01:00Z\",\"issues\":[{\"code\":\"sample_data\",\"message\":\"market data is a local sample and not live\"}],\"bars\":[{\"at\":\"2026-01-02T00:00:00Z\",\"open\":\"10\",\"high\":\"10.5\",\"low\":\"9.5\",\"close\":\"10\",\"volume\":\"100\"},{\"at\":\"2026-01-03T00:00:00Z\",\"open\":\"11\",\"high\":\"11.75\",\"low\":\"10.5\",\"close\":\"11.5\",\"volume\":\"6\"},{\"at\":\"2026-01-04T00:00:00Z\",\"open\":\"12\",\"high\":\"13\",\"low\":\"11.5\",\"close\":\"12.5\",\"volume\":\"8\"},{\"at\":\"2026-01-05T00:00:00Z\",\"open\":\"13\",\"high\":\"14.5\",\"low\":\"12.75\",\"close\":\"14\",\"volume\":\"20\"},{\"at\":\"2026-01-06T00:00:00Z\",\"open\":\"14\",\"high\":\"15.5\",\"low\":\"13.5\",\"close\":\"15\",\"volume\":\"100\"},{\"at\":\"2026-01-07T00:00:00Z\",\"open\":\"16\",\"high\":\"16.5\",\"low\":\"15.5\",\"close\":\"16\",\"volume\":\"100\"}]}\n"
+	const want = "{\"symbol\":\"AAPL\",\"venue\":\"XNAS\",\"timezone\":\"America/New_York\",\"interval\":\"1d\",\"price_adjustment\":\"unspecified\",\"source\":\"local_fixture\",\"sample\":true,\"state\":\"stale\",\"source_as_of\":\"2026-01-07T00:00:00Z\",\"fetched_at\":\"2026-01-10T15:01:00Z\",\"issues\":[{\"code\":\"sample_data\",\"message\":\"market data is a local sample and not live\"}],\"bars\":[{\"at\":\"2026-01-02T00:00:00Z\",\"open\":\"10\",\"high\":\"10.5\",\"low\":\"9.5\",\"close\":\"10\",\"volume\":\"100\"},{\"at\":\"2026-01-03T00:00:00Z\",\"open\":\"11\",\"high\":\"11.75\",\"low\":\"10.5\",\"close\":\"11.5\",\"volume\":\"6\"},{\"at\":\"2026-01-04T00:00:00Z\",\"open\":\"12\",\"high\":\"13\",\"low\":\"11.5\",\"close\":\"12.5\",\"volume\":\"8\"},{\"at\":\"2026-01-05T00:00:00Z\",\"open\":\"13\",\"high\":\"14.5\",\"low\":\"12.75\",\"close\":\"14\",\"volume\":\"20\"},{\"at\":\"2026-01-06T00:00:00Z\",\"open\":\"14\",\"high\":\"15.5\",\"low\":\"13.5\",\"close\":\"15\",\"volume\":\"100\"},{\"at\":\"2026-01-07T00:00:00Z\",\"open\":\"16\",\"high\":\"16.5\",\"low\":\"15.5\",\"close\":\"16\",\"volume\":\"100\"}]}\n"
 	if w.Body.String() != want {
 		t.Fatalf("unexpected response:\n%s", w.Body.String())
 	}
@@ -103,5 +105,52 @@ func TestMarketDataCandlesErrorsAndQueryValidation(t *testing.T) {
 	status, body = request("/v1/market-data/candles?symbol=AAPL&interval=1d")
 	if status != http.StatusInternalServerError || body != (APIError{Code: "internal_error", Message: "internal server error"}) {
 		t.Fatalf("mismatch status=%d body=%+v", status, body)
+	}
+	for _, adjustment := range []string{"", marketDataAdjustmentProviderAdjusted, "split_adjusted"} {
+		svc.marketData = marketDataPortFunc(func(context.Context, string, string) (*MarketDataSeries, error) {
+			return &MarketDataSeries{
+				Symbol: "AAPL", Venue: "XNAS", Timezone: "America/New_York", Interval: "1d", PriceAdjustment: adjustment,
+				Bars: []MarketDataBar{{At: "2026-01-07T00:00:00Z", Open: "10", High: "11", Low: "9", Close: "10", Volume: "1"}},
+			}, nil
+		})
+		status, body = request("/v1/market-data/candles?symbol=AAPL&interval=1d")
+		if status != http.StatusInternalServerError || body != (APIError{Code: "internal_error", Message: "internal server error"}) {
+			t.Fatalf("adjustment=%q status=%d body=%+v", adjustment, status, body)
+		}
+	}
+}
+
+func TestMarketDataOpenAPIRequiresPriceAdjustment(t *testing.T) {
+	raw, err := os.ReadFile("../../contracts/openapi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document struct {
+		Components struct {
+			Schemas map[string]struct {
+				Required   []string `json:"required"`
+				Properties map[string]struct {
+					Enum  []string        `json:"enum"`
+					Const json.RawMessage `json:"const"`
+				} `json:"properties"`
+				AllOf []struct {
+					Properties map[string]struct {
+						Const json.RawMessage `json:"const"`
+					} `json:"properties"`
+				} `json:"allOf"`
+			} `json:"schemas"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	base := document.Components.Schemas["MarketDataCandles"]
+	if !slices.Contains(base.Required, "price_adjustment") ||
+		!slices.Equal(base.Properties["price_adjustment"].Enum, []string{marketDataAdjustmentUnspecified, marketDataAdjustmentProviderAdjusted}) {
+		t.Fatal("MarketDataCandles must require the canonical price_adjustment enum")
+	}
+	fixture := document.Components.Schemas["LocalFixtureMarketDataCandles"]
+	if len(fixture.AllOf) != 2 || string(fixture.AllOf[1].Properties["price_adjustment"].Const) != `"unspecified"` {
+		t.Fatal("LocalFixtureMarketDataCandles must pin price_adjustment=unspecified")
 	}
 }

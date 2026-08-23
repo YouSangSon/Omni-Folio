@@ -92,43 +92,47 @@ FakeApi goldenApi({bool neverVerified = false}) {
   );
 }
 
-MarketCandles marketCandles({String state = 'stale', bool sample = true}) =>
-    MarketCandles.fromJson({
-      'symbol': 'AAPL',
-      'venue': 'XNAS',
-      'timezone': 'America/New_York',
-      'interval': '1d',
-      'source': 'local_fixture',
-      'sample': sample,
-      'state': state,
-      'source_as_of': '2026-08-22T20:00:00Z',
-      'fetched_at': '2026-08-24T03:00:00Z',
-      'issues': state == 'partial'
-          ? [
-              {'code': 'missing_session', 'message': '일부 세션이 없습니다.'},
-            ]
-          : const [],
-      'bars': state == 'empty'
-          ? const []
-          : [
-              {
-                'at': '2026-08-21T20:00:00Z',
-                'open': '100',
-                'high': '110',
-                'low': '90',
-                'close': '105',
-                'volume': '1200',
-              },
-              {
-                'at': '2026-08-22T20:00:00Z',
-                'open': '105',
-                'high': '112',
-                'low': '100',
-                'close': '101',
-                'volume': '900',
-              },
-            ],
-    });
+MarketCandles marketCandles({
+  String state = 'stale',
+  bool sample = true,
+  String priceAdjustment = 'unspecified',
+}) => MarketCandles.fromJson({
+  'symbol': 'AAPL',
+  'venue': 'XNAS',
+  'timezone': 'America/New_York',
+  'interval': '1d',
+  'price_adjustment': priceAdjustment,
+  'source': 'local_fixture',
+  'sample': sample,
+  'state': state,
+  'source_as_of': '2026-08-22T20:00:00Z',
+  'fetched_at': '2026-08-24T03:00:00Z',
+  'issues': state == 'partial'
+      ? [
+          {'code': 'missing_session', 'message': '일부 세션이 없습니다.'},
+        ]
+      : const [],
+  'bars': state == 'empty'
+      ? const []
+      : [
+          {
+            'at': '2026-08-21T20:00:00Z',
+            'open': '100',
+            'high': '110',
+            'low': '90',
+            'close': '105',
+            'volume': '1200',
+          },
+          {
+            'at': '2026-08-22T20:00:00Z',
+            'open': '105',
+            'high': '112',
+            'low': '100',
+            'close': '101',
+            'volume': '900',
+          },
+        ],
+});
 
 Future<void> pumpUi(WidgetTester tester) async {
   await tester.pump();
@@ -204,11 +208,16 @@ void main() {
       throwsFormatException,
     );
     expect(marketCandles().bars.last.close, '101');
+    expect(
+      () => marketCandles(priceAdjustment: 'split_adjusted'),
+      throwsFormatException,
+    );
     final providerCandles = MarketCandles.fromJson({
       'symbol': 'AAPL',
       'venue': 'XNAS',
       'timezone': 'America/New_York',
       'interval': '1d',
+      'price_adjustment': 'provider_adjusted',
       'source': 'provider_neutral_fixture',
       'sample': false,
       'state': 'success',
@@ -233,6 +242,7 @@ void main() {
         'venue': 'XNAS',
         'timezone': 'America/New_York',
         'interval': '1d',
+        'price_adjustment': 'unspecified',
         'source': 'local_fixture',
         'sample': false,
         'state': 'success',
@@ -258,6 +268,7 @@ void main() {
         'venue': 'XNAS',
         'timezone': 'America/New_York',
         'interval': '1d',
+        'price_adjustment': 'provider_adjusted',
         'source': 'provider_neutral_fixture',
         'sample': false,
         'state': 'success',
@@ -289,6 +300,7 @@ void main() {
         'venue': 'XNAS',
         'timezone': 'America/New_York',
         'interval': '1d',
+        'price_adjustment': 'unspecified',
         'source': 'local_fixture',
         'sample': true,
         'state': 'success',
@@ -400,6 +412,7 @@ void main() {
             'venue': 'XNAS',
             'timezone': 'America/New_York',
             'interval': '1d',
+            'price_adjustment': 'unspecified',
             'source': 'local_fixture',
             'sample': true,
             'state': 'success',
@@ -439,6 +452,7 @@ void main() {
             'venue': 'XNAS',
             'timezone': 'America/New_York',
             'interval': '1d',
+            'price_adjustment': 'provider_adjusted',
             'source': 'provider_neutral_fixture',
             'sample': false,
             'state': 'success',
@@ -653,6 +667,7 @@ void main() {
       await pumpUi(tester);
 
       expect(find.text('샘플 데이터 · 실시간 아님'), findsOneWidget);
+      expect(find.textContaining('가격 기준 조정 여부 확인 안 됨'), findsOneWidget);
       expect(find.text('시세 차트'), findsOneWidget);
       expect(find.textContaining('오래된 시세입니다'), findsOneWidget);
       expect(
@@ -769,7 +784,11 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-    final api = goldenApi()..candlesValue = marketCandles(state: 'success');
+    final api = goldenApi()
+      ..candlesValue = marketCandles(
+        state: 'success',
+        priceAdjustment: 'provider_adjusted',
+      );
     await tester.pumpWidget(OmniFolioApp(api: api));
     await pumpUi(tester);
     await tester.tap(find.text('보유'));
@@ -777,6 +796,7 @@ void main() {
     await tester.tap(find.text('AAPL'));
     await pumpUi(tester);
     expect(find.textContaining('원천 local_fixture'), findsOneWidget);
+    expect(find.textContaining('가격 기준 공급자 조정 가격'), findsOneWidget);
     await tester.drag(find.byType(ListView).last, const Offset(0, -2000));
     await tester.pump();
     await tester.tap(find.text('정확한 OHLCV 표 보기'));

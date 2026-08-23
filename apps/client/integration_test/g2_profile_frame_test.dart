@@ -180,6 +180,7 @@ class _ProfileApi implements OmniApi {
     'venue': 'KRX',
     'timezone': 'Asia/Seoul',
     'interval': '1d',
+    'price_adjustment': 'unspecified',
     'source': 'local_fixture',
     'sample': true,
     'state': 'stale',
