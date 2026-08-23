@@ -1,7 +1,7 @@
 <!-- /autoplan restore point: /Users/yousang/.gstack/projects/Omni-Folio/unknown-autoplan-restore-20260823-201622.md -->
 # Omni Folio 구현 계획 초안
 
-상태: 제품 전제 확정, staged hybrid/cloud-ready 아키텍처 사용자 승인 대기
+상태: 제품 전제와 staged hybrid/cloud-ready 아키텍처 승인 완료, Phase A 실행 계획 수립 중
 기준일: 2026-08-23
 
 ## 목표
@@ -199,7 +199,7 @@ CSV import -> 중복 검토 -> 거래 원장 -> 보유/현금/손익 -> JSON bac
 
 ## `/autoplan` CEO 재검토: local-first 실행 경계
 
-판정: **D1 제품 전제 확정. Phase A는 로컬 read-only로 진행하고, cloud/always-on 실행은 무인 자동매매 진입 게이트로 둔다. 세부 아키텍처 착수는 사용자 승인 대기다.**
+판정: **D1 제품 전제와 권장 아키텍처 승인 완료. Phase A는 로컬 read-only로 진행하고, cloud/always-on 실행은 무인 자동매매 진입 게이트로 둔다. 합의된 범위의 가역적인 로컬 작업은 추천안을 자동 채택해 진행한다.**
 
 ### 시스템 감사
 
