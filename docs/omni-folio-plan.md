@@ -101,7 +101,7 @@ Phase A 코어가 green이 된 뒤 같은 단계의 후속 slice에서 수동 �
 
 ### Phase D: 모의주문
 
-- 현재 K2A 통과 범위는 Go 내부 합성 `LIMIT`/`KRW`/`KRX` intent/event log, unknown-submit replay와 현재 backup v3의 order-state proof뿐이다. 아래 제품·broker 항목은 K2B 이후 범위다.
+- 현재 K2A 통과 범위는 Go 내부 합성 `LIMIT`/`KRW`/`KRX` intent/event log와 unknown-submit replay다. 현재 backup v4는 이 order-state proof와 K2C authority/reservation proof를 함께 검증한다. 아래 제품·broker 항목은 K2B 이후 범위다.
 - 종목 상세의 매수/매도 티켓
 - 시장가·지정가, 수량·예상 금액·수수료 확인
 - 주문 접수·부분체결·체결·취소·거절 상태
@@ -871,12 +871,12 @@ Still open: runtime Kiwoom market-data selection, credentialed mock/production o
 K2A fixes the durable order/recovery contract before any Kiwoom order credential or network transport exists. The boundary is intentionally internal-only: synthetic Kiwoom `LIMIT` BUY/SELL for KRX/KRW, with no public API or Flutter order surface.
 
 - `client_order_id`, event ID and provider execution aliases are durable and payload-bound. Conflicting reuse fails without mutating state.
-- Risk verdict ordering is enforced before dispatch, but no risk policy, version, reason or limit engine is claimed. Durable `SUBMIT_DISPATCHED` becomes `SUBMIT_UNKNOWN`; the same order and account-wide new submit stay blocked until an explicit reconciliation event resolves it. Cancel of an independently known open order remains available as a risk-reducing command.
+- At the K2A checkpoint, risk verdict ordering was enforced before dispatch without a risk policy. K2C now supersedes direct approval with a reservation-bound credential-free BUY policy; durable `SUBMIT_DISPATCHED` still becomes `SUBMIT_UNKNOWN`, and account-wide new submit stays blocked until explicit reconciliation resolves it. Cancel of an independently known open order remains available as a risk-reducing command.
 - Append-only replay covers submit ack/reject, partial/full/late fill, cancel dispatch/ack/reject, restart and overfill rejection. A provider “not found” observation alone cannot resolve unknown state.
-- SQLite migration v2 added strict insert-only intent/event tables. Current backup v3 retains their canonical row hash/metadata and full replay, source/candidate counts/digest, exact migration history, STRICT/PK/UNIQUE/FK/rowid/trigger checks while also proving G4H broker snapshot state. Earlier backup formats are not automatically eligible for v3 activation.
+- SQLite migration v2 added strict insert-only intent/event tables. Current backup v4 retains their canonical row hash/metadata and full replay, adds K2C authority/reservation digests and counts, and verifies exact migration history, STRICT/PK/UNIQUE/FK/rowid/trigger checks while also proving G4H broker snapshot state. Earlier backup formats are not automatically eligible for v4 activation.
 - TDD checkpoints are `35ae80e`, `69f6f86`, `37bbff4` and GREEN `132de8e`. `make check`, `make smoke`, Go race/vet, 17 Flutter tests, 13 Python tests, 15 JSON contracts and an independent no-P0/P1 review pass locally on 2026-08-24 KST.
 
-Still open for K2B: credentialed Kiwoom mock submit/query, broker lookup and reconciliation, real risk policy and fencing, public OpenAPI/Flutter order flow, market/amend orders, ledger mutation from fills and every live-money path.
+Still open for K2B: credentialed Kiwoom mock submit/query, broker lookup and reconciliation, production cash/position/fee/loss/time/freshness risk, broker-coupled runner fencing, public OpenAPI/Flutter order flow, market/amend orders, ledger mutation from fills and every live-money path.
 
 ## 2026-08-24 G4F/K2B0 continuation: known-order execution reconciliation
 
@@ -887,7 +887,7 @@ K2B0 adds only the smallest safe lookup bridge that existing K2A storage can sup
 - Incomplete or missing lookup facts preserve the prior state. A complete lookup-only tuple match cannot bind `SUBMIT_UNKNOWN`; it returns `UNCORRELATED` and keeps the account-wide new-submit block.
 - TDD started with the missing reconciliation API and added regressions for fractional timestamp order, incomplete evidence, changed executions, cross-order execution conflicts, mid-transaction rollback, tuple/time conflicts and raw identifier redaction. GREEN checkpoint is `4a2a6e4`; `make check`, Go race and independent safety review pass locally on 2026-08-24 KST.
 
-Still open for K2B: official `kt10000`/`kt10001` submit and `ka10075`/`ka10076`/`kt00007`/`kt00009` credentialed mock observations, documented-or-observed correlation strong enough to handle a lost submit response, real risk/fencing, public OpenAPI/Flutter order flow, market/amend, ledger mutation and every live-money path.
+Still open for K2B: official `kt10000`/`kt10001` submit and `ka10075`/`ka10076`/`kt00007`/`kt00009` credentialed mock observations, documented-or-observed correlation strong enough to handle a lost submit response, production risk/broker-coupled fencing, public OpenAPI/Flutter order flow, market/amend, ledger mutation and every live-money path.
 
 ## 2026-08-24 G4G/K2B1 continuation: dated execution scan
 
@@ -899,7 +899,7 @@ K2B1 adds the smallest provider-private observation boundary that can be justifi
 - `PaginationComplete` describes cursor traversal only. `ExecutionsComplete` remains false because the official contract does not establish retention, cross-page snapshot consistency, timezone, row ordering or identifier lifetime. The date and naive execution clock are deliberately not converted to UTC.
 - TDD exposed and fixed two broader trust-boundary issues: cumulative fills could exceed order quantity, and the shared Kiwoom result checker accepted a missing `return_code`. Code checkpoint `d93cdee`; `make check`, `make smoke`, full Go race and independent architecture/test re-reviews pass locally on 2026-08-24 KST.
 
-Still open for K2B: credentialed mock observations, authoritative empty/result/time/ID semantics, limiter behavior, lost-submit correlation, scheduled credentialed known-good sync, K2B0 mapping, real risk/fencing, public order flow, ledger mutation and every live-money path.
+Still open for K2B: credentialed mock observations, authoritative empty/result/time/ID semantics, limiter behavior, lost-submit correlation, scheduled credentialed known-good sync, K2B0 mapping, production risk/broker-coupled fencing, public order flow, ledger mutation and every live-money path.
 
 ## 2026-08-24 G4H continuation: credential-free known-good broker snapshot
 
@@ -908,7 +908,19 @@ G4H persists only the existing all-or-nothing synthetic Kiwoom account snapshot.
 - `KiwoomSnapshot` now carries explicit `complete=true`; persistence revalidates provider/environment/exchange/account identity, canonical UTC and exact decimals, unique ascending KRX positions and open orders.
 - One SQLite transaction reads the current ledger revision and KRX/KRW quantities for `account-main`, computes deterministic per-symbol `broker - ledger` quantities with exact rational arithmetic, and stores raw snapshot identity separately from the ledger-revision reconciliation record.
 - Exact replay of the same raw snapshot and ledger revision returns the same reconciliation. A later ledger revision appends a new reconciliation without duplicating or mutating the raw snapshot. A changed payload at the same fetched-at, incomplete snapshot, invalid generated ID or corrupt durable hash fails closed without replacing the latest fetched known-good record.
-- Migration v3 makes ledger events, broker snapshots and broker reconciliations insert-only. Backup v3 preserves existing order recovery proofs and adds broker-state digest/count, strict schema/index/rowid/trigger checks and restored latest-record verification.
+- Migration v3 makes ledger events, broker snapshots and broker reconciliations insert-only. Current backup v4 preserves those proofs and adds execution-authority/risk-reservation digest/count plus strict schema/index/rowid/trigger checks and restored latest-record verification.
 - TDD tests cover idempotency, concurrent replay, conflicts, last-known-good retention, arithmetic, DB mutation attempts, runtime/recovery corruption rejection, manifest tampering and weak-trigger restore rejection.
 
-Still open: credentialed Kiwoom observation and scheduled known-good refresh, official freshness/timezone/retention, cash/valuation/open-order/full execution reconciliation, known-good API/UI, risk reservations/kill switch/lease-fencing, paper runner and all live-money paths.
+Still open: credentialed Kiwoom observation and scheduled known-good refresh, official freshness/timezone/retention, cash/valuation/open-order/full execution reconciliation, known-good API/UI, production risk, paper runner and all live-money paths.
+
+## 2026-08-24 G4I/K2C continuation: credential-free execution authority
+
+K2C adds the smallest internal authority that can prevent accidental synthetic dispatch without creating a broker transport or public order surface.
+
+- Missing authority is fail-closed. Manual arm/halt is append-only; halt increments fencing and clears the lease. Each service creates a crypto-random process owner, and only the owner of an unexpired 30-second account lease with the exact fencing token can create a new authorization.
+- Fixed `credential_free_buy_v1` accepts only Kiwoom synthetic KRX/KRW LIMIT BUY for `005930` and `000660`, at most 10 shares, at most KRW 1,000,000 per order and KRW 1,000,000 across active reservations. Exact rational arithmetic is reused; partial and unresolved states retain the full reservation until a terminal state.
+- One immediate SQLite transaction inserts an immutable reservation and its consecutive reservation-bound `RISK_APPROVED` and `SUBMIT_DISPATCHED` events. Exact DB triggers reject ordinary append/direct SQL bypass; a collision rolls the entire transaction back.
+- Migration v4 preserves reservation-free v3 order events as legacy non-authoritative history without backfill. Backup v4 hashes/counts authority and reservation records, replays transitions and bindings, and rejects missing/weak schema, foreign keys and guard triggers. A restored service receives a new owner and cannot reuse the saved process lease.
+- TDD covers default-off, halt, stale/foreign/expired lease, two-handle lease and reservation races, fixed limits, terminal release, idempotency, DB bypass, atomic rollback, legacy migration, backup restore and weak-trigger rejection. `make check`, full Go race and `make smoke` pass locally on 2026-08-24 KST.
+
+Still open: broker request/credential/transmission proof, SELL, cash/position/fee/daily-loss/order-rate/market-hours/stale-data risk, owner/strategy/promotion approval, broker-coupled long-running runner, public OpenAPI/Flutter order flow, paper/live readiness and every real-money path.

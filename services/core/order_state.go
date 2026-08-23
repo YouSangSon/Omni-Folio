@@ -44,6 +44,9 @@ type OrderEvent struct {
 	Quantity             string `json:"quantity,omitempty"`
 	Price                string `json:"price,omitempty"`
 	OccurredAt           string `json:"occurred_at,omitempty"`
+	RiskReservationID    string `json:"risk_reservation_id,omitempty"`
+	RiskPolicyVersion    string `json:"risk_policy_version,omitempty"`
+	FencingToken         int64  `json:"fencing_token,omitempty"`
 }
 
 type OrderState struct {
@@ -64,9 +67,13 @@ type orderQuerier interface {
 }
 
 type orderRecoveryProof struct {
-	SHA256 string
-	Orders int
-	Events int
+	SHA256                   string
+	Orders                   int
+	Events                   int
+	ExecutionAuthoritySHA256 string
+	ExecutionAuthorityEvents int
+	RiskReservationSHA256    string
+	RiskReservations         int
 }
 
 func proveOrderRecovery(ctx context.Context, q orderQuerier) (orderRecoveryProof, error) {
@@ -116,7 +123,7 @@ func proveOrderRecovery(ctx context.Context, q orderQuerier) (orderRecoveryProof
 	}
 
 	eventRows, err := q.QueryContext(ctx, `SELECT sequence,event_id,event_sha256,order_id,event_type,source,provider_order_ref,provider_execution_ref,event_json,recorded_at
-		FROM order_events ORDER BY sequence`)
+		,authority_reservation_id FROM order_events ORDER BY sequence`)
 	if err != nil {
 		return orderRecoveryProof{}, err
 	}
@@ -124,8 +131,8 @@ func proveOrderRecovery(ctx context.Context, q orderQuerier) (orderRecoveryProof
 	for eventRows.Next() {
 		var sequence int64
 		var eventID, eventSHA, orderID, eventType, source, eventJSON, recordedAt string
-		var providerOrderRef, providerExecutionRef sql.NullString
-		if err := eventRows.Scan(&sequence, &eventID, &eventSHA, &orderID, &eventType, &source, &providerOrderRef, &providerExecutionRef, &eventJSON, &recordedAt); err != nil {
+		var providerOrderRef, providerExecutionRef, authorityReservationID sql.NullString
+		if err := eventRows.Scan(&sequence, &eventID, &eventSHA, &orderID, &eventType, &source, &providerOrderRef, &providerExecutionRef, &eventJSON, &recordedAt, &authorityReservationID); err != nil {
 			eventRows.Close()
 			return orderRecoveryProof{}, err
 		}
@@ -148,12 +155,12 @@ func proveOrderRecovery(ctx context.Context, q orderQuerier) (orderRecoveryProof
 		}
 		if string(canonical) != eventJSON || actualSHA != eventSHA || event.EventID != eventID || event.OrderID != orderID ||
 			event.Type != eventType || event.Source != source || !nullableMatches(providerOrderRef, event.ProviderOrderRef) ||
-			!nullableMatches(providerExecutionRef, event.ProviderExecutionRef) {
+			!nullableMatches(providerExecutionRef, event.ProviderExecutionRef) || !nullableMatches(authorityReservationID, event.RiskReservationID) {
 			eventRows.Close()
 			return orderRecoveryProof{}, fmt.Errorf("order event %q metadata or hash mismatch", eventID)
 		}
 		if err := encoder.Encode([]any{"order_events", sequence, eventID, eventSHA, orderID, eventType, source,
-			providerOrderRef, providerExecutionRef, eventJSON, recordedAt}); err != nil {
+			providerOrderRef, providerExecutionRef, eventJSON, recordedAt, authorityReservationID}); err != nil {
 			eventRows.Close()
 			return orderRecoveryProof{}, err
 		}
@@ -171,7 +178,22 @@ func proveOrderRecovery(ctx context.Context, q orderQuerier) (orderRecoveryProof
 			return orderRecoveryProof{}, fmt.Errorf("replay order %q: %w", orderID, err)
 		}
 	}
-	return orderRecoveryProof{hex.EncodeToString(hash.Sum(nil)), len(orderIDs), eventCount}, nil
+	authoritySHA, authorityEvents, err := proveExecutionAuthorityRecovery(ctx, q)
+	if err != nil {
+		return orderRecoveryProof{}, fmt.Errorf("execution authority recovery: %w", err)
+	}
+	reservationSHA, reservations, err := proveRiskReservationRecovery(ctx, q)
+	if err != nil {
+		return orderRecoveryProof{}, fmt.Errorf("risk reservation recovery: %w", err)
+	}
+	if err := encoder.Encode([]any{"execution_authority", authoritySHA, authorityEvents, "risk_reservations", reservationSHA, reservations}); err != nil {
+		return orderRecoveryProof{}, err
+	}
+	return orderRecoveryProof{
+		SHA256: hex.EncodeToString(hash.Sum(nil)), Orders: len(orderIDs), Events: eventCount,
+		ExecutionAuthoritySHA256: authoritySHA, ExecutionAuthorityEvents: authorityEvents,
+		RiskReservationSHA256: reservationSHA, RiskReservations: reservations,
+	}, nil
 }
 
 func (s *Service) recordOrderIntent(ctx context.Context, intent OrderIntent) (*OrderState, error) {
@@ -303,8 +325,8 @@ func appendOrderEventTx(ctx context.Context, tx *sql.Tx, event OrderEvent, recor
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO order_events(event_id,event_sha256,order_id,event_type,source,provider_order_ref,provider_execution_ref,event_json,recorded_at) VALUES(?,?,?,?,?,?,?,?,?)`,
-		event.EventID, eventSHA, event.OrderID, event.Type, event.Source, nullable(event.ProviderOrderRef), nullable(event.ProviderExecutionRef), string(eventJSON), recordedAt); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO order_events(event_id,event_sha256,order_id,event_type,source,provider_order_ref,provider_execution_ref,event_json,recorded_at,authority_reservation_id) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		event.EventID, eventSHA, event.OrderID, event.Type, event.Source, nullable(event.ProviderOrderRef), nullable(event.ProviderExecutionRef), string(eventJSON), recordedAt, nullable(event.RiskReservationID)); err != nil {
 		return nil, err
 	}
 	return next, nil
@@ -524,6 +546,14 @@ func validateOrderEvent(event OrderEvent) error {
 	if !allowed[event.Type] {
 		return fmt.Errorf("unsupported order event %q", event.Type)
 	}
+	authorityMetadata := event.RiskReservationID != "" || event.RiskPolicyVersion != "" || event.FencingToken != 0
+	if event.Type == "RISK_APPROVED" || event.Type == "SUBMIT_DISPATCHED" {
+		if authorityMetadata && (!safeOrderID(event.RiskReservationID) || event.RiskPolicyVersion != syntheticRiskPolicyVersion || event.FencingToken <= 0 || event.Source != "synthetic") {
+			return errors.New("authorized order event metadata is invalid")
+		}
+	} else if authorityMetadata {
+		return errors.New("authority metadata is invalid for this order event")
+	}
 	if event.Type == "SUBMIT_ACKNOWLEDGED" {
 		if !orderAlias(event.ProviderOrderRef, "order") || event.ProviderExecutionRef != "" || event.Quantity != "" || event.Price != "" || event.OccurredAt != "" {
 			return errors.New("submit acknowledgement payload is invalid")
@@ -635,7 +665,7 @@ func insertOrderEvent(ctx context.Context, tx *sql.Tx, event OrderEvent, recorde
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO order_events(event_id,event_sha256,order_id,event_type,source,provider_order_ref,provider_execution_ref,event_json,recorded_at) VALUES(?,?,?,?,?,?,?,?,?)`,
-		event.EventID, eventSHA, event.OrderID, event.Type, event.Source, nil, nil, string(eventJSON), recordedAt)
+	_, err = tx.ExecContext(ctx, `INSERT INTO order_events(event_id,event_sha256,order_id,event_type,source,provider_order_ref,provider_execution_ref,event_json,recorded_at,authority_reservation_id) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		event.EventID, eventSHA, event.OrderID, event.Type, event.Source, nil, nil, string(eventJSON), recordedAt, nullable(event.RiskReservationID))
 	return err
 }

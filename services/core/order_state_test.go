@@ -107,7 +107,9 @@ func TestK2ARiskGateAndExplicitUnknownRecovery(t *testing.T) {
 	}
 
 	blocked := mustRecordK2AOrder(t, svc, "client-account-blocked")
-	mustAppendK2AEvent(t, svc, k2aEvent("blocked-risk-approved", blocked.OrderID, "RISK_APPROVED"), "READY")
+	if _, err := svc.appendOrderEvent(ctx, k2aEvent("blocked-risk-approved", blocked.OrderID, "RISK_APPROVED")); err == nil {
+		t.Fatal("direct risk approval bypassed execution authority")
+	}
 	if _, err := svc.appendOrderEvent(ctx, k2aEvent("blocked-submit", blocked.OrderID, "SUBMIT_DISPATCHED")); err == nil {
 		t.Fatal("account-wide dispatch block did not hold while another submit was unknown")
 	}
@@ -296,7 +298,7 @@ func TestK2AOrderTablesAreInsertOnly(t *testing.T) {
 	}
 }
 
-func TestSchemaMigratesV1ToV3AndReadinessRequiresV3(t *testing.T) {
+func TestSchemaMigratesV1ToV4AndReadinessRequiresV4(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v1.db")
 	db, err := openDB(path)
 	if err != nil {
@@ -324,13 +326,13 @@ func TestSchemaMigratesV1ToV3AndReadinessRequiresV3(t *testing.T) {
 	if err := db.QueryRow(`SELECT MAX(version), COUNT(*) FROM schema_migrations`).Scan(&version, &migrations); err != nil {
 		t.Fatal(err)
 	}
-	if version != 3 || migrations != 3 {
-		t.Fatalf("schema version=(%d,%d), want latest=3 with three migrations", version, migrations)
+	if version != 4 || migrations != 4 {
+		t.Fatalf("schema version=(%d,%d), want latest=4 with four migrations", version, migrations)
 	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM events WHERE event_id='preserved'`).Scan(&preserved); err != nil || preserved != 1 {
 		t.Fatalf("v1 data was not preserved: count=%d err=%v", preserved, err)
 	}
-	for _, table := range []string{"order_idempotency", "order_events", "broker_snapshots", "broker_snapshot_reconciliations"} {
+	for _, table := range []string{"order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations"} {
 		var exists int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&exists); err != nil || exists != 1 {
 			t.Fatalf("migration did not create %s: exists=%d err=%v", table, exists, err)
@@ -344,7 +346,7 @@ func TestSchemaMigratesV1ToV3AndReadinessRequiresV3(t *testing.T) {
 	w := httptest.NewRecorder()
 	svc.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if w.Code != http.StatusOK {
-		t.Fatalf("v3 schema was not ready: status=%d body=%s", w.Code, w.Body.String())
+		t.Fatalf("v4 schema was not ready: status=%d body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -389,9 +391,10 @@ func mustRecordK2AOrder(t *testing.T, svc *Service, clientOrderID string) *Order
 
 func mustReadyAndDispatchK2AOrder(t *testing.T, svc *Service, clientOrderID, eventPrefix string) *OrderState {
 	t.Helper()
+	_ = eventPrefix
 	state := mustRecordK2AOrder(t, svc, clientOrderID)
-	mustAppendK2AEvent(t, svc, k2aEvent(eventPrefix+"-risk-approved", state.OrderID, "RISK_APPROVED"), "READY")
-	return mustAppendK2AEvent(t, svc, k2aEvent(eventPrefix+"-submit-dispatched", state.OrderID, "SUBMIT_DISPATCHED"), "SUBMIT_UNKNOWN")
+	lease := mustK2CLease(t, svc, state.AccountRef)
+	return mustAuthorizeK2C(t, svc, state.OrderID, lease.FencingToken)
 }
 
 func mustAppendK2AEvent(t *testing.T, svc *Service, event OrderEvent, status string) *OrderState {

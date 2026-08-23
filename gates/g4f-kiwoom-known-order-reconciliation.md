@@ -31,5 +31,5 @@ Scope: Go core internal-only synthetic execution reconciliation for a Kiwoom ord
 - Credentialed Kiwoom mock submit/query observation and canonical adapter mapping.
 - A broker-guaranteed or empirically proven correlation contract for a lost submit response; tuple/time similarity alone is insufficient.
 - Public OpenAPI route and Flutter review/lifecycle/cancel UI.
-- Real risk policy, reservations, reasons, DB lease and fencing.
+- Production risk policy, broker-coupled reservations, reasons, lease and fencing. K2C covers only credential-free internal BUY authority.
 - Market/amend orders, ledger fill reconciliation, portfolio mutation and every real-money gate.

@@ -1,6 +1,6 @@
 # Gates: G4E / K2A Kiwoom Synthetic Order-State Log
 
-Scope: Go core internal-only synthetic Kiwoom `LIMIT`/`KRW`/`KRX` order state. No network, credential, public route, Flutter order UI, real risk engine, broker lookup, fencing, market/amend order, ledger fill reconciliation, or live submit.
+Scope: Go core internal-only synthetic Kiwoom `LIMIT`/`KRW`/`KRX` order state. No network, credential, public route, Flutter order UI, broker lookup, market/amend order, ledger fill reconciliation, or live submit. G4I/K2C later supersedes the direct synthetic risk/dispatch setup with a credential-free authority; this file remains K2A historical evidence.
 
 ## Acceptance and evidence
 
@@ -16,12 +16,12 @@ Scope: Go core internal-only synthetic Kiwoom `LIMIT`/`KRW`/`KRX` order state. N
 - [x] **K2A4 event identity:** raw provider IDs, invalid provenance, changed/cross-order provider refs, conflicting event IDs and provider execution aliases, malformed fills and overfills fail closed.
   - CHECK: `cd services/core && go test -run '^TestK2AEventAndProviderExecutionIdempotencyConflicts$' -count=1 ./...`
   - EVIDENCE: PASS.
-- [x] **K2A5 schema and restart:** migration v1→v2 preserves v1 data, readiness requires the exact contiguous migration history, and both order tables are insert-only.
-  - CHECK: `cd services/core && go test -run '^TestK2AOrderTablesAreInsertOnly$|^TestK2AMigratesV1ToV2AndReadinessRequiresV2$|^TestHealthAndReadinessAreSeparate$' -count=1 ./...`
+- [x] **K2A5 schema and restart:** migration v1→v4 preserves v1 data, readiness requires the exact contiguous migration history, and order/authority tables are insert-only.
+  - CHECK: `cd services/core && go test -run '^TestK2AOrderTablesAreInsertOnly$|^TestSchemaMigratesV1ToV4AndReadinessRequiresV4$|^TestHealthAndReadinessAreSeparate$' -count=1 ./...`
   - EVIDENCE: PASS.
-- [x] **K2A6 order-aware backup:** originally passed as backup v2; current backup v3 retains source/candidate order digests/counts, row hash/metadata/full replay and schema protections while adding broker-state recovery evidence.
+- [x] **K2A6 order-aware backup:** originally passed as backup v2; current backup v4 retains source/candidate order digests/counts, row hash/metadata/full replay and schema protections while adding broker-state and K2C authority/reservation recovery evidence.
   - CHECK: `cd services/core && go test -run '^TestK2ABackup|^TestK2ARestore' -count=1 ./...`
-  - EVIDENCE: PASS. Earlier backup formats are not eligible for automatic v3 activation.
+  - EVIDENCE: PASS. Earlier backup formats are not eligible for automatic v4 activation.
 
 ## Verification
 
@@ -35,8 +35,8 @@ Scope: Go core internal-only synthetic Kiwoom `LIMIT`/`KRW`/`KRX` order state. N
 - Kiwoom mock credentials and real broker submit/query observations.
 - Broker lookup/reconciliation that resolves `SUBMIT_UNKNOWN`.
 - Public OpenAPI route and Flutter order review/lifecycle UI.
-- Real risk policy/limits/reasons; K2A proves verdict ordering only.
-- DB lease, fencing and owner-token checks.
+- Production risk beyond K2C's fixed credential-free BUY policy.
+- Broker-coupled runner lease/fencing beyond K2C's internal 30-second account lease.
 - Market orders, amend/correction and provider-specific capability handling.
 - Ledger fill reconciliation and portfolio mutation.
 - Production/live submit and every real-money gate.

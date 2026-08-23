@@ -1,17 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://omni-folio.local/contracts/backup-manifest.v3.schema.json",
-  "title": "Omni-Folio Backup Manifest v3",
-  "description": "CLI contract for a separately restored schema-v3 backup candidate. Schema validity never authorizes replacing the active DB: database, ledger snapshot, replayable order state, and known-good broker snapshot proofs must match and verification_receipt must be verified and eligible_for_activation before replacement.",
+  "$id": "https://omni-folio.local/contracts/backup-manifest.v4.schema.json",
+  "title": "Omni-Folio Backup Manifest v4",
+  "description": "CLI contract for a separately restored schema-v4 backup candidate. Schema validity never authorizes replacing the active DB: database, ledger snapshot, replayable order state, execution authority, risk reservations, and known-good broker snapshot proofs must match and verification_receipt must be verified and eligible_for_activation before replacement.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["format_version", "schema_version", "created_at", "source_ledger_revision", "order_state_sha256", "order_count", "order_event_count", "broker_state_sha256", "broker_snapshot_count", "broker_reconciliation_count", "db_sha256", "size_bytes", "expected_snapshot_sha256", "encryption", "verification_receipt"],
+  "required": ["format_version", "schema_version", "created_at", "source_ledger_revision", "order_state_sha256", "order_count", "order_event_count", "execution_authority_sha256", "execution_authority_event_count", "risk_reservation_sha256", "risk_reservation_count", "broker_state_sha256", "broker_snapshot_count", "broker_reconciliation_count", "db_sha256", "size_bytes", "expected_snapshot_sha256", "encryption", "verification_receipt"],
   "properties": {
     "format_version": {
-      "const": "omni-folio-backup.v3"
+      "const": "omni-folio-backup.v4"
     },
     "schema_version": {
-      "const": "omni-folio.sqlite.v3"
+      "const": "omni-folio.sqlite.v4"
     },
     "created_at": {
       "$ref": "#/$defs/timestamp"
@@ -28,6 +28,22 @@
       "maximum": 9007199254740991
     },
     "order_event_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "execution_authority_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "execution_authority_event_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "risk_reservation_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "risk_reservation_count": {
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991

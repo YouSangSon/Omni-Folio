@@ -24,10 +24,11 @@ func TestK2ABackupProvesOrderRecoveryState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v3" || manifest.SchemaVersion != "omni-folio.sqlite.v3" {
+	if manifest.FormatVersion != "omni-folio-backup.v4" || manifest.SchemaVersion != "omni-folio.sqlite.v4" {
 		t.Fatalf("backup did not declare the order-aware schema: %+v", manifest)
 	}
-	if manifest.OrderStateSHA256 == "" || manifest.OrderCount != 1 || manifest.OrderEventCount != 3 {
+	if manifest.OrderStateSHA256 == "" || manifest.OrderCount != 1 || manifest.OrderEventCount != 3 ||
+		manifest.ExecutionAuthorityEventCount != 2 || manifest.RiskReservationCount != 1 {
 		t.Fatalf("backup omitted order recovery proof: %+v", manifest)
 	}
 	if manifest.VerificationReceipt.OrderStateCheck != "ok" ||

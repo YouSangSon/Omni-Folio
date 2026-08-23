@@ -28,7 +28,9 @@ func TestK2B0LookupCannotAcknowledgeUnknownSubmitFromTupleMatch(t *testing.T) {
 		t.Fatalf("lookup-only inference appended %d acknowledgements", acknowledgements)
 	}
 	blocked := mustRecordK2AOrder(t, svc, "client-k2b0-still-blocked")
-	mustAppendK2AEvent(t, svc, k2aEvent("k2b0-still-blocked-risk", blocked.OrderID, "RISK_APPROVED"), "READY")
+	if _, err := svc.appendOrderEvent(context.Background(), k2aEvent("k2b0-still-blocked-risk", blocked.OrderID, "RISK_APPROVED")); err == nil {
+		t.Fatal("direct risk approval bypassed execution authority")
+	}
 	if _, err := svc.appendOrderEvent(context.Background(), k2aEvent("k2b0-still-blocked-submit", blocked.OrderID, "SUBMIT_DISPATCHED")); err == nil {
 		t.Fatal("lookup-only inference unblocked the account")
 	}
@@ -241,8 +243,8 @@ func TestK2B0ProviderExecutionConflictRollsBackEarlierFills(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustAppendK2AEvent(t, svc, k2aEvent("k2b0-foreign-risk", foreign.OrderID, "RISK_APPROVED"), "READY")
-	mustAppendK2AEvent(t, svc, k2aEvent("k2b0-foreign-submit", foreign.OrderID, "SUBMIT_DISPATCHED"), "SUBMIT_UNKNOWN")
+	foreignLease := mustK2CLease(t, svc, foreign.AccountRef)
+	mustAuthorizeK2C(t, svc, foreign.OrderID, foreignLease.FencingToken)
 	foreignAck := k2aEvent("k2b0-foreign-ack", foreign.OrderID, "SUBMIT_ACKNOWLEDGED")
 	foreignAck.ProviderOrderRef = "kiwoom_order_YYYYYYYYYYYYYYYYYYYYYYYY"
 	mustAppendK2AEvent(t, svc, foreignAck, "OPEN")

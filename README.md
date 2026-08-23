@@ -13,7 +13,7 @@
 | G1 로컬 원장 | 통과 | CSV preview → atomic apply → append-only ledger → snapshot/receipt → backup/restore |
 | G2 Flutter client | 부분 통과 | iOS·Android·web release build와 17개 자동 테스트 통과; chart 포함 Android emulator build/raster p95 2회 통과, physical-device·수동 screen-reader 및 test-instrumentation 격리 증거 남음 |
 | G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, paper-only result |
-| G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 내부 합성 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot·원장 수량 diff와 backup v3 합성 계약 통과. 실제 키움 credentialed 시세/모의주문 transport, freshness/scheduling, unknown-submit correlation, public 주문 UI, 실제 risk/fencing과 모든 live gate는 남는다. |
+| G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot, G4I/K2C 내부 합성 kill switch·lease/fencing·고정 BUY 한도와 backup v4 계약 통과. 실제 키움 credentialed 시세/모의주문 transport, freshness/scheduling, unknown-submit correlation, public 주문 UI, production risk와 모든 live gate는 남는다. |
 
 세부 상태와 완료 조건은 [`PLAN.md`](PLAN.md)와 [`GATES.md`](GATES.md)에서 관리합니다.
 
@@ -120,16 +120,16 @@ curl -fsS 'http://127.0.0.1:8080/v1/market-data/candles?symbol=AAPL&interval=1d'
 
 응답은 canonical decimal string과 함께 `price_adjustment=unspecified`, `source=local_fixture`, `sample=true`, `state=stale`를 반환합니다. 보유 화면에서 AAPL을 열면 가격·거래량 chart, 가격 조정 기준, source/as-of, screen-reader summary와 정확한 OHLCV 표를 볼 수 있습니다. `unspecified`는 가격 조정 여부를 확인하지 못했다는 뜻입니다. 이 fixture는 계약·UI 검증용이며 현재 시세나 투자 판단 자료가 아닙니다.
 
-### Internal synthetic order recovery, reconciliation, and dated execution scan
+### Internal synthetic order recovery, execution authority, reconciliation, and dated execution scan
 
-K2A/K2B0는 Go 내부에서 Kiwoom `LIMIT`/`KRW`/`KRX` intent와 append-only lifecycle, `SUBMIT_UNKNOWN` 중복 방지, cancel/fill replay와 이미 알려진 주문번호의 원자적 체결 조정을 검증합니다. K2B1은 별도로 명시 날짜의 synthetic `kt00009` KRX 현금 매수·매도 체결 row를 읽고 provider 주문유형을 그대로 보존하는 non-joinable scan만 검증합니다. 세 계약 모두 주문 API나 화면을 노출하지 않고 broker 요청도 보내지 않습니다.
+K2A/K2B0는 Go 내부에서 Kiwoom `LIMIT`/`KRW`/`KRX` intent와 append-only lifecycle, `SUBMIT_UNKNOWN` 중복 방지, cancel/fill replay와 이미 알려진 주문번호의 원자적 체결 조정을 검증합니다. K2B1은 별도로 명시 날짜의 synthetic `kt00009` KRX 현금 매수·매도 체결 row를 읽고 provider 주문유형을 그대로 보존하는 non-joinable scan만 검증합니다. K2C는 기본 차단 kill switch, 프로세스별 lease/fencing, `005930`·`000660` BUY만 허용하는 10주·주문 100만 원·계좌 활성 예약 100만 원의 고정 credential-free 정책, durable reservation과 승인/dispatch 원자성을 검증합니다. 이 계약들은 주문 API나 화면을 노출하지 않고 broker 요청도 보내지 않습니다.
 
 ```sh
 cd services/core
-go test -run '^(TestK2A|TestK2B0|TestK2B1)' -count=1 ./...
+go test -run '^(TestK2A|TestK2B0|TestK2B1|TestK2C)' -count=1 ./...
 ```
 
-K2B0는 속성·시간이 같은 주문이 보여도 주문번호 없는 `SUBMIT_UNKNOWN`을 결합하지 않습니다. K2B1의 terminal pagination도 전체 체결 이력 완료를 뜻하지 않으며, 날짜와 timezone 없는 체결 시각을 합쳐 UTC를 만들거나 K2B0 입력으로 사용하지 않습니다. 실제 키움 모의주문 submit/query, 안전한 unknown-submit correlation, risk policy, fencing, broker/ledger reconciliation과 Flutter 주문 흐름은 K2B 범위입니다.
+K2B0는 속성·시간이 같은 주문이 보여도 주문번호 없는 `SUBMIT_UNKNOWN`을 결합하지 않습니다. K2B1의 terminal pagination도 전체 체결 이력 완료를 뜻하지 않으며, 날짜와 timezone 없는 체결 시각을 합쳐 UTC를 만들거나 K2B0 입력으로 사용하지 않습니다. K2C의 `SUBMIT_DISPATCHED`는 durable 내부 handoff일 뿐 broker 송신 증거가 아닙니다. 실제 키움 모의주문 submit/query, 안전한 unknown-submit correlation, cash·position·fee·손실·시장시간·stale-data 한도, owner/strategy 승인, broker/ledger reconciliation과 Flutter 주문 흐름은 K2B 이후 범위입니다.
 
 ### Credential-free known-good broker snapshot
 
@@ -140,7 +140,7 @@ cd services/core
 go test -run '^TestG4H' -count=1 ./...
 ```
 
-schema/backup v3는 ledger event, raw broker snapshot, revisioned broker reconciliation을 insert-only로 보호하고 주문·broker state digest/count와 replay 가능한 canonical record를 restore 후보에서 검증합니다. 이 leaf는 credential, broker request, scheduling, 공식 freshness/timezone, 현금·평가금액 reconciliation, public API/UI, risk approval 또는 live readiness를 증명하지 않습니다.
+현재 schema/backup v4는 ledger event, raw broker snapshot, revisioned broker reconciliation, execution-authority event와 risk reservation을 insert-only로 보호하고 각각의 digest/count와 replay 가능한 canonical record를 restore 후보에서 검증합니다. G4H 자체는 credential, broker request, scheduling, 공식 freshness/timezone, 현금·평가금액 reconciliation, public API/UI 또는 live readiness를 증명하지 않습니다.
 
 ### Research와 자동 개선
 
@@ -204,7 +204,7 @@ docs/              목표, ADR, research, broker/UX 문서
 
 - 실거래는 기본적으로 꺼져 있고 UI 토글이나 환경변수 하나로 켤 수 없습니다.
 - broker secret, access token, 실제 계좌번호, 원본 거래 export를 Git·fixture·로그에 넣지 않습니다.
-- K2A는 timeout/crash 뒤 주문을 `SUBMIT_UNKNOWN`으로 보존하고 같은 주문과 해당 계좌의 신규 submit을 차단합니다. K2B0는 이미 ACK된 주문의 체결만 조정하며, K2B1 dated scan을 포함해 broker가 보장하지 않은 조회 결과로 unknown을 확정하지 않습니다.
+- K2A는 timeout/crash 뒤 주문을 `SUBMIT_UNKNOWN`으로 보존하고 같은 주문과 해당 계좌의 신규 submit을 차단합니다. K2C는 기본 차단 kill switch와 DB lease/fencing 및 immutable reservation을 추가하지만 broker 송신 권한은 없습니다. K2B0는 이미 ACK된 주문의 체결만 조정하며, K2B1 dated scan을 포함해 broker가 보장하지 않은 조회 결과로 unknown을 확정하지 않습니다.
 - 전략은 수익률만으로 승격하지 않습니다. 비용·지연·데이터 누수·drawdown·운영 건강과 owner 승인이 필요합니다.
 - 먼저 생존성과 복구 가능성을 증명합니다. 수익은 보장할 수 없습니다.
 

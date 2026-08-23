@@ -35,5 +35,5 @@ Scope: Go core internal-only, credential-free synthetic `kt00009` transport and 
 
 - Credentialed Kiwoom mock observation of response shape, continuation stability, empty-result behavior, timezone, retention, order types, identifier scope and rate-limit behavior.
 - A broker-guaranteed or empirically proven lost-submit correlation contract; tuple/time similarity and this dated scan are insufficient.
-- Durable known-good persistence, scheduling, K2B0 mapping, public OpenAPI/Flutter order flow, actual risk policy, reservation and fencing.
+- Durable known-good persistence, scheduling, K2B0 mapping, public OpenAPI/Flutter order flow, production risk policy, broker-coupled reservation and fencing. K2C covers only credential-free internal BUY authority.
 - Submit/cancel/amend transport, ledger mutation, market orders and every real-money gate.
