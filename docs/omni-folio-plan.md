@@ -1,12 +1,12 @@
 <!-- /autoplan restore point: /Users/yousang/.gstack/projects/Omni-Folio/unknown-autoplan-restore-20260823-201622.md -->
 # Omni Folio 구현 계획 초안
 
-상태: 제품 전제 부분 확정, D1 실행 게이트 위치 승인 대기
+상태: 제품 전제 확정, staged hybrid/cloud-ready 아키텍처 사용자 승인 대기
 기준일: 2026-08-23
 
 ## 목표
 
-한국·미국 주식과 ETF를 여러 계좌에서 통합해 성과를 분석하고, 시세 차트, 단계적으로 안전한 주문 기능, 백테스트와 모의 자동매매를 제공하는 개인용 local-first 투자 앱을 만든다.
+한국·미국 주식과 ETF를 여러 계좌에서 통합해 성과를 분석하고, 시세 차트, 단계적으로 안전한 주문 기능, 백테스트와 모의 자동매매를 제공하는 개인용 local-first 투자 앱을 만든다. 로컬 단독 사용을 유지하면서 동일 artifact를 사용자가 관리하는 단일 노드 클라우드에 배포할 수 있어야 한다.
 
 ## 전제
 
@@ -16,6 +16,8 @@
 4. 거래 원장이 기준 데이터이며 보유 수량과 성과는 파생한다.
 5. 정확성, 개인정보 보호, 복구 가능성을 실시간성보다 우선한다.
 6. 자동매매는 기본적으로 연구·백테스트·paper trading이며, 실전 자동매매는 별도 승인과 위험 한도 없이는 활성화하지 않는다.
+7. `local-first`는 데이터 소유권과 로컬 실행 가능성을 뜻하며 laptop-only를 뜻하지 않는다.
+8. Phase A는 로컬 SQLite와 수동 실행으로 시작하고, unattended paper/shadow/live는 owner-managed always-on host에서만 활성화한다.
 
 ## 성공 조건
 
@@ -25,18 +27,20 @@
 - 한 공급자가 실패해도 이미 받은 데이터는 보존되고 실패 범위와 마지막 갱신 시각이 보인다.
 - API 키와 계좌 식별자가 브라우저, 로그, export에 노출되지 않는다.
 - 전략은 백테스트와 paper trading에서 동일한 정의로 실행되고, 위험 한도와 kill switch를 우회하지 못한다.
+- 같은 artifact가 local과 단일 노드 cloud 프로필에서 실행되고, backup/restore와 주문 차단형 rollback이 검증된다.
 
 ## 제품 범위
 
 ### Phase A: 계산 가능한 로컬 원장
 
-- SQLite schema: accounts, instruments, transactions, lots, prices, fx_rates, corporate_actions, sync_runs
+- SQLite schema: accounts, instruments, transactions, lots, prices, fx_rates, corporate_actions, sync_runs, schema_migrations
 - Decimal money math와 기준 통화
 - CSV/manual import: parse, normalize, preview, confirm, apply
 - 중복 방지와 append-only correction
 - FIFO와 이동평균 원가
 - TWR, XIRR, realized/unrealized P&L, drawdown
-- JSON/CSV export와 backup/restore
+- versioned JSON/CSV export와 backup/restore, 이전 backup restore golden test
+- 서로 다른 두 브로커 CSV/응답 fixture로 canonical model 검증; 두 번째 live adapter는 구현하지 않음
 
 ### Phase B: 첫 API 어댑터
 
@@ -45,6 +49,7 @@
 - 단일 시장 데이터 provider의 EOD 가격, FX, 배당, 분할
 - provider rate limiter, retry/backoff, freshness state
 - reconciliation report: broker positions vs ledger positions
+- read-only scope credential만 허용하고 주문 scope credential은 이 단계에서 거절
 
 ### Phase C: 사용자 화면
 
@@ -56,6 +61,7 @@
 - light/dark theme, mobile-first, keyboard navigation
 - loading/empty/error/partial/stale/success 상태
 - 성과 차트의 텍스트 요약과 표 대안
+- 모든 평가액·손익·현금 숫자에서 원 거래, FX, 수수료, 세금, 기업행사, correction으로 내려가는 `왜 이 숫자인가` 흐름
 
 ### Phase D: 모의주문
 
@@ -82,6 +88,7 @@
 - 전략 runner와 독립된 fail-closed kill switch
 - Strategy Lab, Backtest Report, Automation Monitor, Risk/Latency 화면
 - buy-and-hold, 단순 리밸런싱, 이동평균 교차는 엔진 검증 fixture로만 제공하고 투자 추천으로 표시하지 않음
+- owner-managed always-on host에서 DB lease와 fencing token으로 계좌·전략별 단일 active runner만 허용
 
 ### Phase F: 제한된 실전 자동매매와 확장
 
@@ -90,6 +97,7 @@
 - 검증 완료 후 KIS/키움 실전 주문 또는 IBKR read-only
 - paper -> shadow -> 소액 canary -> limited live 승격과 사용자 승인
 - 실전 전략 runner를 UI/API와 별도 프로세스로 격리
+- broker별 credential·계좌·capability·promotion gate를 분리하고 다른 broker의 paper 결과를 실전 안전성 증명으로 재사용하지 않음
 - 배당 캘린더와 리밸런싱 편차
 
 ## 아키텍처
@@ -97,7 +105,7 @@
 ```text
 Web/PWA
   |
-Server API
+Server API (`api`, local/cloud 동일 image)
   ├─ Ledger + read models
   ├─ Portfolio calculator
   ├─ Import pipeline
@@ -106,13 +114,30 @@ Server API
   ├─ Research/data catalog + backtester
   ├─ Strategy + portfolio construction
   ├─ Risk + execution
-  ├─ Automation runner
-  └─ Scheduled sync
+  └─ Read models + command endpoints
        |
-     SQLite
+  SQLite on durable volume
+
+Same image, separate roles only when their phase starts
+  ├─ `worker`: restart-safe scheduled sync
+  ├─ `runner`: strategy loop
+  ├─ DB lease/fencing: singleton ownership
+  └─ execution gateway: order credential owner
 ```
 
-초기에는 모듈러 모놀리스와 하나의 데이터베이스를 사용한다. broker adapter와 market-data adapter만 외부 인터페이스 경계로 두고 backtest/paper/shadow/live는 같은 전략·포트폴리오·리스크 코어와 교체 가능한 clock/data/execution adapter를 사용한다. 주문 command와 ack/fill/cancel/reject는 append-only execution log에 저장한다. 실전 자동매매 전에는 runner만 UI/API와 별도 프로세스로 격리하고 broker credential은 runner가 아닌 실행 gateway만 읽는다. plugin SDK, message broker, Redis, microservice, HFT용 분산 실행 엔진은 만들지 않는다.
+초기에는 배포 가능한 모듈러 모놀리스와 하나의 데이터베이스를 사용한다. broker adapter와 market-data adapter만 외부 인터페이스 경계로 두고 backtest/paper/shadow/live는 같은 전략·포트폴리오·리스크 코어와 교체 가능한 clock/data/execution adapter를 사용한다. 주문 command와 ack/fill/cancel/reject는 append-only execution log에 저장한다. 실전 자동매매 전에는 runner만 UI/API와 별도 프로세스로 격리하고 broker credential은 runner가 아닌 execution gateway만 읽는다. plugin SDK, message broker, Redis, microservice, HFT용 분산 실행 엔진은 만들지 않는다.
+
+### 클라우드 준비 계약
+
+- local과 cloud는 같은 저장소와 pinned non-root OCI image를 사용한다. Phase A는 `api`와 `migrate`만 사용하고, 해당 단계가 시작될 때 `worker`, `runner`, `execution-gateway` command를 같은 image에 추가한다.
+- local 프로필은 loopback + SQLite + OS keychain이다. 첫 cloud 프로필은 TLS + owner 인증 + secret manager + 단일 API replica + single-writer provider-managed block volume(RWO)의 SQLite다. 이는 stateful single-node 프로필이며 무중단 교체·scale-out·자동 failover를 보장하지 않는다.
+- container filesystem은 임시 파일만 허용한다. SQLite를 ephemeral disk, NFS형 공유 volume, 다중 writer에 두지 않는다. backup은 SQLite online backup API 또는 동등한 일관된 snapshot으로 off-volume에 암호화 저장하고 restore 후 `integrity_check`와 ledger golden test를 통과한다.
+- 두 번째 API replica, API/worker 독립 확장, 무중단 교체, 다중 노드 failover, 높은 동시 쓰기, managed point-in-time recovery가 필요해지면 PostgreSQL로 먼저 승격한다. SQLite export → PostgreSQL import 후 row count, checksum, ledger invariant를 검증하고 SQLite 상태에서는 scale-out을 지원한다고 주장하지 않는다.
+- migration은 `migrate` one-shot 단계로 실행하고 readiness는 DB 연결과 schema version 불일치를 fail-closed한다. liveness는 외부 broker 장애와 분리한다.
+- HTTP 요청보다 오래 살거나 재시작 복구가 필요한 scheduled sync는 Phase B부터 `worker` 역할로 분리한다. Phase E부터 automation runner는 DB lease/fencing으로 계좌·전략별 단일 active owner만 허용한다. lease를 잃은 runner는 신규 주문을 만들지 못한다.
+- execution gateway는 submit 전에 unique `client_order_id`/idempotency key를 durable하게 기록하고 모든 order intent의 fencing token을 DB의 현재 owner token과 비교한다. token이 다르면 broker submit 전에 거절한다. timeout·crash 후 결과가 불명확하면 재주문하지 않고 broker 조회와 reconciliation으로 상태를 확정한다.
+- 배포·rollback은 신규 주문 차단 → 미체결/reconciliation 확인 → runner lease 이전 → migration/app 전환 순서로 수행한다. 되돌릴 수 없는 migration은 자동 downgrade하지 않는다.
+- Kubernetes, Redis, Kafka, service mesh는 이 계약을 만족하는 데 필요하지 않으므로 측정된 요구가 생길 때까지 추가하지 않는다.
 
 ## UI 구조
 
@@ -127,11 +152,14 @@ React를 선택하면 shadcn/ui와 Tailwind semantic token을 재사용한다. �
 - 계산 골든 케이스: no-flow, deposit, withdrawal, dividend/fee/split
 - Portfolio Performance 및 Excel XIRR 교차 검증
 - adapter contract test와 녹화 fixture
-- API 키 redaction test
+- API 키 redaction, credential scope 거절, read-only/paper/live secret 분리 test
 - 375/768/1024/1440px, keyboard-only, reduced-motion, 200% zoom
 - provider timeout/429/partial response/stale data 복구
 - 백테스트 재현성, lookahead 방지, 수수료·슬리피지·지연 모델
 - 자동매매 위험 한도, stale data 차단, reconciliation mismatch 차단, kill switch
+- 두 runner 동시 기동, lease 상실, submit timeout, ack 전후 crash에서 중복 주문 방지와 fail-closed 복구
+- SQLite online backup의 off-volume restore, `integrity_check`, 이전 schema ledger golden test
+- PostgreSQL 승격 시 SQLite export/import row count·checksum·ledger invariant 일치
 - paper/shadow/live 공통 전략 코어와 신호 충돌·자금 배분 검증
 - 주문/ack/fill/cancel/reject 이벤트의 과부하·재시작 무손실 검증
 - hot path 구간별 UTC timestamp, monotonic duration, freshness, queue depth, p50/p95/p99 검증
@@ -171,12 +199,12 @@ CSV import -> 중복 검토 -> 거래 원장 -> 보유/현금/손익 -> JSON bac
 
 ## `/autoplan` CEO 재검토: local-first 실행 경계
 
-판정: **D1 미결정. 두 독립 검토는 D1을 무인 자동매매 진입 게이트로 옮기고 로컬 read-only Phase A는 별도로 승인하라고 권고했다.**
+판정: **D1 제품 전제 확정. Phase A는 로컬 read-only로 진행하고, cloud/always-on 실행은 무인 자동매매 진입 게이트로 둔다. 세부 아키텍처 착수는 사용자 승인 대기다.**
 
 ### 시스템 감사
 
-- 현재 작업공간은 Git 저장소가 아니며 제품 코드는 없다.
-- 현재 자산은 `docs/goal-prompt.md`, 이 계획, 조사 보고서뿐이다.
+- 현재 작업공간은 `main` 브랜치의 Git 저장소이며 계획 기준선 커밋이 있다. 제품 코드는 아직 없다.
+- 현재 제품 자산은 `docs/goal-prompt.md`, 이 계획, 조사 보고서뿐이다.
 - 기존 코드, 마이그레이션, 테스트, `TODOS.md`, 디자인 시스템은 아직 없으므로 재사용 가능한 내부 구현은 없다.
 - 따라서 지금 가장 값싼 수정은 잘못된 런타임 전제를 코드로 굳히지 않는 것이다.
 
@@ -184,7 +212,7 @@ CSV import -> 중복 검토 -> 거래 원장 -> 보유/현금/손익 -> JSON bac
 
 풀어야 할 실제 문제는 “많은 API를 붙이는 것”이 아니라 여러 계좌의 거래와 주문을 한 원장에서 설명하고, 자동화가 위험 한도를 우회하지 못하게 만드는 것이다. 브로커 수나 전략 수는 이 결과를 측정하는 지표가 아니다.
 
-현재 문서의 `local-first`는 데이터 소유권과 단일 사용자 경험을 뜻하지만 노트북 전용 실행을 뜻하는지는 정해지지 않았다. 노트북이 절전·종료되면 scheduled sync, market-data freshness 감시, broker reconnect, 주문 상태 추적, reconciliation, kill switch가 함께 멈춘다. 따라서 무인 자동매매를 최종 목표로 유지하려면 실행 경계를 명시해야 한다.
+초기 검토 당시 `local-first`는 데이터 소유권과 단일 사용자 경험을 뜻했지만 노트북 전용 실행인지가 불명확했다. 노트북이 절전·종료되면 scheduled sync, market-data freshness 감시, broker reconnect, 주문 상태 추적, reconciliation, kill switch가 함께 멈추므로 D1에서 단계적 hybrid 실행 경계를 확정했다.
 
 ### 이미 존재하는 해법에서 재사용할 것
 
@@ -254,9 +282,9 @@ THIS PLAN
 | 자동매매 로드맵 | 단계적 목표로 유지 가능 | 별도 제품 결정으로 격리 권고 | **DISAGREE** |
 | 오픈소스 활용 | fixture·UX acceptance로 변환 | 실제 데이터 bake-off를 자체 개발 선행 게이트로 요구 | **DISAGREE** |
 
-### 합의된 보강 후보 — 아직 미반영
+### 합의된 보강 사항
 
-다음 항목은 두 검토가 모두 필요하다고 봤지만 사용자 승인 전에는 목표나 범위에 확정하지 않는다.
+다음 항목은 두 검토의 합의와 사용자의 지속 개선 요청에 따라 계획 본문과 완료 조건에 반영한다.
 
 - 모든 평가액·손익·현금 숫자에서 원 거래, FX, 수수료, 세금, 기업행사, correction으로 drill-down하는 “왜 이 숫자인가” 흐름
 - Phase B read-only credential만 허용하고 주문 scope가 있는 credential은 명시적으로 거절하는 capability 검사와 테스트
@@ -270,4 +298,4 @@ THIS PLAN
 
 사용자의 원래 방향을 기본값으로 유지한다. 자동매매는 목표에서 제거하지 않으며, 별도 제품으로 분리하려면 사용자의 명시적 승인이 필요하다.
 
-**UNRESOLVED D1:** 권장안은 실행 형태 결정을 Phase E의 무인 자동매매 진입 게이트로 옮기고, Phase A는 단일 로컬 SQLite·수동 실행·실제 주문 불가 조건으로 진행하는 것이다. 이 게이트 위치 변경과 local Phase A 착수에는 사용자 답변이 필요하다.
+**CONFIRMED D1:** 단계적 hybrid를 사용한다. Phase A는 단일 로컬 SQLite·수동 실행·실제 주문 및 live-capable credential 불가 조건으로 진행한다. 동일 artifact의 단일 노드 cloud 배포 경로는 유지하되, unattended paper/shadow/live는 owner-managed always-on host, 인증·TLS·secret manager·durable backup·singleton runner gate를 통과해야 한다. 구체적인 cloud vendor와 home server/VPS 선택은 배포 직전 결정한다.
