@@ -29,6 +29,7 @@ G3 research vertical slice
 └─ G3.3 no credential/order permission proof
    |
 G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
+├─ G4A Kiwoom K0 read contract
 └─ then Toss Securities read-only as the second adapter
    |
 G5 paper -> shadow -> canary -> limited live

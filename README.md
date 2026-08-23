@@ -13,7 +13,7 @@
 | G1 로컬 원장 | 통과 | CSV preview → atomic apply → append-only ledger → snapshot/receipt → backup/restore |
 | G2 Flutter client | 부분 통과 | iOS·Android·web release build와 자동 테스트 통과; profile p95·screen-reader·reduced-motion 수동 증거 남음 |
 | G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, paper-only result |
-| G4 broker | 다음 | 키움 read-only → 차트·실시간 → 모의주문; 이후 토스증권 read-only |
+| G4 broker | 진행 중 | 키움 K0 HTTP/정규화 합성 계약 통과; live credential, persistence, reconciliation, 차트·실시간, 모의주문 남음 |
 
 세부 상태와 완료 조건은 [`PLAN.md`](PLAN.md)와 [`GATES.md`](GATES.md)에서 관리합니다.
 

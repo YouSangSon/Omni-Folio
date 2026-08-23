@@ -20,9 +20,17 @@
 | 인증 | OAuth client credentials, `appkey`/`secretkey` | OAuth client credentials, 계좌 API는 `X-Tossinvest-Account` 추가 |
 | 범위 | 국내·미국 계좌, 시세, 차트, 주문, 실시간 | 국내·미국 계좌, 시세, 차트, 주문·조건주문, 실시간 |
 | 안전한 검증 환경 | 운영/모의 도메인과 키 분리; 국내 모의는 KRX만 지원 | 공식 [OpenAPI](https://openapi.tossinvest.com/openapi-docs/latest/openapi.json)에서 별도 주문 sandbox는 확인하지 못함 |
-| 호출 제한 | 국내 주문·조회 각 계좌/토큰당 초당 5회, 모의는 TR별 초당 1회; 세션당 실시간 200종목 | 그룹별 제한과 응답의 `X-RateLimit-*`, 429의 `Retry-After`를 런타임 기준으로 사용 |
+| 호출 제한 | 오류코드 `1700`~`1702`로 API·전체·그룹 유량 초과를 알리지만 공개 고정 quota는 재확인하지 못함 | 그룹별 제한과 응답의 `X-RateLimit-*`, 429의 `Retry-After`를 런타임 기준으로 사용 |
 
 공식 명세는 바뀔 수 있다. 구현 시 저장한 문서 복사본을 진실로 두지 않고 위 포털, OpenAPI, AsyncAPI와 실제 응답 헤더를 다시 확인한다. 키움 공식 GitHub 자료는 참고만 하며 [키움 전용 제한 라이선스](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/main/LICENSE.md) 때문에 샘플 코드나 명세를 이 저장소로 복사·수정·재배포하지 않는다.
+
+### 확인된 키움 K0 HTTP 계약
+
+- OAuth는 운영/모의의 `POST /oauth2/token`에 `client_credentials`, `appkey`, `secretkey`를 보내고 `expires_dt`, `token_type`, `token`을 받는다. 공식 문서에는 token lifetime과 timezone, 권한 scope가 명시돼 있지 않다. ([au10001](https://openapi.kiwoom.com/m/guide/apiguide/a1/au10001))
+- `ka00001`, `kt00018`, `ka10075`는 `POST /api/dostk/acnt`를 공유하며 `authorization: Bearer ...`, `api-id`를 요구한다. `cont-yn=Y`이면 응답의 `cont-yn`과 `next-key`를 다음 요청 header에 전달한다. ([ka10075](https://openapi.kiwoom.com/m/guide/apiguide/08/ka10075), [kt00018](https://openapi.kiwoom.com/m/guide/apiguide/08/kt00018))
+- HTTP status만으로 성공을 판단하지 않고 body의 `return_code`도 확인한다. 공개 오류표는 인증·환경 불일치와 유량 초과 코드를 제공하지만 page size와 고정 quota 수치는 확인되지 않았다. ([오류코드](https://openapi.kiwoom.com/m/errorcode/errorCodeView))
+- 국내 모의투자 계좌·주문은 KRX만 지원한다. ([모의투자 안내](https://openapi.kiwoom.com/m/intro/mockInvestInfo))
+- 미확인 quota에서는 자동 retry/backoff를 추측하지 않는다. 읽기 호출은 안전한 오류로 끝내고, 실제 모의 응답과 제한을 측정한 뒤 bounded retry와 limiter를 추가한다.
 
 ## 구현 순서
 
@@ -30,7 +38,8 @@
 
 - Go 서버만 OAuth secret과 access token을 읽는다. 로컬은 OS keychain, cloud는 secret manager를 사용한다.
 - Flutter, Python, `.env`, Git, 로그, 오류 응답에는 app key, secret, token, 계좌 원문을 두지 않는다.
-- provider별 capability, rate-limit, pagination/continuation, 오류 envelope, symbol/market mapping을 골든 응답 fixture로 검증한다.
+- 키움 OAuth의 read-only scope는 공식 문서에서 확인되지 않았으므로 credential 이름만 믿지 않는다. 현재 프로세스는 `ka00001`, `kt00018`, `ka10075`만 허용하고 submit API와 route를 갖지 않는다.
+- provider별 capability, rate-limit, pagination/continuation, 오류 envelope, symbol/market mapping은 공식 예제를 복사하지 않은 합성 contract fixture로 검증한다.
 - 원본 금액·수량의 부호 규칙을 경계에서 canonical decimal string으로 변환한다.
 
 ### K1 — 키움 read-only
@@ -73,5 +82,5 @@
 - 401/403/429/5xx, token 만료, pagination 중단, WebSocket 재연결 뒤에도 기존 snapshot이 보존된다.
 - 계좌·잔고·미체결·차트 timestamp와 출처가 Flutter에 표시되고 stale/partial 상태를 재현할 수 있다.
 - broker snapshot과 ledger 차이를 종목·현금 단위로 설명하며 자동으로 덮어쓰지 않는다.
-- credential redaction, read-only scope, 모의/실전 분리와 로그 누출 방지 테스트가 통과한다.
+- credential redaction, read API-ID allowlist, 모의/실전 분리와 로그 누출 방지 테스트가 통과한다. provider가 실제 OAuth scope를 제공할 때만 scope도 함께 강제한다.
 - 실전 주문은 여전히 비활성이다.

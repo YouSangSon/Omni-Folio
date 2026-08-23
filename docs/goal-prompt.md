@@ -147,7 +147,7 @@ Market data adapters
 
 - 키움 REST API 국내주식 read-only 연결
 - 계좌번호, 계좌평가잔고, 미체결, 일·분봉, 실시간 체결·호가를 canonical contract로 정규화
-- read-only scope credential만 허용하고 주문 scope credential은 이 단계에서 명시적으로 거절
+- provider가 권한 scope를 제공하면 read-only 최소 scope만 허용한다. 키움은 공식 OAuth 문서에서 scope를 확인하지 못했으므로 `ka00001`, `kt00018`, `ka10075` 고정 API-ID allowlist와 submit method·route 부재를 테스트로 강제한다.
 - 계좌, 거래, 잔고 pagination 동기화
 - rate limit, retry/backoff, token 갱신, freshness 상태
 - 브로커 잔고와 원장 잔고 reconciliation 화면
@@ -220,7 +220,7 @@ Market data adapters
 - 두 번째 샘플 전략은 manifest, 전략 모듈, fixture 추가만으로 등록되고 공통 주문·리스크·원장 코드는 변경되지 않는다.
 - 실전 자동매매는 기본 비활성이고, paper/live parity와 사용자 승인 없이는 어떤 경로에서도 주문을 낼 수 없다.
 - API 키 redaction 테스트와 핵심 원장·주문 테스트가 통과한다.
-- read-only, paper, live credential이 별도 secret과 권한으로 분리되고 허용되지 않은 scope가 fail-closed한다.
+- read-only, paper, live 실행 profile과 secret binding을 분리한다. provider가 scope를 제공하면 최소 권한을 강제하고, 제공하지 않으면 허용 API·route·process authority를 고정해 fail-closed한다.
 - Python research와 Flutter client가 broker credential, 운영 DB write, broker submit 경로를 갖지 않으며 live order gate가 매 주문 검증된다.
 - 두 번째 브로커는 새 adapter와 공통 contract test 추가만으로 연결할 수 있고 원장·성과·차트·주문 코어의 공급자별 분기가 늘어나지 않는다.
 - 지원 화면 크기와 키보드·접근성 검증이 통과한다.

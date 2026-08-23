@@ -1,6 +1,6 @@
 # Omni Folio Execution Plan
 
-상태: G0·G1·G3 로컬 통과, G2 접근성·성능 최종 증거 보강 중
+상태: G0·G1·G3 로컬 통과, G2 접근성·성능 최종 증거 보강 중, G4A 키움 K0 합성 계약 통과
 
 ## Now
 
@@ -14,7 +14,8 @@
 
 ## Next
 
-- [ ] 키움 read-only adapter와 reconciliation
+- [x] 키움 K0 read-only transport/normalization 합성 계약
+- [ ] 키움 live/mock credential 검증, known-good persistence, ledger reconciliation
 - [ ] OHLCV/portfolio chart와 accessibility/performance budget
 - [ ] 키움 모의주문 상태 머신과 unknown-submit recovery
 - [ ] deterministic strategy candidate search와 champion/challenger evidence

@@ -4,6 +4,8 @@
 
 - **Ledger authority**: 거래, 현금 이동, 수수료, 세금, 기업행사, 정정을 기록하는 유일한 재무 기준. 보유 수량과 손익은 여기서 계산한다.
 - **Broker truth**: 외부 주문이 실제로 존재하고 어떤 상태인지에 대한 증권사의 사실. Omni Folio는 주문 의도와 위험 판단, 체결의 원장 반영 근거를 소유한다.
+- **Broker snapshot**: 한 번의 완결된 pagination에서 읽은 계좌·잔고·미체결 사실. 원장과 별도이며 전체 성공한 snapshot만 이전 known-good를 대체한다.
+- **Freshness**: source timestamp, 마지막 전체 성공 시각과 `fresh`, `stale`, `partial`, `error` 상태를 함께 나타내는 신뢰 정보. 서비스 readiness나 원장 검증 상태와 합치지 않는다.
 - **Read model**: 원장과 주문 이벤트에서 결정적으로 다시 만들 수 있는 조회 결과. 모바일 캐시는 read model의 복제본일 뿐 권한자가 아니다.
 - **Import preview**: 입력을 쓰지 않고 정규화·검증해 신규, 중복, 오류, 미해결 행과 예상 변화를 보여주는 단계.
 - **Apply receipt**: import가 원자적으로 반영됐거나 전혀 반영되지 않았음을 증명하는 구조화된 결과.
