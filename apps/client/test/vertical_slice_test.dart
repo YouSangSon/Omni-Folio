@@ -96,13 +96,14 @@ MarketCandles marketCandles({
   String state = 'stale',
   bool sample = true,
   String priceAdjustment = 'unspecified',
+  String source = 'local_fixture',
 }) => MarketCandles.fromJson({
   'symbol': 'AAPL',
   'venue': 'XNAS',
   'timezone': 'America/New_York',
   'interval': '1d',
   'price_adjustment': priceAdjustment,
-  'source': 'local_fixture',
+  'source': source,
   'sample': sample,
   'state': state,
   'source_as_of': '2026-08-22T20:00:00Z',
@@ -212,6 +213,10 @@ void main() {
       () => marketCandles(priceAdjustment: 'split_adjusted'),
       throwsFormatException,
     );
+    expect(
+      () => marketCandles(priceAdjustment: 'provider_adjusted'),
+      throwsFormatException,
+    );
     final providerCandles = MarketCandles.fromJson({
       'symbol': 'AAPL',
       'venue': 'XNAS',
@@ -236,6 +241,7 @@ void main() {
       ],
     });
     expect(providerCandles.source, 'provider_neutral_fixture');
+    expect(providerCandles.priceAdjustment, 'provider_adjusted');
     expect(
       () => MarketCandles.fromJson({
         'symbol': 'AAPL',
@@ -787,7 +793,9 @@ void main() {
     final api = goldenApi()
       ..candlesValue = marketCandles(
         state: 'success',
+        sample: false,
         priceAdjustment: 'provider_adjusted',
+        source: 'kiwoom',
       );
     await tester.pumpWidget(OmniFolioApp(api: api));
     await pumpUi(tester);
@@ -795,9 +803,13 @@ void main() {
     await pumpUi(tester);
     await tester.tap(find.text('AAPL'));
     await pumpUi(tester);
-    expect(find.textContaining('원천 local_fixture'), findsOneWidget);
+    expect(find.textContaining('원천 kiwoom'), findsOneWidget);
     expect(find.textContaining('가격 기준 공급자 조정 가격'), findsOneWidget);
-    await tester.drag(find.byType(ListView).last, const Offset(0, -2000));
+    await tester.dragUntilVisible(
+      find.text('정확한 OHLCV 표 보기'),
+      find.byKey(const Key('asset-detail-scroll')),
+      const Offset(0, -200),
+    );
     await tester.pump();
     await tester.tap(find.text('정확한 OHLCV 표 보기'));
     await tester.pump();

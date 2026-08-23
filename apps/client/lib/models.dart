@@ -423,6 +423,7 @@ class MarketCandles {
     required this.venue,
     required this.timezone,
     required this.interval,
+    required this.priceAdjustment,
     required this.source,
     required this.sample,
     required this.state,
@@ -435,15 +436,22 @@ class MarketCandles {
   factory MarketCandles.fromJson(Json json) {
     final source = _text(json, 'source');
     final state = _text(json, 'state');
+    final priceAdjustment = _text(json, 'price_adjustment');
     if (!const {'empty', 'partial', 'stale', 'success'}.contains(state)) {
       throw const FormatException('Unsupported market state');
+    }
+    if (!const {'unspecified', 'provider_adjusted'}.contains(priceAdjustment)) {
+      throw const FormatException('Unsupported market price adjustment');
     }
     if (_text(json, 'interval') != '1d') {
       throw const FormatException('Unsupported market interval');
     }
     final sample = _bool(json, 'sample');
-    if (source == 'local_fixture' && !sample) {
-      throw const FormatException('Fixture source must be marked sample');
+    if (source == 'local_fixture' &&
+        (!sample || priceAdjustment != 'unspecified')) {
+      throw const FormatException(
+        'Fixture source must be sample data with unspecified price adjustment',
+      );
     }
     final barJson = _jsonList(json, 'bars');
     if (barJson.length > 500) {
@@ -472,6 +480,7 @@ class MarketCandles {
       venue: _text(json, 'venue'),
       timezone: _text(json, 'timezone'),
       interval: '1d',
+      priceAdjustment: priceAdjustment,
       source: source,
       sample: sample,
       state: state,
@@ -486,6 +495,7 @@ class MarketCandles {
   final String venue;
   final String timezone;
   final String interval;
+  final String priceAdjustment;
   final String source;
   final bool sample;
   final String state;

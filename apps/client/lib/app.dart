@@ -547,10 +547,16 @@ class _MarketMetadata extends StatelessWidget {
   final MarketCandles candles;
 
   @override
-  Widget build(BuildContext context) => Text(
-    '거래소 ${candles.venue}\n시간대 ${candles.timezone}\n원천 ${candles.source}\n원천 기준 ${candles.sourceAsOf ?? '없음'}\n가져온 시각 ${candles.fetchedAt}\n상태 ${candles.state}',
-    style: _tabular(context),
-  );
+  Widget build(BuildContext context) {
+    final priceAdjustment = switch (candles.priceAdjustment) {
+      'provider_adjusted' => '공급자 조정 가격 · 조정 정확성 미검증',
+      _ => '조정 여부 확인 안 됨',
+    };
+    return Text(
+      '거래소 ${candles.venue}\n시간대 ${candles.timezone}\n가격 기준 $priceAdjustment\n원천 ${candles.source}\n원천 기준 ${candles.sourceAsOf ?? '없음'}\n가져온 시각 ${candles.fetchedAt}\n상태 ${candles.state}',
+      style: _tabular(context),
+    );
+  }
 }
 
 class _CandleChart extends StatelessWidget {

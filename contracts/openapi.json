@@ -120,7 +120,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Local sample bars. source=local_fixture, sample=true, and state=stale are contractual disclosures, not live-market freshness claims.",
+            "description": "Local sample bars. price_adjustment=unspecified, source=local_fixture, sample=true, and state=stale are contractual disclosures, not live-market freshness claims.",
             "content": {
               "application/json": {
                 "schema": {"$ref": "#/components/schemas/LocalFixtureMarketDataCandles"}
@@ -373,12 +373,13 @@
       "MarketDataCandles": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["symbol", "venue", "timezone", "interval", "source", "sample", "state", "source_as_of", "fetched_at", "issues", "bars"],
+        "required": ["symbol", "venue", "timezone", "interval", "price_adjustment", "source", "sample", "state", "source_as_of", "fetched_at", "issues", "bars"],
         "properties": {
           "symbol": {"type": "string", "minLength": 1},
           "venue": {"type": "string", "minLength": 1},
           "timezone": {"type": "string", "minLength": 1},
           "interval": {"type": "string", "minLength": 1},
+          "price_adjustment": {"type": "string", "enum": ["unspecified", "provider_adjusted"]},
           "source": {"type": "string", "minLength": 1},
           "sample": {"type": "boolean"},
           "state": {"type": "string", "enum": ["empty", "partial", "stale", "success"]},
@@ -401,6 +402,7 @@
           {
             "type": "object",
             "properties": {
+              "price_adjustment": {"const": "unspecified"},
               "source": {"const": "local_fixture"},
               "sample": {"const": true},
               "state": {"const": "stale"},

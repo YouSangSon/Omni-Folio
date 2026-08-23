@@ -163,17 +163,22 @@ func (s *Service) handleMarketDataCandles(w http.ResponseWriter, r *http.Request
 		writeError(w, internalError(errors.New("market data port returned a mismatched series")))
 		return
 	}
+	if series.PriceAdjustment != marketDataAdjustmentUnspecified {
+		writeError(w, internalError(errors.New("local market data returned an unsupported price adjustment")))
+		return
+	}
 	writeJSON(w, http.StatusOK, struct {
-		Symbol     string          `json:"symbol"`
-		Venue      string          `json:"venue"`
-		Timezone   string          `json:"timezone"`
-		Interval   string          `json:"interval"`
-		Source     string          `json:"source"`
-		Sample     bool            `json:"sample"`
-		State      string          `json:"state"`
-		SourceAsOf string          `json:"source_as_of"`
-		FetchedAt  string          `json:"fetched_at"`
-		Issues     []APIError      `json:"issues"`
-		Bars       []MarketDataBar `json:"bars"`
-	}{series.Symbol, series.Venue, series.Timezone, series.Interval, "local_fixture", true, "stale", series.Bars[len(series.Bars)-1].At, s.now().UTC().Format(time.RFC3339Nano), []APIError{{Code: "sample_data", Message: "market data is a local sample and not live"}}, series.Bars})
+		Symbol          string          `json:"symbol"`
+		Venue           string          `json:"venue"`
+		Timezone        string          `json:"timezone"`
+		Interval        string          `json:"interval"`
+		PriceAdjustment string          `json:"price_adjustment"`
+		Source          string          `json:"source"`
+		Sample          bool            `json:"sample"`
+		State           string          `json:"state"`
+		SourceAsOf      string          `json:"source_as_of"`
+		FetchedAt       string          `json:"fetched_at"`
+		Issues          []APIError      `json:"issues"`
+		Bars            []MarketDataBar `json:"bars"`
+	}{series.Symbol, series.Venue, series.Timezone, series.Interval, series.PriceAdjustment, "local_fixture", true, "stale", series.Bars[len(series.Bars)-1].At, s.now().UTC().Format(time.RFC3339Nano), []APIError{{Code: "sample_data", Message: "market data is a local sample and not live"}}, series.Bars})
 }
