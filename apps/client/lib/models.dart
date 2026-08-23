@@ -447,12 +447,7 @@ class MarketCandles {
       throw const FormatException('Unsupported market interval');
     }
     final sample = _bool(json, 'sample');
-    if (source == 'local_fixture' &&
-        (!sample || priceAdjustment != 'unspecified')) {
-      throw const FormatException(
-        'Fixture source must be sample data with unspecified price adjustment',
-      );
-    }
+    final sourceAsOf = _optionalRfc3339Text(json, 'source_as_of');
     final barJson = _jsonList(json, 'bars');
     if (barJson.length > 500) {
       throw const FormatException('Too many market bars');
@@ -475,6 +470,14 @@ class MarketCandles {
       _ => false,
     };
     if (!valid) throw const FormatException('Inconsistent market state');
+    if (source == 'local_fixture' &&
+        (!sample ||
+            priceAdjustment != 'unspecified' ||
+            state != 'stale' ||
+            sourceAsOf == null ||
+            issues.isEmpty)) {
+      throw const FormatException('Inconsistent local fixture provenance');
+    }
     return MarketCandles(
       symbol: _text(json, 'symbol'),
       venue: _text(json, 'venue'),
@@ -484,7 +487,7 @@ class MarketCandles {
       source: source,
       sample: sample,
       state: state,
-      sourceAsOf: _optionalRfc3339Text(json, 'source_as_of'),
+      sourceAsOf: sourceAsOf,
       fetchedAt: _rfc3339Text(json['fetched_at']),
       issues: issues,
       bars: bars,

@@ -739,7 +739,12 @@ void main() {
     (tester) async {
       final semantics = tester.ensureSemantics();
       final api = goldenApi();
-      api.candlesValue = marketCandles(state: 'partial');
+      api.candlesValue = marketCandles(
+        state: 'partial',
+        sample: false,
+        priceAdjustment: 'provider_adjusted',
+        source: 'kiwoom',
+      );
       await tester.pumpWidget(OmniFolioApp(api: api));
       await pumpUi(tester);
       await tester.tap(find.text('보유'));
