@@ -44,6 +44,7 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 - canary 또는 live로의 승격과 실제 자금 확대는 자동화하지 않는다. 별도 owner 승인, broker별 promotion evidence, reconciliation, healthy kill switch와 매 주문 risk gate를 요구한다.
 - live 전략은 paper trading에서 일정 기간 검증한 동일한 전략 정의와 동일한 주문 상태 머신만 사용한다. paper/live 환경, API key, 계좌, feature flag를 물리적으로 분리한다.
 - 자동매매 hot path는 p50/p95/p99 지연, 시장 데이터 freshness, queue depth, provider latency, 주문 접수/체결 지연, 실패·재시도 횟수를 측정한다.
+- Flutter 성능 증거는 profile mode, Flutter 버전, 기기·OS 또는 browser, viewport, fixture와 표본 수를 함께 기록하고 build/raster p95를 분리한다. emulator나 web 측정을 physical iOS/Android release 증거로 대체하지 않는다.
 - 주문 hot path는 `market data event → freshness check → strategy signal → pre-trade risk → idempotency key → broker submit → ack/execution ingest → ledger reconciliation → audit log`로 고정한다.
 - 전략 승격은 `paper → shadow live market data → 소액 canary → limited live` 순서로만 허용한다. shadow mode는 실시간 데이터와 실계좌 상태를 읽되 실제 주문 대신 의도 주문과 위험 판단만 기록한다.
 - 시스템 clock drift가 기준을 넘거나 시장 데이터가 stale이면 자동주문을 막는다. 큐가 밀리면 오래된 signal을 늦게 주문하지 않고 버리거나 최신 signal로 병합한다.

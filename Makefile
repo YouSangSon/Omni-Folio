@@ -26,11 +26,11 @@ bootstrap:
 
 format:
 	cd services/core && "$(GO)" fmt ./...
-	"$(DART)" format apps/client/lib apps/client/test
+	"$(DART)" format apps/client/lib apps/client/test apps/client/integration_test apps/client/test_driver
 
 format-check:
 	test -z "$$($(GOFMT) -l services/core/*.go)"
-	cd apps/client && "$(DART)" format --output=none --set-exit-if-changed lib test
+	cd apps/client && "$(DART)" format --output=none --set-exit-if-changed lib test integration_test test_driver
 
 lint:
 	cd services/core && "$(GO)" vet ./...

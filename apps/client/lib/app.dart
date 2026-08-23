@@ -50,6 +50,9 @@ class _OmniFolioAppState extends State<OmniFolioApp> {
           ),
           body: SafeArea(child: pages[_tab]),
           bottomNavigationBar: NavigationBar(
+            animationDuration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : null,
             selectedIndex: _tab,
             onDestinationSelected: (index) => setState(() => _tab = index),
             destinations: const [
@@ -376,10 +379,10 @@ class _TrustBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final isGood = state == DataState.success;
     final color = switch (state) {
-      DataState.success => const Color(0xFF047857),
-      DataState.neverVerified => const Color(0xFFA16207),
-      DataState.stale => const Color(0xFFA16207),
-      _ => const Color(0xFFB91C1C),
+      DataState.success => _positiveColor(context),
+      DataState.neverVerified => _warningColor(context),
+      DataState.stale => _warningColor(context),
+      _ => Theme.of(context).colorScheme.error,
     };
     final label = switch (state) {
       DataState.success => '로컬 기록 확인 완료',
@@ -394,15 +397,16 @@ class _TrustBanner extends StatelessWidget {
     final error = retainedError == null
         ? ''
         : '\n새로고침 실패: ${retainedError!}\n마지막 정상 스냅샷은 유지됩니다.';
+    final text = '데이터 상태: $label\n증권사 잔고 대조 전 · 마지막 확인 $verified$error';
     return Semantics(
       container: true,
       excludeSemantics: true,
       liveRegion: !isGood,
-      label: '신뢰 상태 $label',
+      label: text,
       child: _Notice(
         icon: isGood ? Icons.verified : Icons.warning_amber_rounded,
         color: color,
-        text: '데이터 상태: $label\n증권사 잔고 대조 전 · 마지막 확인 $verified$error',
+        text: text,
       ),
     );
   }
@@ -563,10 +567,10 @@ class DataPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const _Notice(
+        _Notice(
           icon: Icons.block,
           text: '실전 주문 꺼짐 · 현재는 로컬 거래 내역 가져오기만 사용할 수 있어요.',
-          color: Color(0xFFA16207),
+          color: _warningColor(context),
         ),
         const SizedBox(height: 12),
         _SectionCard(
@@ -665,7 +669,11 @@ class _SectionCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          Semantics(
+            container: true,
+            header: true,
+            child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+          ),
           const SizedBox(height: 12),
           child,
         ],
@@ -689,7 +697,7 @@ class _Notice extends StatelessWidget {
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: color, semanticLabel: '상태'),
+        Icon(icon, color: color),
         const SizedBox(width: 12),
         Expanded(child: Text(text)),
       ],
@@ -747,7 +755,9 @@ class _Loading extends StatelessWidget {
       child: SizedBox(
         height: compact ? 24 : 48,
         width: compact ? 24 : 48,
-        child: const CircularProgressIndicator(),
+        child: MediaQuery.disableAnimationsOf(context)
+            ? const Icon(Icons.hourglass_empty)
+            : const CircularProgressIndicator(),
       ),
     ),
   );
@@ -763,9 +773,19 @@ TextStyle _gainStyle(BuildContext context, List<Money> money) {
   return _tabular(context).copyWith(
     color: negative
         ? Theme.of(context).colorScheme.error
-        : const Color(0xFF047857),
+        : _positiveColor(context),
   );
 }
+
+Color _positiveColor(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.dark
+    ? const Color(0xFF34D399)
+    : const Color(0xFF047857);
+
+Color _warningColor(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.dark
+    ? const Color(0xFFFCD34D)
+    : const Color(0xFFA16207);
 
 String _moneySummary(List<Money> money) => money.isEmpty
     ? '없음'

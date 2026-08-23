@@ -1,6 +1,6 @@
 # Omni Folio 구현 계획
 
-상태: G0·G1·G3 로컬 통과, G2 build/widget/browser 증거 확보 및 profile/screen-reader 증거 보강 중
+상태: G0·G1·G3 로컬 통과, G2 build/widget/browser·자동 accessibility/reduced-motion 증거 확보 및 physical profile/screen-reader 증거 보강 중
 기준일: 2026-08-24
 
 ## 목표
@@ -602,7 +602,7 @@ Research / Orders / Automation = 해당 capability가 시작될 때만 추가
 | exact tokens/components | semantic theme와 최소 Flutter components로 구현 |
 | visual evidence | 390×844 mobile 및 desktop browser screenshot 생성 |
 
-미해결 디자인 결정은 없다. profile p95와 수동 assistive-technology 검증은 G2 release evidence로 남아 있다.
+미해결 디자인 결정은 없다. semantics·touch target·light/dark contrast·reduced motion은 자동 검증되며, strict physical-device profile p95와 수동 assistive-technology 검증은 G2 release evidence로 남아 있다.
 
 ### Design NOT in scope
 
@@ -617,7 +617,7 @@ Research / Orders / Automation = 해당 capability가 시작될 때만 추가
 - **P1 Import contract:** preview token, row classification, before/after, apply receipt를 domain output으로 제공
 - **P1 Recovery contract:** 검증 단계와 backup/restore receipt를 구조화
 - **P1 Explainability:** snapshot 각 값의 structured provenance를 보존
-- **P2 Phase C entry gate:** IA, viewport, keyboard, screen-reader acceptance를 적용; profile/screen-reader 수동 증거는 G2 잔여 항목
+- **P2 Phase C entry gate:** IA, viewport, keyboard, screen-reader acceptance를 적용; physical profile과 수동 screen-reader 증거는 G2 잔여 항목
 - **P3 Visual system:** `DESIGN.md`, semantic tokens와 실제 fixture 기반 Flutter variant 생성 완료
 
 ### Design 완료 요약
@@ -736,6 +736,7 @@ critical silent gap은 contract 보강 뒤 0개다.
 - import 기준: 1 MiB/10,000 rows hard cap 안에서 preview/apply p50/p95, peak RSS, DB growth를 기록한다.
 - read 기준: 100/1,000/10,000 ledger events에서 snapshot p50/p95를 측정한다.
 - Flutter 기준: representative import/list fixture의 60 Hz p95 frame budget을 profile mode에서 기록한다. chart는 아직 측정하지 않는다.
+- 2026-08-24 첫 로컬 Android emulator profile은 614 frames에서 build/raster/total-span p95 1.026/16.674/22.222 ms를 기록했지만 환경 메타데이터가 부족했다. Flutter 3.47.1, `Medium_Phone_API_36.1_emulator`, Android 16/API 36, 411.43×914.29 logical viewport@2.625×를 함께 기록한 두 번째 595-frame run은 2.745/31.851/54.008 ms였다. strict 16.67 ms raster budget을 실패했고 emulator 간 변동도 크므로, physical Android/iOS에서 다시 측정한다.
 - Python 기준: 같은 bars/request에서 deterministic output을 우선하고 벡터화 dependency는 stdlib가 측정상 한계일 때만 추가한다.
 - 고정 latency SLA나 cache/Redis를 먼저 약속하지 않는다. broker/order hot path가 생긴 뒤 구간별 p50/p95/p99 예산을 둔다.
 
@@ -797,7 +798,7 @@ A를 먼저 고정한 뒤 B/C/D를 병렬로 실행하고 E가 실제 명령을 
 - Parallelization: 5 lanes, B/C/D parallel after A, E sequential
 - Unresolved decisions: 0
 
-> **Phase 3 plan and first-slice implementation complete.** `make check`, `make smoke`, Go race/build, Flutter web/iOS/Android release builds, deterministic improvement run, Playwright API/UI flow, and isolated non-root/read-only Compose readiness all passed on 2026-08-24. G2 remains open only for profile p95 and manual assistive-technology/reduced-motion evidence.
+> **Phase 3 plan and first-slice implementation complete.** `make check`, `make smoke`, Go race/build, Flutter web/iOS/Android release builds, deterministic improvement run, Playwright API/UI flow, and isolated non-root/read-only Compose readiness all passed on 2026-08-24. G2 automated semantics/touch/contrast/reduced-motion checks pass; strict physical profile p95 and manual assistive-technology evidence remain open.
 
 ## `/autoplan` Phase 4: Developer Experience 검토
 
@@ -816,7 +817,7 @@ A를 먼저 고정한 뒤 B/C/D를 병렬로 실행하고 E가 실제 명령을 
 | Phase | Result | Durable decision or evidence |
 |---|---|---|
 | CEO | PASS | 개인용 local-first 원장 앱에서 시작해 paper/shadow를 자동화 상한으로 두고 live는 owner 승인으로 제한 |
-| Design | PASS WITH RELEASE EVIDENCE OPEN | Flutter 단일 client, Toss-inspired plain-language UX, 실제 mobile/desktop 화면과 200% text test; profile/screen-reader/reduced-motion 증거는 G2에 남김 |
+| Design | PASS WITH RELEASE EVIDENCE OPEN | Flutter 단일 client, Toss-inspired plain-language UX, 실제 mobile/desktop 화면과 200% text·semantics·contrast·reduced-motion test; physical profile/screen-reader 증거는 G2에 남김 |
 | Engineering | PASS | Go exact ledger/import/restore, Flutter trust/import, Python deterministic backtest와 expanding walk-forward, versioned contracts가 root check/smoke 통과 |
 | DX | PASS | pinned asdf, five-minute README, isolated hardened Compose readiness, custom-port 명령 일치 |
 | Broker decision | PASS | 키움 read-only·차트·실시간·모의주문을 첫 gate로, 토스증권 Open API를 두 번째 adapter이자 UX reference로 고정 |

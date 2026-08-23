@@ -224,6 +224,78 @@ void main() {
     expect(find.textContaining('마지막 정상 스냅샷은 유지됩니다'), findsOneWidget);
   });
 
+  testWidgets('trust status and controls expose accessible semantics', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    addTearDown(
+      tester.binding.platformDispatcher.clearPlatformBrightnessTestValue,
+    );
+    try {
+      await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+      await pumpUi(tester);
+
+      expect(
+        find.semantics.byLabel(
+          RegExp(r'데이터 상태: 로컬 기록 확인 완료.*마지막 확인', dotAll: true),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getSemantics(find.text('현금 잔액')),
+        matchesSemantics(label: '현금 잔액', isHeader: true),
+      );
+      await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+      await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
+      await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+      await expectLater(tester, meetsGuideline(textContrastGuideline));
+
+      tester.binding.platformDispatcher.platformBrightnessTestValue =
+          Brightness.dark;
+      await tester.pumpAndSettle();
+      expect(
+        Theme.of(tester.element(find.byType(Scaffold))).brightness,
+        Brightness.dark,
+      );
+      await expectLater(tester, meetsGuideline(textContrastGuideline));
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('reduced motion reaches the final navigation state immediately', (
+    tester,
+  ) async {
+    tester.binding.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(
+          disableAnimations: true,
+          reduceMotion: true,
+        );
+    addTearDown(
+      tester.binding.platformDispatcher.clearAccessibilityFeaturesTestValue,
+    );
+
+    await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+    expect(find.byIcon(Icons.hourglass_empty), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    await pumpUi(tester);
+    expect(
+      MediaQuery.disableAnimationsOf(tester.element(find.byType(Scaffold))),
+      isTrue,
+    );
+    expect(
+      tester
+          .widget<NavigationBar>(find.byType(NavigationBar))
+          .animationDuration,
+      Duration.zero,
+    );
+
+    await tester.tap(find.text('내역'));
+    await tester.pump();
+
+    expect(find.text('거래 내역 가져오기'), findsOneWidget);
+  });
+
   testWidgets('error state remains usable on a small screen at 200% text', (
     tester,
   ) async {

@@ -1,6 +1,6 @@
 # Omni Folio Execution Plan
 
-상태: G0·G1·G3 로컬 통과, G2 접근성·성능 최종 증거 보강 중, G4A 키움 K0 합성 계약 통과
+상태: G0·G1·G3 로컬 통과, G2 자동 접근성·reduced-motion 통과 및 native profile·screen-reader 증거 보강 중, G4A 키움 K0 합성 계약 통과
 
 ## Now
 
@@ -8,7 +8,7 @@
 - [x] Flutter/Go/Python 및 state-authority ADR
 - [x] G0 contracts와 monorepo 실행 명령
 - [x] G1 CSV preview → atomic apply → ledger snapshot/receipt
-- [ ] G2 동일 fixture를 표시하는 Flutter client와 iOS·Android·web build 완료; profile p95·screen-reader/reduced-motion 수동 증거 남음
+- [ ] G2 동일 fixture를 표시하는 Flutter client와 iOS·Android·web build 완료; semantics·touch target·light/dark contrast·reduced-motion 자동 검증 통과, Android emulator raster p95 재측정 실패와 수동 screen-reader·physical-device profile 증거 남음
 - [x] G3 동일 market fixture를 읽는 deterministic Python backtest와 walk-forward 개선 runner
 - [x] local OCI/Compose 정의와 root check/smoke
 

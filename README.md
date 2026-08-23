@@ -11,7 +11,7 @@
 |---|---|---|
 | G0 아키텍처·계약 | 통과 | versioned OpenAPI/JSON Schema, runtime ADR, root commands |
 | G1 로컬 원장 | 통과 | CSV preview → atomic apply → append-only ledger → snapshot/receipt → backup/restore |
-| G2 Flutter client | 부분 통과 | iOS·Android·web release build와 자동 테스트 통과; profile p95·screen-reader·reduced-motion 수동 증거 남음 |
+| G2 Flutter client | 부분 통과 | iOS·Android·web release build와 10개 자동 테스트 통과; semantics·touch target·light/dark contrast·reduced motion 자동 증거 확보, Android emulator raster budget 실패와 physical-device·수동 screen-reader 증거 남음 |
 | G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, paper-only result |
 | G4 broker | 진행 중 | 키움 K0 HTTP/정규화 합성 계약 통과; live credential, persistence, reconciliation, 차트·실시간, 모의주문 남음 |
 
