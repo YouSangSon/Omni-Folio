@@ -20,17 +20,17 @@
 | 인증 | OAuth client credentials, `appkey`/`secretkey` | OAuth client credentials, 계좌 API는 `X-Tossinvest-Account` 추가 |
 | 범위 | 국내·미국 계좌, 시세, 차트, 주문, 실시간 | 국내·미국 계좌, 시세, 차트, 주문·조건주문, 실시간 |
 | 안전한 검증 환경 | 운영/모의 도메인과 키 분리; 국내 모의는 KRX만 지원 | 공식 [OpenAPI](https://openapi.tossinvest.com/openapi-docs/latest/openapi.json)에서 별도 주문 sandbox는 확인하지 못함 |
-| 호출 제한 | 오류코드 `1700`~`1702`로 API·전체·그룹 유량 초과를 알리지만 공개 고정 quota는 재확인하지 못함 | 그룹별 제한과 응답의 `X-RateLimit-*`, 429의 `Retry-After`를 런타임 기준으로 사용 |
+| 호출 제한 | 공식 FAQ 기준 TR·token별 운영 5회/초, 모의 1회/초. 전체·그룹 제한, burst window와 `Retry-After`는 미확인 | 그룹별 제한과 응답의 `X-RateLimit-*`, 429의 `Retry-After`를 런타임 기준으로 사용 |
 
 공식 명세는 바뀔 수 있다. 구현 시 저장한 문서 복사본을 진실로 두지 않고 위 포털, OpenAPI, AsyncAPI와 실제 응답 헤더를 다시 확인한다. 키움 공식 GitHub 자료는 참고만 하며 [키움 전용 제한 라이선스](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/main/LICENSE.md) 때문에 샘플 코드나 명세를 이 저장소로 복사·수정·재배포하지 않는다.
 
 ### 확인된 키움 K0 HTTP 계약
 
 - OAuth는 운영/모의의 `POST /oauth2/token`에 `client_credentials`, `appkey`, `secretkey`를 보내고 `expires_dt`, `token_type`, `token`을 받는다. 공식 문서에는 token lifetime과 timezone, 권한 scope가 명시돼 있지 않다. ([au10001](https://openapi.kiwoom.com/m/guide/apiguide/a1/au10001))
-- `ka00001`, `kt00018`, `ka10075`는 `POST /api/dostk/acnt`를 공유하며 `authorization: Bearer ...`, `api-id`를 요구한다. `cont-yn=Y`이면 응답의 `cont-yn`과 `next-key`를 다음 요청 header에 전달한다. ([ka10075](https://openapi.kiwoom.com/m/guide/apiguide/08/ka10075), [kt00018](https://openapi.kiwoom.com/m/guide/apiguide/08/kt00018))
-- HTTP status만으로 성공을 판단하지 않고 body의 `return_code`도 확인한다. 공개 오류표는 인증·환경 불일치와 유량 초과 코드를 제공하지만 page size와 고정 quota 수치는 확인되지 않았다. ([오류코드](https://openapi.kiwoom.com/m/errorcode/errorCodeView))
+- `ka00001`, `kt00018`, `ka10075`, `kt00009`는 `POST /api/dostk/acnt`를 공유하며 `authorization: Bearer ...`, `api-id`를 요구한다. `cont-yn=Y`이면 응답의 `cont-yn`과 `next-key`를 다음 요청 header에 전달한다. ([ka10075](https://openapi.kiwoom.com/m/guide/apiguide/08/ka10075), [kt00009](https://openapi.kiwoom.com/m/guide/apiguide/08/kt00009), [kt00018](https://openapi.kiwoom.com/m/guide/apiguide/08/kt00018))
+- HTTP status만으로 성공을 판단하지 않고 body의 `return_code`도 확인한다. 공개 오류표는 인증·환경 불일치와 유량 초과 코드를 제공하지만 page size, 전체·그룹 limit과 burst window는 확인되지 않았다. ([오류코드](https://openapi.kiwoom.com/m/errorcode/errorCodeView))
 - 국내 모의투자 계좌·주문은 KRX만 지원한다. ([모의투자 안내](https://openapi.kiwoom.com/m/intro/mockInvestInfo))
-- 미확인 quota에서는 자동 retry/backoff를 추측하지 않는다. 읽기 호출은 안전한 오류로 끝내고, 실제 모의 응답과 제한을 측정한 뒤 bounded retry와 limiter를 추가한다.
+- 공식 FAQ는 TR·token별 운영 초당 5건, 모의 초당 1건을 명시한다. 전체·그룹 limit, burst window와 `Retry-After`는 문서화되지 않았으므로 자동 retry/backoff를 추측하지 않고 실제 모의 응답을 관찰한 뒤 limiter를 추가한다. ([호출 횟수 FAQ](https://bbn.kiwoom.com/bbs/VBbsNoticeNOPAFPagingDetailView?seqid=41))
 
 ## 구현 순서
 
@@ -38,7 +38,7 @@
 
 - Go 서버만 OAuth secret과 access token을 읽는다. 로컬은 OS keychain, cloud는 secret manager를 사용한다.
 - Flutter, Python, `.env`, Git, 로그, 오류 응답에는 app key, secret, token, 계좌 원문을 두지 않는다.
-- 키움 OAuth의 read-only scope는 공식 문서에서 확인되지 않았으므로 credential 이름만 믿지 않는다. 현재 프로세스는 account read `ka00001`/`kt00018`/`ka10075`와 chart read `ka10080`/`ka10081`만 각각 고정 path로 허용하고 submit API와 route를 갖지 않는다.
+- 키움 OAuth의 read-only scope는 공식 문서에서 확인되지 않았으므로 credential 이름만 믿지 않는다. 현재 프로세스는 account read `ka00001`/`kt00018`/`ka10075`/`kt00009`와 chart read `ka10080`/`ka10081`만 각각 고정 path로 허용하고 submit API와 route를 갖지 않는다. `kt00009`는 internal dated scan에서만 사용한다.
 - provider별 capability, rate-limit, pagination/continuation, 오류 envelope, symbol/market mapping은 공식 예제를 복사하지 않은 합성 contract fixture로 검증한다.
 - 원본 금액·수량의 부호 규칙을 경계에서 canonical decimal string으로 변환한다.
 
@@ -77,6 +77,13 @@
 - 체결은 `(occurred_at, provider_execution_ref)` 순서로 기존 K2A 이벤트 경로에 한 SQLite transaction으로 반영한다. 같은 체결 재관측은 idempotent하고, payload 변경·교차 주문 체결번호·중간 충돌은 전체 rollback한다.
 - 미완결·미발견 조회는 known-good 상태를 보존한다. 주문번호를 잃은 `SUBMIT_UNKNOWN`은 동일 tuple/time의 단일 주문이 보여도 `UNCORRELATED`로 유지하고 계좌 신규 submit을 계속 차단한다.
 - 이는 credential-free synthetic contract다. 공식 키움 계좌 조회의 시간대·보존 기간·주문/체결번호 유일성은 문서화되지 않았고 client-order idempotency 필드도 없으므로, credentialed mock 관찰 전에는 실제 조회 복구로 승격하지 않는다. 실행 증거는 [`../gates/g4f-kiwoom-known-order-reconciliation.md`](../gates/g4f-kiwoom-known-order-reconciliation.md)에 기록한다.
+
+### K2B1 — 날짜 지정 체결 page의 내부 합성 스캔
+
+- 현재 [공식 키움 계좌 명세](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/main/kiwoom_docs/%EA%B3%84%EC%A2%8C.md)의 `kt00009`만 사용한다. 요청 날짜, 주식, 전체 시장/방향, 체결만, KRX를 고정하고 terminal cursor까지 읽는다.
+- `A`-prefix KRX 주식, cash buy/sell, provider `trde_tp`, exact decimal, non-zero 7자리 주문·체결번호와 `HH:mm:ss`만 보존한다. alias는 environment·account·요청 날짜를 포함한 `dated_order`/`dated_execution` namespace라 K2A/K2B0 event alias로 사용할 수 없다.
+- `PaginationComplete=true`는 이 요청의 page traversal만 뜻한다. 공식 명세가 timezone, retention, page snapshot consistency, ID lifetime과 lost-submit correlation을 보장하지 않으므로 `ExecutionsComplete=false`를 고정하고 요청 날짜와 execution clock을 UTC로 결합하지 않는다.
+- 빈 배열은 해당 날짜 요청에 row가 없다는 뜻일 뿐 주문 미존재 증거가 아니다. credential, 실제 broker request, DB mutation, K2B0 mapping, unknown-submit 복구, public route/UI는 추가하지 않았다. 실행 증거는 [`../gates/g4g-kiwoom-dated-execution-scan.md`](../gates/g4g-kiwoom-dated-execution-scan.md)에 기록한다.
 
 ### K2B — 키움 모의주문 transport와 조회 복구
 

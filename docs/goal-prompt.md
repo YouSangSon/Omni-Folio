@@ -116,6 +116,7 @@ Market data adapters
 - 주문 command와 ack/fill/cancel/reject는 provider ID와 idempotency key를 포함한 append-only execution log에 저장한다.
 - 현재 K2A 증거는 Go 내부 합성 `LIMIT`/`KRW`/`KRX` 주문 상태 로그에 한정한다. client-order/event/provider-execution idempotency, risk verdict ordering, durable unknown submit, 계좌 단위 신규 submit 차단, 알려진 open-order cancel 허용, fill/cancel/reject replay와 backup v2 복구를 증명하지만 실제 risk policy, broker submit/query, credential, fencing, public API/UI 또는 체결-원장 reconciliation은 증명하지 않는다.
 - 현재 K2B0 증거는 명시적 ACK로 opaque provider order ref가 이미 묶인 합성 주문의 execution reconciliation에 한정한다. 전체 lookup과 전체 execution 목록이 완결되고 account·주문번호·주문 tuple·UTC 시간이 모두 일치할 때만 체결을 기존 order event transaction에 원자 반영한다. 주문번호 없는 `SUBMIT_UNKNOWN`은 tuple/time 유사성으로 결합하지 않고 `UNCORRELATED`와 계좌 차단을 유지한다.
+- 현재 K2B1 증거는 명시 날짜의 합성 키움 `kt00009` 체결 page를 provider-private로 읽고 정규화하는 데 한정한다. terminal pagination은 해당 요청의 page 순회만 뜻하고 `ExecutionsComplete=false`를 유지한다. 날짜와 timezone 없는 `HH:mm:ss` 체결시각을 UTC로 결합하지 않으며 dated alias는 durable 주문·체결 alias와 분리해 K2B0나 `SUBMIT_UNKNOWN` 복구에 사용할 수 없다.
 - 주문 submit 전 `client_order_id`/idempotency key를 unique constraint와 함께 durable하게 기록한다. execution gateway는 모든 order intent의 fencing token을 DB의 현재 owner token과 비교하고 불일치하면 broker submit 전에 거절한다. timeout이나 crash로 결과가 불명확하면 재주문하지 않고 같은 키로 broker 상태를 조회·reconcile한 뒤에만 다음 상태로 진행한다.
 - live 전략 runner는 실전 활성화 전에 UI/API와 별도 프로세스로 격리하고 broker credential이나 외부 주문 API에 접근하지 못하게 한다. credential은 공통 execution gateway만 읽는다. 같은 저장소와 모듈 경계를 유지하므로 이를 별도 microservice로 확장하지 않는다.
 - 새 알고리즘은 versioned strategy manifest, 전략 모듈, contract/backtest fixture만 추가해 등록할 수 있어야 하며 주문·원장·브로커 코어에 전략별 분기를 추가하지 않는다.
@@ -152,7 +153,7 @@ Market data adapters
 
 - 키움 REST API 국내주식 read-only 연결. K1은 먼저 credential-free 합성 `POST /api/dostk/chart` `ka10080`/`ka10081` 계약으로 일·분봉 정규화를 검증했으며, 이는 broker request나 live data 증명이 아니다.
 - 계좌번호, 계좌평가잔고, 미체결, 일·분봉, 실시간 체결·호가를 canonical contract로 정규화
-- provider가 권한 scope를 제공하면 read-only 최소 scope만 허용한다. 키움은 공식 OAuth 문서에서 scope를 확인하지 못했으므로 account read `ka00001`/`kt00018`/`ka10075`와 chart read `ka10080`/`ka10081`만 고정 API-ID·path allowlist로 허용하고, submit method·route 부재를 테스트로 강제한다.
+- provider가 권한 scope를 제공하면 read-only 최소 scope만 허용한다. 키움은 공식 OAuth 문서에서 scope를 확인하지 못했으므로 account read `ka00001`/`kt00018`/`ka10075`/`kt00009`와 chart read `ka10080`/`ka10081`만 고정 API-ID·path allowlist로 허용하고, submit method·route 부재를 테스트로 강제한다. `kt00009`는 internal dated scan에서만 호출한다.
 - 계좌, 거래, 잔고 pagination 동기화
 - rate limit, retry/backoff, token 갱신, freshness 상태
 - 브로커 잔고와 원장 잔고 reconciliation 화면
@@ -169,7 +170,7 @@ Market data adapters
 ### Phase 4 — 주문
 
 - 이 단계는 키움 모의투자 주문만 먼저 구현한다. 실전 주문 credential과 live broker submit은 Phase 6의 broker별 promotion gate 전까지 코드 경로와 설정에서 비활성화한다.
-- 현재 K2A/K2B0는 내부 합성 지정가 매수·매도, idempotency, unknown-submit/replay, backup 복구와 이미 알려진 주문번호의 원자적 체결 조정만 통과했다. 화면, 네트워크, credential, unknown-submit correlation과 실제 모의투자 동작은 없다.
+- 현재 K2A/K2B0는 내부 합성 지정가 매수·매도, idempotency, unknown-submit/replay, backup 복구와 이미 알려진 주문번호의 원자적 체결 조정만 통과했다. K2B1은 명시 날짜의 KRX 현금 매수·매도 체결 row를 읽고 provider 주문유형을 그대로 보존하는 non-joinable scan만 통과했다. 화면, 실제 broker network/credential, unknown-submit correlation과 실제 모의투자 동작은 없다.
 - K2B에서 시장가·지정가, 매수·매도, 수량·예상금액·수수료 확인을 provider capability와 함께 구현한다.
 - K2B에서 접수, 미체결, 부분체결, 체결, 취소, 정정, 거절의 실제 broker mapping과 risk/fencing을 검증한다.
 - K2B에서 재시작·네트워크 단절 후 broker 상태 재조회와 원장 reconciliation을 구현한다. 공식 broker correlation 근거가 없으면 동일 tuple/time 휴리스틱으로 주문번호를 결합하지 않는다.

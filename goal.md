@@ -24,6 +24,8 @@ G4E/K2A는 Go 내부의 합성 Kiwoom `LIMIT`/`KRW`/`KRX` 주문 상태 로그�
 
 G4F/K2B0는 Go 내부 합성 조회로 **이미 명시적 ACK에 의해 opaque provider order ref가 묶인 주문**의 체결만 조정한다. 전체 조회와 전체 체결 목록이 모두 완결되고 account·주문번호·종목·방향·수량·가격·UTC 시간이 일치할 때만 체결을 시간·체결번호 순으로 기존 append-only 이벤트에 한 transaction으로 반영한다. 미완결·미발견·충돌은 상태를 바꾸지 않는다. 주문번호를 받지 못한 `SUBMIT_UNKNOWN`은 동일 속성·시간의 단일 주문이 보여도 `UNCORRELATED`로 유지하고 계좌 신규 submit을 계속 차단한다. 이는 credential, broker request, credentialed mock 관찰, unknown-submit 복구, public API/UI, risk/fencing 또는 ledger mutation을 증명하지 않는다.
 
+G4G/K2B1은 Go 내부에서 명시 날짜의 합성 키움 `kt00009` 체결 page를 읽고 정규화하는 provider-private 경계다. `A`-prefix KRX 주식, 현금 매수·매도, provider 주문유형, exact decimal과 non-zero 7자리 주문·체결번호만 허용하고 environment·account·날짜가 포함된 별도 dated alias를 만든다. terminal cursor는 해당 요청의 pagination 완료만 뜻하며 전체 주문·체결 이력 완료를 뜻하지 않는다. 공식 명세가 timezone·retention·ID lifetime을 보장하지 않으므로 요청 날짜와 `HH:mm:ss` 체결시각을 UTC로 결합하지 않고 `ExecutionsComplete=false`를 유지한다. 이 결과는 K2B0, `SUBMIT_UNKNOWN`, DB, public API/UI에 연결하지 않는다.
+
 Flutter 제품 경험은 영웅문 화면을 재현하지 않는다. 토스증권에서 참고한 쉬운 용어, 한 화면 한 결정, 점진적 상세 공개, 국내·미국의 일관된 흐름, 명확한 주문 확인과 접근성을 Omni Folio 고유 디자인으로 구현한다. 상세한 공급자·UX 결정은 [`docs/broker-priority-and-ux.md`](docs/broker-priority-and-ux.md)를 따른다.
 
 PostgreSQL maintenance migration과 restore 증명 전에는 multi-replica 또는 Kubernetes를 도입하거나 manifest를 만들지 않는다. live 주문은 서버가 owner 승인 만료, broker/account/strategy allowlist, promotion evidence, healthy kill switch를 **매 주문** 검증할 때만 허용한다. 휴대폰 background는 cache refresh와 push 보조만 하며 주문·reconciliation·kill switch의 authority가 아니다.

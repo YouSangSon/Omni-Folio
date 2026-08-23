@@ -35,6 +35,7 @@ G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4D market-data price-adjustment consumer contract
 ├─ G4E/K2A Kiwoom internal synthetic order-state log
 ├─ G4F/K2B0 Kiwoom known-order execution reconciliation
+├─ G4G/K2B1 Kiwoom synthetic dated execution scan
 ├─ K2B Kiwoom mock-order broker transport and lookup recovery
 └─ then Toss Securities read-only as the second adapter
    |

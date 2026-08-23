@@ -888,3 +888,15 @@ K2B0 adds only the smallest safe lookup bridge that existing K2A storage can sup
 - TDD started with the missing reconciliation API and added regressions for fractional timestamp order, incomplete evidence, changed executions, cross-order execution conflicts, mid-transaction rollback, tuple/time conflicts and raw identifier redaction. GREEN checkpoint is `4a2a6e4`; `make check`, Go race and independent safety review pass locally on 2026-08-24 KST.
 
 Still open for K2B: official `kt10000`/`kt10001` submit and `ka10075`/`ka10076`/`kt00007`/`kt00009` credentialed mock observations, documented-or-observed correlation strong enough to handle a lost submit response, real risk/fencing, public OpenAPI/Flutter order flow, market/amend, ledger mutation and every live-money path.
+
+## 2026-08-24 G4G/K2B1 continuation: dated execution scan
+
+K2B1 adds the smallest provider-private observation boundary that can be justified from the current official `kt00009` account specification. It does not connect that observation to K2B0, storage, `SUBMIT_UNKNOWN`, HTTP or Flutter.
+
+- The caller supplies an exact `YYYY-MM-DD`; the adapter sends one fixed stock/KRX/fills-only request and follows the existing bounded continuation transport to its terminal cursor.
+- Every page requires an explicit zero `return_code` and execution array. Only `A`-prefixed KRX stocks, cash buy/sell, a non-empty provider order type, exact quantities/prices, valid provider-local `HH:mm:ss` and non-zero seven-digit order/execution IDs survive normalization.
+- Opaque aliases include environment, account and requested date and use `dated_order`/`dated_execution` namespaces that the durable order-event validator rejects. Duplicate executions, changed order identity/order type, cumulative overfill or a later-page error discard the whole scan.
+- `PaginationComplete` describes cursor traversal only. `ExecutionsComplete` remains false because the official contract does not establish retention, cross-page snapshot consistency, timezone, row ordering or identifier lifetime. The date and naive execution clock are deliberately not converted to UTC.
+- TDD exposed and fixed two broader trust-boundary issues: cumulative fills could exceed order quantity, and the shared Kiwoom result checker accepted a missing `return_code`. Code checkpoint `d93cdee`; `make check`, `make smoke`, full Go race and independent architecture/test re-reviews pass locally on 2026-08-24 KST.
+
+Still open for K2B: credentialed mock observations, authoritative empty/result/time/ID semantics, limiter behavior, lost-submit correlation, known-good persistence and scheduling, K2B0 mapping, real risk/fencing, public order flow, ledger mutation and every live-money path.
