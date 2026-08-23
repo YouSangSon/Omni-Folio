@@ -13,7 +13,7 @@
 | G1 로컬 원장 | 통과 | CSV preview → atomic apply → append-only ledger → snapshot/receipt → backup/restore |
 | G2 Flutter client | 부분 통과 | iOS·Android·web release build와 17개 자동 테스트 통과; chart 포함 Android emulator build/raster p95 2회 통과, physical-device·수동 screen-reader 및 test-instrumentation 격리 증거 남음 |
 | G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, paper-only result |
-| G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 내부 합성 주문 상태·backup v2, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔 합성 계약 통과. 실제 키움 credentialed 시세/모의주문 transport, unknown-submit correlation, public 주문 UI, 실제 risk/fencing, 실시간과 모든 live gate는 남는다. |
+| G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 내부 합성 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot·원장 수량 diff와 backup v3 합성 계약 통과. 실제 키움 credentialed 시세/모의주문 transport, freshness/scheduling, unknown-submit correlation, public 주문 UI, 실제 risk/fencing과 모든 live gate는 남는다. |
 
 세부 상태와 완료 조건은 [`PLAN.md`](PLAN.md)와 [`GATES.md`](GATES.md)에서 관리합니다.
 
@@ -122,7 +122,7 @@ curl -fsS 'http://127.0.0.1:8080/v1/market-data/candles?symbol=AAPL&interval=1d'
 
 ### Internal synthetic order recovery, reconciliation, and dated execution scan
 
-K2A/K2B0는 Go 내부에서 Kiwoom `LIMIT`/`KRW`/`KRX` intent와 append-only lifecycle, `SUBMIT_UNKNOWN` 중복 방지, cancel/fill replay, order-aware backup v2와 이미 알려진 주문번호의 원자적 체결 조정을 검증합니다. K2B1은 별도로 명시 날짜의 synthetic `kt00009` KRX 현금 매수·매도 체결 row를 읽고 provider 주문유형을 그대로 보존하는 non-joinable scan만 검증합니다. 세 계약 모두 주문 API나 화면을 노출하지 않고 broker 요청도 보내지 않습니다.
+K2A/K2B0는 Go 내부에서 Kiwoom `LIMIT`/`KRW`/`KRX` intent와 append-only lifecycle, `SUBMIT_UNKNOWN` 중복 방지, cancel/fill replay와 이미 알려진 주문번호의 원자적 체결 조정을 검증합니다. K2B1은 별도로 명시 날짜의 synthetic `kt00009` KRX 현금 매수·매도 체결 row를 읽고 provider 주문유형을 그대로 보존하는 non-joinable scan만 검증합니다. 세 계약 모두 주문 API나 화면을 노출하지 않고 broker 요청도 보내지 않습니다.
 
 ```sh
 cd services/core
@@ -130,6 +130,17 @@ go test -run '^(TestK2A|TestK2B0|TestK2B1)' -count=1 ./...
 ```
 
 K2B0는 속성·시간이 같은 주문이 보여도 주문번호 없는 `SUBMIT_UNKNOWN`을 결합하지 않습니다. K2B1의 terminal pagination도 전체 체결 이력 완료를 뜻하지 않으며, 날짜와 timezone 없는 체결 시각을 합쳐 UTC를 만들거나 K2B0 입력으로 사용하지 않습니다. 실제 키움 모의주문 submit/query, 안전한 unknown-submit correlation, risk policy, fencing, broker/ledger reconciliation과 Flutter 주문 흐름은 K2B 범위입니다.
+
+### Credential-free known-good broker snapshot
+
+G4H는 기존 합성 `KiwoomSnapshot` 중 `complete=true`인 KRX snapshot만 Go 내부 SQLite에 원자 저장합니다. 같은 account/environment/exchange/fetched-at와 같은 payload는 같은 record를 반환하고, payload 충돌이나 불완전 snapshot은 이전 known-good를 바꾸지 않습니다. 저장 시점 ledger revision의 KRX/KRW 종목 수량과 broker 수량 차이를 exact decimal로 함께 고정합니다.
+
+```sh
+cd services/core
+go test -run '^TestG4H' -count=1 ./...
+```
+
+schema/backup v3는 ledger event와 broker snapshot을 insert-only로 보호하고 주문·broker state digest/count와 replay 가능한 canonical record를 restore 후보에서 검증합니다. 이 leaf는 credential, broker request, scheduling, 공식 freshness/timezone, 현금·평가금액 reconciliation, public API/UI, risk approval 또는 live readiness를 증명하지 않습니다.
 
 ### Research와 자동 개선
 

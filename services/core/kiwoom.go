@@ -149,6 +149,7 @@ type KiwoomSnapshot struct {
 	AccountRef    string            `json:"account_ref"`
 	MaskedAccount string            `json:"masked_account"`
 	FetchedAt     string            `json:"fetched_at"`
+	Complete      bool              `json:"complete"`
 	Currency      string            `json:"currency"`
 	Totals        KiwoomTotals      `json:"totals"`
 	Positions     []KiwoomPosition  `json:"positions"`
@@ -187,6 +188,7 @@ func (c *KiwoomClient) Snapshot(ctx context.Context, exchange KiwoomExchange) (*
 		AccountRef:    c.alias("account", rawAccount),
 		MaskedAccount: "******" + rawAccount[6:],
 		FetchedAt:     c.now().UTC().Format(time.RFC3339Nano),
+		Complete:      true,
 		Currency:      "KRW",
 		Totals:        totals,
 		Positions:     positions,

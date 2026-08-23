@@ -19,9 +19,9 @@ Scope: Go core internal-only synthetic Kiwoom `LIMIT`/`KRW`/`KRX` order state. N
 - [x] **K2A5 schema and restart:** migration v1→v2 preserves v1 data, readiness requires the exact contiguous migration history, and both order tables are insert-only.
   - CHECK: `cd services/core && go test -run '^TestK2AOrderTablesAreInsertOnly$|^TestK2AMigratesV1ToV2AndReadinessRequiresV2$|^TestHealthAndReadinessAreSeparate$' -count=1 ./...`
   - EVIDENCE: PASS.
-- [x] **K2A6 order-aware backup:** backup v2 compares source/candidate order digests and counts, validates row hashes/metadata and full replay, and rejects v1, missing/weak schema constraints, malformed/orphan rows, missing triggers, composite/descending sequence PKs and manifest digest changes.
+- [x] **K2A6 order-aware backup:** originally passed as backup v2; current backup v3 retains source/candidate order digests/counts, row hash/metadata/full replay and schema protections while adding broker-state recovery evidence.
   - CHECK: `cd services/core && go test -run '^TestK2ABackup|^TestK2ARestore' -count=1 ./...`
-  - EVIDENCE: PASS. `omni-folio-backup.v1` is not eligible for automatic v2 activation.
+  - EVIDENCE: PASS. Earlier backup formats are not eligible for automatic v3 activation.
 
 ## Verification
 

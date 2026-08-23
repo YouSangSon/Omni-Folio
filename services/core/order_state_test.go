@@ -296,7 +296,7 @@ func TestK2AOrderTablesAreInsertOnly(t *testing.T) {
 	}
 }
 
-func TestK2AMigratesV1ToV2AndReadinessRequiresV2(t *testing.T) {
+func TestSchemaMigratesV1ToV3AndReadinessRequiresV3(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v1.db")
 	db, err := openDB(path)
 	if err != nil {
@@ -324,13 +324,13 @@ func TestK2AMigratesV1ToV2AndReadinessRequiresV2(t *testing.T) {
 	if err := db.QueryRow(`SELECT MAX(version), COUNT(*) FROM schema_migrations`).Scan(&version, &migrations); err != nil {
 		t.Fatal(err)
 	}
-	if version != 2 || migrations != 2 {
-		t.Fatalf("schema version=(%d,%d), want latest=2 with two migrations", version, migrations)
+	if version != 3 || migrations != 3 {
+		t.Fatalf("schema version=(%d,%d), want latest=3 with three migrations", version, migrations)
 	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM events WHERE event_id='preserved'`).Scan(&preserved); err != nil || preserved != 1 {
 		t.Fatalf("v1 data was not preserved: count=%d err=%v", preserved, err)
 	}
-	for _, table := range []string{"order_idempotency", "order_events"} {
+	for _, table := range []string{"order_idempotency", "order_events", "broker_snapshots"} {
 		var exists int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&exists); err != nil || exists != 1 {
 			t.Fatalf("migration did not create %s: exists=%d err=%v", table, exists, err)
@@ -344,7 +344,7 @@ func TestK2AMigratesV1ToV2AndReadinessRequiresV2(t *testing.T) {
 	w := httptest.NewRecorder()
 	svc.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if w.Code != http.StatusOK {
-		t.Fatalf("v2 schema was not ready: status=%d body=%s", w.Code, w.Body.String())
+		t.Fatalf("v3 schema was not ready: status=%d body=%s", w.Code, w.Body.String())
 	}
 }
 

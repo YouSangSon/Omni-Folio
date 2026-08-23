@@ -56,33 +56,18 @@ func weakOrderRestoreCandidate(t *testing.T, orderEventsDDL string) (string, str
 	if err != nil {
 		t.Fatal(err)
 	}
-	v1, err := migrationFiles.ReadFile("migrations/001_init.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(string(v1)); err != nil {
+	if err := migrate(db); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`
-CREATE TABLE order_idempotency (
-    provider TEXT NOT NULL CHECK (provider = 'kiwoom'),
-    mode TEXT NOT NULL CHECK (mode = 'synthetic'), account_ref TEXT NOT NULL,
-    client_order_id TEXT NOT NULL, request_sha256 TEXT NOT NULL,
-    order_id TEXT NOT NULL UNIQUE, intent_json TEXT NOT NULL, recorded_at TEXT NOT NULL,
-    PRIMARY KEY (provider, mode, account_ref, client_order_id)
-) STRICT;
+	DROP TRIGGER order_events_no_update;
+	DROP TRIGGER order_events_no_delete;
+	DROP TABLE order_events;
 ` + orderEventsDDL + `
-CREATE TRIGGER order_idempotency_no_update BEFORE UPDATE ON order_idempotency
-BEGIN SELECT RAISE(ABORT, 'order_idempotency is insert-only'); END;
-CREATE TRIGGER order_idempotency_no_delete BEFORE DELETE ON order_idempotency
-BEGIN SELECT RAISE(ABORT, 'order_idempotency is insert-only'); END;
-CREATE TRIGGER order_events_no_update BEFORE UPDATE ON order_events
-BEGIN SELECT RAISE(ABORT, 'order_events is insert-only'); END;
-CREATE TRIGGER order_events_no_delete BEFORE DELETE ON order_events
-BEGIN SELECT RAISE(ABORT, 'order_events is insert-only'); END;
-INSERT INTO schema_migrations(version, applied_at) VALUES
-    (1, '2026-01-10T15:00:00Z'),
-    (2, '2026-01-10T15:00:01Z');
+	CREATE TRIGGER order_events_no_update BEFORE UPDATE ON order_events
+	BEGIN SELECT RAISE(ABORT, 'order_events is insert-only'); END;
+	CREATE TRIGGER order_events_no_delete BEFORE DELETE ON order_events
+	BEGIN SELECT RAISE(ABORT, 'order_events is insert-only'); END;
 `); err != nil {
 		t.Fatal(err)
 	}
