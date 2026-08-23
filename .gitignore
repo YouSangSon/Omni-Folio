@@ -75,3 +75,6 @@ build/
 
 # Local QA artifacts
 /output/
+
+# Local agent artifacts
+/docs/_internal/skill-outputs/

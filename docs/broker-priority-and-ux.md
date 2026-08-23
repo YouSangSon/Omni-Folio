@@ -71,10 +71,17 @@
 - SQLite schema v2와 backup v2는 append-only order log, exact row hash/metadata, replay, STRICT/UNIQUE/FK/rowid sequence/trigger를 source와 restore 후보에서 검증한다.
 - 이 leaf는 risk verdict의 **순서만** 증명한다. 실제 risk policy·한도·이유, broker network, credential, public route/UI, fencing, 시장가·정정 또는 ledger reconciliation 증거가 아니다. 실행 증거는 [`../gates/g4e-kiwoom-synthetic-order-state.md`](../gates/g4e-kiwoom-synthetic-order-state.md)에 기록한다.
 
+### K2B0 — 알려진 주문의 내부 합성 체결 조정
+
+- 명시적 `SUBMIT_ACKNOWLEDGED`로 opaque provider order ref가 이미 묶인 주문만 대상으로 한다. 전체 lookup과 전체 execution 목록이 완결되고 account·provider order ref·종목·방향·수량·가격·UTC 시간이 일치할 때만 식별 가능한 체결을 append한다.
+- 체결은 `(occurred_at, provider_execution_ref)` 순서로 기존 K2A 이벤트 경로에 한 SQLite transaction으로 반영한다. 같은 체결 재관측은 idempotent하고, payload 변경·교차 주문 체결번호·중간 충돌은 전체 rollback한다.
+- 미완결·미발견 조회는 known-good 상태를 보존한다. 주문번호를 잃은 `SUBMIT_UNKNOWN`은 동일 tuple/time의 단일 주문이 보여도 `UNCORRELATED`로 유지하고 계좌 신규 submit을 계속 차단한다.
+- 이는 credential-free synthetic contract다. 공식 키움 계좌 조회의 시간대·보존 기간·주문/체결번호 유일성은 문서화되지 않았고 client-order idempotency 필드도 없으므로, credentialed mock 관찰 전에는 실제 조회 복구로 승격하지 않는다. 실행 증거는 [`../gates/g4f-kiwoom-known-order-reconciliation.md`](../gates/g4f-kiwoom-known-order-reconciliation.md)에 기록한다.
+
 ### K2B — 키움 모의주문 transport와 조회 복구
 
 - 현재 공식 주문 명세의 신규 매수 `kt10000`, 매도 `kt10001`, 정정 `kt10002`, 취소 `kt10003`과 계좌 명세의 미체결·체결 조회 `ka10075`, `ka10076`, `kt00007`, `kt00009`를 credentialed mock 관찰과 contract fixture로 검증한 뒤 연결한다. ([주문 명세](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/main/kiwoom_docs/%EC%A3%BC%EB%AC%B8.md), [계좌 명세](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/main/kiwoom_docs/%EA%B3%84%EC%A2%8C.md))
-- 공식 주문 요청에 문서화된 client-order idempotency가 없으므로 내부 key를 dispatch 전에 저장하고, timeout 뒤에는 재전송하지 않고 broker 조회·reconciliation으로 확정한다.
+- 공식 주문 요청에 문서화된 client-order idempotency가 없으므로 내부 key를 dispatch 전에 저장하고 timeout 뒤에는 재전송하지 않는다. credentialed mock 관찰로 검증된 broker correlation 근거가 없으면 조회 tuple/time만으로 unknown을 확정하지 않는다.
 - 실제 risk engine, lease/fencing, market/amend capability, public API/Flutter 주문 확인, 체결-원장 reconciliation을 이 단계에서 검증한다.
 - 실제 키와 실전 submit 경로는 owner 승인 전까지 꺼 둔다.
 

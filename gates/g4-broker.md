@@ -5,8 +5,9 @@
 1. Kiwoom domestic read-only account, holdings, open orders, daily/minute candles, and realtime quote/trade streams.
 2. Kiwoom-to-ledger reconciliation and Flutter stale/partial/chart states.
 3. K2A internal synthetic Kiwoom order-state log and unknown-submit durability.
-4. K2B Kiwoom mock-order submit/query transport and lookup recovery.
-5. Toss Securities read-only adapter using the same canonical contracts.
+4. K2B0 internal synthetic reconciliation for executions of already-bound provider orders.
+5. K2B Kiwoom mock-order submit/query transport and lookup recovery.
+6. Toss Securities read-only adapter using the same canonical contracts.
 
 ## Pass when
 
@@ -15,6 +16,7 @@
 - Broker balances are compared with, never silently substituted for, the authoritative ledger.
 - Charts show source/as-of, price-adjustment basis, price/volume, text/table alternatives, empty/stale/partial/error states, and measured profile-mode frame timing.
 - K2A proves risk-verdict ordering only, durable idempotency, append-only ack/partial-fill/fill/cancel/reject replay, unknown-submit restart recovery, and order-aware backup/restore.
+- K2B0 proves atomic/idempotent execution reconciliation only for an already-bound provider order; lookup-only tuple/time similarity never resolves an unknown submit.
 - K2B must prove actual pre-trade risk policy, credentialed mock submit/query, fencing, public order flow, and broker/ledger reconciliation.
 - Real-money submit remains disabled. Toss order work does not start until a safe test path is documented because a separate official sandbox has not been confirmed.
 
@@ -24,4 +26,5 @@
 - G4B has a provider-neutral local-fixture OHLCV API and Flutter asset-detail chart with explicit sample provenance, exact decimal strings, price/volume, non-color candle cues, state handling, screen-reader summary, and a lazy exact-data table. Automated checks and two metadata-complete Android-emulator profile runs pass after optimization.
 - G4D carries the existing price-adjustment basis through HTTP, OpenAPI, and Flutter. The local fixture is pinned to `unspecified`; `provider_adjusted` is parsed and displayed conservatively for future provider responses but is not wired to the public route.
 - G4E/K2A passes the internal-only Kiwoom synthetic `LIMIT`/`KRW`/`KRX` state log, durable unknown-submit block, risk-reducing cancel, replay/idempotency conflicts, schema v2 and backup v2 order recovery checks. No credential or broker request was used and no public route/UI was added.
-- G4 remains open: real Kiwoom candle/realtime behavior, known-good broker persistence, ledger reconciliation, physical-device profile, manual VoiceOver/TalkBack, K2B mock transport/lookup/risk/fencing/UI, and every live-order gate are unproven.
+- G4F/K2B0 passes the internal-only known-order execution reconciler: complete observations append in one transaction, conflicts rollback, incomplete/not-found preserve state, and unknown submits remain `UNCORRELATED`. No credential, broker request, public route/UI or ledger mutation was added.
+- G4 remains open: real Kiwoom candle/realtime behavior, known-good broker persistence, ledger reconciliation, physical-device profile, manual VoiceOver/TalkBack, K2B mock transport/unknown correlation/risk/fencing/UI, and every live-order gate are unproven.

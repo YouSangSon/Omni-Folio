@@ -877,3 +877,14 @@ K2A fixes the durable order/recovery contract before any Kiwoom order credential
 - TDD checkpoints are `35ae80e`, `69f6f86`, `37bbff4` and GREEN `132de8e`. `make check`, `make smoke`, Go race/vet, 17 Flutter tests, 13 Python tests, 15 JSON contracts and an independent no-P0/P1 review pass locally on 2026-08-24 KST.
 
 Still open for K2B: credentialed Kiwoom mock submit/query, broker lookup and reconciliation, real risk policy and fencing, public OpenAPI/Flutter order flow, market/amend orders, ledger mutation from fills and every live-money path.
+
+## 2026-08-24 G4F/K2B0 continuation: known-order execution reconciliation
+
+K2B0 adds only the smallest safe lookup bridge that existing K2A storage can support without credentials, network transport, a schema migration or a public order surface.
+
+- A complete synthetic lookup may append executions only after an explicit ACK has already bound one opaque provider order ref to the local order. Account, order ref, canonical order tuple and UTC dispatch/observation window must agree.
+- Complete execution observations are sorted by actual RFC3339Nano time and provider execution ref, then appended through the existing event hash/provider-execution idempotency path in one SQLite transaction. Any later conflict rolls the entire lookup back.
+- Incomplete or missing lookup facts preserve the prior state. A complete lookup-only tuple match cannot bind `SUBMIT_UNKNOWN`; it returns `UNCORRELATED` and keeps the account-wide new-submit block.
+- TDD started with the missing reconciliation API and added regressions for fractional timestamp order, incomplete evidence, changed executions, cross-order execution conflicts, mid-transaction rollback, tuple/time conflicts and raw identifier redaction. GREEN checkpoint is `4a2a6e4`; `make check`, Go race and independent safety review pass locally on 2026-08-24 KST.
+
+Still open for K2B: official `kt10000`/`kt10001` submit and `ka10075`/`ka10076`/`kt00007`/`kt00009` credentialed mock observations, documented-or-observed correlation strong enough to handle a lost submit response, real risk/fencing, public OpenAPI/Flutter order flow, market/amend, ledger mutation and every live-money path.
