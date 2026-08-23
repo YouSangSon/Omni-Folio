@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omni-folio.local/contracts/backup-manifest.v1.schema.json",
+  "title": "Omni-Folio Backup Manifest v1",
+  "description": "CLI contract for a separately restored backup candidate. Schema validity never authorizes replacing the active DB: hashes must match and verification_receipt must be verified and eligible_for_activation before replacement.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format_version", "schema_version", "created_at", "source_ledger_revision", "db_sha256", "size_bytes", "expected_snapshot_sha256", "encryption", "verification_receipt"],
+  "properties": {
+    "format_version": {
+      "const": "omni-folio-backup.v1"
+    },
+    "schema_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_at": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "source_ledger_revision": {
+      "$ref": "#/$defs/opaque_id"
+    },
+    "db_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "size_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "expected_snapshot_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "encryption": {
+      "$ref": "#/$defs/encryption"
+    },
+    "verification_receipt": {
+      "$ref": "#/$defs/verification_receipt"
+    }
+  },
+  "$defs": {
+    "opaque_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "encryption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["encrypted", "algorithm"],
+      "properties": {
+        "encrypted": {
+          "type": "boolean"
+        },
+        "algorithm": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "encrypted": {
+              "const": false
+            },
+            "algorithm": {
+              "const": "none"
+            }
+          }
+        },
+        {
+          "properties": {
+            "encrypted": {
+              "const": true
+            },
+            "algorithm": {
+              "not": {
+                "const": "none"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "verification_receipt": {
+      "description": "Verification is performed against a separately restored candidate. candidate_db_sha256 and candidate_snapshot_sha256 must equal the manifest hashes before active DB replacement.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receipt_id", "candidate_id", "verified_at", "status", "integrity_check", "golden_snapshot_check", "candidate_db_sha256", "candidate_snapshot_sha256", "eligible_for_activation", "errors"],
+      "properties": {
+        "receipt_id": {
+          "$ref": "#/$defs/opaque_id"
+        },
+        "candidate_id": {
+          "$ref": "#/$defs/opaque_id"
+        },
+        "verified_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["verified", "rejected"]
+        },
+        "integrity_check": {
+          "type": "string",
+          "enum": ["ok", "failed"]
+        },
+        "golden_snapshot_check": {
+          "type": "string",
+          "enum": ["ok", "failed"]
+        },
+        "candidate_db_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "candidate_snapshot_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "eligible_for_activation": {
+          "type": "boolean"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "status": {
+              "const": "verified"
+            },
+            "integrity_check": {
+              "const": "ok"
+            },
+            "golden_snapshot_check": {
+              "const": "ok"
+            },
+            "eligible_for_activation": {
+              "const": true
+            },
+            "errors": {
+              "maxItems": 0
+            }
+          }
+        },
+        {
+          "properties": {
+            "status": {
+              "const": "rejected"
+            },
+            "eligible_for_activation": {
+              "const": false
+            },
+            "errors": {
+              "minItems": 1
+            }
+          }
+        }
+      ]
+    }
+  }
+}

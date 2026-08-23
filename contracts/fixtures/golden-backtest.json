@@ -1,0 +1,123 @@
+{
+  "schema_version": "backtest-run.v1",
+  "run_id": "run_buy_hold_fixture_001",
+  "status": "complete",
+  "manifest": {
+    "strategy": {
+      "name": "buy_and_hold",
+      "version": "1.0.0",
+      "parameters": {
+        "quantity": "10",
+        "liquidate_at_end": true
+      },
+      "parameter_hash": "3fe0ba7b698b6866a62055f39a3829ca3166588e7f6f2dcf39bbff4648e0ec71"
+    },
+    "data": {
+      "dataset_id": "dataset_market_bars_fixture",
+      "version": "market-bars.v1",
+      "input_sha256": "5fcd7ce9cd01a71a32ee086fe0b06809a6ba2625ee4fbbae885adb38c4a44afb",
+      "bar_interval": "1d",
+      "timezone": "UTC"
+    },
+    "engine": {
+      "name": "omni-folio-reference",
+      "version": "0.1.0"
+    },
+    "execution": {
+      "starting_cash": "1000",
+      "fee": "1",
+      "tax": "0.001",
+      "slippage_bps": "100",
+      "delay_bars": "1",
+      "max_participation": "0.5",
+      "signal_price": "bar_close",
+      "fill_price": "next_eligible_bar_open"
+    },
+    "started_at": "2026-08-23T06:00:00Z",
+    "finished_at": "2026-08-23T06:00:00.010Z"
+  },
+  "result": {
+    "currency": "USD",
+    "metrics": {
+      "starting_cash": "1000",
+      "ending_cash": "1033.0416",
+      "ending_equity": "1033.0416",
+      "total_return": "0.0330416",
+      "realized_pnl": "33.0416",
+      "unrealized_pnl": "0",
+      "fees": "4",
+      "taxes": "0.1584",
+      "slippage_cost": "2.8",
+      "turnover": "0.2796",
+      "max_drawdown": "0",
+      "partial_fill_count": "2",
+      "lookahead_violations": "0"
+    },
+    "orders": [
+      {
+        "order_id": "order_buy_001",
+        "symbol": "AAPL",
+        "side": "BUY",
+        "requested_quantity": "10",
+        "signal_at": "2026-01-02T00:00:00Z",
+        "first_eligible_at": "2026-01-03T00:00:00Z",
+        "first_fill_at": "2026-01-03T00:00:00Z",
+        "fills": [
+          {
+            "fill_id": "fill_buy_001",
+            "bar_at": "2026-01-03T00:00:00Z",
+            "quantity": "3",
+            "price": "11.11",
+            "notional": "33.33",
+            "fee": "1",
+            "tax": "0",
+            "fill_state": "partial"
+          },
+          {
+            "fill_id": "fill_buy_002",
+            "bar_at": "2026-01-04T00:00:00Z",
+            "quantity": "4",
+            "price": "12.12",
+            "notional": "48.48",
+            "fee": "1",
+            "tax": "0",
+            "fill_state": "partial"
+          },
+          {
+            "fill_id": "fill_buy_003",
+            "bar_at": "2026-01-05T00:00:00Z",
+            "quantity": "3",
+            "price": "13.13",
+            "notional": "39.39",
+            "fee": "1",
+            "tax": "0",
+            "fill_state": "complete"
+          }
+        ]
+      },
+      {
+        "order_id": "order_sell_001",
+        "symbol": "AAPL",
+        "side": "SELL",
+        "requested_quantity": "10",
+        "signal_at": "2026-01-06T00:00:00Z",
+        "first_eligible_at": "2026-01-07T00:00:00Z",
+        "first_fill_at": "2026-01-07T00:00:00Z",
+        "fills": [
+          {
+            "fill_id": "fill_sell_001",
+            "bar_at": "2026-01-07T00:00:00Z",
+            "quantity": "10",
+            "price": "15.84",
+            "notional": "158.4",
+            "fee": "1",
+            "tax": "0.1584",
+            "fill_state": "complete"
+          }
+        ]
+      }
+    ],
+    "positions": []
+  },
+  "disclaimer": "Research fixture only; not investment advice."
+}

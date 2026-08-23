@@ -1,0 +1,53 @@
+{
+  "preview_id": "preview_edge_001",
+  "file_sha256": "a0f634507833bbb83b580a8c6eedb29bd64c726b34a36ca6f7b3bb735869119c",
+  "schema_version": "omni-folio.csv.v1",
+  "mapping_version": "canonical-transaction.v1",
+  "ledger_revision": "rev_0000000003",
+  "preview_fingerprint": "45f81188c9235f26f9d675524d2015223bcf90f677725cb965cc646cd494afc5",
+  "can_apply": false,
+  "rows": [
+    {
+      "row_number": 2,
+      "status": "duplicate",
+      "transaction": {
+        "event_id": "event_trade_001",
+        "source_event_id": "trade-001",
+        "account_id": "account-main",
+        "type": "BUY",
+        "occurred_at": "2026-01-03T14:30:00Z",
+        "instrument_id": "instrument_aapl",
+        "symbol": "AAPL",
+        "quantity": "10",
+        "price": "50",
+        "fee": "1",
+        "currency": "USD",
+        "amount": "-501"
+      },
+      "duplicate_of": "event_trade_001"
+    },
+    {
+      "row_number": 3,
+      "status": "error",
+      "errors": [
+        {
+          "code": "invalid_datetime",
+          "message": "occurred_at must be an RFC 3339 timestamp",
+          "field": "occurred_at"
+        },
+        {
+          "code": "invalid_decimal",
+          "message": "quantity must be a canonical decimal",
+          "field": "quantity"
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "total_rows": 2,
+    "new_rows": 0,
+    "duplicate_rows": 1,
+    "error_rows": 1,
+    "unresolved_rows": 0
+  }
+}

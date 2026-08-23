@@ -1,0 +1,39 @@
+{
+  "portfolio_id": "portfolio_main",
+  "ledger_revision": "rev_0000000003",
+  "as_of": "2026-01-10T15:00:00Z",
+  "recorded_at": "2026-01-10T15:01:00.125Z",
+  "live_enabled": false,
+  "valuation_status": "unavailable",
+  "cash": [
+    {
+      "currency": "USD",
+      "amount": "778"
+    }
+  ],
+  "holdings": [
+    {
+      "instrument_id": "instrument_aapl",
+      "symbol": "AAPL",
+      "quantity": "6",
+      "cost_basis": "300.6",
+      "currency": "USD"
+    }
+  ],
+  "realized_pnl": [
+    {
+      "currency": "USD",
+      "amount": "78.6"
+    }
+  ],
+  "provenance": {
+    "event_ids": [
+      "event_cash_001",
+      "event_trade_001",
+      "event_trade_002"
+    ],
+    "receipt_ids": [
+      "receipt_golden_001"
+    ]
+  }
+}

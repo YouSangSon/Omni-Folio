@@ -1,0 +1,67 @@
+{
+  "preview_id": "preview_golden_001",
+  "file_sha256": "3c6ccdd58c64f3b997533f0210b77111f3a060b84ad4b3367a5a705a9c615b29",
+  "schema_version": "omni-folio.csv.v1",
+  "mapping_version": "canonical-transaction.v1",
+  "ledger_revision": "rev_0000000000",
+  "preview_fingerprint": "3769f9a7b44d782e9af8ab8b85900b9f2af02fc18e609a0b9da208ff5562f8ac",
+  "can_apply": true,
+  "rows": [
+    {
+      "row_number": 2,
+      "status": "new",
+      "transaction": {
+        "event_id": "event_cash_001",
+        "source_event_id": "cash-001",
+        "account_id": "account-main",
+        "type": "DEPOSIT",
+        "occurred_at": "2026-01-02T09:00:00Z",
+        "currency": "USD",
+        "amount": "1000"
+      }
+    },
+    {
+      "row_number": 3,
+      "status": "new",
+      "transaction": {
+        "event_id": "event_trade_001",
+        "source_event_id": "trade-001",
+        "account_id": "account-main",
+        "type": "BUY",
+        "occurred_at": "2026-01-03T14:30:00Z",
+        "instrument_id": "instrument_aapl",
+        "symbol": "AAPL",
+        "quantity": "10",
+        "price": "50",
+        "fee": "1",
+        "currency": "USD",
+        "amount": "-501"
+      }
+    },
+    {
+      "row_number": 4,
+      "status": "new",
+      "transaction": {
+        "event_id": "event_trade_002",
+        "source_event_id": "trade-002",
+        "account_id": "account-main",
+        "type": "SELL",
+        "occurred_at": "2026-01-10T15:00:00Z",
+        "instrument_id": "instrument_aapl",
+        "symbol": "AAPL",
+        "quantity": "4",
+        "price": "70",
+        "fee": "1",
+        "currency": "USD",
+        "amount": "279"
+      }
+    }
+  ],
+  "totals": {
+    "total_rows": 3,
+    "new_rows": 3,
+    "duplicate_rows": 0,
+    "error_rows": 0,
+    "unresolved_rows": 0
+  }
+}

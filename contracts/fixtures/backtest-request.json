@@ -1,0 +1,33 @@
+{
+  "schema_version": "backtest-request.v1",
+  "strategy": {
+    "name": "buy_and_hold",
+    "version": "1.0.0",
+    "parameters": {
+      "quantity": "10",
+      "liquidate_at_end": true
+    },
+    "parameter_hash": "3fe0ba7b698b6866a62055f39a3829ca3166588e7f6f2dcf39bbff4648e0ec71"
+  },
+  "data": {
+    "path": "fixtures/market-bars.csv",
+    "version": "market-bars.v1",
+    "input_sha256": "5fcd7ce9cd01a71a32ee086fe0b06809a6ba2625ee4fbbae885adb38c4a44afb",
+    "bar_interval": "1d",
+    "timezone": "UTC"
+  },
+  "engine": {
+    "name": "omni-folio-reference",
+    "version": "0.1.0"
+  },
+  "execution": {
+    "starting_cash": "1000",
+    "fee": "1",
+    "tax": "0.001",
+    "slippage_bps": "100",
+    "delay_bars": "1",
+    "max_participation": "0.5",
+    "signal_price": "bar_close",
+    "fill_price": "next_eligible_bar_open"
+  }
+}

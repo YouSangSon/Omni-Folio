@@ -1,0 +1,617 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Omni-Folio Core API",
+    "version": "0.1.0",
+    "description": "Minimal cross-runtime contract for trust status, CSV import, and the deterministic portfolio snapshot. JSON decimals are canonical strings; IDs are opaque strings."
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "Process is healthy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/status": {
+      "get": {
+        "operationId": "getStatus",
+        "responses": {
+          "200": {
+            "description": "Current data trust state. Phase A never enables live trading.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                },
+                "examples": {
+                  "first_launch": {
+                    "value": {
+                      "service": "omni-folio",
+                      "live_enabled": false,
+                      "mode": "local_import_only",
+                      "trust_state": "never_verified",
+                      "ledger_revision": "rev_0000000000",
+                      "last_verified_at": null,
+                      "issues": []
+                    }
+                  },
+                  "verified": {
+                    "value": {
+                      "service": "omni-folio",
+                      "live_enabled": false,
+                      "mode": "local_import_only",
+                      "trust_state": "verified",
+                      "ledger_revision": "rev_0000000003",
+                      "last_verified_at": "2026-08-23T03:05:00Z",
+                      "issues": []
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/imports/preview": {
+      "post": {
+        "operationId": "previewImport",
+        "description": "Parses and validates raw CSV text without writing to the ledger. Rejects input over 1 MiB (1048576 bytes) or 10000 data rows. The preview fingerprint binds file hash, schema version, mapping version, and ledger revision.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "text/csv": {
+              "x-max-bytes": 1048576,
+              "x-max-rows": 10000,
+              "schema": {
+                "type": "string",
+                "minLength": 1,
+                "description": "UTF-8 CSV text, limited to 1048576 encoded bytes and 10000 data rows excluding the header."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Read-only row classification and totals.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportPreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
+    "/v1/imports/apply": {
+      "post": {
+        "operationId": "applyImport",
+        "description": "Atomically applies an applicable preview. Repeating the same idempotency_key with the same payload returns the original receipt. Reusing that key with a different payload returns 409.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyImportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Original or replayed atomic apply receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "description": "The idempotency key was already used with a different payload, or the preview ledger revision is stale.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "idempotency_conflict": {
+                    "value": {
+                      "code": "idempotency_conflict",
+                      "message": "idempotency_key was already used with a different payload"
+                    }
+                  },
+                  "stale_preview": {
+                    "value": {
+                      "code": "stale_preview",
+                      "message": "ledger revision changed; create a new preview"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/portfolio/snapshot": {
+      "get": {
+        "operationId": "getPortfolioSnapshot",
+        "responses": {
+          "200": {
+            "description": "Deterministic ledger snapshot. It does not claim live market valuation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioSnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "BadRequest": {
+        "description": "Malformed or invalid input.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "OpaqueId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Opaque identifier. Consumers must not parse or order it."
+      },
+      "Decimal": {
+        "type": "string",
+        "pattern": "^(?:0|-?(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$",
+        "description": "Canonical base-10 decimal string: no exponent, leading plus/zero, trailing fractional zero, or negative zero."
+      },
+      "OccurredAt": {
+        "type": "string",
+        "format": "date-time",
+        "description": "When the economic event occurred at its source."
+      },
+      "ReceivedAt": {
+        "type": "string",
+        "format": "date-time",
+        "description": "When Omni-Folio received the apply request; this is not the source event time or durable commit time."
+      },
+      "RecordedAt": {
+        "type": "string",
+        "format": "date-time",
+        "description": "When Omni-Folio durably recorded the ledger mutation."
+      },
+      "Health": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "const": "ok"
+          }
+        }
+      },
+      "Status": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["service", "live_enabled", "mode", "trust_state", "ledger_revision", "last_verified_at", "issues"],
+        "properties": {
+          "service": {
+            "const": "omni-folio"
+          },
+          "live_enabled": {
+            "const": false,
+            "description": "Phase A is read/import only; live trading is disabled."
+          },
+          "mode": {
+            "const": "local_import_only"
+          },
+          "trust_state": {
+            "type": "string",
+            "enum": ["never_verified", "verified", "stale", "partial", "error"]
+          },
+          "ledger_revision": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "last_verified_at": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "Null when trust_state is never_verified."
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "field": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "NormalizedTransaction": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event_id", "source_event_id", "account_id", "type", "occurred_at", "currency", "amount"],
+        "properties": {
+          "event_id": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "source_event_id": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "account_id": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["BUY", "SELL", "DEPOSIT"]
+          },
+          "occurred_at": {
+            "$ref": "#/components/schemas/OccurredAt"
+          },
+          "instrument_id": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "symbol": {
+            "type": "string",
+            "minLength": 1
+          },
+          "quantity": {
+            "$ref": "#/components/schemas/Decimal"
+          },
+          "price": {
+            "$ref": "#/components/schemas/Decimal"
+          },
+          "fee": {
+            "$ref": "#/components/schemas/Decimal"
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Decimal",
+            "description": "Signed net cash impact of the event, including fees."
+          }
+        }
+      },
+      "PreviewRow": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["row_number", "status"],
+        "properties": {
+          "row_number": {
+            "type": "integer",
+            "minimum": 2
+          },
+          "status": {
+            "type": "string",
+            "enum": ["error", "new", "duplicate", "unresolved"]
+          },
+          "transaction": {
+            "$ref": "#/components/schemas/NormalizedTransaction"
+          },
+          "duplicate_of": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "errors": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/Error"
+            }
+          },
+          "resolution": {
+            "$ref": "#/components/schemas/PreviewResolution"
+          }
+        }
+      },
+      "PreviewResolution": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "source_field", "source_value", "required_action", "candidate_ids"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["mapping", "account", "instrument"]
+          },
+          "source_field": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_value": {
+            "type": "string"
+          },
+          "required_action": {
+            "type": "string",
+            "enum": ["select_column_mapping", "select_account", "select_instrument"]
+          },
+          "candidate_ids": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpaqueId"
+            }
+          }
+        }
+      },
+      "PreviewTotals": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["total_rows", "new_rows", "duplicate_rows", "error_rows", "unresolved_rows"],
+        "properties": {
+          "total_rows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "new_rows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "duplicate_rows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "error_rows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unresolved_rows": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ImportPreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["preview_id", "file_sha256", "schema_version", "mapping_version", "ledger_revision", "preview_fingerprint", "can_apply", "rows", "totals"],
+        "properties": {
+          "preview_id": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "file_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "schema_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mapping_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ledger_revision": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "preview_fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "SHA-256 of compact sorted-key UTF-8 JSON containing file_sha256, schema_version, mapping_version, and ledger_revision. Apply must reject a changed binding."
+          },
+          "can_apply": {
+            "type": "boolean",
+            "description": "False when any row is error or unresolved; preview never mutates the ledger."
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PreviewRow"
+            }
+          },
+          "totals": {
+            "$ref": "#/components/schemas/PreviewTotals"
+          }
+        }
+      },
+      "ApplyImportRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["preview_id", "idempotency_key"],
+        "properties": {
+          "preview_id": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "idempotency_key": {
+            "$ref": "#/components/schemas/OpaqueId"
+          }
+        }
+      },
+      "ApplyReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["receipt_id", "preview_id", "idempotency_key", "file_sha256", "ledger_revision_before", "ledger_revision_after", "applied_rows", "skipped_duplicate_rows", "received_at", "recorded_at"],
+        "properties": {
+          "receipt_id": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "preview_id": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "idempotency_key": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "file_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "ledger_revision_before": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "ledger_revision_after": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "applied_rows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "skipped_duplicate_rows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "received_at": {
+            "$ref": "#/components/schemas/ReceivedAt"
+          },
+          "recorded_at": {
+            "$ref": "#/components/schemas/RecordedAt"
+          }
+        }
+      },
+      "Money": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["currency", "amount"],
+        "properties": {
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Decimal"
+          }
+        }
+      },
+      "Holding": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["instrument_id", "symbol", "quantity", "cost_basis", "currency"],
+        "properties": {
+          "instrument_id": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "symbol": {
+            "type": "string",
+            "minLength": 1
+          },
+          "quantity": {
+            "$ref": "#/components/schemas/Decimal"
+          },
+          "cost_basis": {
+            "$ref": "#/components/schemas/Decimal",
+            "description": "Remaining FIFO acquisition cost, including allocated buy fees."
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          }
+        }
+      },
+      "SnapshotProvenance": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event_ids", "receipt_ids"],
+        "properties": {
+          "event_ids": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpaqueId"
+            }
+          },
+          "receipt_ids": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpaqueId"
+            }
+          }
+        }
+      },
+      "PortfolioSnapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["portfolio_id", "ledger_revision", "as_of", "recorded_at", "live_enabled", "valuation_status", "cash", "holdings", "realized_pnl", "provenance"],
+        "properties": {
+          "portfolio_id": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "ledger_revision": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Latest occurred_at included in this ledger snapshot."
+          },
+          "recorded_at": {
+            "$ref": "#/components/schemas/RecordedAt"
+          },
+          "live_enabled": {
+            "const": false
+          },
+          "valuation_status": {
+            "const": "unavailable",
+            "description": "No live price source is part of this slice."
+          },
+          "cash": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Money"
+            }
+          },
+          "holdings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Holding"
+            }
+          },
+          "realized_pnl": {
+            "type": "array",
+            "description": "FIFO realized profit/loss net of allocated buy fees and sell fees.",
+            "items": {
+              "$ref": "#/components/schemas/Money"
+            }
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/SnapshotProvenance"
+          }
+        }
+      }
+    }
+  }
+}

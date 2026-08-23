@@ -1,0 +1,3 @@
+source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount
+trade-001,account-main,BUY,2026-01-03T14:30:00Z,AAPL,10,50,1,USD,-501
+trade-invalid,account-main,SELL,not-a-timestamp,AAPL,oops,70,1,USD,279
