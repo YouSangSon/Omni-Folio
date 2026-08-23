@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -456,5 +457,22 @@ func TestK2CMigrationPreservesLegacyNonAuthoritativeOrderEvents(t *testing.T) {
 	proof, err := proveOrderRecovery(context.Background(), db)
 	if err != nil || proof.ExecutionAuthorityEvents != 0 || proof.RiskReservations != 0 {
 		t.Fatalf("legacy events were incorrectly promoted to authority: proof=%+v err=%v", proof, err)
+	}
+}
+
+func TestK2CRuntimeRejectsAuthorizedEventHashCorruption(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	lease := mustK2CLease(t, svc, k2aAccountRef)
+	order := mustRecordK2AOrder(t, svc, "client-authority-corruption")
+	mustAuthorizeK2C(t, svc, order.OrderID, lease.FencingToken)
+	if _, err := svc.db.Exec(`DROP TRIGGER order_events_no_update`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.db.Exec(`UPDATE order_events SET event_sha256=? WHERE order_id=? AND event_type='RISK_APPROVED'`,
+		strings.Repeat("0", 64), order.OrderID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.authorizeSyntheticDispatch(context.Background(), order.OrderID, lease.FencingToken); err == nil {
+		t.Fatal("runtime replay accepted a corrupt authorized event hash")
 	}
 }

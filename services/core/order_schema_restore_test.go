@@ -76,6 +76,9 @@ func weakOrderRestoreCandidate(t *testing.T, orderEventsDDL string) (string, str
 			WHERE reservation_id = NEW.authority_reservation_id
 			  AND order_id = NEW.order_id
 			  AND risk_event_id = NEW.event_id
+			  AND reservation_id = json_extract(NEW.event_json, '$.risk_reservation_id')
+			  AND policy_version = json_extract(NEW.event_json, '$.risk_policy_version')
+			  AND fencing_token = json_extract(NEW.event_json, '$.fencing_token')
 		) THEN RAISE(ABORT, 'risk approval requires an authority reservation') END;
 	END;
 	CREATE TRIGGER order_events_dispatch_reservation_guard BEFORE INSERT ON order_events
@@ -86,6 +89,9 @@ func weakOrderRestoreCandidate(t *testing.T, orderEventsDDL string) (string, str
 			WHERE reservation_id = NEW.authority_reservation_id
 			  AND order_id = NEW.order_id
 			  AND dispatch_event_id = NEW.event_id
+			  AND reservation_id = json_extract(NEW.event_json, '$.risk_reservation_id')
+			  AND policy_version = json_extract(NEW.event_json, '$.risk_policy_version')
+			  AND fencing_token = json_extract(NEW.event_json, '$.fencing_token')
 		) THEN RAISE(ABORT, 'submit dispatch requires an authority reservation') END;
 	END;
 	CREATE TRIGGER order_events_non_authority_reservation_guard BEFORE INSERT ON order_events

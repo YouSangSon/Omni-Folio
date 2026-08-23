@@ -590,16 +590,18 @@ func validateRiskReservationRecord(record riskReservationRecord) error {
 
 func loadAuthorizedOrderEvent(ctx context.Context, q orderQuerier, eventID string) (int64, OrderEvent, error) {
 	var sequence int64
-	var raw, reservationID string
-	if err := q.QueryRowContext(ctx, `SELECT sequence,event_json,authority_reservation_id FROM order_events WHERE event_id=?`, eventID).Scan(&sequence, &raw, &reservationID); err != nil {
+	var eventSHA, orderID, eventType, source, raw, reservationID string
+	if err := q.QueryRowContext(ctx, `SELECT sequence,event_sha256,order_id,event_type,source,event_json,authority_reservation_id FROM order_events WHERE event_id=?`, eventID).
+		Scan(&sequence, &eventSHA, &orderID, &eventType, &source, &raw, &reservationID); err != nil {
 		return 0, OrderEvent{}, err
 	}
 	var event OrderEvent
 	if err := json.Unmarshal([]byte(raw), &event); err != nil {
 		return 0, OrderEvent{}, err
 	}
-	canonical, _, err := orderJSONHash(event)
-	if err != nil || string(canonical) != raw || event.EventID != eventID || event.RiskReservationID != reservationID {
+	canonical, actualSHA, err := orderJSONHash(event)
+	if err != nil || string(canonical) != raw || actualSHA != eventSHA || event.EventID != eventID || event.OrderID != orderID ||
+		event.Type != eventType || event.Source != source || event.RiskReservationID != reservationID {
 		return 0, OrderEvent{}, errors.New("authorized order event metadata mismatch")
 	}
 	if err := validateOrderEvent(event); err != nil {
