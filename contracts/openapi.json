@@ -23,12 +23,48 @@
         }
       }
     },
+    "/readyz": {
+      "get": {
+        "operationId": "getReadiness",
+        "description": "Checks that the process can read the migrated database schema required to serve ledger requests.",
+        "responses": {
+          "200": {
+            "description": "Database is reachable and schema version is supported.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database is unavailable, unmigrated, or on an unsupported schema.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_ready": {
+                    "value": {
+                      "code": "not_ready",
+                      "message": "service is not ready"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/status": {
       "get": {
         "operationId": "getStatus",
         "responses": {
           "200": {
-            "description": "Current data trust state. Phase A never enables live trading.",
+            "description": "Current local-ledger validation state. This does not claim reconciliation with a broker. Phase A never enables live trading.",
             "content": {
               "application/json": {
                 "schema": {
@@ -238,7 +274,8 @@
           },
           "trust_state": {
             "type": "string",
-            "enum": ["never_verified", "verified", "stale", "partial", "error"]
+            "enum": ["never_verified", "verified", "stale", "partial", "error"],
+            "description": "Validation state of the local imported ledger only; verified does not mean broker-reconciled."
           },
           "ledger_revision": {
             "$ref": "#/components/schemas/OpaqueId"
@@ -246,7 +283,7 @@
           "last_verified_at": {
             "type": ["string", "null"],
             "format": "date-time",
-            "description": "Null when trust_state is never_verified."
+            "description": "Time of the last successful atomic import and local ledger-invariant validation. Null when trust_state is never_verified; never a broker-reconciliation timestamp."
           },
           "issues": {
             "type": "array",
