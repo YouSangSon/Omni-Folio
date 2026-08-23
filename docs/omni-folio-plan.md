@@ -101,6 +101,7 @@ Phase A 코어가 green이 된 뒤 같은 단계의 후속 slice에서 수동 �
 
 ### Phase D: 모의주문
 
+- 현재 K2A 통과 범위는 Go 내부 합성 `LIMIT`/`KRW`/`KRX` intent/event log, unknown-submit replay와 backup v2뿐이다. 아래 제품·broker 항목은 K2B 이후 범위다.
 - 종목 상세의 매수/매도 티켓
 - 시장가·지정가, 수량·예상 금액·수수료 확인
 - 주문 접수·부분체결·체결·취소·거절 상태
@@ -168,7 +169,7 @@ Later roles from the same Go codebase
 
 - local과 cloud는 같은 저장소와 pinned non-root Go OCI image를 사용한다. Flutter native/web은 별도 서명·배포 산출물이다. 첫 lake는 `api`와 `migrate`만 사용하고, 해당 단계가 시작될 때 `worker`, `runner`, `execution-gateway` command를 같은 Go image에 추가한다.
 - local 프로필은 loopback + SQLite + OS keychain이다. 첫 cloud 프로필은 TLS + owner 인증 + secret manager + 단일 API replica + single-writer provider-managed block volume(RWO)의 SQLite다. 이는 stateful single-node 프로필이며 무중단 교체·scale-out·자동 failover를 보장하지 않는다.
-- container filesystem은 임시 파일만 허용한다. SQLite를 ephemeral disk, NFS형 공유 volume, 다중 writer에 두지 않는다. backup은 SQLite online backup API 또는 동등한 일관된 snapshot으로 off-volume에 암호화 저장하고 restore 후 `integrity_check`와 ledger golden test를 통과한다.
+- container filesystem은 임시 파일만 허용한다. SQLite를 ephemeral disk, NFS형 공유 volume, 다중 writer에 두지 않는다. backup은 SQLite online backup API 또는 동등한 일관된 snapshot으로 off-volume에 암호화 저장하고 restore 후 `integrity_check`, ledger golden test와 schema/order-log hash·replay 증명을 통과한다.
 - 두 번째 API replica, API/worker 독립 확장, 무중단 교체, 다중 노드 failover, 높은 동시 쓰기, managed point-in-time recovery가 필요해지면 PostgreSQL로 먼저 승격한다. SQLite export → PostgreSQL import 후 row count, checksum, ledger invariant를 검증하고 SQLite 상태에서는 scale-out을 지원한다고 주장하지 않는다.
 - migration은 `migrate` one-shot 단계로 실행하고 readiness는 DB 연결과 schema version 불일치를 fail-closed한다. liveness는 외부 broker 장애와 분리한다.
 - HTTP 요청보다 오래 살거나 재시작 복구가 필요한 scheduled sync는 Phase B부터 `worker` 역할로 분리한다. Phase E부터 automation runner는 DB lease/fencing으로 계좌·전략별 단일 active owner만 허용한다. lease를 잃은 runner는 신규 주문을 만들지 못한다.
@@ -198,7 +199,7 @@ Flutter Material primitive와 semantic design token을 사용한다. 토스증�
 - 자동 후보 순위의 결정성, holdout 격리, 최소 데이터·거래 수, 과적합/성능 저하 시 승격 거절과 champion 롤백
 - 자동매매 위험 한도, stale data 차단, reconciliation mismatch 차단, kill switch
 - 두 runner 동시 기동, lease 상실, submit timeout, ack 전후 crash에서 중복 주문 방지와 fail-closed 복구
-- SQLite online backup의 off-volume restore, `integrity_check`, 이전 schema ledger golden test
+- SQLite online backup의 off-volume restore, `integrity_check`, 이전 schema ledger golden test와 order-log hash·replay
 - PostgreSQL 승격 시 SQLite export/import row count·checksum·ledger invariant 일치
 - paper/shadow/live 공통 전략 코어와 신호 충돌·자금 배분 검증
 - 주문/ack/fill/cancel/reject 이벤트의 과부하·재시작 무손실 검증
@@ -824,7 +825,7 @@ A를 먼저 고정한 뒤 B/C/D를 병렬로 실행하고 E가 실제 명령을 
 | DX | PASS | pinned asdf, five-minute README, isolated hardened Compose readiness, custom-port 명령 일치 |
 | Broker decision | PASS | 키움 read-only·차트·실시간·모의주문을 첫 gate로, 토스증권 Open API를 두 번째 adapter이자 UX reference로 고정 |
 
-미해결 제품·아키텍처·구현 결정은 없다. 다음 작업은 결정이 아니라 [`gates/g4-broker.md`](../gates/g4-broker.md)의 키움 read-only 실행과 G2의 남은 수동 release evidence다. 실전 주문, credential 등록, 외부 배포와 push는 이 보고서로 승인되지 않는다.
+이 초기 GSTACK review 시점의 미해결 제품·아키텍처·구현 결정은 없었다. 이후 G4B~G4E continuation이 당시 next-work 문장을 대체했다. 현재 next work는 [`PLAN.md`](../PLAN.md)의 credentialed Kiwoom read/market evidence, K2B mock submit/query·lookup recovery와 G2의 남은 수동 release evidence다. 실전 주문, credential 등록, 외부 배포와 push는 이 보고서로 승인되지 않는다.
 
 NO UNRESOLVED DECISIONS
 
@@ -864,3 +865,15 @@ K1 already preserved `provider_adjusted` internally, but the public candle respo
 - TDD checkpoints are `4e81f2b`/`0519d20` for the consumer field and `bebbfaa`/`41093c0` for strict local provenance. `make check`, `make smoke`, Go race, and the existing Kiwoom candle suite pass locally on 2026-08-24 KST.
 
 Still open: runtime Kiwoom market-data selection, credentialed mock/production observation, authoritative timezone/freshness, persistence/known-good retention, realtime, reconciliation, and corporate-action adjustment verification.
+
+## 2026-08-24 G4E/K2A continuation: internal synthetic order-state log
+
+K2A fixes the durable order/recovery contract before any Kiwoom order credential or network transport exists. The boundary is intentionally internal-only: synthetic Kiwoom `LIMIT` BUY/SELL for KRX/KRW, with no public API or Flutter order surface.
+
+- `client_order_id`, event ID and provider execution aliases are durable and payload-bound. Conflicting reuse fails without mutating state.
+- Risk verdict ordering is enforced before dispatch, but no risk policy, version, reason or limit engine is claimed. Durable `SUBMIT_DISPATCHED` becomes `SUBMIT_UNKNOWN`; the same order and account-wide new submit stay blocked until an explicit reconciliation event resolves it. Cancel of an independently known open order remains available as a risk-reducing command.
+- Append-only replay covers submit ack/reject, partial/full/late fill, cancel dispatch/ack/reject, restart and overfill rejection. A provider “not found” observation alone cannot resolve unknown state.
+- SQLite migration v2 adds strict insert-only intent/event tables. Backup v2 hashes both tables, validates canonical row hash/metadata and full replay, compares source/candidate counts and digest, and requires exact migration history, STRICT tables, PK/UNIQUE/FK semantics, rowid sequence, `foreign_key_check` and insert-only triggers. Backup v1 is not automatically eligible for v2 activation.
+- TDD checkpoints are `35ae80e`, `69f6f86`, `37bbff4` and GREEN `132de8e`. `make check`, `make smoke`, Go race/vet, 17 Flutter tests, 13 Python tests, 15 JSON contracts and an independent no-P0/P1 review pass locally on 2026-08-24 KST.
+
+Still open for K2B: credentialed Kiwoom mock submit/query, broker lookup and reconciliation, real risk policy and fencing, public OpenAPI/Flutter order flow, market/amend orders, ledger mutation from fills and every live-money path.

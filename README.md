@@ -13,7 +13,7 @@
 | G1 로컬 원장 | 통과 | CSV preview → atomic apply → append-only ledger → snapshot/receipt → backup/restore |
 | G2 Flutter client | 부분 통과 | iOS·Android·web release build와 17개 자동 테스트 통과; chart 포함 Android emulator build/raster p95 2회 통과, physical-device·수동 screen-reader 및 test-instrumentation 격리 증거 남음 |
 | G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, paper-only result |
-| G4 broker·chart | 진행 중 | K0 read 계약, local sample OHLCV/Flutter 차트, K1 credential-free 합성 `ka10080`/`ka10081` candle 계약 통과. 실제 키움 credentialed 시세·freshness, persistence, reconciliation, physical profile·수동 screen reader, 실시간·모의주문은 남는다. |
+| G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 내부 합성 `LIMIT`/`KRW`/`KRX` 주문 상태·backup v2 복구 계약 통과. 실제 키움 credentialed 시세/모의주문 transport, broker lookup·reconciliation, public 주문 UI, 실제 risk/fencing, 실시간과 모든 live gate는 남는다. |
 
 세부 상태와 완료 조건은 [`PLAN.md`](PLAN.md)와 [`GATES.md`](GATES.md)에서 관리합니다.
 
@@ -30,7 +30,7 @@ flowchart LR
 ```
 
 - Flutter와 Python에는 증권사 credential이나 주문 제출 권한이 없습니다.
-- Go core만 canonical 원장과 향후 주문 상태를 변경할 수 있습니다.
+- Go core만 canonical 원장과 주문 상태를 변경할 수 있습니다.
 - SQLite는 로컬 단일 writer 단계의 의도적인 선택입니다. PostgreSQL migration·restore·load evidence 전에는 multi-replica나 Kubernetes manifest를 만들지 않습니다.
 - 토스증권의 쉬운 용어와 차분한 정보 위계를 참고하되 화면·상표·trade dress는 복제하지 않습니다.
 
@@ -120,6 +120,17 @@ curl -fsS 'http://127.0.0.1:8080/v1/market-data/candles?symbol=AAPL&interval=1d'
 
 응답은 canonical decimal string과 함께 `price_adjustment=unspecified`, `source=local_fixture`, `sample=true`, `state=stale`를 반환합니다. 보유 화면에서 AAPL을 열면 가격·거래량 chart, 가격 조정 기준, source/as-of, screen-reader summary와 정확한 OHLCV 표를 볼 수 있습니다. `unspecified`는 가격 조정 여부를 확인하지 못했다는 뜻입니다. 이 fixture는 계약·UI 검증용이며 현재 시세나 투자 판단 자료가 아닙니다.
 
+### Internal synthetic order recovery
+
+K2A는 Go 내부 테스트 계약입니다. Kiwoom `LIMIT`/`KRW`/`KRX` intent와 append-only lifecycle, `SUBMIT_UNKNOWN` 중복 방지, cancel/fill replay와 order-aware backup v2를 검증하지만 주문 API나 화면을 노출하지 않고 broker 요청도 보내지 않습니다.
+
+```sh
+cd services/core
+go test -run '^TestK2A' -count=1 ./...
+```
+
+실제 키움 모의주문 submit/query, risk policy, fencing, broker/ledger reconciliation과 Flutter 주문 흐름은 K2B 범위입니다.
+
 ### Research와 자동 개선
 
 ```sh
@@ -182,7 +193,7 @@ docs/              목표, ADR, research, broker/UX 문서
 
 - 실거래는 기본적으로 꺼져 있고 UI 토글이나 환경변수 하나로 켤 수 없습니다.
 - broker secret, access token, 실제 계좌번호, 원본 거래 export를 Git·fixture·로그에 넣지 않습니다.
-- timeout 난 주문은 실패로 간주해 재전송하지 않고 broker 조회와 reconciliation으로 확정합니다.
+- K2A는 timeout/crash 뒤 주문을 `SUBMIT_UNKNOWN`으로 보존하고 같은 주문과 해당 계좌의 신규 submit을 차단합니다. 실제 broker 조회와 reconciliation은 K2B이며 구현 전에는 상태가 확정됐다고 표시하지 않습니다.
 - 전략은 수익률만으로 승격하지 않습니다. 비용·지연·데이터 누수·drawdown·운영 건강과 owner 승인이 필요합니다.
 - 먼저 생존성과 복구 가능성을 증명합니다. 수익은 보장할 수 없습니다.
 

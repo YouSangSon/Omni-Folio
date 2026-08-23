@@ -33,6 +33,8 @@ G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4B provider-neutral local sample OHLCV and asset-detail chart
 ├─ G4C Kiwoom K1 synthetic candle contract
 ├─ G4D market-data price-adjustment consumer contract
+├─ G4E/K2A Kiwoom internal synthetic order-state log
+├─ K2B Kiwoom mock-order broker transport and lookup recovery
 └─ then Toss Securities read-only as the second adapter
    |
 G5 paper -> shadow -> canary -> limited live

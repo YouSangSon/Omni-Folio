@@ -93,7 +93,7 @@ Market data adapters
 - local 프로필은 loopback bind, 단일 SQLite, OS keychain을 사용하고 외부 인증 없이 인터넷에 공개하지 않는다.
 - 첫 cloud 프로필은 TLS와 owner 인증, secret manager 주입, 단일 API replica, single-writer provider-managed block volume(RWO)의 SQLite, 암호화된 정기 backup과 restore drill을 요구한다. ephemeral filesystem이나 NFS형 공유·다중 writer volume에 SQLite를 두지 않는다. 이 프로필은 stateful single-node이며 무중단 교체, scale-out, 자동 failover를 보장하지 않는다.
 - 애플리케이션의 영속 상태는 데이터베이스와 versioned backup에만 두고 container filesystem은 임시 파일 외에는 사용하지 않는다.
-- SQLite backup은 online backup API 또는 동등한 transaction-consistent snapshot으로 off-volume에 저장한다. 실행 중 DB 파일의 단순 복사나 같은 volume의 복사본은 backup으로 인정하지 않으며, restore 후 `integrity_check`와 ledger golden test를 통과해야 한다.
+- SQLite backup은 online backup API 또는 동등한 transaction-consistent snapshot으로 off-volume에 저장한다. 실행 중 DB 파일의 단순 복사나 같은 volume의 복사본은 backup으로 인정하지 않으며, restore 후 `integrity_check`, ledger golden test, schema/order-log hash·metadata·replay 증명을 통과해야 한다.
 - 두 번째 API replica, API/worker 독립 확장, 무중단 교체, 다중 노드 failover, 높은 동시 쓰기, managed point-in-time recovery 또는 Kubernetes가 필요해지면 먼저 maintenance window에서 PostgreSQL로 승격한다. SQLite export → PostgreSQL import 후 row count, checksum, ledger invariant, order sequence와 restore를 검증하고 SQLite 상태에서 scale-out을 지원한다고 주장하지 않는다.
 - schema migration은 startup side effect가 아니라 명시적인 `migrate` 단계로 실행한다. 배포 전 off-volume backup, schema compatibility check, migration 후 ledger golden test, restore 검증을 통과해야 한다.
 - liveness는 프로세스 생존만, readiness는 DB 연결·schema version·필수 설정만 확인한다. 브로커 장애는 전체 API를 죽이지 않고 provider별 degraded/freshness 상태로 노출한다.
@@ -114,6 +114,7 @@ Market data adapters
 - 일반 목적 백테스트·실행 엔진을 새로 만들기 전에 LEAN과 NautilusTrader를 짧은 POC로 평가한다. 요구를 충족하는 기존 엔진이 있으면 재사용하고, 둘 다 맞지 않을 때만 일봉/분봉 이벤트 재생과 deterministic fill model의 최소 내부 엔진을 만든다.
 - 시장 데이터 큐는 stale snapshot이나 superseded signal을 병합할 수 있지만 주문 command, ack, fill, cancel, reject 이벤트는 유실하거나 덮어쓰지 않는다.
 - 주문 command와 ack/fill/cancel/reject는 provider ID와 idempotency key를 포함한 append-only execution log에 저장한다.
+- 현재 K2A 증거는 Go 내부 합성 `LIMIT`/`KRW`/`KRX` 주문 상태 로그에 한정한다. client-order/event/provider-execution idempotency, risk verdict ordering, durable unknown submit, 계좌 단위 신규 submit 차단, 알려진 open-order cancel 허용, fill/cancel/reject replay와 backup v2 복구를 증명하지만 실제 risk policy, broker submit/query, credential, fencing, public API/UI 또는 체결-원장 reconciliation은 증명하지 않는다.
 - 주문 submit 전 `client_order_id`/idempotency key를 unique constraint와 함께 durable하게 기록한다. execution gateway는 모든 order intent의 fencing token을 DB의 현재 owner token과 비교하고 불일치하면 broker submit 전에 거절한다. timeout이나 crash로 결과가 불명확하면 재주문하지 않고 같은 키로 broker 상태를 조회·reconcile한 뒤에만 다음 상태로 진행한다.
 - live 전략 runner는 실전 활성화 전에 UI/API와 별도 프로세스로 격리하고 broker credential이나 외부 주문 API에 접근하지 못하게 한다. credential은 공통 execution gateway만 읽는다. 같은 저장소와 모듈 경계를 유지하므로 이를 별도 microservice로 확장하지 않는다.
 - 새 알고리즘은 versioned strategy manifest, 전략 모듈, contract/backtest fixture만 추가해 등록할 수 있어야 하며 주문·원장·브로커 코어에 전략별 분기를 추가하지 않는다.
@@ -167,10 +168,10 @@ Market data adapters
 ### Phase 4 — 주문
 
 - 이 단계는 키움 모의투자 주문만 먼저 구현한다. 실전 주문 credential과 live broker submit은 Phase 6의 broker별 promotion gate 전까지 코드 경로와 설정에서 비활성화한다.
-- 시장가·지정가, 매수·매도, 수량·예상금액·수수료 확인
-- idempotency key와 중복 주문 방지
-- 접수, 미체결, 부분체결, 체결, 취소, 정정, 거절 상태 머신
-- 재시작·네트워크 단절 후 주문 상태 재조회와 원장 reconciliation
+- 현재 K2A는 내부 합성 지정가 매수·매도, idempotency, unknown-submit/replay와 backup 복구만 통과했다. 화면, 네트워크, credential과 실제 모의투자 동작은 없다.
+- K2B에서 시장가·지정가, 매수·매도, 수량·예상금액·수수료 확인을 provider capability와 함께 구현한다.
+- K2B에서 접수, 미체결, 부분체결, 체결, 취소, 정정, 거절의 실제 broker mapping과 risk/fencing을 검증한다.
+- K2B에서 재시작·네트워크 단절 후 broker 상태 재조회와 원장 reconciliation을 구현한다.
 
 ### Phase 5 — 전략 연구와 모의 자동매매
 

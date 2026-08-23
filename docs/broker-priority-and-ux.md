@@ -63,10 +63,19 @@
 - Flutter는 local fixture가 sample·stale이고 source timestamp와 provenance issue를 갖춘 경우만 받으며 가격 기준을 쉬운 말로 표시한다. `provider_adjusted`도 공급자 요청 provenance일 뿐 “수정주가 검증 완료”로 표현하지 않는다.
 - 실행 증거는 [`../gates/g4d-market-data-price-adjustment.md`](../gates/g4d-market-data-price-adjustment.md)에 기록한다.
 
-### K2 — 키움 모의주문
+### K2A — 내부 합성 주문 상태 로그
 
-- 주문 intent, pre-trade risk, durable idempotency key, broker submit, ack/fill/cancel/reject, reconciliation 순서를 하나의 상태 머신으로 검증한다.
-- timeout 뒤 결과가 불명확하면 같은 주문을 다시 보내지 않고 broker 조회로 상태를 확정한다.
+- Go 내부에서만 `kiwoom`/`synthetic`/`KRX`/`KRW` 지정가 매수·매도 intent를 기록한다. client-order ID, event ID와 provider execution alias의 동일 payload replay만 허용하고 충돌은 거절한다.
+- risk verdict 순서 뒤 submit dispatch를 append하고 즉시 `SUBMIT_UNKNOWN`으로 보존한다. 같은 주문의 blind resubmit과 해당 계좌의 신규 submit을 차단하지만, 이미 알려진 open order의 cancel은 위험 축소 경로로 허용한다.
+- explicit ack/reject/fill/cancel event만 상태를 확정한다. provider에서 찾지 못했다는 사실만으로 unknown을 성공·실패로 바꾸지 않는다.
+- SQLite schema v2와 backup v2는 append-only order log, exact row hash/metadata, replay, STRICT/UNIQUE/FK/rowid sequence/trigger를 source와 restore 후보에서 검증한다.
+- 이 leaf는 risk verdict의 **순서만** 증명한다. 실제 risk policy·한도·이유, broker network, credential, public route/UI, fencing, 시장가·정정 또는 ledger reconciliation 증거가 아니다. 실행 증거는 [`../gates/g4e-kiwoom-synthetic-order-state.md`](../gates/g4e-kiwoom-synthetic-order-state.md)에 기록한다.
+
+### K2B — 키움 모의주문 transport와 조회 복구
+
+- 현재 공식 주문 명세의 신규 매수 `kt10000`, 매도 `kt10001`, 정정 `kt10002`, 취소 `kt10003`과 계좌 명세의 미체결·체결 조회 `ka10075`, `ka10076`, `kt00007`, `kt00009`를 credentialed mock 관찰과 contract fixture로 검증한 뒤 연결한다. ([주문 명세](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/main/kiwoom_docs/%EC%A3%BC%EB%AC%B8.md), [계좌 명세](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/main/kiwoom_docs/%EA%B3%84%EC%A2%8C.md))
+- 공식 주문 요청에 문서화된 client-order idempotency가 없으므로 내부 key를 dispatch 전에 저장하고, timeout 뒤에는 재전송하지 않고 broker 조회·reconciliation으로 확정한다.
+- 실제 risk engine, lease/fencing, market/amend capability, public API/Flutter 주문 확인, 체결-원장 reconciliation을 이 단계에서 검증한다.
 - 실제 키와 실전 submit 경로는 owner 승인 전까지 꺼 둔다.
 
 ### T1 — 토스 read-only
