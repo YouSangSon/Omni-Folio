@@ -246,7 +246,7 @@ func (s *Service) authorizeSyntheticDispatchOnce(ctx context.Context, orderID st
 }
 
 func validateSyntheticBuyPolicy(intent OrderIntent) (string, *big.Rat, error) {
-	if intent.Provider != "kiwoom" || intent.Mode != "synthetic" || intent.Exchange != "KRX" || intent.Currency != "KRW" ||
+	if intent.Provider != "kiwoom" || (intent.Mode != "synthetic" && intent.Mode != "paper") || intent.Exchange != "KRX" || intent.Currency != "KRW" ||
 		intent.OrderType != "LIMIT" || intent.Side != "BUY" || (intent.Symbol != "005930" && intent.Symbol != "000660") {
 		return "", nil, errors.New("order is outside the fixed credential-free synthetic BUY policy")
 	}

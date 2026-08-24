@@ -29,7 +29,8 @@ G3 research vertical slice
 ├─ G3.2 fee/slippage/lookahead fixtures
 ├─ G3.3 no credential/order permission proof
 ├─ G3.4 Go/SQLite append-only paper-candidate registry and rollback proof
-└─ G3.5 strategy-selection-bound order record and durable-dispatch proof
+├─ G3.5 strategy-selection-bound order record and durable-dispatch proof
+└─ G3.6 credential-free selected-signal paper fill, replay and restore proof
    |
 G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4A Kiwoom K0 read contract
@@ -40,7 +41,7 @@ G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4F/K2B0 Kiwoom known-order execution reconciliation
 ├─ G4G/K2B1 Kiwoom synthetic dated execution scan
 ├─ G4H Kiwoom broker known-good snapshot persistence
-├─ G4I/K2C internal synthetic execution authority and schema v6/backup v5 proof
+├─ G4I/K2C internal synthetic execution authority and schema v7/backup v5 proof
 ├─ G4J/K2B2 credential-free Kiwoom mock LIMIT submit transport
 ├─ K2B Kiwoom mock-order broker transport and lookup recovery
 └─ then Toss Securities read-only as the second adapter

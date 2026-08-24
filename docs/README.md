@@ -28,6 +28,7 @@
 - JSON/decimal/fixture 계약: [`../contracts/`](../contracts/)
 - Gate별 acceptance: [`../gates/`](../gates/)
 - Strategy/order authority: [`../gates/g3-research.md`](../gates/g3-research.md)
+- 현재 paper execution leaf: [`../gates/g3f-paper-runner-foundation.md`](../gates/g3f-paper-runner-foundation.md)
 - 현재 Kiwoom mock-submit leaf: [`../gates/g4j-k2b2-kiwoom-mock-submit.md`](../gates/g4j-k2b2-kiwoom-mock-submit.md)
 - Root 검증 명령: `make check && make smoke`
 

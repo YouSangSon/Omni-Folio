@@ -31,7 +31,7 @@ import (
 const (
 	maxBodyBytes  = 1 << 20
 	maxImportRows = 10_000
-	latestSchema  = 6
+	latestSchema  = 7
 	zeroTime      = "1970-01-01T00:00:00Z"
 	csvSchema     = "omni-folio.csv.v1"
 	mappingSchema = "canonical-transaction.v2"
@@ -269,26 +269,60 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("unsupported schema version %d", current)
 		}
 	}
-	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql"}
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql"}
 	for version := current + 1; version <= latestSchema; version++ {
 		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
 		if err != nil {
 			return err
 		}
+		disableForeignKeys := version == 7
+		if disableForeignKeys {
+			if _, err := db.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
+				return err
+			}
+		}
 		tx, err := db.Begin()
 		if err != nil {
+			if disableForeignKeys {
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+			}
 			return err
 		}
 		if _, err := tx.Exec(string(script)); err != nil {
 			tx.Rollback()
+			if disableForeignKeys {
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+			}
 			return err
 		}
 		if _, err := tx.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)`, version, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 			tx.Rollback()
+			if disableForeignKeys {
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+			}
 			return err
 		}
+		if disableForeignKeys {
+			var violations int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&violations); err != nil || violations != 0 {
+				tx.Rollback()
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+				if err != nil {
+					return err
+				}
+				return fmt.Errorf("paper-order migration foreign-key check failed: violations=%d", violations)
+			}
+		}
 		if err := tx.Commit(); err != nil {
+			if disableForeignKeys {
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+			}
 			return err
+		}
+		if disableForeignKeys {
+			if _, err := db.Exec(`PRAGMA foreign_keys=ON`); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -1105,7 +1139,7 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	}
 	verifiedAt := now().UTC()
 	manifest := &BackupManifest{
-		FormatVersion: "omni-folio-backup.v5", SchemaVersion: "omni-folio.sqlite.v6", CreatedAt: createdAt.Format(time.RFC3339Nano),
+		FormatVersion: "omni-folio-backup.v5", SchemaVersion: "omni-folio.sqlite.v7", CreatedAt: createdAt.Format(time.RFC3339Nano),
 		SourceLedgerRevision: revision(sourceRevision), OrderStateSHA256: sourceOrders.SHA256, OrderCount: sourceOrders.Orders,
 		OrderEventCount: sourceOrders.Events, ExecutionAuthoritySHA256: sourceOrders.ExecutionAuthoritySHA256,
 		ExecutionAuthorityEventCount: sourceOrders.ExecutionAuthorityEvents, RiskReservationSHA256: sourceOrders.RiskReservationSHA256,
@@ -1451,7 +1485,7 @@ func verifyManifest(path, goldenPath, manifestPath string) error {
 	if err := dec.Decode(&manifest); err != nil {
 		return fmt.Errorf("backup manifest: %w", err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v5" || manifest.SchemaVersion != "omni-folio.sqlite.v6" ||
+	if manifest.FormatVersion != "omni-folio-backup.v5" || manifest.SchemaVersion != "omni-folio.sqlite.v7" ||
 		manifest.Encryption.Encrypted || manifest.Encryption.Algorithm != "none" {
 		return errors.New("unsupported backup manifest version or encryption")
 	}

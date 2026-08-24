@@ -24,6 +24,9 @@ func (c *KiwoomClient) submitMockLimitOrder(ctx context.Context, intent OrderInt
 	if err := validateOrderIntent(intent); err != nil {
 		return "", &KiwoomError{Kind: "invalid_request"}
 	}
+	if intent.Mode != "synthetic" {
+		return "", &KiwoomError{Kind: "invalid_request"}
+	}
 	apiID := kiwoomBuyOrderAPI
 	if intent.Side == "SELL" {
 		apiID = kiwoomSellOrderAPI
@@ -59,6 +62,13 @@ func (s *Service) submitAuthorizedKiwoomMockOrder(ctx context.Context, client *K
 	if s == nil || s.db == nil || client == nil || client.environment != KiwoomMock || !safeOrderID(orderID) || fencingToken <= 0 {
 		return nil, errors.New("Kiwoom mock submit configuration is invalid")
 	}
+	intent, err := loadOrderIntentFrom(ctx, s.db, orderID)
+	if err != nil {
+		return nil, err
+	}
+	if intent.Mode != "synthetic" {
+		return nil, errors.New("Kiwoom mock submit requires synthetic mode")
+	}
 	if _, err := client.token(ctx); err != nil {
 		return nil, fmt.Errorf("Kiwoom mock token preflight failed: %w", err)
 	}
@@ -68,10 +78,6 @@ func (s *Service) submitAuthorizedKiwoomMockOrder(ctx context.Context, client *K
 	}
 	if !dispatched {
 		return state, errors.New("order submit was already dispatched; reconcile instead of resubmitting")
-	}
-	intent, err := loadOrderIntentFrom(ctx, s.db, orderID)
-	if err != nil {
-		return state, err
 	}
 	providerOrderRef, err := client.submitMockLimitOrder(ctx, intent)
 	if err != nil {

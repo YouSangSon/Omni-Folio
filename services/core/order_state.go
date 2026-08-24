@@ -34,6 +34,12 @@ type OrderIntent struct {
 	Currency                 string `json:"currency"`
 	StrategyResultSHA256     string `json:"strategy_result_sha256,omitempty"`
 	StrategySelectionEventID string `json:"strategy_selection_event_id,omitempty"`
+	SignalSchemaVersion      string `json:"signal_schema_version,omitempty"`
+	SignalID                 string `json:"signal_id,omitempty"`
+	SignalDataSHA256         string `json:"signal_data_sha256,omitempty"`
+	SignalDataAsOf           string `json:"signal_data_as_of,omitempty"`
+	SignalGeneratedAt        string `json:"signal_generated_at,omitempty"`
+	SignalExpiresAt          string `json:"signal_expires_at,omitempty"`
 }
 
 type OrderEvent struct {
@@ -513,9 +519,9 @@ func validateOrderIntent(intent OrderIntent) error {
 	if !safeOrderID(intent.ClientOrderID) {
 		return errors.New("client_order_id is invalid")
 	}
-	if intent.Provider != "kiwoom" || intent.Mode != "synthetic" || intent.Exchange != "KRX" ||
+	if intent.Provider != "kiwoom" || (intent.Mode != "synthetic" && intent.Mode != "paper") || intent.Exchange != "KRX" ||
 		(intent.Side != "BUY" && intent.Side != "SELL") || intent.OrderType != "LIMIT" || intent.Currency != "KRW" {
-		return errors.New("order intent is outside the synthetic Kiwoom LIMIT/KRW/KRX boundary")
+		return errors.New("order intent is outside the synthetic/paper Kiwoom LIMIT/KRW/KRX boundary")
 	}
 	if !orderAlias(intent.AccountRef, "account") {
 		return errors.New("account_ref must be an opaque Kiwoom account alias")
@@ -536,6 +542,21 @@ func validateOrderIntent(intent OrderIntent) error {
 	strategyBound := intent.StrategyResultSHA256 != "" || intent.StrategySelectionEventID != ""
 	if strategyBound && (!strategySHA256Pattern.MatchString(intent.StrategyResultSHA256) || !safeOrderID(intent.StrategySelectionEventID)) {
 		return errors.New("strategy order selection binding is invalid")
+	}
+	signalBound := intent.SignalSchemaVersion != "" || intent.SignalID != "" || intent.SignalDataSHA256 != "" ||
+		intent.SignalDataAsOf != "" || intent.SignalGeneratedAt != "" || intent.SignalExpiresAt != ""
+	if intent.Mode == "paper" && (!strategyBound || !signalBound) {
+		return errors.New("paper order requires strategy and signal bindings")
+	}
+	if signalBound {
+		dataAsOf, dataOK := canonicalUTCTime(intent.SignalDataAsOf)
+		generatedAt, generatedOK := canonicalUTCTime(intent.SignalGeneratedAt)
+		expiresAt, expiresOK := canonicalUTCTime(intent.SignalExpiresAt)
+		if !strategyBound || intent.SignalSchemaVersion != paperSignalSchema || !safeOrderID(intent.SignalID) ||
+			!strategySHA256Pattern.MatchString(intent.SignalDataSHA256) || !dataOK || !generatedOK || !expiresOK ||
+			dataAsOf.After(generatedAt) || !generatedAt.Before(expiresAt) {
+			return errors.New("strategy signal binding is invalid")
+		}
 	}
 	return nil
 }

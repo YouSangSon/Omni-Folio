@@ -12,6 +12,7 @@
 - `no_promotion` evidence는 보존하되 선택하지 못하고, `paper_candidate` 선택은 expected current event가 일치할 때만 append한다.
 - rollback은 현재 event를 source로 요구하고 직전 선택 또는 `no_strategy`만 파생하며 기존 행을 수정·삭제하지 않는다.
 - 전략 주문 intent는 선택 result SHA와 exact selection event ID를 함께 보존한다. 신규 기록과 durable dispatch는 둘 다 현재 registry replay와 일치해야 하며 rollback·reselection 뒤 stale event는 fail-closed한다.
+- versioned paper signal은 선택 전략·입력 data hash·유효 시간과 주문 tuple을 보존하고, K2C risk를 통과한 뒤 공통 주문 상태 머신에서만 결정적 부분/완전 체결된다. 실제 broker transport에는 진입하지 않는다.
 - 부족한 표본, holdout 오염, 비용 후 성과·낙폭·거래 수 gate 실패에서는 승격하지 않는다.
 - 자동 승격 결과는 `paper_candidate` 또는 `shadow`를 넘지 않으며 live order 권한을 포함하지 않는다.
 
@@ -21,6 +22,7 @@
 - The backtest golden manifest covers delayed next-eligible-bar fills, fee, tax, slippage, participation-based partial fills, canonical decimals, and zero lookahead violations.
 - The improvement runner uses two expanding walk-forward folds and one final holdout, finite SMA candidates, a buy-and-hold baseline, deterministic selection/hash, and fails closed on short folds, zero delay, failed validation/holdout/baseline gates.
 - Fixture result: `strategy-improvement-result.v1`, policy `sma-expanding-walk-forward.v1`, target `paper_candidate`, SHA-256 `bf00a8e0d6c59a58f53e7dbe772ad6d235f385ebf4341aa4f451774a9a935513`. This is research evidence, not expected return or live authorization.
-- `TestG3Registry*`는 실제 Python CLI→Go ingest의 cross-runtime hash, idempotent registration, stale selection, rejected-candidate 차단, 이전 선택/`no_strategy` rollback, insert-only/replay와 schema v6/backup v5 복구를 검증한다.
+- `TestG3Registry*`는 실제 Python CLI→Go ingest의 cross-runtime hash, idempotent registration, stale selection, rejected-candidate 차단, 이전 선택/`no_strategy` rollback, insert-only/replay와 schema v7/backup v5 복구를 검증한다.
 - `TestG3StrategyOrderRequiresCurrentSelectionAtRecordAndDispatch`는 이미 기록된 intent의 idempotent retry를 보존하면서 stale 신규 기록과 rollback된 전략의 durable dispatch를 차단하고, 새 selection event에 묶인 주문만 허용함을 검증한다.
-- 현재 registry는 paper runner, 실제 paper 성능 관찰, 자동 성능저하 rollback 또는 broker-write 순간까지의 selection/lease race 차단을 제공하지 않는다.
+- `TestG3PaperRunner*`는 선택 신호→K2C reservation→공통 order replay→부분/완전 체결→backup/restore와 만료·rollback·Kiwoom transport 차단을 검증한다.
+- 현재 paper adapter는 local fixture 한 건만 처리한다. 수수료·세금·slippage·quote stream, 자동 scheduling, 실제 paper 성능 관찰·성능저하 rollback 또는 broker-write 순간까지의 selection/lease race 차단은 제공하지 않는다.

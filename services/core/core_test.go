@@ -80,7 +80,7 @@ func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
 	}
 	properties := schema["properties"].(map[string]any)
 	if properties["format_version"].(map[string]any)["const"] != "omni-folio-backup.v5" ||
-		properties["schema_version"].(map[string]any)["const"] != "omni-folio.sqlite.v6" {
+		properties["schema_version"].(map[string]any)["const"] != "omni-folio.sqlite.v7" {
 		t.Fatal("backup contract version drifted from the runtime")
 	}
 
@@ -418,7 +418,7 @@ func TestHealthAndReadinessAreSeparate(t *testing.T) {
 	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(1, ?)`, "2026-01-10T15:00:00Z"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(7, ?)`, "2026-01-10T15:01:00Z"); err != nil {
+	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(8, ?)`, "2026-01-10T15:01:00Z"); err != nil {
 		t.Fatal(err)
 	}
 	if w := request("/readyz"); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), `"code":"not_ready"`) {

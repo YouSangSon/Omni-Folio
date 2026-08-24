@@ -54,6 +54,7 @@ func TestK2AIntentValidationAndClientOrderIdempotency(t *testing.T) {
 		{"raw account reference", func(v *OrderIntent) { v.AccountRef = "9876543210" }},
 		{"wrong provider", func(v *OrderIntent) { v.Provider = "other" }},
 		{"non synthetic mode", func(v *OrderIntent) { v.Mode = "mock" }},
+		{"paper without strategy signal", func(v *OrderIntent) { v.Mode = "paper" }},
 		{"non KRX exchange", func(v *OrderIntent) { v.Exchange = "NXT" }},
 		{"invalid symbol", func(v *OrderIntent) { v.Symbol = "A005930" }},
 		{"invalid side", func(v *OrderIntent) { v.Side = "SHORT" }},
@@ -302,7 +303,7 @@ func TestK2AOrderTablesAreInsertOnly(t *testing.T) {
 	}
 }
 
-func TestSchemaMigratesV1ToV6AndReadinessRequiresV6(t *testing.T) {
+func TestSchemaMigratesV1ToV7AndReadinessRequiresV7(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v1.db")
 	db, err := openDB(path)
 	if err != nil {
@@ -330,8 +331,8 @@ func TestSchemaMigratesV1ToV6AndReadinessRequiresV6(t *testing.T) {
 	if err := db.QueryRow(`SELECT MAX(version), COUNT(*) FROM schema_migrations`).Scan(&version, &migrations); err != nil {
 		t.Fatal(err)
 	}
-	if version != 6 || migrations != 6 {
-		t.Fatalf("schema version=(%d,%d), want latest=6 with six migrations", version, migrations)
+	if version != 7 || migrations != 7 {
+		t.Fatalf("schema version=(%d,%d), want latest=7 with seven migrations", version, migrations)
 	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM events WHERE event_id='preserved'`).Scan(&preserved); err != nil || preserved != 1 {
 		t.Fatalf("v1 data was not preserved: count=%d err=%v", preserved, err)
@@ -350,7 +351,45 @@ func TestSchemaMigratesV1ToV6AndReadinessRequiresV6(t *testing.T) {
 	w := httptest.NewRecorder()
 	svc.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if w.Code != http.StatusOK {
-		t.Fatalf("v6 schema was not ready: status=%d body=%s", w.Code, w.Body.String())
+		t.Fatalf("v7 schema was not ready: status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestPaperMigrationRejectsForeignKeyDamageAtomically(t *testing.T) {
+	db, err := openDB(filepath.Join(t.TempDir(), "damaged-v6.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql"}
+	for version, name := range files {
+		script, err := migrationFiles.ReadFile("migrations/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(script)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)`, version+1, "2026-01-01T00:00:00Z"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO order_events(sequence,event_id,event_sha256,order_id,event_type,source,event_json,recorded_at) VALUES(1,'orphan-event','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','missing-order','INTENT_RECORDED','synthetic','{}','2026-01-01T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`PRAGMA foreign_keys=ON`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migrate(db); err == nil || !strings.Contains(err.Error(), "foreign-key check failed") {
+		t.Fatalf("damaged v6 migration was accepted: %v", err)
+	}
+	var version int
+	if err := db.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 6 {
+		t.Fatalf("failed migration was not rolled back: version=%d err=%v", version, err)
 	}
 }
 
