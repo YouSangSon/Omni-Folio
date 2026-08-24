@@ -102,6 +102,8 @@ Kubernetes manifest는 다음이 모두 증명된 뒤 만든다.
 
 Kubernetes Job/CronJob과 rolling Deployment도 중복 실행 가능성을 없애지 않으므로 DB idempotency와 fencing은 유지한다. ([Jobs](https://kubernetes.io/docs/concepts/workloads/controllers/job/), [CronJobs](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/), [Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/))
 
+Gate 진입 후 첫 로컬 적합성 검증은 Kind의 Podman provider로 수행한다. 이 선택은 production Kubernetes 배포판을 고정하지 않으며, 현재 저장소 상태에서 Kind cluster나 manifest가 이미 준비됐다는 뜻도 아니다.
+
 ## Consequences
 
 - 처음부터 네 언어를 섞지 않는다. 제품 runtime은 Dart, Go, Python 세 개이며 SQL과 wire schema만 공유한다.

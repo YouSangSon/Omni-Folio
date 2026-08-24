@@ -101,7 +101,7 @@ Phase A 코어가 green이 된 뒤 같은 단계의 후속 slice에서 수동 �
 
 ### Phase D: 모의주문
 
-- 현재 K2A 통과 범위는 Go 내부 합성 `LIMIT`/`KRW`/`KRX` intent/event log와 unknown-submit replay다. 현재 backup v4는 이 order-state proof와 K2C authority/reservation proof를 함께 검증한다. 아래 제품·broker 항목은 K2B 이후 범위다.
+- 현재 K2A 통과 범위는 Go 내부 합성 `LIMIT`/`KRW`/`KRX` intent/event log와 unknown-submit replay다. 현재 backup v5는 이 order-state proof와 K2C authority/reservation proof를 함께 검증한다. 아래 제품·broker 항목은 K2B 이후 범위다.
 - 종목 상세의 매수/매도 티켓
 - 시장가·지정가, 수량·예상 금액·수수료 확인
 - 주문 접수·부분체결·체결·취소·거절 상태
@@ -873,7 +873,7 @@ K2A fixes the durable order/recovery contract before any Kiwoom order credential
 - `client_order_id`, event ID and provider execution aliases are durable and payload-bound. Conflicting reuse fails without mutating state.
 - At the K2A checkpoint, risk verdict ordering was enforced before dispatch without a risk policy. K2C now supersedes direct approval with a reservation-bound credential-free BUY policy; durable `SUBMIT_DISPATCHED` still becomes `SUBMIT_UNKNOWN`, and account-wide new submit stays blocked until explicit reconciliation resolves it. Cancel of an independently known open order remains available as a risk-reducing command.
 - Append-only replay covers submit ack/reject, partial/full/late fill, cancel dispatch/ack/reject, restart and overfill rejection. A provider “not found” observation alone cannot resolve unknown state.
-- SQLite migration v2 added strict insert-only intent/event tables. Current backup v4 retains their canonical row hash/metadata and full replay, adds K2C authority/reservation digests and counts, and verifies exact migration history, STRICT/PK/UNIQUE/FK/rowid/trigger checks while also proving G4H broker snapshot state. Earlier backup formats are not automatically eligible for v4 activation.
+- SQLite migration v2 added strict insert-only intent/event tables. Current backup v5 retains their canonical row hash/metadata and full replay, adds K2C authority/reservation digests and counts, and verifies exact migration history, STRICT/PK/UNIQUE/FK/rowid/trigger checks while also proving G4H broker snapshot state. Earlier backup formats are not automatically eligible for v5 activation.
 - TDD checkpoints are `35ae80e`, `69f6f86`, `37bbff4` and GREEN `132de8e`. `make check`, `make smoke`, Go race/vet, 17 Flutter tests, 13 Python tests, 15 JSON contracts and an independent no-P0/P1 review pass locally on 2026-08-24 KST.
 
 Still open for K2B: credentialed Kiwoom mock submit/query, broker lookup and reconciliation, production cash/position/fee/loss/time/freshness risk, broker-coupled runner fencing, public OpenAPI/Flutter order flow, market/amend orders, ledger mutation from fills and every live-money path.
@@ -908,7 +908,7 @@ G4H persists only the existing all-or-nothing synthetic Kiwoom account snapshot.
 - `KiwoomSnapshot` now carries explicit `complete=true`; persistence revalidates provider/environment/exchange/account identity, canonical UTC and exact decimals, unique ascending KRX positions and open orders.
 - One SQLite transaction reads the current ledger revision and KRX/KRW quantities for `account-main`, computes deterministic per-symbol `broker - ledger` quantities with exact rational arithmetic, and stores raw snapshot identity separately from the ledger-revision reconciliation record.
 - Exact replay of the same raw snapshot and ledger revision returns the same reconciliation. A later ledger revision appends a new reconciliation without duplicating or mutating the raw snapshot. A changed payload at the same fetched-at, incomplete snapshot, invalid generated ID or corrupt durable hash fails closed without replacing the latest fetched known-good record.
-- Migration v3 makes ledger events, broker snapshots and broker reconciliations insert-only. Current backup v4 preserves those proofs and adds execution-authority/risk-reservation digest/count plus strict schema/index/rowid/trigger checks and restored latest-record verification.
+- Migration v3 makes ledger events, broker snapshots and broker reconciliations insert-only. Current backup v5 preserves those proofs and adds execution-authority/risk-reservation digest/count plus strict schema/index/rowid/trigger checks and restored latest-record verification.
 - TDD tests cover idempotency, concurrent replay, conflicts, last-known-good retention, arithmetic, DB mutation attempts, runtime/recovery corruption rejection, manifest tampering and weak-trigger restore rejection.
 
 Still open: credentialed Kiwoom observation and scheduled known-good refresh, official freshness/timezone/retention, cash/valuation/open-order/full execution reconciliation, known-good API/UI, production risk, paper runner and all live-money paths.
@@ -920,7 +920,7 @@ K2C adds the smallest internal authority that can prevent accidental synthetic d
 - Missing authority is fail-closed. Manual arm/halt is append-only; halt increments fencing and clears the lease. Each service creates a crypto-random process owner, and only the owner of an unexpired 30-second account lease with the exact fencing token can create a new authorization.
 - Fixed `credential_free_buy_v1` accepts only Kiwoom synthetic KRX/KRW LIMIT BUY for `005930` and `000660`, at most 10 shares, at most KRW 1,000,000 per order and KRW 1,000,000 across active reservations. Exact rational arithmetic is reused; partial and unresolved states retain the full reservation until a terminal state.
 - One immediate SQLite transaction inserts an immutable reservation and its consecutive reservation-bound `RISK_APPROVED` and `SUBMIT_DISPATCHED` events. Exact DB triggers reject ordinary append/direct SQL bypass; a collision rolls the entire transaction back.
-- Migration v4 preserves reservation-free v3 order events as legacy non-authoritative history without backfill. Backup v4 hashes/counts authority and reservation records, replays transitions and bindings, and rejects missing/weak schema, foreign keys and guard triggers. A restored service receives a new owner and cannot reuse the saved process lease.
+- Migration v4 preserves reservation-free v3 order events as legacy non-authoritative history without backfill. Backup v5 hashes/counts authority and reservation records, replays transitions and bindings, and rejects missing/weak schema, foreign keys and guard triggers. A restored service receives a new owner and cannot reuse the saved process lease.
 - TDD covers default-off, halt, stale/foreign/expired lease, two-handle lease and reservation races, fixed limits, terminal release, idempotency, DB bypass, atomic rollback, legacy migration, backup restore and weak-trigger rejection. `make check`, full Go race and `make smoke` pass locally on 2026-08-24 KST.
 
 Still open: broker request/credential/transmission proof, SELL, cash/position/fee/daily-loss/order-rate/market-hours/stale-data risk, owner/strategy/promotion approval, broker-coupled long-running runner, public OpenAPI/Flutter order flow, paper/live readiness and every real-money path.
@@ -931,7 +931,20 @@ The original G1 golden slice proved deposits and fee-aware FIFO trades, but the 
 
 - `WITHDRAWAL`, `FEE` and `TAX` require negative cash impact; `DEPOSIT` and instrument-bound `DIVIDEND` require positive cash impact. Trade-only fields are rejected where they do not apply.
 - `SPLIT` requires an instrument, a positive exact ratio and zero cash impact. Replay multiplies each open FIFO lot quantity while preserving total cost basis; a split without an open holding rolls the whole apply back.
-- Migration v5 rebuilds only the constrained `events` table, preserves existing v1-v4 rows, enforces event shape/cash direction with native CHECK constraints and restores insert-only triggers. Backup format remains v4 while the declared/required SQLite schema advances to v5.
+- Migration v5 rebuilds only the constrained `events` table, preserves existing v1-v4 rows, enforces event shape/cash direction with native CHECK constraints and restores insert-only triggers. At that checkpoint backup format was v4 and SQLite schema was v5; the G3 registry continuation below supersedes them with backup v5/schema v6 while leaving the ledger event contract at v5.
 - OpenAPI and backup contracts advance with the runtime. Focused cash/split, invalid-direction, rollback and v1-to-v5 migration tests pass with the existing order, broker snapshot and execution-authority recovery suite.
 
 Still open: FX rates/conversions, correction events, dividend reinvestment, jurisdiction-specific tax classification, credentialed broker fill/cash reconciliation and every live-money path.
+
+## 2026-08-24 G3 continuation: append-only paper-candidate registry
+
+Python keeps ownership of deterministic research generation, while Go admits and durably selects that evidence. This closes only the research-selection history gap; it does not create a paper runner or execution permission.
+
+- Go ingests a local `strategy-improvement-result.v1`, canonicalizes JSON with number preservation, recomputes result and parameter hashes, and validates the known manifest, evaluation policy and promotion gates. Identical result reimport is idempotent; conflicting or malformed evidence fails before selection.
+- `no_promotion` remains durable rejected evidence. Only a registered `paper_candidate` can be selected, and every selection requires the exact current event ID so stale writers append nothing.
+- Current selection is replay-derived rather than a mutable pointer. Rollback must name the current source event and pops exactly one selection, reaching the prior candidate or `no_strategy`.
+- Migration v6 adds STRICT insert-only evidence and selection tables in the existing Go-owned SQLite database. Backup v5 compares source/candidate registry digest, counts, current replay result, schema, foreign keys and triggers.
+- Local CLI commands are `strategy-register`, `strategy-status`, `strategy-select`, and `strategy-rollback`. They add no HTTP/UI, broker request, credential, scheduler or automatic selection.
+- `TestG3Registry*`, full Go tests, root checks, smoke and recovery tamper tests are the delivery evidence.
+
+Still open: incumbent-compatible challenger comparison, paper runner observations, automatic degradation stop/rollback, paper/shadow promotion, strategy identity in order intent and per-dispatch execution authorization.

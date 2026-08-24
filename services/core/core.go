@@ -31,7 +31,7 @@ import (
 const (
 	maxBodyBytes  = 1 << 20
 	maxImportRows = 10_000
-	latestSchema  = 5
+	latestSchema  = 6
 	zeroTime      = "1970-01-01T00:00:00Z"
 	csvSchema     = "omni-folio.csv.v1"
 	mappingSchema = "canonical-transaction.v2"
@@ -173,6 +173,10 @@ type BackupManifest struct {
 	BrokerStateSHA256            string              `json:"broker_state_sha256"`
 	BrokerSnapshotCount          int                 `json:"broker_snapshot_count"`
 	BrokerReconciliationCount    int                 `json:"broker_reconciliation_count"`
+	StrategyRegistrySHA256       string              `json:"strategy_registry_sha256"`
+	StrategyEvidenceCount        int                 `json:"strategy_evidence_count"`
+	StrategySelectionEventCount  int                 `json:"strategy_selection_event_count"`
+	SelectedStrategyResultSHA256 string              `json:"selected_strategy_result_sha256"`
 	DBSHA256                     string              `json:"db_sha256"`
 	SizeBytes                    int64               `json:"size_bytes"`
 	ExpectedSnapshotSHA256       string              `json:"expected_snapshot_sha256"`
@@ -186,20 +190,22 @@ type BackupEncryption struct {
 }
 
 type VerificationReceipt struct {
-	ReceiptID                  string   `json:"receipt_id"`
-	CandidateID                string   `json:"candidate_id"`
-	VerifiedAt                 string   `json:"verified_at"`
-	Status                     string   `json:"status"`
-	IntegrityCheck             string   `json:"integrity_check"`
-	GoldenSnapshotCheck        string   `json:"golden_snapshot_check"`
-	OrderStateCheck            string   `json:"order_state_check"`
-	BrokerStateCheck           string   `json:"broker_state_check"`
-	CandidateDBSHA256          string   `json:"candidate_db_sha256"`
-	CandidateSnapshotSHA256    string   `json:"candidate_snapshot_sha256"`
-	CandidateOrderStateSHA256  string   `json:"candidate_order_state_sha256"`
-	CandidateBrokerStateSHA256 string   `json:"candidate_broker_state_sha256"`
-	EligibleForActivation      bool     `json:"eligible_for_activation"`
-	Errors                     []string `json:"errors"`
+	ReceiptID                       string   `json:"receipt_id"`
+	CandidateID                     string   `json:"candidate_id"`
+	VerifiedAt                      string   `json:"verified_at"`
+	Status                          string   `json:"status"`
+	IntegrityCheck                  string   `json:"integrity_check"`
+	GoldenSnapshotCheck             string   `json:"golden_snapshot_check"`
+	OrderStateCheck                 string   `json:"order_state_check"`
+	BrokerStateCheck                string   `json:"broker_state_check"`
+	StrategyRegistryCheck           string   `json:"strategy_registry_check"`
+	CandidateDBSHA256               string   `json:"candidate_db_sha256"`
+	CandidateSnapshotSHA256         string   `json:"candidate_snapshot_sha256"`
+	CandidateOrderStateSHA256       string   `json:"candidate_order_state_sha256"`
+	CandidateBrokerStateSHA256      string   `json:"candidate_broker_state_sha256"`
+	CandidateStrategyRegistrySHA256 string   `json:"candidate_strategy_registry_sha256"`
+	EligibleForActivation           bool     `json:"eligible_for_activation"`
+	Errors                          []string `json:"errors"`
 }
 
 type appError struct {
@@ -263,7 +269,7 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("unsupported schema version %d", current)
 		}
 	}
-	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql"}
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql"}
 	for version := current + 1; version <= latestSchema; version++ {
 		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
 		if err != nil {
@@ -1059,6 +1065,10 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err != nil {
 		return nil, fmt.Errorf("source broker recovery proof: %w", err)
 	}
+	sourceStrategy, err := proveStrategyRegistryRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source strategy registry recovery proof: %w", err)
+	}
 	createdAt := now().UTC()
 	quoted := strings.ReplaceAll(out, "'", "''")
 	if _, err := db.Exec(`VACUUM INTO '` + quoted + `'`); err != nil {
@@ -1072,11 +1082,18 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err != nil {
 		return nil, err
 	}
+	candidateStrategy, err := verifyStrategyRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
 	if sourceOrders != candidateOrders {
 		return nil, errors.New("backup order recovery proof does not match source")
 	}
 	if sourceBroker != candidateBroker {
 		return nil, errors.New("backup broker recovery proof does not match source")
+	}
+	if !sameStrategyRegistryProof(sourceStrategy, candidateStrategy) {
+		return nil, errors.New("backup strategy registry recovery proof does not match source")
 	}
 	dbSHA, size, err := hashFile(out)
 	if err != nil {
@@ -1088,19 +1105,21 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	}
 	verifiedAt := now().UTC()
 	manifest := &BackupManifest{
-		FormatVersion: "omni-folio-backup.v4", SchemaVersion: "omni-folio.sqlite.v5", CreatedAt: createdAt.Format(time.RFC3339Nano),
+		FormatVersion: "omni-folio-backup.v5", SchemaVersion: "omni-folio.sqlite.v6", CreatedAt: createdAt.Format(time.RFC3339Nano),
 		SourceLedgerRevision: revision(sourceRevision), OrderStateSHA256: sourceOrders.SHA256, OrderCount: sourceOrders.Orders,
 		OrderEventCount: sourceOrders.Events, ExecutionAuthoritySHA256: sourceOrders.ExecutionAuthoritySHA256,
 		ExecutionAuthorityEventCount: sourceOrders.ExecutionAuthorityEvents, RiskReservationSHA256: sourceOrders.RiskReservationSHA256,
 		RiskReservationCount: sourceOrders.RiskReservations, BrokerStateSHA256: sourceBroker.SHA256, BrokerSnapshotCount: sourceBroker.Snapshots,
 		BrokerReconciliationCount: sourceBroker.Reconciliations,
-		DBSHA256:                  dbSHA, SizeBytes: size, ExpectedSnapshotSHA256: snapshotSHA,
+		StrategyRegistrySHA256:    sourceStrategy.SHA256, StrategyEvidenceCount: sourceStrategy.Evidence,
+		StrategySelectionEventCount: sourceStrategy.Events, SelectedStrategyResultSHA256: sourceStrategy.SelectedResultSHA256,
+		DBSHA256: dbSHA, SizeBytes: size, ExpectedSnapshotSHA256: snapshotSHA,
 		Encryption: BackupEncryption{Encrypted: false, Algorithm: "none"},
 		VerificationReceipt: VerificationReceipt{
 			ReceiptID: id("backup_verification"), CandidateID: id("restore_candidate"), VerifiedAt: verifiedAt.Format(time.RFC3339Nano),
-			Status: "verified", IntegrityCheck: "ok", GoldenSnapshotCheck: "ok", OrderStateCheck: "ok", BrokerStateCheck: "ok", CandidateDBSHA256: dbSHA,
+			Status: "verified", IntegrityCheck: "ok", GoldenSnapshotCheck: "ok", OrderStateCheck: "ok", BrokerStateCheck: "ok", StrategyRegistryCheck: "ok", CandidateDBSHA256: dbSHA,
 			CandidateSnapshotSHA256: snapshotSHA, CandidateOrderStateSHA256: candidateOrders.SHA256,
-			CandidateBrokerStateSHA256: candidateBroker.SHA256, EligibleForActivation: true, Errors: []string{},
+			CandidateBrokerStateSHA256: candidateBroker.SHA256, CandidateStrategyRegistrySHA256: candidateStrategy.SHA256, EligibleForActivation: true, Errors: []string{},
 		},
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
@@ -1118,8 +1137,24 @@ func verifyRestore(path, goldenPath string) error {
 	if _, err := verifyRestoreProof(path, goldenPath); err != nil {
 		return err
 	}
-	_, err := verifyBrokerRestoreProof(path)
+	if _, err := verifyBrokerRestoreProof(path); err != nil {
+		return err
+	}
+	_, err := verifyStrategyRestoreProof(path)
 	return err
+}
+
+func verifyStrategyRestoreProof(path string) (strategyRegistryRecoveryProof, error) {
+	db, err := openExistingDB(path)
+	if err != nil {
+		return strategyRegistryRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := proveStrategyRegistryRecovery(context.Background(), db)
+	if err != nil {
+		return strategyRegistryRecoveryProof{}, fmt.Errorf("candidate strategy registry recovery proof: %w", err)
+	}
+	return proof, nil
 }
 
 func verifyBrokerRestoreProof(path string) (brokerRecoveryProof, error) {
@@ -1181,7 +1216,7 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	if err := requireSchema(db); err != nil {
 		return fmt.Errorf("restore schema: %w", err)
 	}
-	for _, table := range []string{"order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations"} {
+	for _, table := range []string{"order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events"} {
 		var strict int
 		if err := db.QueryRow(`SELECT strict FROM pragma_table_list WHERE schema='main' AND type='table' AND name=?`, table).Scan(&strict); err != nil {
 			return fmt.Errorf("restore order table %s: %w", table, err)
@@ -1209,6 +1244,8 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		{"broker_snapshots", []string{"provider", "environment", "exchange", "account_ref", "fetched_at"}, "u"},
 		{"broker_snapshot_reconciliations", []string{"reconciliation_id"}, "u"},
 		{"broker_snapshot_reconciliations", []string{"snapshot_id", "ledger_account_id", "ledger_revision"}, "u"},
+		{"strategy_research_evidence", []string{"result_sha256"}, "u"},
+		{"strategy_selection_events", []string{"event_id"}, "u"},
 	} {
 		ok, err := hasUniqueIndex(db, unique.table, unique.columns, unique.origin)
 		if err != nil {
@@ -1218,7 +1255,7 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 			return fmt.Errorf("restore order table %s lacks required unique columns %s", unique.table, strings.Join(unique.columns, ","))
 		}
 	}
-	for _, table := range []string{"order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations"} {
+	for _, table := range []string{"order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events"} {
 		var sequenceType string
 		var sequencePK, primaryKeyColumns, primaryKeyIndexes int
 		if err := db.QueryRow(`SELECT type, pk FROM pragma_table_info(?) WHERE name='sequence'`, table).Scan(&sequenceType, &sequencePK); err != nil {
@@ -1253,6 +1290,12 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	if foreignKeys != 1 || matchingForeignKeys != 1 {
 		return errors.New("restore broker reconciliations lack the required snapshot foreign key")
 	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(("table"='strategy_research_evidence' AND "from"='candidate_result_sha256' AND "to"='result_sha256') OR ("table"='strategy_selection_events' AND "from"='source_event_id' AND "to"='event_id')), 0) FROM pragma_foreign_key_list(?)`, "strategy_selection_events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore strategy selection foreign keys: %w", err)
+	}
+	if foreignKeys != 2 || matchingForeignKeys != 2 {
+		return errors.New("restore strategy selection events lack required evidence or source foreign keys")
+	}
 	foreignKeyRows, err := db.Query(`PRAGMA foreign_key_check`)
 	if err != nil {
 		return err
@@ -1286,6 +1329,10 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		"broker_snapshot_reconciliations_no_delete": {"broker_snapshot_reconciliations", "delete"},
 		"events_no_update":                          {"events", "update"},
 		"events_no_delete":                          {"events", "delete"},
+		"strategy_research_evidence_no_update":      {"strategy_research_evidence", "update"},
+		"strategy_research_evidence_no_delete":      {"strategy_research_evidence", "delete"},
+		"strategy_selection_events_no_update":       {"strategy_selection_events", "update"},
+		"strategy_selection_events_no_delete":       {"strategy_selection_events", "delete"},
 	}
 	rows, err := db.Query(`SELECT name, tbl_name, sql FROM sqlite_master WHERE type='trigger'`)
 	if err != nil {
@@ -1314,18 +1361,22 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	if len(required) != 0 {
 		return errors.New("restore candidate is missing insert-only state triggers")
 	}
-	guardSQL := map[string]string{
-		"order_events_risk_reservation_guard":          "create trigger order_events_risk_reservation_guard before insert on order_events when new.event_type = 'risk_approved' begin select case when new.authority_reservation_id is null or not exists ( select 1 from risk_reservations where reservation_id = new.authority_reservation_id and order_id = new.order_id and risk_event_id = new.event_id and reservation_id = json_extract(new.event_json, '$.risk_reservation_id') and policy_version = json_extract(new.event_json, '$.risk_policy_version') and fencing_token = json_extract(new.event_json, '$.fencing_token') ) then raise(abort, 'risk approval requires an authority reservation') end; end",
-		"order_events_dispatch_reservation_guard":      "create trigger order_events_dispatch_reservation_guard before insert on order_events when new.event_type = 'submit_dispatched' begin select case when new.authority_reservation_id is null or not exists ( select 1 from risk_reservations where reservation_id = new.authority_reservation_id and order_id = new.order_id and dispatch_event_id = new.event_id and reservation_id = json_extract(new.event_json, '$.risk_reservation_id') and policy_version = json_extract(new.event_json, '$.risk_policy_version') and fencing_token = json_extract(new.event_json, '$.fencing_token') ) then raise(abort, 'submit dispatch requires an authority reservation') end; end",
-		"order_events_non_authority_reservation_guard": "create trigger order_events_non_authority_reservation_guard before insert on order_events when new.event_type not in ('risk_approved', 'submit_dispatched') and new.authority_reservation_id is not null begin select raise(abort, 'authority reservation is invalid for this event'); end",
+	guardSQL := map[string]struct {
+		table string
+		sql   string
+	}{
+		"order_events_risk_reservation_guard":          {"order_events", "create trigger order_events_risk_reservation_guard before insert on order_events when new.event_type = 'risk_approved' begin select case when new.authority_reservation_id is null or not exists ( select 1 from risk_reservations where reservation_id = new.authority_reservation_id and order_id = new.order_id and risk_event_id = new.event_id and reservation_id = json_extract(new.event_json, '$.risk_reservation_id') and policy_version = json_extract(new.event_json, '$.risk_policy_version') and fencing_token = json_extract(new.event_json, '$.fencing_token') ) then raise(abort, 'risk approval requires an authority reservation') end; end"},
+		"order_events_dispatch_reservation_guard":      {"order_events", "create trigger order_events_dispatch_reservation_guard before insert on order_events when new.event_type = 'submit_dispatched' begin select case when new.authority_reservation_id is null or not exists ( select 1 from risk_reservations where reservation_id = new.authority_reservation_id and order_id = new.order_id and dispatch_event_id = new.event_id and reservation_id = json_extract(new.event_json, '$.risk_reservation_id') and policy_version = json_extract(new.event_json, '$.risk_policy_version') and fencing_token = json_extract(new.event_json, '$.fencing_token') ) then raise(abort, 'submit dispatch requires an authority reservation') end; end"},
+		"order_events_non_authority_reservation_guard": {"order_events", "create trigger order_events_non_authority_reservation_guard before insert on order_events when new.event_type not in ('risk_approved', 'submit_dispatched') and new.authority_reservation_id is not null begin select raise(abort, 'authority reservation is invalid for this event'); end"},
+		"strategy_selection_events_state_guard":        {"strategy_selection_events", "create trigger strategy_selection_events_state_guard before insert on strategy_selection_events begin select case when new.expected_current_event_id != coalesce( (select event_id from strategy_selection_events order by sequence desc limit 1), 'no_event' ) then raise(abort, 'strategy selection expected current event is stale') end; select case when new.previous_selected_result_sha256 != coalesce( (select selected_result_sha256 from strategy_selection_events order by sequence desc limit 1), 'no_strategy' ) then raise(abort, 'strategy selection previous result is stale') end; select case when new.event_type = 'select' and ( new.selected_result_sha256 != new.candidate_result_sha256 or not exists ( select 1 from strategy_research_evidence where result_sha256 = new.candidate_result_sha256 and target = 'paper_candidate' ) ) then raise(abort, 'strategy selection requires paper_candidate evidence') end; select case when new.event_type = 'rollback' and new.source_event_id != coalesce( (select event_id from strategy_selection_events order by sequence desc limit 1), 'no_event' ) then raise(abort, 'strategy rollback source is stale') end; end"},
 	}
 	for name, expected := range guardSQL {
 		var definition string
-		if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='trigger' AND name=? AND tbl_name='order_events'`, name).Scan(&definition); err != nil {
+		if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='trigger' AND name=? AND tbl_name=?`, name, expected.table).Scan(&definition); err != nil {
 			return fmt.Errorf("restore authority guard %s: %w", name, err)
 		}
 		normalized := strings.ToLower(strings.Join(strings.Fields(definition), " "))
-		if normalized != expected {
+		if normalized != expected.sql {
 			return fmt.Errorf("restore authority guard %s does not match the required definition", name)
 		}
 	}
@@ -1400,12 +1451,12 @@ func verifyManifest(path, goldenPath, manifestPath string) error {
 	if err := dec.Decode(&manifest); err != nil {
 		return fmt.Errorf("backup manifest: %w", err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v4" || manifest.SchemaVersion != "omni-folio.sqlite.v5" ||
+	if manifest.FormatVersion != "omni-folio-backup.v5" || manifest.SchemaVersion != "omni-folio.sqlite.v6" ||
 		manifest.Encryption.Encrypted || manifest.Encryption.Algorithm != "none" {
 		return errors.New("unsupported backup manifest version or encryption")
 	}
 	receipt := manifest.VerificationReceipt
-	if receipt.Status != "verified" || receipt.IntegrityCheck != "ok" || receipt.GoldenSnapshotCheck != "ok" || receipt.OrderStateCheck != "ok" || receipt.BrokerStateCheck != "ok" || !receipt.EligibleForActivation || len(receipt.Errors) != 0 {
+	if receipt.Status != "verified" || receipt.IntegrityCheck != "ok" || receipt.GoldenSnapshotCheck != "ok" || receipt.OrderStateCheck != "ok" || receipt.BrokerStateCheck != "ok" || receipt.StrategyRegistryCheck != "ok" || !receipt.EligibleForActivation || len(receipt.Errors) != 0 {
 		return errors.New("backup manifest is not eligible for activation")
 	}
 	dbSHA, size, err := hashFile(path)
@@ -1439,6 +1490,15 @@ func verifyManifest(path, goldenPath, manifestPath string) error {
 	if manifest.BrokerStateSHA256 != broker.SHA256 || receipt.CandidateBrokerStateSHA256 != broker.SHA256 ||
 		manifest.BrokerSnapshotCount != broker.Snapshots || manifest.BrokerReconciliationCount != broker.Reconciliations {
 		return errors.New("backup broker recovery proof mismatch")
+	}
+	strategy, err := verifyStrategyRestoreProof(path)
+	if err != nil {
+		return err
+	}
+	if manifest.StrategyRegistrySHA256 != strategy.SHA256 || receipt.CandidateStrategyRegistrySHA256 != strategy.SHA256 ||
+		manifest.StrategyEvidenceCount != strategy.Evidence || manifest.StrategySelectionEventCount != strategy.Events ||
+		manifest.SelectedStrategyResultSHA256 != strategy.SelectedResultSHA256 {
+		return errors.New("backup strategy registry recovery proof mismatch")
 	}
 	db, err := openExistingDB(path)
 	if err != nil {

@@ -12,8 +12,8 @@
 | G0 아키텍처·계약 | 통과 | versioned OpenAPI/JSON Schema, runtime ADR, root commands |
 | G1 로컬 원장 | 통과 | CSV preview → atomic apply → append-only exact cash/trade/dividend/tax/split replay → snapshot/receipt → schema v5 backup/restore |
 | G2 Flutter client | 부분 통과 | iOS·Android·web release build와 17개 자동 테스트 통과; chart 포함 Android emulator build/raster p95 2회 통과, physical-device·수동 screen-reader 및 test-instrumentation 격리 증거 남음 |
-| G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, paper-only result |
-| G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot, G4I/K2C 내부 합성 kill switch·lease/fencing·고정 BUY 한도와 backup v4 계약 통과. 실제 키움 credentialed 시세/모의주문 transport, freshness/scheduling, unknown-submit correlation, public 주문 UI, production risk와 모든 live gate는 남는다. |
+| G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, Go/SQLite append-only paper-candidate registry와 수동 rollback |
+| G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot, G4I/K2C 내부 합성 kill switch·lease/fencing·고정 BUY 한도와 backup v5 계약 통과. 실제 키움 credentialed 시세/모의주문 transport, freshness/scheduling, unknown-submit correlation, public 주문 UI, production risk와 모든 live gate는 남는다. |
 
 세부 상태와 완료 조건은 [`PLAN.md`](PLAN.md)와 [`GATES.md`](GATES.md)에서 관리합니다.
 
@@ -32,6 +32,7 @@ flowchart LR
 - Flutter와 Python에는 증권사 credential이나 주문 제출 권한이 없습니다.
 - Go core만 canonical 원장과 주문 상태를 변경할 수 있습니다.
 - SQLite는 로컬 단일 writer 단계의 의도적인 선택입니다. PostgreSQL migration·restore·load evidence 전에는 multi-replica나 Kubernetes manifest를 만들지 않습니다.
+- G6 진입 뒤의 로컬 Kubernetes 검증 기준은 `Kind + Podman`입니다. 현재 Kind 클러스터는 provision하지 않았고, G6 증거 전에는 manifest도 만들지 않습니다.
 - 토스증권의 쉬운 용어와 차분한 정보 위계를 참고하되 화면·상표·trade dress는 복제하지 않습니다.
 
 결정 근거는 [`docs/adr/0001-runtime-and-monorepo.md`](docs/adr/0001-runtime-and-monorepo.md), 브로커 순서와 UX 계약은 [`docs/broker-priority-and-ux.md`](docs/broker-priority-and-ux.md)를 따릅니다.
@@ -142,7 +143,7 @@ cd services/core
 go test -run '^TestG4H' -count=1 ./...
 ```
 
-현재 schema v5/backup v4는 ledger event, raw broker snapshot, revisioned broker reconciliation, execution-authority event와 risk reservation을 insert-only로 보호하고 각각의 digest/count와 replay 가능한 canonical record를 restore 후보에서 검증합니다. G4H 자체는 credential, broker request, scheduling, 공식 freshness/timezone, 현금·평가금액 reconciliation, public API/UI 또는 live readiness를 증명하지 않습니다.
+현재 schema v6/backup v5는 ledger event, raw broker snapshot, revisioned broker reconciliation, execution-authority event, risk reservation과 strategy registry를 insert-only로 보호하고 각각의 digest/count와 replay 가능한 canonical record를 restore 후보에서 검증합니다. G4H 자체는 credential, broker request, scheduling, 공식 freshness/timezone, 현금·평가금액 reconciliation, public API/UI 또는 live readiness를 증명하지 않습니다.
 
 ### Research와 자동 개선
 
@@ -152,6 +153,23 @@ make run-improvement
 ```
 
 전략 개선 runner는 유한한 long-only SMA 후보를 expanding walk-forward로 평가하고 final holdout을 한 번만 엽니다. 결과는 `paper_candidate` 또는 `no_promotion`만 만들 수 있으며 credential·주문·live 승격 권한을 얻지 못합니다.
+
+Go core는 이 로컬 결과를 schema v6 SQLite의 insert-only registry에 등록합니다. `no_promotion`도 거절 evidence로 보존되지만 선택할 수 없습니다. `paper_candidate` 선택은 현재 champion과 직접 비교하는 로직이 아직 없으므로 명시적 CLI와 optimistic concurrency를 요구하며, rollback은 직전 선택이나 `no_strategy`로만 새 이벤트를 append합니다.
+
+```sh
+candidate_file="$(mktemp)"
+PYTHONPATH=services/research python3 -m omni_research.improve_cli \
+  --bars contracts/fixtures/strategy-market-bars.csv \
+  --config contracts/fixtures/strategy-improvement-config.json \
+  --output "$candidate_file"
+
+(cd services/core && go run . strategy-register \
+  -db ../../data/omni-folio.db \
+  -artifact "$candidate_file")
+rm -f "$candidate_file"
+```
+
+등록 결과의 `result_sha256`를 선택할 때는 `strategy-select -result-sha256 ... -expected-current-event ...`를 사용합니다. 최초 expected event는 `no_event`이고 이후에는 `strategy-status` 또는 직전 출력의 `current_event_id`입니다. 되돌리기는 `strategy-rollback`에 현재 event ID를 `-expected-current-event`와 `-source-event` 둘 다로 전달합니다. 이 선택 상태는 paper runner나 주문 권한이 아니며 broker 요청을 만들지 않습니다.
 
 ## 주요 명령
 

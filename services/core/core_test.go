@@ -69,6 +69,62 @@ func TestGoldenVerticalSliceAndBackupRestore(t *testing.T) {
 	}
 }
 
+func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
+	var schema map[string]any
+	contract, err := os.ReadFile(filepath.Join("..", "..", "contracts", "backup-manifest.schema.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(contract, &schema); err != nil {
+		t.Fatal(err)
+	}
+	properties := schema["properties"].(map[string]any)
+	if properties["format_version"].(map[string]any)["const"] != "omni-folio-backup.v5" ||
+		properties["schema_version"].(map[string]any)["const"] != "omni-folio.sqlite.v6" {
+		t.Fatal("backup contract version drifted from the runtime")
+	}
+
+	var runtimeManifest, golden map[string]any
+	runtimeJSON, err := json.Marshal(BackupManifest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(runtimeJSON, &runtimeManifest); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(fixture(t, "golden-backup-manifest.json"), &golden); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(jsonKeySet(runtimeManifest), jsonStringSet(schema["required"])) ||
+		!reflect.DeepEqual(jsonKeySet(golden), jsonStringSet(schema["required"])) {
+		t.Fatal("backup manifest schema, runtime fields, and golden fixture disagree")
+	}
+
+	receiptSchema := schema["$defs"].(map[string]any)["verification_receipt"].(map[string]any)
+	var runtimeReceipt map[string]any
+	receiptJSON, err := json.Marshal(VerificationReceipt{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(receiptJSON, &runtimeReceipt); err != nil {
+		t.Fatal(err)
+	}
+	goldenReceipt := golden["verification_receipt"].(map[string]any)
+	if !reflect.DeepEqual(jsonKeySet(runtimeReceipt), jsonStringSet(receiptSchema["required"])) ||
+		!reflect.DeepEqual(jsonKeySet(goldenReceipt), jsonStringSet(receiptSchema["required"])) {
+		t.Fatal("verification receipt schema, runtime fields, and golden fixture disagree")
+	}
+
+	var invalid map[string]any
+	if err := json.Unmarshal(fixture(t, "invalid-backup-manifest.json"), &invalid); err != nil {
+		t.Fatal(err)
+	}
+	rejected := invalid["verification_receipt"].(map[string]any)
+	if rejected["status"] != "rejected" || rejected["eligible_for_activation"] != false || len(rejected["errors"].([]any)) == 0 {
+		t.Fatal("invalid backup fixture no longer proves fail-closed activation")
+	}
+}
+
 func TestInvalidAndDuplicatePreviewMatchesFixture(t *testing.T) {
 	svc, _ := testService(t,
 		[]time.Time{
@@ -362,7 +418,7 @@ func TestHealthAndReadinessAreSeparate(t *testing.T) {
 	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(1, ?)`, "2026-01-10T15:00:00Z"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(6, ?)`, "2026-01-10T15:01:00Z"); err != nil {
+	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(7, ?)`, "2026-01-10T15:01:00Z"); err != nil {
 		t.Fatal(err)
 	}
 	if w := request("/readyz"); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), `"code":"not_ready"`) {
@@ -528,6 +584,23 @@ func fixture(t *testing.T, name string) []byte {
 }
 
 func fixturePath(name string) string { return filepath.Join("..", "..", "contracts", "fixtures", name) }
+
+func jsonKeySet(value map[string]any) map[string]bool {
+	result := make(map[string]bool, len(value))
+	for key := range value {
+		result[key] = true
+	}
+	return result
+}
+
+func jsonStringSet(value any) map[string]bool {
+	items := value.([]any)
+	result := make(map[string]bool, len(items))
+	for _, item := range items {
+		result[item.(string)] = true
+	}
+	return result
+}
 
 func decodeFixture(t *testing.T, name string, dst any) {
 	t.Helper()
