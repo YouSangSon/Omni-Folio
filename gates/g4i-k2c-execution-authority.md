@@ -13,7 +13,7 @@ Scope: Go core internal-only synthetic execution authority for credential-free K
 - [x] **Lease and fencing race:** two SQLite handles cannot both acquire one active lease, and failed authorization rolls back reservation and order events.
   - CHECK: `cd services/core && go test -run '^TestK2CAuthorityLeaseRaceAndAtomicRollback$' -count=1 ./...`
   - EVIDENCE: PASS.
-- [x] **Durable recovery:** backup/restore v4 includes execution authority and risk reservation digest/count, and a restored process cannot reuse another process owner lease.
+- [x] **Durable recovery:** backup/restore v5 includes execution authority and risk reservation digest/count, and a restored process cannot reuse another process owner lease.
   - CHECK: `cd services/core && go test -run '^TestK2CBackupRestoresAuthorityAndStartsWithNoOwnedLease$' -count=1 ./...`
   - EVIDENCE: PASS.
 - [x] **Bypass guard:** direct order-event insertion, forged reservation metadata and weakened restore trigger DDL are rejected.
@@ -30,7 +30,7 @@ Scope: Go core internal-only synthetic execution authority for credential-free K
 
 ## Deferred
 
-- Credentialed Kiwoom mock-order submit/query transport.
+- Credentialed Kiwoom mock-order observation and query recovery. G4J/K2B2 covers only credential-free synthetic submit transport.
 - Public OpenAPI route and Flutter order review/confirm/cancel UI.
 - Production risk policy: cash, holdings, fees, max loss, market hours, stale market data, strategy approval and owner approval.
 - Paper/shadow/live promotion and broker/ledger reconciliation.

@@ -31,6 +31,7 @@ const (
 	kiwoomTokenPath      = "/oauth2/token"
 	kiwoomAccountPath    = "/api/dostk/acnt"
 	kiwoomChartPath      = "/api/dostk/chart"
+	kiwoomOrderPath      = "/api/dostk/ordr"
 	kiwoomCallTimeout    = 10 * time.Second
 	kiwoomTokenSkew      = 30 * time.Second
 	// ponytail: fixed cap and no 429/5xx retries until Kiwoom publishes usable
@@ -388,6 +389,10 @@ func (c *KiwoomClient) readPage(ctx context.Context, apiID string, requestBody a
 	if path == "" {
 		return kiwoomPage{}, &KiwoomError{Kind: "api_not_allowed"}
 	}
+	return c.postPage(ctx, apiID, path, requestBody, cont, next, true)
+}
+
+func (c *KiwoomClient) postPage(ctx context.Context, apiID, path string, requestBody any, cont, next string, retryUnauthorized bool) (kiwoomPage, error) {
 	payload, err := json.Marshal(requestBody)
 	if err != nil {
 		return kiwoomPage{}, &KiwoomError{Kind: "invalid_request", APIID: apiID}
@@ -396,7 +401,11 @@ func (c *KiwoomClient) readPage(ctx context.Context, apiID string, requestBody a
 	if err != nil {
 		return kiwoomPage{}, err
 	}
-	for attempt := 0; attempt < 2; attempt++ {
+	attempts := 1
+	if retryUnauthorized {
+		attempts = 2
+	}
+	for attempt := 0; attempt < attempts; attempt++ {
 		headers := http.Header{
 			"Content-Type":  {"application/json;charset=UTF-8"},
 			"Authorization": {"Bearer " + token},
@@ -410,13 +419,15 @@ func (c *KiwoomClient) readPage(ctx context.Context, apiID string, requestBody a
 		if err != nil {
 			return kiwoomPage{}, err
 		}
-		if response.StatusCode == http.StatusUnauthorized && attempt == 0 {
+		if response.StatusCode == http.StatusUnauthorized {
 			c.invalidateToken(token)
-			token, err = c.token(ctx)
-			if err != nil {
-				return kiwoomPage{}, err
+			if retryUnauthorized && attempt == 0 {
+				token, err = c.token(ctx)
+				if err != nil {
+					return kiwoomPage{}, err
+				}
+				continue
 			}
-			continue
 		}
 		if response.StatusCode < 200 || response.StatusCode >= 300 {
 			return kiwoomPage{}, kiwoomHTTPError(apiID, response.StatusCode)
@@ -425,13 +436,15 @@ func (c *KiwoomClient) readPage(ctx context.Context, apiID string, requestBody a
 			return kiwoomPage{}, &KiwoomError{Kind: "api_id_mismatch", APIID: apiID}
 		}
 		var result kiwoomResult
-		if attempt == 0 && kiwoomDecode(body, &result) == nil && kiwoomAuthFailure(result.ReturnCode) {
+		if kiwoomDecode(body, &result) == nil && kiwoomAuthFailure(result.ReturnCode) {
 			c.invalidateToken(token)
-			token, err = c.token(ctx)
-			if err != nil {
-				return kiwoomPage{}, err
+			if retryUnauthorized && attempt == 0 {
+				token, err = c.token(ctx)
+				if err != nil {
+					return kiwoomPage{}, err
+				}
+				continue
 			}
-			continue
 		}
 		continued, cursor, err := kiwoomPagination(response.Header)
 		if err != nil {

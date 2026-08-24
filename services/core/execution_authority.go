@@ -140,59 +140,65 @@ func (s *Service) acquireSyntheticExecutionLease(ctx context.Context, accountRef
 }
 
 func (s *Service) authorizeSyntheticDispatch(ctx context.Context, orderID string, fencingToken int64) (*OrderState, error) {
+	state, _, err := s.authorizeSyntheticDispatchOnce(ctx, orderID, fencingToken)
+	return state, err
+}
+
+func (s *Service) authorizeSyntheticDispatchOnce(ctx context.Context, orderID string, fencingToken int64) (*OrderState, bool, error) {
 	if !safeOrderID(orderID) || fencingToken <= 0 {
-		return nil, errors.New("execution authorization identifiers are invalid")
+		return nil, false, errors.New("execution authorization identifiers are invalid")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer tx.Rollback()
 	reservation, found, err := loadRiskReservationByOrder(ctx, tx, orderID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if found {
-		return validateAuthorizedReservation(ctx, tx, reservation)
+		state, err := validateAuthorizedReservation(ctx, tx, reservation)
+		return state, false, err
 	}
 	state, err := loadOrderStateFrom(ctx, tx, orderID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if state.Status != "RECORDED" || state.PendingAction != "" {
-		return nil, errors.New("execution authorization requires a recorded order")
+		return nil, false, errors.New("execution authorization requires a recorded order")
 	}
 	intent, err := loadOrderIntentFrom(ctx, tx, orderID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	notional, notionalValue, err := validateSyntheticBuyPolicy(intent)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	authority, err := loadExecutionAuthoritySnapshot(ctx, tx, intent.AccountRef)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	now := s.now().UTC()
 	expires, expiryOK := canonicalUTCTime(authority.LeaseExpiresAt)
 	if !authority.Armed || authority.LeaseOwner != s.executionOwner || authority.FencingToken != fencingToken ||
 		!expiryOK || !now.Before(expires) {
-		return nil, errors.New("execution authority is halted, stale, expired, or owned by another process")
+		return nil, false, errors.New("execution authority is halted, stale, expired, or owned by another process")
 	}
 	blocked, err := accountHasUnresolvedOrder(ctx, tx, intent.AccountRef)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if blocked {
-		return nil, errors.New("account has an unresolved order command")
+		return nil, false, errors.New("account has an unresolved order command")
 	}
 	active, err := activeReservedNotional(ctx, tx, intent.AccountRef)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if active.Add(active, notionalValue).Cmp(big.NewRat(syntheticMaxAccountNotional, 1)) > 0 {
-		return nil, errors.New("active synthetic BUY reservations exceed the fixed account limit")
+		return nil, false, errors.New("active synthetic BUY reservations exceed the fixed account limit")
 	}
 	recordedAt := now.Format(time.RFC3339Nano)
 	reservation = riskReservationRecord{
@@ -202,38 +208,38 @@ func (s *Service) authorizeSyntheticDispatch(ctx context.Context, orderID string
 		RiskEventID: s.id("order_event"), DispatchEventID: s.id("order_event"), ReservedAt: recordedAt,
 	}
 	if err := insertRiskReservation(ctx, tx, reservation); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	risk := authorizedOrderEvent(reservation.RiskEventID, orderID, "RISK_APPROVED", reservation)
 	dispatch := authorizedOrderEvent(reservation.DispatchEventID, orderID, "SUBMIT_DISPATCHED", reservation)
 	if err := validateOrderEvent(risk); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	state, err = appendOrderEventTx(ctx, tx, risk, recordedAt)
 	if err != nil || state.Status != "READY" {
-		return nil, fmt.Errorf("append risk approval: %w", err)
+		return nil, false, fmt.Errorf("append risk approval: %w", err)
 	}
 	if err := validateOrderEvent(dispatch); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	state, err = appendOrderEventTx(ctx, tx, dispatch, recordedAt)
 	if err != nil || state.Status != "SUBMIT_UNKNOWN" || state.PendingAction != "SUBMIT" {
-		return nil, fmt.Errorf("append submit dispatch: %w", err)
+		return nil, false, fmt.Errorf("append submit dispatch: %w", err)
 	}
 	var riskSequence, dispatchSequence int64
 	if err := tx.QueryRowContext(ctx, `SELECT sequence FROM order_events WHERE event_id=?`, reservation.RiskEventID).Scan(&riskSequence); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if err := tx.QueryRowContext(ctx, `SELECT sequence FROM order_events WHERE event_id=?`, reservation.DispatchEventID).Scan(&dispatchSequence); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if dispatchSequence != riskSequence+1 {
-		return nil, errors.New("authorized order events are not consecutive")
+		return nil, false, errors.New("authorized order events are not consecutive")
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return state, nil
+	return state, true, nil
 }
 
 func validateSyntheticBuyPolicy(intent OrderIntent) (string, *big.Rat, error) {

@@ -948,3 +948,14 @@ Python keeps ownership of deterministic research generation, while Go admits and
 - `TestG3Registry*`, full Go tests, root checks, smoke and recovery tamper tests are the delivery evidence.
 
 Still open: incumbent-compatible challenger comparison, paper runner observations, automatic degradation stop/rollback, paper/shadow promotion, strategy identity in order intent and per-dispatch execution authorization.
+
+## 2026-08-24 G4J/K2B2 continuation: credential-free Kiwoom mock submit transport
+
+K2B2 connects the existing K2C durable dispatch to the official Kiwoom mock LIMIT BUY request contract without using a real credential, external broker request, public route or live authority.
+
+- A successful token preflight happens before any order mutation. K2C then atomically records the reservation, risk approval and `SUBMIT_DISPATCHED` before one `kt10000` write to `/api/dostk/ordr`.
+- The write path reuses the bounded Kiwoom HTTP/token implementation but disables its read-only 401/provider-auth retry. Network, timeout, auth and provider availability uncertainty therefore leave the durable state at `SUBMIT_UNKNOWN`; a repeated call cannot resend.
+- A valid provider order number is immediately converted to an account-scoped HMAC alias. Raw provider order IDs, response messages and access tokens never enter order state or events. Only an explicit non-auth/rate-limit provider rejection becomes `SUBMIT_REJECTED`.
+- Focused K2B2 tests and the full Go core suite pass locally. The official order document is pinned in [`gates/g4j-k2b2-kiwoom-mock-submit.md`](../gates/g4j-k2b2-kiwoom-mock-submit.md).
+
+Still open for K2B: credentialed mock observation, lookup/correlation after a lost submit response, SELL policy, broker-coupled long-running fencing, public OpenAPI/Flutter flow, production risk, market/amend/cancel transport, fill-to-ledger reconciliation and every live-money path.

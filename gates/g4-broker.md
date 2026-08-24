@@ -9,8 +9,9 @@
 5. K2B1 internal synthetic `kt00009` dated execution scan without reconciliation authority.
 6. G4H credential-free complete snapshot persistence and ledger quantity diff.
 7. G4I/K2C internal synthetic execution authority, fixed BUY policy, lease/fencing and backup v5 proof.
-8. K2B Kiwoom mock-order submit/query transport and lookup recovery.
-9. Toss Securities read-only adapter using the same canonical contracts.
+8. G4J/K2B2 credential-free Kiwoom mock LIMIT submit transport.
+9. K2B credentialed mock observation, query transport and lookup recovery.
+10. Toss Securities read-only adapter using the same canonical contracts.
 
 ## Pass when
 
@@ -23,6 +24,7 @@
 - K2B1 proves only strict, all-or-nothing normalization of one explicit-date `kt00009` page set; pagination completion never means complete execution history and dated aliases cannot enter durable order events.
 - G4H proves only atomic retention of a complete synthetic raw snapshot and revision-bound KRX/KRW quantity reconciliation; failed inputs preserve last-known-good and never auto-correct the ledger.
 - K2C proves only credential-free internal execution authority: default-off kill switch, process owner, 30-second SQLite lease/fencing, fixed BUY limits, immutable reservation, DB bypass rejection and backup v5 recovery. It is not production risk and does not send broker orders.
+- K2B2 proves only the official mock `kt10000` LIMIT BUY request shape on an in-memory transport, with token preflight, durable dispatch-before-write, no write retry, opaque ACK and conservative unknown/reject outcomes. It uses no real credential or external broker request.
 - K2B must prove credentialed mock submit/query, broker-coupled runner fencing, public order flow, and broker/ledger reconciliation.
 - Real-money submit remains disabled. Toss order work does not start until a safe test path is documented because a separate official sandbox has not been confirmed.
 
@@ -36,4 +38,5 @@
 - G4G/K2B1 passes the internal-only synthetic dated execution scan: fixed KRX stock/fills-only request, strict provider order/fill normalization, date/account/environment-scoped non-joinable aliases, no partial result after later-page failure, naive execution clock and `ExecutionsComplete=false`. No credential, broker request, persistence, K2B0 mapping or public route/UI was added.
 - G4H passes credential-free complete snapshot validation, atomic raw snapshot plus ledger-revision reconciliation idempotency, quantity diff, last-known-good retention, insert-only ledger/broker rows and current backup v5 broker-state recovery. No credential, actual broker request, scheduler, authoritative freshness, public route/UI or auto-correction was added.
 - G4I/K2C passes internal default-off execution authority, process owner, lease/fencing, fixed credential-free BUY limits, atomic reservation-bound approval/dispatch and backup v5 recovery. It adds no broker transmission, credential, public route/UI or production/live authority.
-- G4 remains open: real Kiwoom candle/realtime behavior, scheduled credentialed persistence, full broker/ledger reconciliation, physical-device profile, manual VoiceOver/TalkBack, K2B mock transport/unknown correlation/public UI/broker-coupled risk, and every live-order gate are unproven.
+- G4J/K2B2 passes the credential-free Kiwoom mock LIMIT BUY submit contract. Synthetic transport proves the exact request, one-shot write, raw identifier/message/token redaction, definitive rejection and unresolved network/auth outcomes without enabling a route, runner or live authority.
+- G4 remains open: real Kiwoom candle/realtime behavior, scheduled credentialed persistence, full broker/ledger reconciliation, physical-device profile, manual VoiceOver/TalkBack, K2B credentialed observation/unknown correlation/public UI/broker-coupled risk, and every live-order gate are unproven.

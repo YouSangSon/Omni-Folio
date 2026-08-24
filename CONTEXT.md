@@ -13,6 +13,7 @@
 - **Synthetic Kiwoom order state**: broker 요청 없이 Go 내부에서만 실행하는 K2A `LIMIT`/`KRW`/`KRX` 주문 intent/event replay 계약. 실제 risk engine·broker submit/query·public route/UI·원장 반영은 포함하지 않는다.
 - **Known-order execution reconciliation**: 명시적 broker ACK로 opaque provider order ref가 이미 묶인 주문에 대해, 완결된 조회의 식별 가능한 체결만 기존 append-only 주문 이벤트에 반영하는 K2B0 계약. 주문번호 없는 unknown submit을 속성 유사도로 결합하지 않는다.
 - **Dated execution scan**: 명시한 날짜의 합성 `kt00009` 요청에서 terminal cursor까지 읽은 K2B1 provider-private 결과. `PaginationComplete`는 그 요청의 page 순회만 뜻하고 전체 주문 이력이나 체결 완결성을 뜻하지 않는다. `ExecutionsComplete`는 false이며 `ExecutionClock`은 timezone 없는 `HH:mm:ss`로 보존한다.
+- **Mock submit transport**: 실제 credential이나 외부 broker 호출 없이 공식 `kt10000`/`POST /api/dostk/ordr` 요청·응답을 합성 transport로 검증하는 K2B2 내부 계약. public route/UI, credentialed 관찰, unknown-submit 조회 복구와 live 권한은 포함하지 않는다.
 - **Read model**: 원장과 주문 이벤트에서 결정적으로 다시 만들 수 있는 조회 결과. 모바일 캐시는 read model의 복제본일 뿐 권한자가 아니다.
 - **Import preview**: 입력을 쓰지 않고 정규화·검증해 신규, 중복, 오류, 미해결 행과 예상 변화를 보여주는 단계.
 - **Cash-flow ledger event**: `DEPOSIT`·`DIVIDEND`는 양수, `WITHDRAWAL`·`FEE`·`TAX`는 음수 cash impact만 갖는 append-only event. `DIVIDEND`만 instrument provenance를 요구한다.
@@ -43,4 +44,5 @@
 - public market series는 `price_adjustment`를 생략하지 않는다. local fixture는 `unspecified`로 고정하고 화면에서도 조정 여부를 확인하지 못했다고 표시한다.
 - synthetic Kiwoom candle 결과는 `provider_adjusted`를 내부 provenance로 보존한다. 공식 문서가 timestamp timezone을 명시하지 않아 Asia/Seoul을 운영 가정으로 해석하며, adjustment event·freshness·실시간성을 주장하지 않는다.
 - `SUBMIT_UNKNOWN`은 실패가 아니다. 같은 주문과 해당 계좌의 신규 submit은 차단하되 이미 알려진 open order의 cancel은 위험 축소 경로로 허용한다. K2B0는 이미 ACK된 주문의 체결만 조정하며, 주문번호 없는 timeout은 종목·방향·수량·가격·시간이 같아도 결합하지 않고 `UNCORRELATED`로 유지한다.
+- K2B2 mock 주문은 token preflight가 성공한 뒤 reservation과 `SUBMIT_DISPATCHED`를 먼저 durable commit하고 broker write를 한 번만 시도한다. write의 401·provider auth code·timeout·network·5xx는 자동 재시도하지 않고 `SUBMIT_UNKNOWN`을 유지한다. 명시적 provider reject만 `REJECTED`로 끝내며 ACK의 원본 주문번호는 계좌 범위 HMAC alias로만 저장한다.
 - K2B1 dated aliases는 environment·account·요청 날짜를 포함한 별도 namespace이며 K2A/K2B0 order event alias로 사용할 수 없다. 요청 날짜와 provider-local execution clock을 결합해 UTC timestamp를 만들거나 terminal pagination을 complete execution history로 승격하지 않는다.

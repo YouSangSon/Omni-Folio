@@ -40,6 +40,7 @@ G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4G/K2B1 Kiwoom synthetic dated execution scan
 ├─ G4H Kiwoom broker known-good snapshot persistence
 ├─ G4I/K2C internal synthetic execution authority and schema v6/backup v5 proof
+├─ G4J/K2B2 credential-free Kiwoom mock LIMIT submit transport
 ├─ K2B Kiwoom mock-order broker transport and lookup recovery
 └─ then Toss Securities read-only as the second adapter
    |
