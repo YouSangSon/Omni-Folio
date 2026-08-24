@@ -16,7 +16,8 @@ G1 ledger vertical slice
 ├─ G1.1 migrate + canonical transaction
 ├─ G1.2 CSV preview + idempotent atomic apply
 ├─ G1.3 FIFO snapshot + provenance
-└─ G1.4 backup + verified restore
+├─ G1.4 backup + verified restore
+└─ G1.5 exact cash flows + stock-split replay
    |
 G2 client vertical slice
 ├─ G2.1 Flutter iOS/Android/web build
@@ -37,7 +38,7 @@ G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4F/K2B0 Kiwoom known-order execution reconciliation
 ├─ G4G/K2B1 Kiwoom synthetic dated execution scan
 ├─ G4H Kiwoom broker known-good snapshot persistence
-├─ G4I/K2C internal synthetic execution authority and backup v4 proof
+├─ G4I/K2C internal synthetic execution authority and schema v5/backup v4 proof
 ├─ K2B Kiwoom mock-order broker transport and lookup recovery
 └─ then Toss Securities read-only as the second adapter
    |

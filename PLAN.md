@@ -7,7 +7,7 @@
 - [x] 제품·안전 목표와 조사 기준선
 - [x] Flutter/Go/Python 및 state-authority ADR
 - [x] G0 contracts와 monorepo 실행 명령
-- [x] G1 CSV preview → atomic apply → ledger snapshot/receipt
+- [x] G1 CSV preview → atomic apply → ledger snapshot/receipt, schema v5 exact cash-flow·split replay와 v1→v5 보존 migration
 - [ ] G2 동일 fixture를 표시하는 Flutter client와 iOS·Android·web build 완료; semantics·touch target·light/dark contrast·reduced-motion 자동 검증과 chart 포함 Android emulator profile 2회 통과, 수동 screen-reader·physical-device profile 증거 남음
 - [x] G3 동일 market fixture를 읽는 deterministic Python backtest와 walk-forward 개선 runner
 - [x] local OCI/Compose 정의와 root check/smoke
@@ -18,11 +18,12 @@
 - [x] provider-neutral local fixture OHLCV API와 Flutter 종목 상세 price/volume chart·정확한 표·샘플 provenance
 - [x] K1 키움 `ka10080`/`ka10081` 합성 candle 계약 검증: KRX 6자리 symbol, 지원 interval, signed price magnitude·exact decimal OHLCV, pagination normalization/dedupe/conflict/cap 확인
 - [x] OpenAPI·HTTP·Flutter에 `price_adjustment` 필수 계약 연결: local fixture `unspecified` 고정, provider-adjusted 의미 보수적 표시, 잘못된 값 fail-closed
-- [x] G4E/K2A 내부 합성 주문 상태 로그: LIMIT/KRW/KRX, risk verdict ordering, durable unknown submit, 계좌 단위 신규 submit 차단, 알려진 주문 cancel 허용, 현재 schema/backup v4의 주문 로그 복구 증명
+- [x] G4E/K2A 내부 합성 주문 상태 로그: LIMIT/KRW/KRX, risk verdict ordering, durable unknown submit, 계좌 단위 신규 submit 차단, 알려진 주문 cancel 허용, 현재 schema v5/backup v4의 주문 로그 복구 증명
 - [x] G4F/K2B0 내부 합성 known-order reconciliation: 이미 ACK된 provider order ref만 완전한 execution lookup으로 원자 반영하고 lookup-only `SUBMIT_UNKNOWN` 결합 금지
 - [x] G4G/K2B1 내부 합성 `kt00009` 날짜 지정 체결 스캔: terminal pagination, 엄격한 주식/체결 정규화, date/account/environment 별도 alias, naive execution clock과 불완전성 보존
-- [x] G4H credential-free known-good broker snapshot: complete KRX raw snapshot과 ledger revision별 reconciliation을 SQLite에 원자 저장, replay/conflict, 종목 수량 diff, 실패 시 이전 known-good 보존, insert-only ledger/broker state와 schema/backup v4 복구 증명
+- [x] G4H credential-free known-good broker snapshot: complete KRX raw snapshot과 ledger revision별 reconciliation을 SQLite에 원자 저장, replay/conflict, 종목 수량 diff, 실패 시 이전 known-good 보존, insert-only ledger/broker state와 schema v5/backup v4 복구 증명
 - [x] G4I/K2C 내부 합성 execution authority: default-off kill switch, process owner, 30초 lease/fencing, 고정 BUY 한도, immutable reservation과 승인/dispatch 원자성, DB 우회 차단, backup v4 복구 증명
+- [ ] 원장 후속: FX, correction, 배당 재투자·국가별 세금 분류와 credentialed broker 체결/현금 reconciliation
 - [ ] 키움 live/mock credential 검증, official timezone/freshness 관찰, credentialed scheduled known-good refresh, credentialed ledger reconciliation
 - [ ] 실제 키움 OHLCV를 local chart contract에 연결, 기간 선택·평균단가·체결 marker와 physical accessibility/performance budget
 - [ ] K2B 키움 모의주문 broker submit/query transport, credentialed mock 관찰, 안전한 unknown-submit correlation, public route/UI, production risk·broker-coupled runner fencing, 시장가·정정, 체결-원장 reconciliation

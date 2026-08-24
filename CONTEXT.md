@@ -15,6 +15,8 @@
 - **Dated execution scan**: 명시한 날짜의 합성 `kt00009` 요청에서 terminal cursor까지 읽은 K2B1 provider-private 결과. `PaginationComplete`는 그 요청의 page 순회만 뜻하고 전체 주문 이력이나 체결 완결성을 뜻하지 않는다. `ExecutionsComplete`는 false이며 `ExecutionClock`은 timezone 없는 `HH:mm:ss`로 보존한다.
 - **Read model**: 원장과 주문 이벤트에서 결정적으로 다시 만들 수 있는 조회 결과. 모바일 캐시는 read model의 복제본일 뿐 권한자가 아니다.
 - **Import preview**: 입력을 쓰지 않고 정규화·검증해 신규, 중복, 오류, 미해결 행과 예상 변화를 보여주는 단계.
+- **Cash-flow ledger event**: `DEPOSIT`·`DIVIDEND`는 양수, `WITHDRAWAL`·`FEE`·`TAX`는 음수 cash impact만 갖는 append-only event. `DIVIDEND`만 instrument provenance를 요구한다.
+- **Stock-split ledger event**: 양수 분할 비율과 0 cash impact로 기존 열린 FIFO lot의 수량만 조정하고 총원가는 보존하는 append-only corporate action. 열린 lot가 없으면 전체 apply를 거절한다.
 - **Apply receipt**: import가 원자적으로 반영됐거나 전혀 반영되지 않았음을 증명하는 구조화된 결과.
 - **Order intent**: 전략 또는 사용자가 원하는 주문을 표현하지만 아직 증권사에 전송되지 않은 명령.
 - **Execution event**: 접수, 부분체결, 체결, 취소, 거절처럼 증권사에서 관찰한 append-only 주문 사실.
@@ -32,6 +34,7 @@
 - 주문 timeout은 실패가 아니라 결과 미확정 상태다. 같은 식별자로 조회·reconcile하기 전 재주문하지 않는다.
 - offline 상태에서 주문을 큐에 넣지 않는다.
 - 삭제나 덮어쓰기 대신 correction/event append를 기본으로 한다.
+- 현금 event의 부호와 분할의 0 cash impact를 신뢰하지 않고 import 경계와 SQLite CHECK에서 검증한다. 분할은 실현손익을 만들거나 기존 FIFO 총원가를 바꾸지 않는다.
 - sample market data는 live/current 상태로 승격하거나 실제 market source와 조용히 혼합하지 않는다.
 - public market series는 `price_adjustment`를 생략하지 않는다. local fixture는 `unspecified`로 고정하고 화면에서도 조정 여부를 확인하지 못했다고 표시한다.
 - synthetic Kiwoom candle 결과는 `provider_adjusted`를 내부 provenance로 보존한다. 공식 문서가 timestamp timezone을 명시하지 않아 Asia/Seoul을 운영 가정으로 해석하며, adjustment event·freshness·실시간성을 주장하지 않는다.

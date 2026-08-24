@@ -924,3 +924,14 @@ K2C adds the smallest internal authority that can prevent accidental synthetic d
 - TDD covers default-off, halt, stale/foreign/expired lease, two-handle lease and reservation races, fixed limits, terminal release, idempotency, DB bypass, atomic rollback, legacy migration, backup restore and weak-trigger rejection. `make check`, full Go race and `make smoke` pass locally on 2026-08-24 KST.
 
 Still open: broker request/credential/transmission proof, SELL, cash/position/fee/daily-loss/order-rate/market-hours/stale-data risk, owner/strategy/promotion approval, broker-coupled long-running runner, public OpenAPI/Flutter order flow, paper/live readiness and every real-money path.
+
+## 2026-08-24 G1 continuation: exact cash flows and stock-split replay
+
+The original G1 golden slice proved deposits and fee-aware FIFO trades, but the product contract also names cash movements, dividends, fees, taxes and corporate actions as ledger authority. Schema v5 closes that local, credential-free gap without adding a new runtime or dependency.
+
+- `WITHDRAWAL`, `FEE` and `TAX` require negative cash impact; `DEPOSIT` and instrument-bound `DIVIDEND` require positive cash impact. Trade-only fields are rejected where they do not apply.
+- `SPLIT` requires an instrument, a positive exact ratio and zero cash impact. Replay multiplies each open FIFO lot quantity while preserving total cost basis; a split without an open holding rolls the whole apply back.
+- Migration v5 rebuilds only the constrained `events` table, preserves existing v1-v4 rows, enforces event shape/cash direction with native CHECK constraints and restores insert-only triggers. Backup format remains v4 while the declared/required SQLite schema advances to v5.
+- OpenAPI and backup contracts advance with the runtime. Focused cash/split, invalid-direction, rollback and v1-to-v5 migration tests pass with the existing order, broker snapshot and execution-authority recovery suite.
+
+Still open: FX rates/conversions, correction events, dividend reinvestment, jurisdiction-specific tax classification, credentialed broker fill/cash reconciliation and every live-money path.

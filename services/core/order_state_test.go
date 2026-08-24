@@ -298,7 +298,7 @@ func TestK2AOrderTablesAreInsertOnly(t *testing.T) {
 	}
 }
 
-func TestSchemaMigratesV1ToV4AndReadinessRequiresV4(t *testing.T) {
+func TestSchemaMigratesV1ToV5AndReadinessRequiresV5(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v1.db")
 	db, err := openDB(path)
 	if err != nil {
@@ -326,8 +326,8 @@ func TestSchemaMigratesV1ToV4AndReadinessRequiresV4(t *testing.T) {
 	if err := db.QueryRow(`SELECT MAX(version), COUNT(*) FROM schema_migrations`).Scan(&version, &migrations); err != nil {
 		t.Fatal(err)
 	}
-	if version != 4 || migrations != 4 {
-		t.Fatalf("schema version=(%d,%d), want latest=4 with four migrations", version, migrations)
+	if version != 5 || migrations != 5 {
+		t.Fatalf("schema version=(%d,%d), want latest=5 with five migrations", version, migrations)
 	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM events WHERE event_id='preserved'`).Scan(&preserved); err != nil || preserved != 1 {
 		t.Fatalf("v1 data was not preserved: count=%d err=%v", preserved, err)
@@ -346,7 +346,7 @@ func TestSchemaMigratesV1ToV4AndReadinessRequiresV4(t *testing.T) {
 	w := httptest.NewRecorder()
 	svc.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if w.Code != http.StatusOK {
-		t.Fatalf("v4 schema was not ready: status=%d body=%s", w.Code, w.Body.String())
+		t.Fatalf("v5 schema was not ready: status=%d body=%s", w.Code, w.Body.String())
 	}
 }
 

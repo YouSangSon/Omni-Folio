@@ -10,7 +10,7 @@
 | Gate | 상태 | 증거 |
 |---|---|---|
 | G0 아키텍처·계약 | 통과 | versioned OpenAPI/JSON Schema, runtime ADR, root commands |
-| G1 로컬 원장 | 통과 | CSV preview → atomic apply → append-only ledger → snapshot/receipt → backup/restore |
+| G1 로컬 원장 | 통과 | CSV preview → atomic apply → append-only exact cash/trade/dividend/tax/split replay → snapshot/receipt → schema v5 backup/restore |
 | G2 Flutter client | 부분 통과 | iOS·Android·web release build와 17개 자동 테스트 통과; chart 포함 Android emulator build/raster p95 2회 통과, physical-device·수동 screen-reader 및 test-instrumentation 격리 증거 남음 |
 | G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, paper-only result |
 | G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot, G4I/K2C 내부 합성 kill switch·lease/fencing·고정 BUY 한도와 backup v4 계약 통과. 실제 키움 credentialed 시세/모의주문 transport, freshness/scheduling, unknown-submit correlation, public 주문 UI, production risk와 모든 live gate는 남는다. |
@@ -93,6 +93,8 @@ make run-client API_URL=http://127.0.0.1:18080
 
 Preview는 원장을 변경하지 않습니다. 반환된 `preview_id`를 새 idempotency key와 함께 apply합니다.
 
+schema v5 CSV type은 `DEPOSIT`, `WITHDRAWAL`, `BUY`, `SELL`, `DIVIDEND`, `FEE`, `TAX`, `SPLIT`입니다. 금액과 수량은 canonical decimal string이며, 현금 event 부호와 split의 zero cash impact는 apply 전에 검증됩니다.
+
 ```sh
 preview_file="$(mktemp)"
 curl -fsS -X POST \
@@ -140,7 +142,7 @@ cd services/core
 go test -run '^TestG4H' -count=1 ./...
 ```
 
-현재 schema/backup v4는 ledger event, raw broker snapshot, revisioned broker reconciliation, execution-authority event와 risk reservation을 insert-only로 보호하고 각각의 digest/count와 replay 가능한 canonical record를 restore 후보에서 검증합니다. G4H 자체는 credential, broker request, scheduling, 공식 freshness/timezone, 현금·평가금액 reconciliation, public API/UI 또는 live readiness를 증명하지 않습니다.
+현재 schema v5/backup v4는 ledger event, raw broker snapshot, revisioned broker reconciliation, execution-authority event와 risk reservation을 insert-only로 보호하고 각각의 digest/count와 replay 가능한 canonical record를 restore 후보에서 검증합니다. G4H 자체는 credential, broker request, scheduling, 공식 freshness/timezone, 현금·평가금액 reconciliation, public API/UI 또는 live readiness를 증명하지 않습니다.
 
 ### Research와 자동 개선
 

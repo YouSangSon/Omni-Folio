@@ -106,6 +106,7 @@ Market data adapters
 - 브로커마다 가능한 주문 유형과 시장이 다르므로 `BrokerCapabilities`로 기능을 선언하고 UI도 이를 기준으로 노출한다.
 - 공급자별 인증, rate limit, pagination, symbol mapping, 재시도는 해당 adapter 내부에 둔다.
 - 주문 상태 머신과 거래 원장을 분리하고 체결 이벤트를 통해 reconciliation한다.
+- 현재 schema v5 ledger 증거는 `DEPOSIT`, `WITHDRAWAL`, `BUY`, `SELL`, `DIVIDEND`, `FEE`, `TAX`, `SPLIT`의 exact-decimal CSV preview/apply/replay와 v1→v5 보존 migration에 한정한다. 현금 이벤트의 부호와 분할의 zero cash impact를 fail-closed하고, 열린 FIFO lot의 수량만 분할 비율로 조정해 원가를 보존한다. FX, 정정, 배당 재투자, 국가별 세금 분류와 broker 체결 자동 반영은 아직 증명하지 않는다.
 - 전략 정의는 브로커 SDK, credential, 주문 API에 접근하지 않고 `Signal`만 만든다. 포트폴리오 구성기가 여러 전략의 신호와 자금 배분을 `PortfolioTarget`으로 합치고, 공통 risk/execution pipeline만 주문을 만든다.
 - 실행 모드는 `backtest`, `paper`, `shadow`, `live-disabled`, `live-enabled`로 구분하며 UI·로그·credential·계좌를 섞지 않는다.
 - 위험 제어는 전략이 우회할 수 없는 공통 레이어에 둔다: 종목/시장 허용 목록, 가격 collar, 1회 주문 수량·금액, 총/순 익스포저, 포지션·미체결 주문, 일일 손실, 주문 속도, 거래 시간, stale data, clock drift, provider/reconciliation 장애.

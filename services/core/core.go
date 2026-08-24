@@ -31,10 +31,10 @@ import (
 const (
 	maxBodyBytes  = 1 << 20
 	maxImportRows = 10_000
-	latestSchema  = 4
+	latestSchema  = 5
 	zeroTime      = "1970-01-01T00:00:00Z"
 	csvSchema     = "omni-folio.csv.v1"
-	mappingSchema = "canonical-transaction.v1"
+	mappingSchema = "canonical-transaction.v2"
 )
 
 //go:embed migrations/*.sql
@@ -263,7 +263,7 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("unsupported schema version %d", current)
 		}
 	}
-	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql"}
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql"}
 	for version := current + 1; version <= latestSchema; version++ {
 		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
 		if err != nil {
@@ -600,13 +600,44 @@ func (s *Service) normalize(record []string, value func([]string, string) string
 		errs = append(errs, APIError{"invalid_decimal", "amount must be a canonical decimal", "amount"})
 	}
 	switch tx.Type {
-	case "DEPOSIT":
+	case "DEPOSIT", "WITHDRAWAL", "FEE", "TAX":
 		if tx.Symbol != "" || tx.Quantity != "" || tx.Price != "" || tx.Fee != "" {
-			errs = append(errs, APIError{"invalid_fields", "DEPOSIT trade fields must be empty", "symbol"})
+			errs = append(errs, APIError{"invalid_fields", tx.Type + " trade fields must be empty", "symbol"})
 		}
 		tx.Symbol, tx.Quantity, tx.Price, tx.Fee = "", "", "", ""
+		if err == nil && ((tx.Type == "DEPOSIT" && amount.Sign() <= 0) || (tx.Type != "DEPOSIT" && amount.Sign() >= 0)) {
+			direction := "negative"
+			if tx.Type == "DEPOSIT" {
+				direction = "positive"
+			}
+			errs = append(errs, APIError{"invalid_amount", tx.Type + " amount must be " + direction, "amount"})
+		}
+	case "DIVIDEND":
+		if tx.Symbol == "" {
+			errs = append(errs, APIError{"required", "symbol is required for DIVIDEND", "symbol"})
+		} else {
+			tx.InstrumentID = "instrument_" + strings.ToLower(tx.Symbol)
+		}
+		if tx.Quantity != "" || tx.Price != "" || tx.Fee != "" {
+			errs = append(errs, APIError{"invalid_fields", "DIVIDEND quantity, price, and fee must be empty", "quantity"})
+		}
+		tx.Quantity, tx.Price, tx.Fee = "", "", ""
 		if err == nil && amount.Sign() <= 0 {
-			errs = append(errs, APIError{"invalid_amount", "DEPOSIT amount must be positive", "amount"})
+			errs = append(errs, APIError{"invalid_amount", "DIVIDEND amount must be positive", "amount"})
+		}
+	case "SPLIT":
+		if tx.Symbol == "" {
+			errs = append(errs, APIError{"required", "symbol is required for SPLIT", "symbol"})
+		} else {
+			tx.InstrumentID = "instrument_" + strings.ToLower(tx.Symbol)
+		}
+		positiveDecimal(tx.Quantity, "quantity", &errs)
+		if tx.Price != "" || tx.Fee != "" {
+			errs = append(errs, APIError{"invalid_fields", "SPLIT price and fee must be empty", "price"})
+		}
+		tx.Price, tx.Fee = "", ""
+		if err == nil && amount.Sign() != 0 {
+			errs = append(errs, APIError{"invalid_amount", "SPLIT amount must be zero", "amount"})
 		}
 	case "BUY", "SELL":
 		if tx.Symbol == "" {
@@ -630,7 +661,7 @@ func (s *Service) normalize(record []string, value func([]string, string) string
 			}
 		}
 	default:
-		errs = append(errs, APIError{"invalid_type", "type must be DEPOSIT, BUY, or SELL", "type"})
+		errs = append(errs, APIError{"invalid_type", "unsupported transaction type", "type"})
 	}
 	return tx, errs
 }
@@ -675,7 +706,7 @@ func unresolved(tx *Transaction) *Resolution {
 			RequiredAction: "select_account", CandidateIDs: []string{"account-main"},
 		}
 	}
-	if tx.Type != "DEPOSIT" && tx.Symbol != "AAPL" {
+	if tx.Symbol != "" && tx.Symbol != "AAPL" {
 		return &Resolution{
 			Kind: "instrument", SourceField: "symbol", SourceValue: tx.Symbol,
 			RequiredAction: "select_instrument", CandidateIDs: []string{"instrument_aapl"},
@@ -839,12 +870,24 @@ func snapshotFrom(ctx context.Context, q queryer) (*PortfolioSnapshot, error) {
 		if occurredAt > asOf {
 			asOf = occurredAt
 		}
-		if typ == "DEPOSIT" {
+		switch typ {
+		case "DEPOSIT", "WITHDRAWAL", "DIVIDEND", "FEE", "TAX":
 			continue
 		}
 		quantity, err := parseDecimal(quantityRaw)
 		if err != nil {
 			return nil, err
+		}
+		key := instrument + "\x00" + currency
+		p := positions[key]
+		if typ == "SPLIT" {
+			if p == nil || len(p.lots) == 0 {
+				return nil, fmt.Errorf("SPLIT %s has no open holding", eventID)
+			}
+			for i := range p.lots {
+				p.lots[i].quantity.Mul(p.lots[i].quantity, quantity)
+			}
+			continue
 		}
 		price, err := parseDecimal(priceRaw)
 		if err != nil {
@@ -854,8 +897,6 @@ func snapshotFrom(ctx context.Context, q queryer) (*PortfolioSnapshot, error) {
 		if err != nil {
 			return nil, err
 		}
-		key := instrument + "\x00" + currency
-		p := positions[key]
 		if p == nil {
 			p = &position{instrument: instrument, symbol: symbol, currency: currency}
 			positions[key] = p
@@ -1047,7 +1088,7 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	}
 	verifiedAt := now().UTC()
 	manifest := &BackupManifest{
-		FormatVersion: "omni-folio-backup.v4", SchemaVersion: "omni-folio.sqlite.v4", CreatedAt: createdAt.Format(time.RFC3339Nano),
+		FormatVersion: "omni-folio-backup.v4", SchemaVersion: "omni-folio.sqlite.v5", CreatedAt: createdAt.Format(time.RFC3339Nano),
 		SourceLedgerRevision: revision(sourceRevision), OrderStateSHA256: sourceOrders.SHA256, OrderCount: sourceOrders.Orders,
 		OrderEventCount: sourceOrders.Events, ExecutionAuthoritySHA256: sourceOrders.ExecutionAuthoritySHA256,
 		ExecutionAuthorityEventCount: sourceOrders.ExecutionAuthorityEvents, RiskReservationSHA256: sourceOrders.RiskReservationSHA256,
@@ -1359,7 +1400,7 @@ func verifyManifest(path, goldenPath, manifestPath string) error {
 	if err := dec.Decode(&manifest); err != nil {
 		return fmt.Errorf("backup manifest: %w", err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v4" || manifest.SchemaVersion != "omni-folio.sqlite.v4" ||
+	if manifest.FormatVersion != "omni-folio-backup.v4" || manifest.SchemaVersion != "omni-folio.sqlite.v5" ||
 		manifest.Encryption.Encrypted || manifest.Encryption.Algorithm != "none" {
 		return errors.New("unsupported backup manifest version or encryption")
 	}
