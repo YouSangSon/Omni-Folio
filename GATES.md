@@ -50,6 +50,7 @@ G6 PostgreSQL and Kubernetes promotion
 ## Root completion evidence
 
 - `make check` 또는 동등한 단일 명령이 각 활성 서브프로젝트의 format, lint, unit, contract test를 실행한다.
+- 검증 명령은 성공·실패·중단 뒤 자신이 만든 프로세스, 임시 파일, Podman/Kind/Testcontainers 리소스를 소유 label·세션·명시적 ID 기준으로 회수하며 전역 prune을 사용하지 않는다.
 - 동일 fixture의 decimal·ID·timestamp가 Flutter, Go, Python contract test에서 일치한다.
 - local 검증, broker sandbox, live readiness, 실제 운영 증거를 따로 보고한다.
 - external deploy, credential, live 주문, push는 명시 승인 없이는 실행하지 않는다.

@@ -17,7 +17,7 @@ WEB_ORIGIN ?= http://$(FLUTTER_WEB_HOST):$(FLUTTER_WEB_PORT)
 RESEARCH_PYTHONPATH ?= $(ROOT)/services/research
 MARKET_FIXTURE ?= $(ROOT)/contracts/fixtures/market-bars.csv
 
-.PHONY: bootstrap format format-check lint test contract-check check run-core run-client run-research run-improvement smoke
+.PHONY: bootstrap format format-check lint test contract-check check clean clean-test-resources run-core run-client run-research run-improvement smoke
 
 bootstrap:
 	mkdir -p "$(ROOT)/data"
@@ -46,7 +46,36 @@ test:
 contract-check:
 	"$(PYTHON)" -c 'import json, pathlib; files=sorted(pathlib.Path("contracts").rglob("*.json")); assert files, "no JSON contract files found"; [json.loads(path.read_text(encoding="utf-8")) for path in files]; print(f"validated {len(files)} JSON contract files")'
 
-check: format-check lint test contract-check
+check:
+	+@cleanup() { \
+		cleanup_status=0; \
+		trap - EXIT INT TERM; \
+		$(MAKE) clean-test-resources || cleanup_status=$$?; \
+		if test "$$status" -ne 0; then exit "$$status"; fi; \
+		exit "$$cleanup_status"; \
+	}; \
+	trap 'status=130; cleanup' INT; \
+	trap 'status=143; cleanup' TERM; \
+	trap 'status=$$?; cleanup' EXIT; \
+	$(MAKE) format-check lint test contract-check
+
+clean-test-resources:
+	@set -eu; \
+	for artifact_path in \
+		"$(ROOT)/apps/client/build" \
+		"$(ROOT)/apps/client/coverage" \
+		"$(ROOT)/services/core/core"; do \
+		if test -e "$$artifact_path"; then find "$$artifact_path" -depth -delete; fi; \
+	done; \
+	find "$(ROOT)/services/research" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete; \
+	find "$(ROOT)/services/research" -depth -type d -name __pycache__ -empty -delete
+
+clean: clean-test-resources
+	@set -eu; \
+	for artifact_path in "$(ROOT)/.playwright-cli" "$(ROOT)/output"; do \
+		if test -e "$$artifact_path"; then find "$$artifact_path" -depth -delete; fi; \
+	done
+	cd apps/client && "$(FLUTTER)" clean
 
 run-core:
 	mkdir -p "$(dir $(DB_PATH))"

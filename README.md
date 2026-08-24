@@ -56,7 +56,7 @@ make check
 make smoke
 ```
 
-`make smoke`는 임시 SQLite 파일에서 health, readiness, CSV preview, atomic apply, snapshot, local sample OHLCV를 확인하고 종료할 때 데이터를 제거합니다.
+`make check`는 성공·실패와 관계없이 검사 중 생성한 Flutter build/coverage, Python bytecode와 로컬 Go 바이너리를 정리합니다. `make smoke`는 임시 SQLite 파일에서 health, readiness, CSV preview, atomic apply, snapshot, local sample OHLCV를 확인하고 종료할 때 프로세스와 데이터를 제거합니다. 전체 Flutter/QA 캐시까지 비우려면 `make clean`을 사용합니다.
 
 ### 앱 실행
 
@@ -160,7 +160,8 @@ make bootstrap        로컬 dependency 준비
 make format           Go/Dart format 적용
 make lint             Go vet, Flutter analyze, Python compile 검사
 make test             Go, Flutter, Python 단위 테스트
-make check            format, lint, test, JSON contract 검사
+make check            format, lint, test, JSON contract 검사 후 테스트 생성물 정리
+make clean            Flutter/QA 캐시를 포함한 로컬 생성물 정리
 make smoke            임시 DB 기반 ledger·local market HTTP 수직 슬라이스 검사
 make run-core         migrate 후 local Go API와 명시적 sample market fixture 실행
 make run-client       Flutter web client 실행

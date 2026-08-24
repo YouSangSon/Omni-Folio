@@ -34,6 +34,7 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 - 배포 가능한 Go 모듈러 모놀리스와 SQLite single-writer local로 시작한다. 로컬과 단일 노드 클라우드는 같은 OCI image를 사용하고 설정·secret·영속 저장소만 실행 프로필으로 바꾼다. 측정된 필요가 생기기 전에는 microservice, Redis, message broker, 동적 plugin SDK를 추가하지 않는다.
 - 신뢰할 수 있는 프레임워크·라이브러리는 회피하지 않는다. 직접 구현보다 정확성·성능·유지보수성이 나을 때 채택하되 공식 저장소의 활성도, license, 보안 이력, release 고정·lockfile, 공급망 검사와 Omni Folio 골든 fixture 교차검증을 통과해야 한다.
 - 새 의존성은 기능별로 하나의 주 구현만 선택한다. 백테스트·차트·Decimal처럼 핵심 결과를 만드는 라이브러리는 입력 snapshot과 버전을 manifest에 남기고 reference fixture와 결과가 어긋나면 승격을 차단한다.
+- 테스트가 만든 프로세스, 임시 DB, 컨테이너, Pod, volume, network와 생성물은 성공·실패·중단 경로 모두에서 소유 범위 안에서 회수한다. Podman/Kind/Testcontainers는 프로젝트·세션 label 또는 명시적 ID로만 정리하고 전역 prune으로 다른 작업의 리소스를 삭제하지 않는다.
 - 실전 주문은 절대 자동 활성화하지 않는다. 모의투자 검증, 체결-원장 reconciliation, 실패 복구, 사용자 명시 승인 전에는 비활성 상태로 유지한다.
 - 자동매매는 `Universe → Signal/Alpha → PortfolioTarget → RiskAdjustedTarget → OrderIntent → Execution` 단계로 분리한다. 전략은 브로커 주문을 직접 만들거나 전송하지 않는다.
 - 백테스트 결과를 실전 기대수익으로 표시하지 않는다. 슬리피지, 수수료, 세금, 체결 지연, 데이터 지연, survivorship/lookahead bias를 검증 항목으로 둔다.
