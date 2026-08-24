@@ -12,7 +12,10 @@ import (
 	"time"
 )
 
-const paperSignalSchema = "paper-signal.v1"
+const (
+	legacyPaperSignalSchema = "paper-signal.v1"
+	paperSignalSchema       = "paper-signal.v2"
+)
 
 type PaperSignal struct {
 	SchemaVersion            string `json:"schema_version"`
@@ -20,11 +23,8 @@ type PaperSignal struct {
 	StrategyResultSHA256     string `json:"strategy_result_sha256"`
 	StrategySelectionEventID string `json:"strategy_selection_event_id"`
 	DataSHA256               string `json:"data_sha256"`
-	AccountRef               string `json:"account_ref"`
 	Symbol                   string `json:"symbol"`
-	Side                     string `json:"side"`
-	Quantity                 string `json:"quantity"`
-	LimitPrice               string `json:"limit_price"`
+	TargetQuantity           string `json:"target_quantity"`
 	DataAsOf                 string `json:"data_as_of"`
 	GeneratedAt              string `json:"generated_at"`
 	ExpiresAt                string `json:"expires_at"`
@@ -38,13 +38,13 @@ type PaperMarketObservation struct {
 	AvailableQuantity string `json:"available_quantity"`
 }
 
-// ponytail: this first paper adapter models one KRX BUY limit against one ask with finite displayed
-// quantity; add fees, tax, slippage and a quote stream before performance promotion evidence.
-func (s *Service) runPaperSignal(ctx context.Context, signal PaperSignal, observation PaperMarketObservation, fencingToken int64) (*OrderState, error) {
+// ponytail: this first paper adapter nets one KRX long-only target against local paper orders and
+// one finite ask; add holdings, cash allocation, fees, tax, slippage and quotes before promotion.
+func (s *Service) runPaperSignal(ctx context.Context, accountRef string, signal PaperSignal, observation PaperMarketObservation, fencingToken int64) (*OrderState, error) {
 	if s == nil || s.db == nil {
 		return nil, errors.New("paper runner is not configured")
 	}
-	intent, generatedAt, expiresAt, err := validatePaperSignal(signal)
+	target, generatedAt, expiresAt, err := validatePaperSignal(signal)
 	if err != nil {
 		return nil, err
 	}
@@ -52,17 +52,13 @@ func (s *Service) runPaperSignal(ctx context.Context, signal PaperSignal, observ
 	if err != nil {
 		return nil, err
 	}
-	exists, err := s.paperOrderExists(ctx, intent)
-	if err != nil {
-		return nil, err
-	}
 	now := s.now().UTC()
-	if !exists && (now.Before(generatedAt) || !now.Before(expiresAt)) {
-		return nil, errors.New("paper signal is not active")
-	}
-	state, err := s.recordOrderIntent(ctx, intent)
+	state, err := s.recordPaperTarget(ctx, accountRef, signal, observation.AskPrice, target, generatedAt, expiresAt, now)
 	if err != nil {
 		return nil, err
+	}
+	if state == nil {
+		return nil, nil
 	}
 	if state.Status == "RECORDED" {
 		if now.Before(generatedAt) || !now.Before(expiresAt) {
@@ -86,7 +82,7 @@ func (s *Service) runPaperSignal(ctx context.Context, signal PaperSignal, observ
 	if state.Status != "OPEN" && state.Status != "PARTIALLY_FILLED" {
 		return state, nil
 	}
-	limit, _ := parseDecimal(intent.LimitPrice)
+	limit, _ := parseDecimal(state.LimitPrice)
 	if ask.Cmp(limit) > 0 {
 		return state, nil
 	}
@@ -109,24 +105,75 @@ func (s *Service) runPaperSignal(ctx context.Context, signal PaperSignal, observ
 	})
 }
 
-func validatePaperSignal(signal PaperSignal) (OrderIntent, time.Time, time.Time, error) {
+func validatePaperSignal(signal PaperSignal) (*big.Int, time.Time, time.Time, error) {
 	dataAsOf, dataOK := canonicalUTCTime(signal.DataAsOf)
 	generatedAt, generatedOK := canonicalUTCTime(signal.GeneratedAt)
 	expiresAt, expiresOK := canonicalUTCTime(signal.ExpiresAt)
-	intent := OrderIntent{
-		ClientOrderID: "paper_" + signal.SignalID, Provider: "kiwoom", Mode: "paper", AccountRef: signal.AccountRef,
-		Symbol: signal.Symbol, Exchange: "KRX", Side: signal.Side, OrderType: "LIMIT", Quantity: signal.Quantity,
-		LimitPrice: signal.LimitPrice, Currency: "KRW", StrategyResultSHA256: signal.StrategyResultSHA256,
+	if len(signal.TargetQuantity) == 0 || len(signal.TargetQuantity) > 64 {
+		return nil, time.Time{}, time.Time{}, errors.New("paper signal is invalid")
+	}
+	target, targetOK := new(big.Int).SetString(signal.TargetQuantity, 10)
+	if signal.SchemaVersion != paperSignalSchema || !safeOrderID(signal.SignalID) || !kiwoomStockPattern.MatchString(signal.Symbol) ||
+		!strategySHA256Pattern.MatchString(signal.StrategyResultSHA256) || !safeOrderID(signal.StrategySelectionEventID) ||
+		!strategySHA256Pattern.MatchString(signal.DataSHA256) || !targetOK || target.Sign() <= 0 || !validOrderInteger(signal.TargetQuantity) ||
+		!dataOK || !generatedOK || !expiresOK || dataAsOf.After(generatedAt) || !generatedAt.Before(expiresAt) ||
+		!safeOrderID("paper_"+signal.SignalID) {
+		return nil, time.Time{}, time.Time{}, errors.New("paper signal is invalid")
+	}
+	return target, generatedAt, expiresAt, nil
+}
+
+func paperOrderIntent(accountRef string, signal PaperSignal, quantity, limitPrice string) OrderIntent {
+	return OrderIntent{
+		ClientOrderID: "paper_" + signal.SignalID, Provider: "kiwoom", Mode: "paper", AccountRef: accountRef,
+		Symbol: signal.Symbol, Exchange: "KRX", Side: "BUY", OrderType: "LIMIT", Quantity: quantity,
+		LimitPrice: limitPrice, Currency: "KRW", StrategyResultSHA256: signal.StrategyResultSHA256,
 		StrategySelectionEventID: signal.StrategySelectionEventID, SignalSchemaVersion: signal.SchemaVersion,
 		SignalID: signal.SignalID, SignalDataSHA256: signal.DataSHA256, SignalDataAsOf: signal.DataAsOf,
-		SignalGeneratedAt: signal.GeneratedAt, SignalExpiresAt: signal.ExpiresAt,
+		SignalGeneratedAt: signal.GeneratedAt, SignalExpiresAt: signal.ExpiresAt, SignalTargetQuantity: signal.TargetQuantity,
 	}
-	if signal.SchemaVersion != paperSignalSchema || !safeOrderID(signal.SignalID) || signal.Side != "BUY" ||
-		!dataOK || !generatedOK || !expiresOK || dataAsOf.After(generatedAt) || !generatedAt.Before(expiresAt) ||
-		validateOrderIntent(intent) != nil {
-		return OrderIntent{}, time.Time{}, time.Time{}, errors.New("paper signal is invalid")
+}
+
+func (s *Service) recordPaperTarget(ctx context.Context, accountRef string, signal PaperSignal, limitPrice string, target *big.Int, generatedAt, expiresAt, now time.Time) (*OrderState, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
 	}
-	return intent, generatedAt, expiresAt, nil
+	defer tx.Rollback()
+	orderID, exists, err := paperOrderBySignalFrom(ctx, tx, accountRef, signal.SignalID)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		intent, err := loadOrderIntentFrom(ctx, tx, orderID)
+		if err != nil || intent != paperOrderIntent(accountRef, signal, intent.Quantity, intent.LimitPrice) {
+			return nil, errors.New("paper signal conflicts with its recorded order")
+		}
+		return loadOrderStateFrom(ctx, tx, orderID)
+	}
+	if now.Before(generatedAt) || !now.Before(expiresAt) {
+		return nil, errors.New("paper signal is not active")
+	}
+	projected, err := paperProjectedQuantityFrom(ctx, tx, accountRef, signal.Symbol)
+	if err != nil {
+		return nil, err
+	}
+	delta := new(big.Int).Sub(target, projected)
+	if delta.Sign() <= 0 {
+		return nil, nil
+	}
+	intent := paperOrderIntent(accountRef, signal, delta.String(), limitPrice)
+	if _, _, err := validateSyntheticBuyPolicy(intent); err != nil {
+		return nil, err
+	}
+	state, err := s.recordOrderIntentTx(ctx, tx, intent)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return state, nil
 }
 
 func validatePaperObservation(observation PaperMarketObservation, signal PaperSignal, generatedAt, now time.Time) (time.Time, *big.Rat, *big.Rat, error) {
@@ -141,14 +188,67 @@ func validatePaperObservation(observation PaperMarketObservation, signal PaperSi
 	return observedAt, ask, available, nil
 }
 
-func (s *Service) paperOrderExists(ctx context.Context, intent OrderIntent) (bool, error) {
-	var orderID string
-	err := s.db.QueryRowContext(ctx, `SELECT order_id FROM order_idempotency WHERE provider=? AND mode=? AND account_ref=? AND client_order_id=?`,
-		intent.Provider, intent.Mode, intent.AccountRef, intent.ClientOrderID).Scan(&orderID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
+func paperOrderBySignalFrom(ctx context.Context, q orderQuerier, accountRef, signalID string) (string, bool, error) {
+	if !orderAlias(accountRef, "account") || !safeOrderID(signalID) {
+		return "", false, errors.New("paper execution identity is invalid")
 	}
-	return err == nil, err
+	var orderID string
+	err := q.QueryRowContext(ctx, `SELECT order_id FROM order_idempotency WHERE provider=? AND mode=? AND account_ref=? AND client_order_id=?`,
+		"kiwoom", "paper", accountRef, "paper_"+signalID).Scan(&orderID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	return orderID, err == nil, err
+}
+
+func paperProjectedQuantityFrom(ctx context.Context, q orderQuerier, accountRef, symbol string) (*big.Int, error) {
+	rows, err := q.QueryContext(ctx, `SELECT order_id FROM order_idempotency WHERE mode='paper' AND account_ref=? ORDER BY rowid`, accountRef)
+	if err != nil {
+		return nil, err
+	}
+	var orderIDs []string
+	for rows.Next() {
+		var orderID string
+		if err := rows.Scan(&orderID); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		orderIDs = append(orderIDs, orderID)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	projected := new(big.Int)
+	for _, orderID := range orderIDs {
+		intent, err := loadOrderIntentFrom(ctx, q, orderID)
+		if err != nil {
+			return nil, err
+		}
+		if intent.Symbol != symbol {
+			continue
+		}
+		if intent.Side != "BUY" {
+			return nil, errors.New("paper projected position contains a non-BUY order")
+		}
+		state, err := loadOrderStateFrom(ctx, q, orderID)
+		if err != nil {
+			return nil, err
+		}
+		quantity := state.FilledQuantity
+		if state.Status == "RECORDED" || state.Status == "READY" || reservationIsActive(state) {
+			quantity = state.Quantity
+		}
+		value, ok := new(big.Int).SetString(quantity, 10)
+		if !ok {
+			return nil, errors.New("paper projected quantity is invalid")
+		}
+		projected.Add(projected, value)
+	}
+	return projected, nil
 }
 
 func paperProviderAlias(kind string, parts ...string) string {

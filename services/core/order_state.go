@@ -40,6 +40,7 @@ type OrderIntent struct {
 	SignalDataAsOf           string `json:"signal_data_as_of,omitempty"`
 	SignalGeneratedAt        string `json:"signal_generated_at,omitempty"`
 	SignalExpiresAt          string `json:"signal_expires_at,omitempty"`
+	SignalTargetQuantity     string `json:"signal_target_quantity,omitempty"`
 }
 
 type OrderEvent struct {
@@ -205,6 +206,22 @@ func proveOrderRecovery(ctx context.Context, q orderQuerier) (orderRecoveryProof
 }
 
 func (s *Service) recordOrderIntent(ctx context.Context, intent OrderIntent) (*OrderState, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	state, err := s.recordOrderIntentTx(ctx, tx, intent)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return state, nil
+}
+
+func (s *Service) recordOrderIntentTx(ctx context.Context, tx *sql.Tx, intent OrderIntent) (*OrderState, error) {
 	if err := validateOrderIntent(intent); err != nil {
 		return nil, err
 	}
@@ -212,11 +229,6 @@ func (s *Service) recordOrderIntent(ctx context.Context, intent OrderIntent) (*O
 	if err != nil {
 		return nil, err
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
 
 	var priorSHA, priorOrderID string
 	err = tx.QueryRowContext(ctx, `SELECT request_sha256, order_id FROM order_idempotency WHERE provider=? AND mode=? AND account_ref=? AND client_order_id=?`,
@@ -229,6 +241,9 @@ func (s *Service) recordOrderIntent(ctx context.Context, intent OrderIntent) (*O
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
+	}
+	if intent.Mode == "paper" && intent.SignalSchemaVersion != paperSignalSchema {
+		return nil, errors.New("new paper orders require the target-based signal schema")
 	}
 	if err := validateStrategyOrderSelection(ctx, tx, intent); err != nil {
 		return nil, err
@@ -247,9 +262,6 @@ func (s *Service) recordOrderIntent(ctx context.Context, intent OrderIntent) (*O
 	state := newOrderState(orderID, intent)
 	state, err = applyOrderEvent(state, event)
 	if err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return state, nil
@@ -544,7 +556,7 @@ func validateOrderIntent(intent OrderIntent) error {
 		return errors.New("strategy order selection binding is invalid")
 	}
 	signalBound := intent.SignalSchemaVersion != "" || intent.SignalID != "" || intent.SignalDataSHA256 != "" ||
-		intent.SignalDataAsOf != "" || intent.SignalGeneratedAt != "" || intent.SignalExpiresAt != ""
+		intent.SignalDataAsOf != "" || intent.SignalGeneratedAt != "" || intent.SignalExpiresAt != "" || intent.SignalTargetQuantity != ""
 	if intent.Mode == "paper" && (!strategyBound || !signalBound) {
 		return errors.New("paper order requires strategy and signal bindings")
 	}
@@ -552,7 +564,14 @@ func validateOrderIntent(intent OrderIntent) error {
 		dataAsOf, dataOK := canonicalUTCTime(intent.SignalDataAsOf)
 		generatedAt, generatedOK := canonicalUTCTime(intent.SignalGeneratedAt)
 		expiresAt, expiresOK := canonicalUTCTime(intent.SignalExpiresAt)
-		if !strategyBound || intent.SignalSchemaVersion != paperSignalSchema || !safeOrderID(intent.SignalID) ||
+		legacySignal := intent.SignalSchemaVersion == legacyPaperSignalSchema && intent.SignalTargetQuantity == ""
+		targetSignal := intent.SignalSchemaVersion == paperSignalSchema && validOrderInteger(intent.SignalTargetQuantity)
+		if targetSignal {
+			target, _ := parseDecimal(intent.SignalTargetQuantity)
+			quantity, _ := parseDecimal(intent.Quantity)
+			targetSignal = target.Cmp(quantity) >= 0
+		}
+		if !strategyBound || (!legacySignal && !targetSignal) || !safeOrderID(intent.SignalID) ||
 			!strategySHA256Pattern.MatchString(intent.SignalDataSHA256) || !dataOK || !generatedOK || !expiresOK ||
 			dataAsOf.After(generatedAt) || !generatedAt.Before(expiresAt) {
 			return errors.New("strategy signal binding is invalid")

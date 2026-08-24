@@ -29,7 +29,7 @@
 - **Research evidence**: Python이 만든 immutable `strategy-improvement-result.v1`. 재현 가능한 평가 산출물이지 실행 권한이 아니다.
 - **Selected paper candidate**: Go registry replay가 가리키는 최신 `paper_candidate`; paper에서 실행 중인 champion이나 주문 승인과 동일하지 않다.
 - **Strategy order binding**: 전략이 만든 주문 intent에 선택 result SHA와 exact selection event ID를 함께 보존하는 G3.5 fencing 계약. 신규 intent 기록과 durable dispatch 시점 모두 현재 registry replay와 일치해야 한다.
-- **Paper signal**: 선택된 전략 result·exact selection event, 입력 data hash, 생성·만료 시각과 주문 tuple을 묶은 versioned 내부 명령. 성과 evidence나 broker 주문 권한이 아니다.
+- **Paper signal**: 선택된 전략 result·exact selection event, 입력 data hash, 생성·만료 시각, 종목과 목표 수량을 묶은 `paper-signal.v2` 내부 명령. 계좌·방향·주문 수량·가격이나 broker 주문 권한을 갖지 않는다.
 - **Paper execution adapter**: 실제 broker 호출 없이 한 시점의 local fixture ask와 가용 수량을 공통 주문 상태 머신의 결정적 ACK·부분/완전 체결 event로 바꾸는 G3.6 adapter.
 - **`no_promotion` / `no_strategy`**: 전자는 한 실험의 gate 실패 결과, 후자는 현재 선택이 없다는 registry sentinel이다.
 - **Live-disabled**: 어떤 UI 설정이나 프로세스 시작만으로도 실주문이 나갈 수 없는 기본 실행 상태.
@@ -40,6 +40,7 @@
 - 모바일·웹·Python 연구 프로세스는 broker credential과 주문 제출 권한을 갖지 않는다.
 - strategy registry는 evidence와 선택 이력만 소유한다. 선택 상태만으로 paper/live runner 또는 주문 dispatch를 허용하지 않으며, 전략 주문은 exact current selection에 묶인 경우에만 기록·durable dispatch할 수 있다.
 - 새 paper 주문은 현재 selection, 유효한 signal, K2C lease/fencing과 risk reservation을 모두 요구한다. 이미 durable dispatch된 paper 주문은 selection rollback이나 signal 만료 뒤에도 같은 관찰의 idempotent replay와 잔여 체결 복구를 계속한다.
+- Go는 같은 paper 계좌·종목의 체결 수량과 미완결 BUY 전체 수량을 목표에서 원자적으로 차감해 양수 delta만 `OrderIntent`로 만든다. 동시·반복 신호는 같은 목표를 중복 주문하지 않으며 `paper-signal.v1`은 복구만 허용한다.
 - paper mode는 Kiwoom mock/production transport에 진입하지 않는다. G3.6의 local fixture 체결은 수수료·세금·slippage·quote stream·실제 성능 또는 live parity를 증명하지 않는다.
 - 주문 timeout은 실패가 아니라 결과 미확정 상태다. 같은 식별자로 조회·reconcile하기 전 재주문하지 않는다.
 - offline 상태에서 주문을 큐에 넣지 않는다.

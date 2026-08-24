@@ -173,14 +173,14 @@ rm -f "$candidate_file"
 
 ### Credential-free paper execution foundation
 
-G3.6은 선택된 전략과 입력 data hash·생성/만료 시각을 `paper-signal.v1`에 고정하고, 기존 K2C risk와 공통 주문 상태 머신을 거쳐 local fixture ask를 부분/완전 체결로 재생합니다. 같은 관찰은 idempotent하며, backup/restore 뒤에도 상태가 보존됩니다. paper 주문은 Kiwoom transport로 전송되지 않습니다.
+G3.6은 선택된 전략과 입력 data hash·생성/만료 시각·종목·목표 수량을 `paper-signal.v2`에 고정합니다. 전략은 계좌·방향·주문 수량·가격을 정하지 않습니다. Go가 같은 paper 계좌·종목의 체결과 미완결 BUY를 목표에서 원자적으로 차감해 양수 delta만 K2C와 공통 주문 상태 머신으로 보내고, local fixture ask를 부분/완전 체결로 재생합니다. 동시·반복 목표는 중복 주문하지 않고 backup/restore 뒤에도 상태가 보존되며, paper 주문은 Kiwoom transport로 전송되지 않습니다.
 
 ```sh
 cd services/core
 go test -run '^TestG3PaperRunner' -count=1 ./...
 ```
 
-이 기반은 내부 함수와 fixture 검증까지만 제공합니다. 자동 scheduler, quote stream, 수수료·세금·slippage, 포트폴리오 자금 배분, paper 성능·저하 감지, public API/UI와 shadow/live 승격은 아직 없습니다.
+이 기반은 내부 함수와 fixture 검증까지만 제공합니다. 목표 감소 SELL/down-rebalance, 자동 scheduler, quote stream, 수수료·세금·slippage, 외부 보유·현금과 다중 전략 자금 배분, paper 성능·저하 감지, public API/UI와 shadow/live 승격은 아직 없습니다.
 
 ## 주요 명령
 

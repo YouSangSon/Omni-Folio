@@ -972,10 +972,10 @@ G3.5 closes the stale-strategy handoff gap before adding a paper runner. An opti
 
 G3.6 adds the smallest paper execution adapter that can reuse the selected-strategy, K2C risk and append-only order contracts without introducing credentials, a scheduler, a second state machine or a public surface.
 
-- `paper-signal.v1` binds one order tuple to the exact selected result/event, input data hash and canonical generation/expiry window. New stale, expired or rolled-back signals create no order.
+- `paper-signal.v2` binds symbol and target quantity to the exact selected result/event, input data hash and canonical generation/expiry window; it does not carry account, side, order quantity or price. Go atomically subtracts filled quantity and the full quantity of outstanding BUY orders, then creates only a positive delta intent. Legacy v1 remains recovery-only.
 - K2C remains the only dispatch authority. A local fixture ask with finite displayed quantity produces deterministic ACK and partial/full fill events in the existing order log; exact observation replay is idempotent.
 - Once durable dispatch exists, later selection rollback or signal expiry does not prevent reconciliation of remaining fills. A separate mode guard rejects paper orders before Kiwoom mock transport.
 - Migration v7 widens only the order mode constraint from `synthetic` to `synthetic|paper`, preserves prior rows and insert-only triggers, and runs a foreign-key check. Backup format stays v5 because its structure is unchanged; its required runtime schema advances to v7.
 - Focused G3.6 tests, full Go tests, root checks, smoke, race and vulnerability checks are the delivery evidence.
 
-Still open: scheduled signals and quote stream, portfolio construction/netting, fees/tax/slippage/latency, automatic paper performance/degradation evidence, shadow promotion, broker-write fencing, credentialed broker observation and every live-money path.
+Still open: scheduled signals and quote stream, external holding/cash integration, multi-strategy capital allocation, fees/tax/slippage/latency, automatic paper performance/degradation evidence, shadow promotion, broker-write fencing, credentialed broker observation and every live-money path.

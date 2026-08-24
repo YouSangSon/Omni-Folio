@@ -31,7 +31,7 @@
 - [x] deterministic strategy candidate search와 walk-forward challenger evidence
 - [x] Go/SQLite append-only research evidence·paper-candidate selection registry, stale 선택 차단, 직전 선택/`no_strategy` 수동 rollback, schema v7/backup v5 복구 증명
 - [x] G3.5 strategy-bound order authority: 선택 result SHA와 exact selection event를 intent에 보존하고 신규 record와 durable dispatch에서 현재 registry 상태를 fail-closed 재검증
-- [x] G3.6 credential-free paper execution foundation: versioned signal을 선택 전략에 고정하고 K2C risk·공통 주문 상태 머신·결정적 부분/완전 체결·재실행·schema v7/backup v5 복구를 검증하며 Kiwoom transport 진입을 차단
+- [x] G3.6 credential-free paper execution foundation: `paper-signal.v2` 목표 수량을 체결+미완결 BUY에 원자 netting해 Go가 delta OrderIntent를 만들고 K2C risk·공통 주문 상태 머신·결정적 부분/완전 체결·동시 재실행·schema v7/backup v5 복구를 검증하며 Kiwoom transport 진입을 차단
 - [ ] 실제 paper 성능 evidence와 저하 감지에 따른 자동 중지·rollback
 - [ ] strategy/risk/paper runner와 자동 paper/shadow promotion evidence
 

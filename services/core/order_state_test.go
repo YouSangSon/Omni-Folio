@@ -44,6 +44,15 @@ func TestK2AIntentValidationAndClientOrderIdempotency(t *testing.T) {
 	if state, err := svc.recordOrderIntent(ctx, sell); err != nil || state.Status != "RECORDED" {
 		t.Fatalf("valid exact-decimal sell intent was rejected: state=%+v err=%v", state, err)
 	}
+	legacyPaper := k2aIntent("legacy-paper-signal")
+	legacyPaper.Mode = "paper"
+	legacyPaper.StrategyResultSHA256, legacyPaper.StrategySelectionEventID = strings.Repeat("a", 64), "legacy-selection"
+	legacyPaper.SignalSchemaVersion, legacyPaper.SignalID = legacyPaperSignalSchema, "legacy-signal"
+	legacyPaper.SignalDataSHA256 = strings.Repeat("b", 64)
+	legacyPaper.SignalDataAsOf, legacyPaper.SignalGeneratedAt, legacyPaper.SignalExpiresAt = "2026-01-10T14:59:00Z", "2026-01-10T14:59:01Z", "2026-01-10T15:01:00Z"
+	if err := validateOrderIntent(legacyPaper); err != nil {
+		t.Fatalf("legacy paper-signal.v1 recovery contract broke: %v", err)
+	}
 
 	tests := []struct {
 		name   string
