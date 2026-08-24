@@ -12,3 +12,4 @@
 ## Evidence
 
 - Not active. No Kubernetes manifests before this gate entry criteria are met.
+- Entry 후 첫 로컬 클러스터 검증은 Kind v0.32+의 Podman provider(`KIND_EXPERIMENTAL_PROVIDER=podman`)를 기준으로 한다. 현재 provision된 Kind cluster는 없다.

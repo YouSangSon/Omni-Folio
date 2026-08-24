@@ -1,6 +1,6 @@
 # Omni Folio 구현 계획
 
-상태: G0·G1·G3 로컬 통과, G2 build/widget/browser 증거 확보 및 profile/screen-reader 증거 보강 중
+상태: G0·G1·G3 로컬 통과(G3.6 credential-free paper execution foundation 포함), G2 build/widget/browser·자동 accessibility/reduced-motion 증거 확보 및 physical profile/screen-reader 증거 보강 중
 기준일: 2026-08-24
 
 ## 목표
@@ -79,6 +79,8 @@ Phase A 코어가 green이 된 뒤 같은 단계의 후속 slice에서 수동 �
 
 - 키움 REST API 국내주식 read-only adapter
 - `ka00001`, `kt00018`, `ka10075`, 일·분봉과 실시간 체결·호가의 canonical mapping
+- K1 synthetic candle boundary: `POST /api/dostk/chart`의 `ka10080`/`ka10081`, KRX 6자리 symbol, `1d`와 `1/3/5/10/15/30/45/60m`; 가격 부호는 magnitude로 정규화하고 decimal OHLCV와 nonnegative volume을 보존한다. page는 UTC ascending으로 정렬하고 동일 overlap은 dedupe, 값 충돌은 거절하며 newest 500개로 제한한다. `upd_stkpc_tp=1`은 내부 `provider_adjusted` provenance로만 노출한다.
+- official candle timestamp timezone은 명시되지 않아 Asia/Seoul을 운영 가정으로 사용한다. 이 합성 계약은 credential, broker request, current/fresh data, public route, persistence, adjustment-event correctness, realtime 또는 주문 capability를 증명하지 않는다.
 - 계좌, 거래, 잔고 동기화와 pagination/cursor
 - 단일 시장 데이터 provider의 EOD 가격, FX, 배당, 분할
 - provider rate limiter, retry/backoff, freshness state
@@ -99,6 +101,7 @@ Phase A 코어가 green이 된 뒤 같은 단계의 후속 slice에서 수동 �
 
 ### Phase D: 모의주문
 
+- 현재 K2A 통과 범위는 Go 내부 합성 `LIMIT`/`KRW`/`KRX` intent/event log와 unknown-submit replay다. 현재 backup v5는 이 order-state proof와 K2C authority/reservation proof를 함께 검증한다. 아래 제품·broker 항목은 K2B 이후 범위다.
 - 종목 상세의 매수/매도 티켓
 - 시장가·지정가, 수량·예상 금액·수수료 확인
 - 주문 접수·부분체결·체결·취소·거절 상태
@@ -166,7 +169,7 @@ Later roles from the same Go codebase
 
 - local과 cloud는 같은 저장소와 pinned non-root Go OCI image를 사용한다. Flutter native/web은 별도 서명·배포 산출물이다. 첫 lake는 `api`와 `migrate`만 사용하고, 해당 단계가 시작될 때 `worker`, `runner`, `execution-gateway` command를 같은 Go image에 추가한다.
 - local 프로필은 loopback + SQLite + OS keychain이다. 첫 cloud 프로필은 TLS + owner 인증 + secret manager + 단일 API replica + single-writer provider-managed block volume(RWO)의 SQLite다. 이는 stateful single-node 프로필이며 무중단 교체·scale-out·자동 failover를 보장하지 않는다.
-- container filesystem은 임시 파일만 허용한다. SQLite를 ephemeral disk, NFS형 공유 volume, 다중 writer에 두지 않는다. backup은 SQLite online backup API 또는 동등한 일관된 snapshot으로 off-volume에 암호화 저장하고 restore 후 `integrity_check`와 ledger golden test를 통과한다.
+- container filesystem은 임시 파일만 허용한다. SQLite를 ephemeral disk, NFS형 공유 volume, 다중 writer에 두지 않는다. backup은 SQLite online backup API 또는 동등한 일관된 snapshot으로 off-volume에 암호화 저장하고 restore 후 `integrity_check`, ledger golden test와 schema/order-log hash·replay 증명을 통과한다.
 - 두 번째 API replica, API/worker 독립 확장, 무중단 교체, 다중 노드 failover, 높은 동시 쓰기, managed point-in-time recovery가 필요해지면 PostgreSQL로 먼저 승격한다. SQLite export → PostgreSQL import 후 row count, checksum, ledger invariant를 검증하고 SQLite 상태에서는 scale-out을 지원한다고 주장하지 않는다.
 - migration은 `migrate` one-shot 단계로 실행하고 readiness는 DB 연결과 schema version 불일치를 fail-closed한다. liveness는 외부 broker 장애와 분리한다.
 - HTTP 요청보다 오래 살거나 재시작 복구가 필요한 scheduled sync는 Phase B부터 `worker` 역할로 분리한다. Phase E부터 automation runner는 DB lease/fencing으로 계좌·전략별 단일 active owner만 허용한다. lease를 잃은 runner는 신규 주문을 만들지 못한다.
@@ -196,7 +199,7 @@ Flutter Material primitive와 semantic design token을 사용한다. 토스증�
 - 자동 후보 순위의 결정성, holdout 격리, 최소 데이터·거래 수, 과적합/성능 저하 시 승격 거절과 champion 롤백
 - 자동매매 위험 한도, stale data 차단, reconciliation mismatch 차단, kill switch
 - 두 runner 동시 기동, lease 상실, submit timeout, ack 전후 crash에서 중복 주문 방지와 fail-closed 복구
-- SQLite online backup의 off-volume restore, `integrity_check`, 이전 schema ledger golden test
+- SQLite online backup의 off-volume restore, `integrity_check`, 이전 schema ledger golden test와 order-log hash·replay
 - PostgreSQL 승격 시 SQLite export/import row count·checksum·ledger invariant 일치
 - paper/shadow/live 공통 전략 코어와 신호 충돌·자금 배분 검증
 - 주문/ack/fill/cancel/reject 이벤트의 과부하·재시작 무손실 검증
@@ -242,7 +245,7 @@ CSV import -> 중복 검토 -> 거래 원장 -> 보유/현금/손익 -> JSON bac
 ### 시스템 감사
 
 - 이 CEO 검토 당시 작업공간은 `main` 브랜치의 Git 저장소이고 제품 코드는 없었다. 현재는 첫 수직 슬라이스가 구현되어 이 상태 기록을 supersede한다.
-- 이 CEO 검토 시점의 제품 자산은 `docs/goal-prompt.md`, 이 계획, 조사 보고서뿐이었다.
+- 이 CEO 검토 시점의 제품 자산은 현재 [`../goal.md`](../goal.md)의 초기 goal prompt, 이 계획, 조사 보고서뿐이었다.
 - 검토 시점에는 코드, 마이그레이션, 테스트, `TODOS.md`, 디자인 시스템이 없어 재사용 가능한 내부 구현도 없었다. 현재 첫 수직 슬라이스 상태는 문서 상단과 Phase 3 evidence가 우선한다.
 - 따라서 지금 가장 값싼 수정은 잘못된 런타임 전제를 코드로 굳히지 않는 것이다.
 
@@ -602,7 +605,7 @@ Research / Orders / Automation = 해당 capability가 시작될 때만 추가
 | exact tokens/components | semantic theme와 최소 Flutter components로 구현 |
 | visual evidence | 390×844 mobile 및 desktop browser screenshot 생성 |
 
-미해결 디자인 결정은 없다. profile p95와 수동 assistive-technology 검증은 G2 release evidence로 남아 있다.
+미해결 디자인 결정은 없다. semantics·touch target·light/dark contrast·reduced motion은 자동 검증되며, strict physical-device profile p95와 수동 assistive-technology 검증은 G2 release evidence로 남아 있다.
 
 ### Design NOT in scope
 
@@ -617,7 +620,7 @@ Research / Orders / Automation = 해당 capability가 시작될 때만 추가
 - **P1 Import contract:** preview token, row classification, before/after, apply receipt를 domain output으로 제공
 - **P1 Recovery contract:** 검증 단계와 backup/restore receipt를 구조화
 - **P1 Explainability:** snapshot 각 값의 structured provenance를 보존
-- **P2 Phase C entry gate:** IA, viewport, keyboard, screen-reader acceptance를 적용; profile/screen-reader 수동 증거는 G2 잔여 항목
+- **P2 Phase C entry gate:** IA, viewport, keyboard, screen-reader acceptance를 적용; physical profile과 수동 screen-reader 증거는 G2 잔여 항목
 - **P3 Visual system:** `DESIGN.md`, semantic tokens와 실제 fixture 기반 Flutter variant 생성 완료
 
 ### Design 완료 요약
@@ -736,6 +739,7 @@ critical silent gap은 contract 보강 뒤 0개다.
 - import 기준: 1 MiB/10,000 rows hard cap 안에서 preview/apply p50/p95, peak RSS, DB growth를 기록한다.
 - read 기준: 100/1,000/10,000 ledger events에서 snapshot p50/p95를 측정한다.
 - Flutter 기준: representative import/list fixture의 60 Hz p95 frame budget을 profile mode에서 기록한다. chart는 아직 측정하지 않는다.
+- 2026-08-24 첫 로컬 Android emulator profile은 614 frames에서 build/raster/total-span p95 1.026/16.674/22.222 ms를 기록했지만 환경 메타데이터가 부족했다. Flutter 3.47.1, `Medium_Phone_API_36.1_emulator`, Android 16/API 36, 411.43×914.29 logical viewport@2.625×를 함께 기록한 두 번째 595-frame run은 2.745/31.851/54.008 ms였다. strict 16.67 ms raster budget을 실패했고 emulator 간 변동도 크므로, physical Android/iOS에서 다시 측정한다.
 - Python 기준: 같은 bars/request에서 deterministic output을 우선하고 벡터화 dependency는 stdlib가 측정상 한계일 때만 추가한다.
 - 고정 latency SLA나 cache/Redis를 먼저 약속하지 않는다. broker/order hot path가 생긴 뒤 구간별 p50/p95/p99 예산을 둔다.
 
@@ -797,7 +801,7 @@ A를 먼저 고정한 뒤 B/C/D를 병렬로 실행하고 E가 실제 명령을 
 - Parallelization: 5 lanes, B/C/D parallel after A, E sequential
 - Unresolved decisions: 0
 
-> **Phase 3 plan and first-slice implementation complete.** `make check`, `make smoke`, Go race/build, Flutter web/iOS/Android release builds, deterministic improvement run, Playwright API/UI flow, and isolated non-root/read-only Compose readiness all passed on 2026-08-24. G2 remains open only for profile p95 and manual assistive-technology/reduced-motion evidence.
+> **Phase 3 plan and first-slice implementation complete.** `make check`, `make smoke`, Go race/build, Flutter web/iOS/Android release builds, deterministic improvement run, Playwright API/UI flow, and isolated non-root/read-only Compose readiness all passed on 2026-08-24. G2 automated semantics/touch/contrast/reduced-motion checks pass; strict physical profile p95 and manual assistive-technology evidence remain open.
 
 ## `/autoplan` Phase 4: Developer Experience 검토
 
@@ -816,11 +820,162 @@ A를 먼저 고정한 뒤 B/C/D를 병렬로 실행하고 E가 실제 명령을 
 | Phase | Result | Durable decision or evidence |
 |---|---|---|
 | CEO | PASS | 개인용 local-first 원장 앱에서 시작해 paper/shadow를 자동화 상한으로 두고 live는 owner 승인으로 제한 |
-| Design | PASS WITH RELEASE EVIDENCE OPEN | Flutter 단일 client, Toss-inspired plain-language UX, 실제 mobile/desktop 화면과 200% text test; profile/screen-reader/reduced-motion 증거는 G2에 남김 |
+| Design | PASS WITH RELEASE EVIDENCE OPEN | Flutter 단일 client, Toss-inspired plain-language UX, 실제 mobile/desktop 화면과 200% text·semantics·contrast·reduced-motion test; physical profile/screen-reader 증거는 G2에 남김 |
 | Engineering | PASS | Go exact ledger/import/restore, Flutter trust/import, Python deterministic backtest와 expanding walk-forward, versioned contracts가 root check/smoke 통과 |
 | DX | PASS | pinned asdf, five-minute README, isolated hardened Compose readiness, custom-port 명령 일치 |
 | Broker decision | PASS | 키움 read-only·차트·실시간·모의주문을 첫 gate로, 토스증권 Open API를 두 번째 adapter이자 UX reference로 고정 |
 
-미해결 제품·아키텍처·구현 결정은 없다. 다음 작업은 결정이 아니라 [`gates/g4-broker.md`](../gates/g4-broker.md)의 키움 read-only 실행과 G2의 남은 수동 release evidence다. 실전 주문, credential 등록, 외부 배포와 push는 이 보고서로 승인되지 않는다.
+이 초기 GSTACK review 시점의 미해결 제품·아키텍처·구현 결정은 없었다. 이후 G4B~G4E continuation이 당시 next-work 문장을 대체했다. 현재 next work는 [`PLAN.md`](../PLAN.md)의 credentialed Kiwoom read/market evidence, K2B mock submit/query·lookup recovery와 G2의 남은 수동 release evidence다. 실전 주문, credential 등록, 외부 배포와 push는 이 보고서로 승인되지 않는다.
 
 NO UNRESOLVED DECISIONS
+
+## 2026-08-24 G4B continuation: local sample OHLCV contract and chart
+
+The next product leaf was chosen as a credential-free provider-neutral OHLCV vertical slice before real Kiwoom candle transport. This fixes the consumer contract without guessing provider pagination, timezone, adjustment, minute-unit, or realtime semantics. The earlier Phase A statements that charts and broker work were out of scope remain historical scope records; this continuation supersedes them for G4B only.
+
+- Go exposes `GET /v1/market-data/candles?symbol=AAPL&interval=1d` only when an explicit local fixture path is configured. Absent data fails with `503`; unknown series with `404`; malformed, oversized, unordered, inconsistent, or non-canonical data fails at startup.
+- OpenAPI separates a provider-neutral `MarketDataCandles` state contract from the local-fixture response subtype. The local endpoint always reports `source=local_fixture`, `sample=true`, `state=stale` and a non-live issue.
+- Flutter opens asset detail from holdings and renders a horizontally scrollable static price/volume candle surface using native `CustomPainter`. Exact values stay strings; doubles are limited to finite paint geometry. The text alternative is a horizontally scrollable, vertically lazy 500-row surface with header and cell semantics.
+- Sample provenance is visible and machine-readable. Fixture values cannot count as current prices, broker evidence, reconciliation, strategy promotion data, or live readiness.
+- `make check`, `make smoke`, Go race, Flutter web/Android/iOS release builds, and 17 Flutter tests pass locally. No runtime dependency was added.
+
+The first 500-row table implementation failed the emulator raster budget at `22.446 ms` p95. After lazy-row optimization and a harness assertion that proves bidirectional table scrolling, two metadata-complete Flutter 3.47.1 Android 16/API 36 emulator runs recorded 727 frames at build/raster/total-span `0.928/5.749/10.698 ms` and 728 frames at `1.158/16.623/20.632 ms`. The build and raster phases pass the 16.67 ms budget in both runs. Physical Android/iOS profile and manual VoiceOver/TalkBack remain open; emulator variance is not release proof.
+
+Deliberately deferred: real Kiwoom OHLCV/realtime, period switching, portfolio performance, average-cost and fill markers, cache/persistence, chart package, and broker-specific UI branches. Add them only after official/mock response observations preserve this canonical contract.
+
+## 2026-08-24 G4C continuation: synthetic Kiwoom daily/minute candle contract
+
+K1 moved one step past local fixtures without using credentials: Kiwoom daily `ka10081` and minute `ka10080` now share the existing OAuth/read transport and are bound to `POST /api/dostk/chart`. The public `/v1/market-data/candles` route remains local-fixture only, so no response is presented as live Kiwoom data.
+
+- The adapter requests adjusted prices with `upd_stkpc_tp=1`, accepts official minute intervals `1,3,5,10,15,30,45,60`, and keeps submit API IDs outside the read allowlist.
+- Provider dates/times are parsed as Korean market local time by operational assumption, then emitted as UTC RFC3339 bars with `Timezone=Asia/Seoul`, `Venue=XKRX`, and `PriceAdjustment=provider_adjusted`.
+- OHLC prices are exact positive canonical decimals after Kiwoom sign/magnitude normalization; volume is exact non-negative canonical decimal.
+- Pagination is bounded by the existing 32-page cap and the consumer-facing series is capped at the newest 500 bars. One bounded look-ahead page validates the cap boundary; exact duplicate timestamps collapse and conflicting duplicates fail closed.
+- `go test -count=1 ./...`, `go test -race -count=1 ./...`, `make check`, and `make smoke` pass locally on 2026-08-24 KST.
+
+Still open: credentialed Kiwoom mock/production candles, official timezone/freshness confirmation, realtime WebSocket, cache/persistence, reconciliation, Flutter wiring from Kiwoom data, mock orders, and live-order gates.
+
+## 2026-08-24 G4D continuation: price-adjustment consumer contract
+
+K1 already preserved `provider_adjusted` internally, but the public candle response and Flutter model dropped the price basis. G4D closes only that consumer-contract gap without generalizing source/freshness or wiring Kiwoom credentials.
+
+- OpenAPI and HTTP require `price_adjustment` with only `unspecified` and `provider_adjusted` in the provider-neutral base contract.
+- The current public route remains local-fixture-only and pins `price_adjustment=unspecified`; empty, provider-adjusted, or unknown values from that port fail closed.
+- Flutter rejects missing/unknown values and requires the OpenAPI local-fixture subtype exactly: sample, unspecified adjustment, stale state, non-null source timestamp, and at least one provenance issue. It displays “조정 여부 확인 안 됨” or “공급자 조정 가격 · 조정 정확성 미검증” in asset metadata.
+- TDD checkpoints are `4e81f2b`/`0519d20` for the consumer field and `bebbfaa`/`41093c0` for strict local provenance. `make check`, `make smoke`, Go race, and the existing Kiwoom candle suite pass locally on 2026-08-24 KST.
+
+Still open: runtime Kiwoom market-data selection, credentialed mock/production observation, authoritative timezone/freshness, persistence/known-good retention, realtime, reconciliation, and corporate-action adjustment verification.
+
+## 2026-08-24 G4E/K2A continuation: internal synthetic order-state log
+
+K2A fixes the durable order/recovery contract before any Kiwoom order credential or network transport exists. The boundary is intentionally internal-only: synthetic Kiwoom `LIMIT` BUY/SELL for KRX/KRW, with no public API or Flutter order surface.
+
+- `client_order_id`, event ID and provider execution aliases are durable and payload-bound. Conflicting reuse fails without mutating state.
+- At the K2A checkpoint, risk verdict ordering was enforced before dispatch without a risk policy. K2C now supersedes direct approval with a reservation-bound credential-free BUY policy; durable `SUBMIT_DISPATCHED` still becomes `SUBMIT_UNKNOWN`, and account-wide new submit stays blocked until explicit reconciliation resolves it. Cancel of an independently known open order remains available as a risk-reducing command.
+- Append-only replay covers submit ack/reject, partial/full/late fill, cancel dispatch/ack/reject, restart and overfill rejection. A provider “not found” observation alone cannot resolve unknown state.
+- SQLite migration v2 added strict insert-only intent/event tables. Current backup v5 retains their canonical row hash/metadata and full replay, adds K2C authority/reservation digests and counts, and verifies exact migration history, STRICT/PK/UNIQUE/FK/rowid/trigger checks while also proving G4H broker snapshot state. Earlier backup formats are not automatically eligible for v5 activation.
+- TDD checkpoints are `35ae80e`, `69f6f86`, `37bbff4` and GREEN `132de8e`. `make check`, `make smoke`, Go race/vet, 17 Flutter tests, 13 Python tests, 15 JSON contracts and an independent no-P0/P1 review pass locally on 2026-08-24 KST.
+
+Still open for K2B: credentialed Kiwoom mock submit/query, broker lookup and reconciliation, production cash/position/fee/loss/time/freshness risk, broker-coupled runner fencing, public OpenAPI/Flutter order flow, market/amend orders, ledger mutation from fills and every live-money path.
+
+## 2026-08-24 G4F/K2B0 continuation: known-order execution reconciliation
+
+K2B0 adds only the smallest safe lookup bridge that existing K2A storage can support without credentials, network transport, a schema migration or a public order surface.
+
+- A complete synthetic lookup may append executions only after an explicit ACK has already bound one opaque provider order ref to the local order. Account, order ref, canonical order tuple and UTC dispatch/observation window must agree.
+- Complete execution observations are sorted by actual RFC3339Nano time and provider execution ref, then appended through the existing event hash/provider-execution idempotency path in one SQLite transaction. Any later conflict rolls the entire lookup back.
+- Incomplete or missing lookup facts preserve the prior state. A complete lookup-only tuple match cannot bind `SUBMIT_UNKNOWN`; it returns `UNCORRELATED` and keeps the account-wide new-submit block.
+- TDD started with the missing reconciliation API and added regressions for fractional timestamp order, incomplete evidence, changed executions, cross-order execution conflicts, mid-transaction rollback, tuple/time conflicts and raw identifier redaction. GREEN checkpoint is `4a2a6e4`; `make check`, Go race and independent safety review pass locally on 2026-08-24 KST.
+
+Still open for K2B: official `kt10000`/`kt10001` submit and `ka10075`/`ka10076`/`kt00007`/`kt00009` credentialed mock observations, documented-or-observed correlation strong enough to handle a lost submit response, production risk/broker-coupled fencing, public OpenAPI/Flutter order flow, market/amend, ledger mutation and every live-money path.
+
+## 2026-08-24 G4G/K2B1 continuation: dated execution scan
+
+K2B1 adds the smallest provider-private observation boundary that can be justified from the current official `kt00009` account specification. It does not connect that observation to K2B0, storage, `SUBMIT_UNKNOWN`, HTTP or Flutter.
+
+- The caller supplies an exact `YYYY-MM-DD`; the adapter sends one fixed stock/KRX/fills-only request and follows the existing bounded continuation transport to its terminal cursor.
+- Every page requires an explicit zero `return_code` and execution array. Only `A`-prefixed KRX stocks, cash buy/sell, a non-empty provider order type, exact quantities/prices, valid provider-local `HH:mm:ss` and non-zero seven-digit order/execution IDs survive normalization.
+- Opaque aliases include environment, account and requested date and use `dated_order`/`dated_execution` namespaces that the durable order-event validator rejects. Duplicate executions, changed order identity/order type, cumulative overfill or a later-page error discard the whole scan.
+- `PaginationComplete` describes cursor traversal only. `ExecutionsComplete` remains false because the official contract does not establish retention, cross-page snapshot consistency, timezone, row ordering or identifier lifetime. The date and naive execution clock are deliberately not converted to UTC.
+- TDD exposed and fixed two broader trust-boundary issues: cumulative fills could exceed order quantity, and the shared Kiwoom result checker accepted a missing `return_code`. Code checkpoint `d93cdee`; `make check`, `make smoke`, full Go race and independent architecture/test re-reviews pass locally on 2026-08-24 KST.
+
+Still open for K2B: credentialed mock observations, authoritative empty/result/time/ID semantics, limiter behavior, lost-submit correlation, scheduled credentialed known-good sync, K2B0 mapping, production risk/broker-coupled fencing, public order flow, ledger mutation and every live-money path.
+
+## 2026-08-24 G4H continuation: credential-free known-good broker snapshot
+
+G4H persists only the existing all-or-nothing synthetic Kiwoom account snapshot. It creates no broker runtime, scheduler, public route, Flutter capability or order authority.
+
+- `KiwoomSnapshot` now carries explicit `complete=true`; persistence revalidates provider/environment/exchange/account identity, canonical UTC and exact decimals, unique ascending KRX positions and open orders.
+- One SQLite transaction reads the current ledger revision and KRX/KRW quantities for `account-main`, computes deterministic per-symbol `broker - ledger` quantities with exact rational arithmetic, and stores raw snapshot identity separately from the ledger-revision reconciliation record.
+- Exact replay of the same raw snapshot and ledger revision returns the same reconciliation. A later ledger revision appends a new reconciliation without duplicating or mutating the raw snapshot. A changed payload at the same fetched-at, incomplete snapshot, invalid generated ID or corrupt durable hash fails closed without replacing the latest fetched known-good record.
+- Migration v3 makes ledger events, broker snapshots and broker reconciliations insert-only. Current backup v5 preserves those proofs and adds execution-authority/risk-reservation digest/count plus strict schema/index/rowid/trigger checks and restored latest-record verification.
+- TDD tests cover idempotency, concurrent replay, conflicts, last-known-good retention, arithmetic, DB mutation attempts, runtime/recovery corruption rejection, manifest tampering and weak-trigger restore rejection.
+
+Still open: credentialed Kiwoom observation and scheduled known-good refresh, official freshness/timezone/retention, cash/valuation/open-order/full execution reconciliation, known-good API/UI, production risk, paper runner and all live-money paths.
+
+## 2026-08-24 G4I/K2C continuation: credential-free execution authority
+
+K2C adds the smallest internal authority that can prevent accidental synthetic dispatch without creating a broker transport or public order surface.
+
+- Missing authority is fail-closed. Manual arm/halt is append-only; halt increments fencing and clears the lease. Each service creates a crypto-random process owner, and only the owner of an unexpired 30-second account lease with the exact fencing token can create a new authorization.
+- Fixed `credential_free_buy_v1` accepts only Kiwoom synthetic KRX/KRW LIMIT BUY for `005930` and `000660`, at most 10 shares, at most KRW 1,000,000 per order and KRW 1,000,000 across active reservations. Exact rational arithmetic is reused; partial and unresolved states retain the full reservation until a terminal state.
+- One immediate SQLite transaction inserts an immutable reservation and its consecutive reservation-bound `RISK_APPROVED` and `SUBMIT_DISPATCHED` events. Exact DB triggers reject ordinary append/direct SQL bypass; a collision rolls the entire transaction back.
+- Migration v4 preserves reservation-free v3 order events as legacy non-authoritative history without backfill. Backup v5 hashes/counts authority and reservation records, replays transitions and bindings, and rejects missing/weak schema, foreign keys and guard triggers. A restored service receives a new owner and cannot reuse the saved process lease.
+- TDD covers default-off, halt, stale/foreign/expired lease, two-handle lease and reservation races, fixed limits, terminal release, idempotency, DB bypass, atomic rollback, legacy migration, backup restore and weak-trigger rejection. `make check`, full Go race and `make smoke` pass locally on 2026-08-24 KST.
+
+Still open: broker request/credential/transmission proof, SELL, cash/position/fee/daily-loss/order-rate/market-hours/stale-data risk, owner/strategy/promotion approval, broker-coupled long-running runner, public OpenAPI/Flutter order flow, paper/live readiness and every real-money path.
+
+## 2026-08-24 G1 continuation: exact cash flows and stock-split replay
+
+The original G1 golden slice proved deposits and fee-aware FIFO trades, but the product contract also names cash movements, dividends, fees, taxes and corporate actions as ledger authority. Schema v5 closes that local, credential-free gap without adding a new runtime or dependency.
+
+- `WITHDRAWAL`, `FEE` and `TAX` require negative cash impact; `DEPOSIT` and instrument-bound `DIVIDEND` require positive cash impact. Trade-only fields are rejected where they do not apply.
+- `SPLIT` requires an instrument, a positive exact ratio and zero cash impact. Replay multiplies each open FIFO lot quantity while preserving total cost basis; a split without an open holding rolls the whole apply back.
+- Migration v5 rebuilds only the constrained `events` table, preserves existing v1-v4 rows, enforces event shape/cash direction with native CHECK constraints and restores insert-only triggers. At that checkpoint backup format was v4 and SQLite schema was v5; the G3 registry continuation below supersedes them with backup v5/schema v6 while leaving the ledger event contract at v5.
+- OpenAPI and backup contracts advance with the runtime. Focused cash/split, invalid-direction, rollback and v1-to-v5 migration tests pass with the existing order, broker snapshot and execution-authority recovery suite.
+
+Still open: FX rates/conversions, correction events, dividend reinvestment, jurisdiction-specific tax classification, credentialed broker fill/cash reconciliation and every live-money path.
+
+## 2026-08-24 G3 continuation: append-only paper-candidate registry
+
+Python keeps ownership of deterministic research generation, while Go admits and durably selects that evidence. This closes only the research-selection history gap; it does not create a paper runner or execution permission.
+
+- Go ingests a local `strategy-improvement-result.v1`, canonicalizes JSON with number preservation, recomputes result and parameter hashes, and validates the known manifest, evaluation policy and promotion gates. Identical result reimport is idempotent; conflicting or malformed evidence fails before selection.
+- `no_promotion` remains durable rejected evidence. Only a registered `paper_candidate` can be selected, and every selection requires the exact current event ID so stale writers append nothing.
+- Current selection is replay-derived rather than a mutable pointer. Rollback must name the current source event and pops exactly one selection, reaching the prior candidate or `no_strategy`.
+- Migration v6 adds STRICT insert-only evidence and selection tables in the existing Go-owned SQLite database. Backup v5 compares source/candidate registry digest, counts, current replay result, schema, foreign keys and triggers.
+- Local CLI commands are `strategy-register`, `strategy-status`, `strategy-select`, and `strategy-rollback`. They add no HTTP/UI, broker request, credential, scheduler or automatic selection.
+- `TestG3Registry*`, full Go tests, root checks, smoke and recovery tamper tests are the delivery evidence.
+
+Still open: incumbent-compatible challenger comparison, paper runner observations, automatic degradation stop/rollback, paper/shadow promotion, strategy identity in order intent and per-dispatch execution authorization.
+
+## 2026-08-24 G4J/K2B2 continuation: credential-free Kiwoom mock submit transport
+
+K2B2 connects the existing K2C durable dispatch to the official Kiwoom mock LIMIT BUY request contract without using a real credential, external broker request, public route or live authority.
+
+- A successful token preflight happens before any order mutation. K2C then atomically records the reservation, risk approval and `SUBMIT_DISPATCHED` before one `kt10000` write to `/api/dostk/ordr`.
+- The write path reuses the bounded Kiwoom HTTP/token implementation but disables its read-only 401/provider-auth retry. Network, timeout, auth and provider availability uncertainty therefore leave the durable state at `SUBMIT_UNKNOWN`; a repeated call cannot resend.
+- A valid provider order number is immediately converted to an account-scoped HMAC alias shared by submit ACK and account snapshot reads. Raw provider order IDs, response messages and access tokens never enter order state or events. Only an explicit non-auth/rate-limit provider rejection becomes `SUBMIT_REJECTED`.
+- Focused K2B2 tests and the full Go core suite pass locally. The official order document is pinned in [`gates/g4j-k2b2-kiwoom-mock-submit.md`](../gates/g4j-k2b2-kiwoom-mock-submit.md).
+
+Still open for K2B: credentialed mock observation, lookup/correlation after a lost submit response, SELL policy, broker-coupled long-running fencing, public OpenAPI/Flutter flow, production risk, market/amend/cancel transport, fill-to-ledger reconciliation and every live-money path.
+
+## 2026-08-24 G3.5 continuation: strategy-selection-bound order authority
+
+G3.5 closes the stale-strategy handoff gap before adding a paper runner. An optional strategy order binding carries both the selected result SHA and exact selection event ID inside the append-only order intent.
+
+- A new strategy-bound intent is recorded only when both identifiers match the current registry replay. An exact idempotent retry still returns its existing order after a later rollback instead of creating a replacement.
+- K2C durable dispatch replays the registry again in the same SQLite transaction and fails closed if the candidate was rolled back or reselected under a newer event. Existing manual synthetic orders remain backward-compatible because empty bindings are omitted from canonical JSON.
+- This is not a paper runner, automatic promotion, paper performance evidence or broker-write race proof. Broker-coupled selection/lease fencing remains required before unattended or live-capable execution.
+
+## 2026-08-24 G3.6 continuation: credential-free paper execution foundation
+
+G3.6 adds the smallest paper execution adapter that can reuse the selected-strategy, K2C risk and append-only order contracts without introducing credentials, a scheduler, a second state machine or a public surface.
+
+- `paper-signal.v2` binds symbol and target quantity to the exact selected result/event, input data hash and canonical generation/expiry window; it does not carry account, side, order quantity or price. Go atomically subtracts filled quantity and the full quantity of outstanding BUY orders, then creates only a positive delta intent. Legacy v1 remains recovery-only.
+- K2C remains the only dispatch authority. A local fixture ask with finite displayed quantity produces deterministic ACK and partial/full fill events in the existing order log; exact observation replay is idempotent.
+- Once durable dispatch exists, later selection rollback or signal expiry does not prevent reconciliation of remaining fills. A separate mode guard rejects paper orders before Kiwoom mock transport.
+- Migration v7 widens only the order mode constraint from `synthetic` to `synthetic|paper`, preserves prior rows and insert-only triggers, and runs a foreign-key check. Backup format stays v5 because its structure is unchanged; its required runtime schema advances to v7.
+- Focused G3.6 tests, full Go tests, root checks, smoke, race and vulnerability checks are the delivery evidence.
+
+Still open: scheduled signals and quote stream, external holding/cash integration, multi-strategy capital allocation, fees/tax/slippage/latency, automatic paper performance/degradation evidence, shadow promotion, broker-write fencing, credentialed broker observation and every live-money path.

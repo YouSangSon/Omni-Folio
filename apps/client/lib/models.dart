@@ -39,10 +39,31 @@ bool _bool(Json value, String key) {
 DateTime? _optionalDate(Json value, String key) {
   final result = value[key];
   if (result == null) return null;
-  if (result is! String) {
-    throw const FormatException('Date field must be text');
+  return _rfc3339(result);
+}
+
+DateTime _rfc3339(Object? value) {
+  if (value is! String ||
+      !RegExp(
+        r'^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$',
+      ).hasMatch(value)) {
+    throw const FormatException('Date must be RFC3339 text');
   }
-  return DateTime.parse(result);
+  try {
+    return DateTime.parse(value);
+  } on FormatException {
+    throw const FormatException('Invalid RFC3339 date');
+  }
+}
+
+String _rfc3339Text(Object? value) {
+  _rfc3339(value);
+  return value! as String;
+}
+
+String? _optionalRfc3339Text(Json value, String key) {
+  final result = value[key];
+  return result == null ? null : _rfc3339Text(result);
 }
 
 List<Json> _jsonList(Json value, String key) {
@@ -298,6 +319,193 @@ class ApplyReceipt {
   final int skippedDuplicateRows;
   final String ledgerRevisionAfter;
   final DateTime recordedAt;
+}
+
+class MarketIssue {
+  const MarketIssue({required this.code, required this.message});
+
+  factory MarketIssue.fromJson(Json json) =>
+      MarketIssue(code: _text(json, 'code'), message: _text(json, 'message'));
+
+  final String code;
+  final String message;
+}
+
+class MarketBar {
+  const MarketBar({
+    required this.at,
+    required this.open,
+    required this.high,
+    required this.low,
+    required this.close,
+    required this.volume,
+  });
+
+  factory MarketBar.fromJson(Json json) {
+    final open = _positiveDecimal(json, 'open');
+    final high = _positiveDecimal(json, 'high');
+    final low = _positiveDecimal(json, 'low');
+    final close = _positiveDecimal(json, 'close');
+    final volume = _nonnegativeDecimal(json, 'volume');
+    if (_comparePositiveDecimal(low, open) > 0 ||
+        _comparePositiveDecimal(low, close) > 0 ||
+        _comparePositiveDecimal(high, open) < 0 ||
+        _comparePositiveDecimal(high, close) < 0) {
+      throw const FormatException('OHLC values are inconsistent');
+    }
+    final at = _rfc3339Text(json['at']);
+    return MarketBar(
+      at: at,
+      open: open,
+      high: high,
+      low: low,
+      close: close,
+      volume: volume,
+    );
+  }
+
+  final String at;
+  final String open;
+  final String high;
+  final String low;
+  final String close;
+  final String volume;
+}
+
+String _positiveDecimal(Json json, String key) {
+  final value = _decimal(json, key);
+  if (value == '0' || value.startsWith('-')) {
+    throw const FormatException('Price must be positive');
+  }
+  return _drawableDecimal(value);
+}
+
+String _nonnegativeDecimal(Json json, String key) {
+  final value = _decimal(json, key);
+  if (value.startsWith('-')) {
+    throw const FormatException('Volume must be nonnegative');
+  }
+  return _drawableDecimal(value);
+}
+
+String _drawableDecimal(String value) {
+  final parsed = double.tryParse(value);
+  if (parsed == null || !parsed.isFinite) {
+    throw const FormatException('Decimal is outside the drawable range');
+  }
+  return value;
+}
+
+int _comparePositiveDecimal(String left, String right) {
+  final leftParts = left.split('.');
+  final rightParts = right.split('.');
+  if (leftParts.first.length != rightParts.first.length) {
+    return leftParts.first.length.compareTo(rightParts.first.length);
+  }
+  final integer = leftParts.first.compareTo(rightParts.first);
+  if (integer != 0) return integer;
+  final width = [
+    leftParts.length == 1 ? 0 : leftParts.last.length,
+    rightParts.length == 1 ? 0 : rightParts.last.length,
+  ].reduce((a, b) => a > b ? a : b);
+  final leftFraction = (leftParts.length == 1 ? '' : leftParts.last).padRight(
+    width,
+    '0',
+  );
+  final rightFraction = (rightParts.length == 1 ? '' : rightParts.last)
+      .padRight(width, '0');
+  return leftFraction.compareTo(rightFraction);
+}
+
+class MarketCandles {
+  const MarketCandles({
+    required this.symbol,
+    required this.venue,
+    required this.timezone,
+    required this.interval,
+    required this.priceAdjustment,
+    required this.source,
+    required this.sample,
+    required this.state,
+    required this.sourceAsOf,
+    required this.fetchedAt,
+    required this.issues,
+    required this.bars,
+  });
+
+  factory MarketCandles.fromJson(Json json) {
+    final source = _text(json, 'source');
+    final state = _text(json, 'state');
+    final priceAdjustment = _text(json, 'price_adjustment');
+    if (!const {'empty', 'partial', 'stale', 'success'}.contains(state)) {
+      throw const FormatException('Unsupported market state');
+    }
+    if (!const {'unspecified', 'provider_adjusted'}.contains(priceAdjustment)) {
+      throw const FormatException('Unsupported market price adjustment');
+    }
+    if (_text(json, 'interval') != '1d') {
+      throw const FormatException('Unsupported market interval');
+    }
+    final sample = _bool(json, 'sample');
+    final sourceAsOf = _optionalRfc3339Text(json, 'source_as_of');
+    final barJson = _jsonList(json, 'bars');
+    if (barJson.length > 500) {
+      throw const FormatException('Too many market bars');
+    }
+    final bars = barJson.map(MarketBar.fromJson).toList(growable: false);
+    for (var index = 1; index < bars.length; index++) {
+      if (!_rfc3339(bars[index - 1].at).isBefore(_rfc3339(bars[index].at))) {
+        throw const FormatException('Bars must be strictly ordered');
+      }
+    }
+    final issues = _jsonList(
+      json,
+      'issues',
+    ).map(MarketIssue.fromJson).toList(growable: false);
+    final valid = switch (state) {
+      'empty' => bars.isEmpty && issues.isEmpty,
+      'success' => bars.isNotEmpty && issues.isEmpty,
+      'partial' => bars.isNotEmpty && issues.isNotEmpty,
+      'stale' => bars.isNotEmpty,
+      _ => false,
+    };
+    if (!valid) throw const FormatException('Inconsistent market state');
+    if (source == 'local_fixture' &&
+        (!sample ||
+            priceAdjustment != 'unspecified' ||
+            state != 'stale' ||
+            sourceAsOf == null ||
+            issues.isEmpty)) {
+      throw const FormatException('Inconsistent local fixture provenance');
+    }
+    return MarketCandles(
+      symbol: _text(json, 'symbol'),
+      venue: _text(json, 'venue'),
+      timezone: _text(json, 'timezone'),
+      interval: '1d',
+      priceAdjustment: priceAdjustment,
+      source: source,
+      sample: sample,
+      state: state,
+      sourceAsOf: sourceAsOf,
+      fetchedAt: _rfc3339Text(json['fetched_at']),
+      issues: issues,
+      bars: bars,
+    );
+  }
+
+  final String symbol;
+  final String venue;
+  final String timezone;
+  final String interval;
+  final String priceAdjustment;
+  final String source;
+  final bool sample;
+  final String state;
+  final String? sourceAsOf;
+  final String fetchedAt;
+  final List<MarketIssue> issues;
+  final List<MarketBar> bars;
 }
 
 Json decodeObject(String body) {

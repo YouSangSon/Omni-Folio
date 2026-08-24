@@ -10,10 +10,10 @@
 | Gate | 상태 | 증거 |
 |---|---|---|
 | G0 아키텍처·계약 | 통과 | versioned OpenAPI/JSON Schema, runtime ADR, root commands |
-| G1 로컬 원장 | 통과 | CSV preview → atomic apply → append-only ledger → snapshot/receipt → backup/restore |
-| G2 Flutter client | 부분 통과 | iOS·Android·web release build와 자동 테스트 통과; profile p95·screen-reader·reduced-motion 수동 증거 남음 |
-| G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, paper-only result |
-| G4 broker | 다음 | 키움 read-only → 차트·실시간 → 모의주문; 이후 토스증권 read-only |
+| G1 로컬 원장 | 통과 | CSV preview → atomic apply → append-only exact cash/trade/dividend/tax/split replay → snapshot/receipt → schema v5 backup/restore |
+| G2 Flutter client | 부분 통과 | iOS·Android·web release build와 17개 자동 테스트 통과; chart 포함 Android emulator build/raster p95 2회 통과, physical-device·수동 screen-reader 및 test-instrumentation 격리 증거 남음 |
+| G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, append-only candidate registry·수동 rollback, exact selection-bound order authority, credential-free paper execution foundation |
+| G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot, G4I/K2C 내부 합성 authority, G4J/K2B2 credential-free mock 지정가 submit 계약 통과. 실제 키움 credentialed 시세·모의주문 관찰, freshness/scheduling, unknown-submit 조회 복구, public 주문 UI, production risk와 모든 live gate는 남는다. |
 
 세부 상태와 완료 조건은 [`PLAN.md`](PLAN.md)와 [`GATES.md`](GATES.md)에서 관리합니다.
 
@@ -30,8 +30,9 @@ flowchart LR
 ```
 
 - Flutter와 Python에는 증권사 credential이나 주문 제출 권한이 없습니다.
-- Go core만 canonical 원장과 향후 주문 상태를 변경할 수 있습니다.
+- Go core만 canonical 원장과 주문 상태를 변경할 수 있습니다.
 - SQLite는 로컬 단일 writer 단계의 의도적인 선택입니다. PostgreSQL migration·restore·load evidence 전에는 multi-replica나 Kubernetes manifest를 만들지 않습니다.
+- G6 진입 뒤의 로컬 Kubernetes 검증 기준은 `Kind + Podman`입니다. 현재 Kind 클러스터는 provision하지 않았고, G6 증거 전에는 manifest도 만들지 않습니다.
 - 토스증권의 쉬운 용어와 차분한 정보 위계를 참고하되 화면·상표·trade dress는 복제하지 않습니다.
 
 결정 근거는 [`docs/adr/0001-runtime-and-monorepo.md`](docs/adr/0001-runtime-and-monorepo.md), 브로커 순서와 UX 계약은 [`docs/broker-priority-and-ux.md`](docs/broker-priority-and-ux.md)를 따릅니다.
@@ -56,7 +57,7 @@ make check
 make smoke
 ```
 
-`make smoke`는 임시 SQLite 파일에서 health, readiness, CSV preview, atomic apply, snapshot을 확인하고 종료할 때 데이터를 제거합니다.
+`make check`는 성공·실패와 관계없이 검사 중 생성한 Flutter build/coverage, Python bytecode와 로컬 Go 바이너리를 정리합니다. `make smoke`는 임시 SQLite 파일에서 health, readiness, CSV preview, atomic apply, snapshot, local sample OHLCV를 확인하고 종료할 때 프로세스와 데이터를 제거합니다. 전체 Flutter/QA 캐시까지 비우려면 `make clean`을 사용합니다.
 
 ### 앱 실행
 
@@ -76,6 +77,8 @@ make run-client
 - Flutter web: `http://localhost:8081`
 - local DB: `data/omni-folio.db`
 
+`make run-core`는 `contracts/fixtures/market-bars.csv`를 명시적으로 전달하므로 AAPL 보유 항목에서 샘플 종목 차트를 확인할 수 있습니다. 화면과 API 모두 이를 `샘플 데이터 · 실시간 아님`으로 표시합니다. fixture 없이 fail-closed 동작을 확인하려면 `make run-core MARKET_FIXTURE=`를 사용합니다.
+
 다른 API 포트를 사용할 때는 core와 client를 함께 바꿉니다.
 
 ```sh
@@ -90,6 +93,8 @@ make run-client API_URL=http://127.0.0.1:18080
 ### CSV import
 
 Preview는 원장을 변경하지 않습니다. 반환된 `preview_id`를 새 idempotency key와 함께 apply합니다.
+
+schema v5 CSV type은 `DEPOSIT`, `WITHDRAWAL`, `BUY`, `SELL`, `DIVIDEND`, `FEE`, `TAX`, `SPLIT`입니다. 금액과 수량은 canonical decimal string이며, 현금 event 부호와 split의 zero cash impact는 apply 전에 검증됩니다.
 
 ```sh
 preview_file="$(mktemp)"
@@ -110,6 +115,36 @@ rm -f "$preview_file"
 
 Golden fixture의 기대값은 신규 3행, revision `rev_0000000003`, USD cash `778`, AAPL 6주, cost basis `300.6`입니다. 동적 ID와 timestamp는 매 실행마다 달라집니다.
 
+### Local sample OHLCV chart
+
+```sh
+curl -fsS 'http://127.0.0.1:8080/v1/market-data/candles?symbol=AAPL&interval=1d'
+```
+
+응답은 canonical decimal string과 함께 `price_adjustment=unspecified`, `source=local_fixture`, `sample=true`, `state=stale`를 반환합니다. 보유 화면에서 AAPL을 열면 가격·거래량 chart, 가격 조정 기준, source/as-of, screen-reader summary와 정확한 OHLCV 표를 볼 수 있습니다. `unspecified`는 가격 조정 여부를 확인하지 못했다는 뜻입니다. 이 fixture는 계약·UI 검증용이며 현재 시세나 투자 판단 자료가 아닙니다.
+
+### Internal synthetic order recovery, execution authority, reconciliation, and mock submit
+
+K2A/K2B0는 Go 내부에서 Kiwoom `LIMIT`/`KRW`/`KRX` intent와 append-only lifecycle, `SUBMIT_UNKNOWN` 중복 방지, cancel/fill replay와 이미 알려진 주문번호의 원자적 체결 조정을 검증합니다. K2B1은 명시 날짜의 synthetic `kt00009` 체결 row를 non-joinable scan으로 보존합니다. K2C는 기본 차단 kill switch, 프로세스별 lease/fencing, `005930`·`000660` BUY의 10주·주문 100만 원·계좌 활성 예약 100만 원 한도를 검증합니다. K2B2는 합성 credential과 in-memory transport로 공식 `kt10000` mock 지정가 요청을 재현하며 token preflight, durable dispatch-before-write, write 무재시도, opaque ACK와 unknown/reject 분기를 검증합니다. 외부 broker 호출, public 주문 API/UI와 live 권한은 없습니다.
+
+```sh
+cd services/core
+go test -run '^(TestK2A|TestK2B0|TestK2B1|TestK2B2|TestK2C)' -count=1 ./...
+```
+
+K2B0는 속성·시간이 같은 주문이 보여도 주문번호 없는 `SUBMIT_UNKNOWN`을 결합하지 않습니다. K2B1의 terminal pagination도 전체 체결 이력 완료를 뜻하지 않으며 날짜와 timezone 없는 체결 시각을 합쳐 UTC를 만들지 않습니다. K2B2의 write는 401을 포함해 자동 재시도하지 않으며 결과가 불명확하면 재주문 대신 조회·reconciliation을 기다립니다. 실제 credentialed mock 관찰, unknown-submit 조회 복구, cash·position·fee·손실·시장시간·stale-data 한도, owner/strategy 승인, broker/ledger reconciliation과 Flutter 주문 흐름은 남아 있습니다.
+
+### Credential-free known-good broker snapshot
+
+G4H는 기존 합성 `KiwoomSnapshot` 중 `complete=true`인 KRX snapshot만 Go 내부 SQLite에 원자 저장합니다. 같은 account/environment/exchange/fetched-at와 같은 payload는 raw snapshot을 중복 저장하지 않고, ledger revision별 reconciliation record를 별도로 남깁니다. payload 충돌이나 불완전 snapshot은 이전 known-good를 바꾸지 않습니다. 저장 시점 ledger revision의 KRX/KRW 종목 수량과 broker 수량 차이를 exact decimal로 고정합니다.
+
+```sh
+cd services/core
+go test -run '^TestG4H' -count=1 ./...
+```
+
+현재 schema v7/backup v5는 ledger event, raw broker snapshot, revisioned broker reconciliation, execution-authority event, risk reservation, strategy registry와 synthetic/paper 주문을 insert-only로 보호하고 각각의 digest/count와 replay 가능한 canonical record를 restore 후보에서 검증합니다. G4H 자체는 credential, broker request, scheduling, 공식 freshness/timezone, 현금·평가금액 reconciliation, public API/UI 또는 live readiness를 증명하지 않습니다.
+
 ### Research와 자동 개선
 
 ```sh
@@ -119,6 +154,34 @@ make run-improvement
 
 전략 개선 runner는 유한한 long-only SMA 후보를 expanding walk-forward로 평가하고 final holdout을 한 번만 엽니다. 결과는 `paper_candidate` 또는 `no_promotion`만 만들 수 있으며 credential·주문·live 승격 권한을 얻지 못합니다.
 
+Go core는 이 로컬 결과를 schema v7 SQLite의 insert-only registry에 등록합니다. `no_promotion`도 거절 evidence로 보존되지만 선택할 수 없습니다. `paper_candidate` 선택은 현재 champion과 직접 비교하는 로직이 아직 없으므로 명시적 CLI와 optimistic concurrency를 요구하며, rollback은 직전 선택이나 `no_strategy`로만 새 이벤트를 append합니다.
+
+```sh
+candidate_file="$(mktemp)"
+PYTHONPATH=services/research python3 -m omni_research.improve_cli \
+  --bars contracts/fixtures/strategy-market-bars.csv \
+  --config contracts/fixtures/strategy-improvement-config.json \
+  --output "$candidate_file"
+
+(cd services/core && go run . strategy-register \
+  -db ../../data/omni-folio.db \
+  -artifact "$candidate_file")
+rm -f "$candidate_file"
+```
+
+등록 결과의 `result_sha256`를 선택할 때는 `strategy-select -result-sha256 ... -expected-current-event ...`를 사용합니다. 최초 expected event는 `no_event`이고 이후에는 `strategy-status` 또는 직전 출력의 `current_event_id`입니다. 되돌리기는 `strategy-rollback`에 현재 event ID를 `-expected-current-event`와 `-source-event` 둘 다로 전달합니다. 선택 상태만으로 주문 권한이 생기지는 않습니다.
+
+### Credential-free paper execution foundation
+
+G3.6은 선택된 전략과 입력 data hash·생성/만료 시각·종목·목표 수량을 `paper-signal.v2`에 고정합니다. 전략은 계좌·방향·주문 수량·가격을 정하지 않습니다. Go가 같은 paper 계좌·종목의 체결과 미완결 BUY를 목표에서 원자적으로 차감해 양수 delta만 K2C와 공통 주문 상태 머신으로 보내고, local fixture ask를 부분/완전 체결로 재생합니다. 동시·반복 목표는 중복 주문하지 않고 backup/restore 뒤에도 상태가 보존되며, paper 주문은 Kiwoom transport로 전송되지 않습니다.
+
+```sh
+cd services/core
+go test -run '^TestG3PaperRunner' -count=1 ./...
+```
+
+이 기반은 내부 함수와 fixture 검증까지만 제공합니다. 목표 감소 SELL/down-rebalance, 자동 scheduler, quote stream, 수수료·세금·slippage, 외부 보유·현금과 다중 전략 자금 배분, paper 성능·저하 감지, public API/UI와 shadow/live 승격은 아직 없습니다.
+
 ## 주요 명령
 
 ```text
@@ -126,9 +189,10 @@ make bootstrap        로컬 dependency 준비
 make format           Go/Dart format 적용
 make lint             Go vet, Flutter analyze, Python compile 검사
 make test             Go, Flutter, Python 단위 테스트
-make check            format, lint, test, JSON contract 검사
-make smoke            임시 DB 기반 HTTP 수직 슬라이스 검사
-make run-core         migrate 후 local Go API 실행
+make check            format, lint, test, JSON contract 검사 후 테스트 생성물 정리
+make clean            Flutter/QA 캐시를 포함한 로컬 생성물 정리
+make smoke            임시 DB 기반 ledger·local market HTTP 수직 슬라이스 검사
+make run-core         migrate 후 local Go API와 명시적 sample market fixture 실행
 make run-client       Flutter web client 실행
 make run-research     deterministic backtest fixture 실행
 make run-improvement  walk-forward strategy fixture 실행
@@ -172,7 +236,7 @@ docs/              목표, ADR, research, broker/UX 문서
 
 - 실거래는 기본적으로 꺼져 있고 UI 토글이나 환경변수 하나로 켤 수 없습니다.
 - broker secret, access token, 실제 계좌번호, 원본 거래 export를 Git·fixture·로그에 넣지 않습니다.
-- timeout 난 주문은 실패로 간주해 재전송하지 않고 broker 조회와 reconciliation으로 확정합니다.
+- K2A는 timeout/crash 뒤 주문을 `SUBMIT_UNKNOWN`으로 보존하고 같은 주문과 해당 계좌의 신규 submit을 차단합니다. K2C는 기본 차단 kill switch와 DB lease/fencing 및 immutable reservation을 추가합니다. K2B2 mock write는 durable dispatch 뒤 한 번만 시도하고 불명확한 응답을 재주문하지 않습니다. K2B0/K2B1의 조회 결과만으로 unknown을 임의 확정하지 않습니다.
 - 전략은 수익률만으로 승격하지 않습니다. 비용·지연·데이터 누수·drawdown·운영 건강과 owner 승인이 필요합니다.
 - 먼저 생존성과 복구 가능성을 증명합니다. 수익은 보장할 수 없습니다.
 

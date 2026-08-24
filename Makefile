@@ -15,8 +15,9 @@ FLUTTER_WEB_HOST ?= localhost
 FLUTTER_WEB_PORT ?= 8081
 WEB_ORIGIN ?= http://$(FLUTTER_WEB_HOST):$(FLUTTER_WEB_PORT)
 RESEARCH_PYTHONPATH ?= $(ROOT)/services/research
+MARKET_FIXTURE ?= $(ROOT)/contracts/fixtures/market-bars.csv
 
-.PHONY: bootstrap format format-check lint test contract-check check run-core run-client run-research run-improvement smoke
+.PHONY: bootstrap format format-check lint test contract-check check clean clean-test-resources run-core run-client run-research run-improvement smoke
 
 bootstrap:
 	mkdir -p "$(ROOT)/data"
@@ -26,11 +27,11 @@ bootstrap:
 
 format:
 	cd services/core && "$(GO)" fmt ./...
-	"$(DART)" format apps/client/lib apps/client/test
+	"$(DART)" format apps/client/lib apps/client/test apps/client/integration_test apps/client/test_driver
 
 format-check:
 	test -z "$$($(GOFMT) -l services/core/*.go)"
-	cd apps/client && "$(DART)" format --output=none --set-exit-if-changed lib test
+	cd apps/client && "$(DART)" format --output=none --set-exit-if-changed lib test integration_test test_driver
 
 lint:
 	cd services/core && "$(GO)" vet ./...
@@ -45,12 +46,41 @@ test:
 contract-check:
 	"$(PYTHON)" -c 'import json, pathlib; files=sorted(pathlib.Path("contracts").rglob("*.json")); assert files, "no JSON contract files found"; [json.loads(path.read_text(encoding="utf-8")) for path in files]; print(f"validated {len(files)} JSON contract files")'
 
-check: format-check lint test contract-check
+check:
+	+@cleanup() { \
+		cleanup_status=0; \
+		trap - EXIT INT TERM; \
+		$(MAKE) clean-test-resources || cleanup_status=$$?; \
+		if test "$$status" -ne 0; then exit "$$status"; fi; \
+		exit "$$cleanup_status"; \
+	}; \
+	trap 'status=130; cleanup' INT; \
+	trap 'status=143; cleanup' TERM; \
+	trap 'status=$$?; cleanup' EXIT; \
+	$(MAKE) format-check lint test contract-check
+
+clean-test-resources:
+	@set -eu; \
+	for artifact_path in \
+		"$(ROOT)/apps/client/build" \
+		"$(ROOT)/apps/client/coverage" \
+		"$(ROOT)/services/core/core"; do \
+		if test -e "$$artifact_path"; then find "$$artifact_path" -depth -delete; fi; \
+	done; \
+	find "$(ROOT)/services/research" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete; \
+	find "$(ROOT)/services/research" -depth -type d -name __pycache__ -empty -delete
+
+clean: clean-test-resources
+	@set -eu; \
+	for artifact_path in "$(ROOT)/.playwright-cli" "$(ROOT)/output"; do \
+		if test -e "$$artifact_path"; then find "$$artifact_path" -depth -delete; fi; \
+	done
+	cd apps/client && "$(FLUTTER)" clean
 
 run-core:
 	mkdir -p "$(dir $(DB_PATH))"
 	cd services/core && "$(GO)" run . migrate -db "$(DB_PATH)"
-	cd services/core && "$(GO)" run . serve -db "$(DB_PATH)" -addr "$(CORE_ADDR)" -allow-origin "$(WEB_ORIGIN)"
+	cd services/core && "$(GO)" run . serve -db "$(DB_PATH)" -addr "$(CORE_ADDR)" -allow-origin "$(WEB_ORIGIN)" -market-fixture "$(MARKET_FIXTURE)"
 
 run-client:
 	cd apps/client && "$(FLUTTER)" run -d "$(FLUTTER_DEVICE)" --web-hostname "$(FLUTTER_WEB_HOST)" --web-port "$(FLUTTER_WEB_PORT)" --dart-define=OMNI_API_URL="$(API_URL)"
@@ -79,7 +109,7 @@ smoke:
 	log="$$smoke_dir/core.log"; \
 	(cd services/core && "$(GO)" build -o "$$bin" .); \
 	"$$bin" migrate -db "$$db"; \
-	"$$bin" serve -db "$$db" -addr 127.0.0.1:18080 >"$$log" 2>&1 & \
+	"$$bin" serve -db "$$db" -addr 127.0.0.1:18080 -market-fixture "$(MARKET_FIXTURE)" >"$$log" 2>&1 & \
 	pid=$$!; \
 	ready=0; \
 	for _ in $$(seq 1 30); do \
@@ -96,4 +126,6 @@ smoke:
 	"$(PYTHON)" -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["applied_rows"] == 3 and d["ledger_revision_after"] == "rev_0000000003"' "$$apply_json"; \
 	snapshot_json="$$(curl --fail --silent http://127.0.0.1:18080/v1/portfolio/snapshot)"; \
 	"$(PYTHON)" -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["ledger_revision"] == "rev_0000000003" and d["live_enabled"] is False and d["cash"][0]["amount"] == "778"' "$$snapshot_json"; \
-	printf '%s\n' 'smoke: health, status, preview, apply, snapshot OK'
+	market_json="$$(curl --fail --silent 'http://127.0.0.1:18080/v1/market-data/candles?symbol=AAPL&interval=1d')"; \
+	"$(PYTHON)" -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["symbol"] == "AAPL" and d["price_adjustment"] == "unspecified" and d["source"] == "local_fixture" and d["sample"] is True and d["state"] == "stale" and d["issues"][0]["code"] == "sample_data" and len(d["bars"]) == 6 and d["bars"][0]["open"] == "10" and d["bars"][-1]["close"] == "16"' "$$market_json"; \
+	printf '%s\n' 'smoke: health, status, preview, apply, snapshot, market data OK'

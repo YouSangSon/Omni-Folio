@@ -69,6 +69,62 @@ func TestGoldenVerticalSliceAndBackupRestore(t *testing.T) {
 	}
 }
 
+func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
+	var schema map[string]any
+	contract, err := os.ReadFile(filepath.Join("..", "..", "contracts", "backup-manifest.schema.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(contract, &schema); err != nil {
+		t.Fatal(err)
+	}
+	properties := schema["properties"].(map[string]any)
+	if properties["format_version"].(map[string]any)["const"] != "omni-folio-backup.v5" ||
+		properties["schema_version"].(map[string]any)["const"] != "omni-folio.sqlite.v7" {
+		t.Fatal("backup contract version drifted from the runtime")
+	}
+
+	var runtimeManifest, golden map[string]any
+	runtimeJSON, err := json.Marshal(BackupManifest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(runtimeJSON, &runtimeManifest); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(fixture(t, "golden-backup-manifest.json"), &golden); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(jsonKeySet(runtimeManifest), jsonStringSet(schema["required"])) ||
+		!reflect.DeepEqual(jsonKeySet(golden), jsonStringSet(schema["required"])) {
+		t.Fatal("backup manifest schema, runtime fields, and golden fixture disagree")
+	}
+
+	receiptSchema := schema["$defs"].(map[string]any)["verification_receipt"].(map[string]any)
+	var runtimeReceipt map[string]any
+	receiptJSON, err := json.Marshal(VerificationReceipt{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(receiptJSON, &runtimeReceipt); err != nil {
+		t.Fatal(err)
+	}
+	goldenReceipt := golden["verification_receipt"].(map[string]any)
+	if !reflect.DeepEqual(jsonKeySet(runtimeReceipt), jsonStringSet(receiptSchema["required"])) ||
+		!reflect.DeepEqual(jsonKeySet(goldenReceipt), jsonStringSet(receiptSchema["required"])) {
+		t.Fatal("verification receipt schema, runtime fields, and golden fixture disagree")
+	}
+
+	var invalid map[string]any
+	if err := json.Unmarshal(fixture(t, "invalid-backup-manifest.json"), &invalid); err != nil {
+		t.Fatal(err)
+	}
+	rejected := invalid["verification_receipt"].(map[string]any)
+	if rejected["status"] != "rejected" || rejected["eligible_for_activation"] != false || len(rejected["errors"].([]any)) == 0 {
+		t.Fatal("invalid backup fixture no longer proves fail-closed activation")
+	}
+}
+
 func TestInvalidAndDuplicatePreviewMatchesFixture(t *testing.T) {
 	svc, _ := testService(t,
 		[]time.Time{
@@ -196,6 +252,99 @@ func TestFIFOAllocatesBuyAndSellFeesExactly(t *testing.T) {
 	}
 }
 
+func TestCashFlowsAndSplitReplayExactly(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	preview, appErr := svc.preview(context.Background(), []byte(testCSV(
+		"d1,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000",
+		"b1,account-main,BUY,2026-01-02T00:00:00Z,AAPL,10,10,2,USD,-102",
+		"v1,account-main,DIVIDEND,2026-01-03T00:00:00Z,AAPL,,,,USD,5",
+		"t1,account-main,TAX,2026-01-03T00:01:00Z,,,,,USD,-1",
+		"s1,account-main,SPLIT,2026-01-04T00:00:00Z,AAPL,2,,,USD,0",
+		"x1,account-main,SELL,2026-01-05T00:00:00Z,AAPL,5,12,1,USD,59",
+		"f1,account-main,FEE,2026-01-05T00:01:00Z,,,,,USD,-2",
+		"w1,account-main,WITHDRAWAL,2026-01-06T00:00:00Z,,,,,USD,-100",
+	)))
+	if appErr != nil {
+		t.Fatal(appErr)
+	}
+	if _, appErr := svc.apply(context.Background(), ApplyRequest{preview.PreviewID, "cash-flow-split"}); appErr != nil {
+		t.Fatal(appErr)
+	}
+	snapshot, err := snapshotFrom(context.Background(), svc.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(snapshot.Cash, []Money{{"USD", "859"}}) ||
+		!reflect.DeepEqual(snapshot.Holdings, []Holding{{"instrument_aapl", "AAPL", "15", "76.5", "USD"}}) ||
+		!reflect.DeepEqual(snapshot.RealizedPnL, []Money{{"USD", "33.5"}}) {
+		t.Fatalf("unexpected cash-flow/split snapshot: %+v", snapshot)
+	}
+}
+
+func TestExtendedLedgerTypesRejectInvalidCashDirection(t *testing.T) {
+	for _, row := range []string{
+		"w1,account-main,WITHDRAWAL,2026-01-01T00:00:00Z,,,,,USD,1",
+		"v1,account-main,DIVIDEND,2026-01-01T00:00:00Z,AAPL,,,,USD,-1",
+		"f1,account-main,FEE,2026-01-01T00:00:00Z,,,,,USD,1",
+		"t1,account-main,TAX,2026-01-01T00:00:00Z,,,,,USD,1",
+		"s1,account-main,SPLIT,2026-01-01T00:00:00Z,AAPL,2,,,USD,1",
+	} {
+		t.Run(strings.SplitN(row, ",", 2)[0], func(t *testing.T) {
+			svc, _ := testService(t, nil, nil)
+			preview, appErr := svc.preview(context.Background(), []byte(testCSV(row)))
+			if appErr != nil {
+				t.Fatal(appErr)
+			}
+			if preview.CanApply || preview.Totals.ErrorRows != 1 || preview.Rows[0].Errors[0].Code != "invalid_amount" {
+				t.Fatalf("invalid cash direction was accepted: %+v", preview)
+			}
+		})
+	}
+}
+
+func TestSplitWithoutOpenHoldingRollsBack(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	preview, appErr := svc.preview(context.Background(), []byte(testCSV(
+		"s1,account-main,SPLIT,2026-01-01T00:00:00Z,AAPL,2,,,USD,0",
+	)))
+	if appErr != nil {
+		t.Fatal(appErr)
+	}
+	if _, appErr := svc.apply(context.Background(), ApplyRequest{preview.PreviewID, "split-without-holding"}); appErr == nil || appErr.body.Code != "invalid_ledger" {
+		t.Fatalf("expected invalid_ledger, got %#v", appErr)
+	}
+	var events, revision int
+	if err := svc.db.QueryRow(`SELECT count(*) FROM events`).Scan(&events); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.db.QueryRow(`SELECT revision FROM ledger_meta`).Scan(&revision); err != nil {
+		t.Fatal(err)
+	}
+	if events != 0 || revision != 0 {
+		t.Fatalf("partial split mutation: events=%d revision=%d", events, revision)
+	}
+}
+
+func TestSchemaV5RejectsInvalidExtendedLedgerRows(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	for _, row := range []struct {
+		name, typ, instrument, symbol, quantity, price, fee, amount string
+	}{
+		{"positive withdrawal", "WITHDRAWAL", "", "", "", "", "", "1"},
+		{"negative dividend", "DIVIDEND", "instrument_aapl", "AAPL", "", "", "", "-1"},
+		{"cash-changing split", "SPLIT", "instrument_aapl", "AAPL", "2", "", "", "1"},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			_, err := svc.db.Exec(`INSERT INTO events(event_id,source_event_id,account_id,type,occurred_at,instrument_id,symbol,quantity,price,fee,currency,amount,receipt_id,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				"event_"+row.name, "source_"+row.name, "account-main", row.typ, "2026-01-01T00:00:00Z",
+				nullable(row.instrument), nullable(row.symbol), nullable(row.quantity), nullable(row.price), nullable(row.fee), "USD", row.amount, "receipt", "2026-01-01T00:00:00Z")
+			if err == nil {
+				t.Fatalf("schema accepted invalid %s row", row.typ)
+			}
+		})
+	}
+}
+
 func TestHTTPBodyAndStructuredErrors(t *testing.T) {
 	svc, _ := testService(t, nil, nil)
 	r := httptest.NewRequest(http.MethodPost, "/v1/imports/apply", strings.NewReader(`{"preview_id":"x","idempotency_key":"y","extra":true}`))
@@ -260,7 +409,16 @@ func TestHealthAndReadinessAreSeparate(t *testing.T) {
 	if w := request("/readyz"); w.Code != http.StatusOK || w.Body.String() != "{\"status\":\"ok\"}\n" {
 		t.Fatalf("ready status=%d body=%s", w.Code, w.Body.String())
 	}
-	if _, err := svc.db.Exec(`UPDATE schema_migrations SET version=2`); err != nil {
+	if _, err := svc.db.Exec(`DELETE FROM schema_migrations WHERE version=1`); err != nil {
+		t.Fatal(err)
+	}
+	if w := request("/readyz"); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), `"code":"not_ready"`) {
+		t.Fatalf("readiness accepted an incomplete migration history: status=%d body=%s", w.Code, w.Body.String())
+	}
+	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(1, ?)`, "2026-01-10T15:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(8, ?)`, "2026-01-10T15:01:00Z"); err != nil {
 		t.Fatal(err)
 	}
 	if w := request("/readyz"); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), `"code":"not_ready"`) {
@@ -372,7 +530,7 @@ func TestStatusUnresolvedLimitsAndFingerprintBinding(t *testing.T) {
 	if err := svc.db.QueryRow(`SELECT preview_json FROM previews WHERE preview_id=?`, valid.PreviewID).Scan(&stored); err != nil {
 		t.Fatal(err)
 	}
-	stored = strings.Replace(stored, `"mapping_version":"canonical-transaction.v1"`, `"mapping_version":"changed.v2"`, 1)
+	stored = strings.Replace(stored, `"mapping_version":"canonical-transaction.v2"`, `"mapping_version":"changed.v3"`, 1)
 	if _, err := svc.db.Exec(`UPDATE previews SET preview_json=? WHERE preview_id=?`, stored, valid.PreviewID); err != nil {
 		t.Fatal(err)
 	}
@@ -426,6 +584,23 @@ func fixture(t *testing.T, name string) []byte {
 }
 
 func fixturePath(name string) string { return filepath.Join("..", "..", "contracts", "fixtures", name) }
+
+func jsonKeySet(value map[string]any) map[string]bool {
+	result := make(map[string]bool, len(value))
+	for key := range value {
+		result[key] = true
+	}
+	return result
+}
+
+func jsonStringSet(value any) map[string]bool {
+	items := value.([]any)
+	result := make(map[string]bool, len(items))
+	for _, item := range items {
+		result[item.(string)] = true
+	}
+	return result
+}
 
 func decodeFixture(t *testing.T, name string, dst any) {
 	t.Helper()

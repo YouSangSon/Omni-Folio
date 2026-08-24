@@ -4,7 +4,7 @@
 
 ## 처음 읽는 순서
 
-1. [`../goal.md`](../goal.md) — 현재 목표, 실행 권한, 안전 상한
+1. [`../goal.md`](../goal.md) — 제품 목표, 실행 권한, 안전 상한, 아키텍처와 완료 조건의 단일 goal prompt
 2. [`../PLAN.md`](../PLAN.md) — Now/Next/Later 실행 순서
 3. [`../GATES.md`](../GATES.md) — 단계별 promotion tree
 4. [`../DESIGN.md`](../DESIGN.md) — Flutter 제품 경험과 접근성 계약
@@ -15,7 +15,6 @@
 | 목적 | 문서 | 역할 |
 |---|---|---|
 | 도메인 용어·불변식 | [`../CONTEXT.md`](../CONTEXT.md) | ledger, broker truth, reconciliation, live-disabled의 공통 언어 |
-| 구현용 전체 목표 | [`goal-prompt.md`](goal-prompt.md) | 제품·도메인·자동매매·cloud acceptance의 정식 prompt |
 | 상세 실행 계획 | [`omni-folio-plan.md`](omni-folio-plan.md) | 조사, 단계, 위험, review decision ledger |
 | API·오픈소스 조사 | [`omni-folio-research-report.md`](omni-folio-research-report.md) | 공식 소스와 후보 생태계 비교 |
 | 브로커·UX 결정 | [`broker-priority-and-ux.md`](broker-priority-and-ux.md) | 키움 우선, 토스증권 두 번째, Toss-inspired 원칙 |
@@ -28,6 +27,9 @@
 - HTTP API source of truth: [`../contracts/openapi.json`](../contracts/openapi.json)
 - JSON/decimal/fixture 계약: [`../contracts/`](../contracts/)
 - Gate별 acceptance: [`../gates/`](../gates/)
+- Strategy/order authority: [`../gates/g3-research.md`](../gates/g3-research.md)
+- 현재 paper execution leaf: [`../gates/g3f-paper-runner-foundation.md`](../gates/g3f-paper-runner-foundation.md)
+- 현재 Kiwoom mock-submit leaf: [`../gates/g4j-k2b2-kiwoom-mock-submit.md`](../gates/g4j-k2b2-kiwoom-mock-submit.md)
 - Root 검증 명령: `make check && make smoke`
 
 문서가 코드·계약과 충돌하면 실제 동작을 조용히 문서에 맞추지 않습니다. 먼저 충돌을 기록하고 owner 계약과 executable test를 함께 갱신합니다. 브로커 limit·인증·endpoint는 바뀔 수 있으므로 adapter 구현 시 공식 문서와 실제 응답을 다시 확인합니다.

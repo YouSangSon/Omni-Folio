@@ -12,7 +12,7 @@
   "data": {
     "path": "fixtures/market-bars.csv",
     "version": "market-bars.v1",
-    "input_sha256": "5fcd7ce9cd01a71a32ee086fe0b06809a6ba2625ee4fbbae885adb38c4a44afb",
+    "input_sha256": "42e5c1e15b2eb2f066e7d8c582a6871365997d5ee57df1b2720540a6600d93a6",
     "bar_interval": "1d",
     "timezone": "UTC"
   },

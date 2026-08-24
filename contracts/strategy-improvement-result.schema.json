@@ -3,8 +3,8 @@
   "$id": "https://omni-folio.local/contracts/strategy-improvement-result.v1.schema.json",
   "title": "Omni-Folio Strategy Improvement Result v1",
   "type": "object",
-  "additionalProperties": true,
-  "required": ["schema_version", "experiment_id", "input_sha256", "config_sha256", "manifest", "evaluation", "candidates", "challenger", "promotion", "disclaimer", "result_sha256"],
+  "additionalProperties": false,
+  "required": ["schema_version", "experiment_id", "input_sha256", "config_sha256", "manifest", "execution", "evaluation", "candidates", "challenger", "promotion", "disclaimer", "result_sha256"],
   "properties": {
     "schema_version": { "const": "strategy-improvement-result.v1" },
     "experiment_id": { "type": "string", "minLength": 1 },
@@ -13,15 +13,47 @@
     "result_sha256": { "$ref": "#/$defs/sha256" },
     "manifest": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["strategy", "data", "engine", "evaluation_policy"],
       "properties": {
+        "strategy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version", "parameters", "parameter_hash"],
+          "properties": {
+            "name": { "const": "long_only_sma_crossover" },
+            "version": { "type": "string", "minLength": 1 },
+            "parameters": { "type": "object" },
+            "parameter_hash": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "input_sha256"],
+          "properties": {
+            "version": { "type": "string", "minLength": 1 },
+            "input_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "engine": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version"],
+          "properties": {
+            "name": { "const": "omni-folio-reference" },
+            "version": { "const": "0.1.0" }
+          }
+        },
         "evaluation_policy": {
           "type": "object",
+          "additionalProperties": false,
           "required": ["version"],
           "properties": { "version": { "const": "sma-expanding-walk-forward.v1" } }
         }
       }
     },
+    "execution": { "type": "object" },
     "evaluation": {
       "type": "object",
       "required": ["method", "minimum_fold_bars", "folds", "final_holdout", "selection_metric", "final_holdout_evaluated_after_selection"],
@@ -44,9 +76,19 @@
     },
     "promotion": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["target", "baseline", "walk_forward_gate_passed", "final_holdout_gate_passed", "baseline_gate_passed", "failed_gates"],
       "properties": {
-        "target": { "enum": ["paper_candidate", "no_promotion"] }
+        "target": { "enum": ["paper_candidate", "no_promotion"] },
+        "baseline": { "type": "object" },
+        "walk_forward_gate_passed": { "type": "boolean" },
+        "final_holdout_gate_passed": { "type": "boolean" },
+        "baseline_gate_passed": { "type": "boolean" },
+        "failed_gates": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["walk_forward", "final_holdout", "buy_and_hold_baseline"] }
+        }
       }
     },
     "disclaimer": {

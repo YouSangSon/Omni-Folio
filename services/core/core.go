@@ -31,9 +31,10 @@ import (
 const (
 	maxBodyBytes  = 1 << 20
 	maxImportRows = 10_000
+	latestSchema  = 7
 	zeroTime      = "1970-01-01T00:00:00Z"
 	csvSchema     = "omni-folio.csv.v1"
-	mappingSchema = "canonical-transaction.v1"
+	mappingSchema = "canonical-transaction.v2"
 )
 
 //go:embed migrations/*.sql
@@ -42,10 +43,12 @@ var migrationFiles embed.FS
 var decimalPattern = regexp.MustCompile(`^(?:0|-?(?:[1-9][0-9]*(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9]))$`)
 
 type Service struct {
-	db  *sql.DB
-	now func() time.Time
-	id  func(string) string
-	ttl time.Duration
+	db             *sql.DB
+	now            func() time.Time
+	id             func(string) string
+	ttl            time.Duration
+	marketData     MarketDataPort
+	executionOwner string
 }
 
 type APIError struct {
@@ -156,15 +159,29 @@ type PortfolioSnapshot struct {
 }
 
 type BackupManifest struct {
-	FormatVersion          string              `json:"format_version"`
-	SchemaVersion          string              `json:"schema_version"`
-	CreatedAt              string              `json:"created_at"`
-	SourceLedgerRevision   string              `json:"source_ledger_revision"`
-	DBSHA256               string              `json:"db_sha256"`
-	SizeBytes              int64               `json:"size_bytes"`
-	ExpectedSnapshotSHA256 string              `json:"expected_snapshot_sha256"`
-	Encryption             BackupEncryption    `json:"encryption"`
-	VerificationReceipt    VerificationReceipt `json:"verification_receipt"`
+	FormatVersion                string              `json:"format_version"`
+	SchemaVersion                string              `json:"schema_version"`
+	CreatedAt                    string              `json:"created_at"`
+	SourceLedgerRevision         string              `json:"source_ledger_revision"`
+	OrderStateSHA256             string              `json:"order_state_sha256"`
+	OrderCount                   int                 `json:"order_count"`
+	OrderEventCount              int                 `json:"order_event_count"`
+	ExecutionAuthoritySHA256     string              `json:"execution_authority_sha256"`
+	ExecutionAuthorityEventCount int                 `json:"execution_authority_event_count"`
+	RiskReservationSHA256        string              `json:"risk_reservation_sha256"`
+	RiskReservationCount         int                 `json:"risk_reservation_count"`
+	BrokerStateSHA256            string              `json:"broker_state_sha256"`
+	BrokerSnapshotCount          int                 `json:"broker_snapshot_count"`
+	BrokerReconciliationCount    int                 `json:"broker_reconciliation_count"`
+	StrategyRegistrySHA256       string              `json:"strategy_registry_sha256"`
+	StrategyEvidenceCount        int                 `json:"strategy_evidence_count"`
+	StrategySelectionEventCount  int                 `json:"strategy_selection_event_count"`
+	SelectedStrategyResultSHA256 string              `json:"selected_strategy_result_sha256"`
+	DBSHA256                     string              `json:"db_sha256"`
+	SizeBytes                    int64               `json:"size_bytes"`
+	ExpectedSnapshotSHA256       string              `json:"expected_snapshot_sha256"`
+	Encryption                   BackupEncryption    `json:"encryption"`
+	VerificationReceipt          VerificationReceipt `json:"verification_receipt"`
 }
 
 type BackupEncryption struct {
@@ -173,16 +190,22 @@ type BackupEncryption struct {
 }
 
 type VerificationReceipt struct {
-	ReceiptID               string   `json:"receipt_id"`
-	CandidateID             string   `json:"candidate_id"`
-	VerifiedAt              string   `json:"verified_at"`
-	Status                  string   `json:"status"`
-	IntegrityCheck          string   `json:"integrity_check"`
-	GoldenSnapshotCheck     string   `json:"golden_snapshot_check"`
-	CandidateDBSHA256       string   `json:"candidate_db_sha256"`
-	CandidateSnapshotSHA256 string   `json:"candidate_snapshot_sha256"`
-	EligibleForActivation   bool     `json:"eligible_for_activation"`
-	Errors                  []string `json:"errors"`
+	ReceiptID                       string   `json:"receipt_id"`
+	CandidateID                     string   `json:"candidate_id"`
+	VerifiedAt                      string   `json:"verified_at"`
+	Status                          string   `json:"status"`
+	IntegrityCheck                  string   `json:"integrity_check"`
+	GoldenSnapshotCheck             string   `json:"golden_snapshot_check"`
+	OrderStateCheck                 string   `json:"order_state_check"`
+	BrokerStateCheck                string   `json:"broker_state_check"`
+	StrategyRegistryCheck           string   `json:"strategy_registry_check"`
+	CandidateDBSHA256               string   `json:"candidate_db_sha256"`
+	CandidateSnapshotSHA256         string   `json:"candidate_snapshot_sha256"`
+	CandidateOrderStateSHA256       string   `json:"candidate_order_state_sha256"`
+	CandidateBrokerStateSHA256      string   `json:"candidate_broker_state_sha256"`
+	CandidateStrategyRegistrySHA256 string   `json:"candidate_strategy_registry_sha256"`
+	EligibleForActivation           bool     `json:"eligible_for_activation"`
+	Errors                          []string `json:"errors"`
 }
 
 type appError struct {
@@ -196,7 +219,7 @@ func openDB(path string) (*sql.DB, error) {
 	if path == "" {
 		return nil, errors.New("database path is required")
 	}
-	db, err := sql.Open("sqlite3", path+"?_busy_timeout=5000&_foreign_keys=on")
+	db, err := sql.Open("sqlite3", path+"?_busy_timeout=5000&_foreign_keys=on&_txlock=immediate")
 	if err != nil {
 		return nil, err
 	}
@@ -221,12 +244,12 @@ func openExistingDB(path string) (*sql.DB, error) {
 }
 
 func requireSchema(db *sql.DB) error {
-	var version int
-	if err := db.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&version); err != nil {
+	var first, latest, count int
+	if err := db.QueryRow(`SELECT COALESCE(MIN(version), 0), COALESCE(MAX(version), 0), COUNT(*) FROM schema_migrations`).Scan(&first, &latest, &count); err != nil {
 		return fmt.Errorf("database is not migrated; run migrate first: %w", err)
 	}
-	if version != 1 {
-		return fmt.Errorf("unsupported schema version %d", version)
+	if first != 1 || latest != latestSchema || count != latestSchema {
+		return fmt.Errorf("unsupported schema history %d..%d (%d migrations)", first, latest, count)
 	}
 	return nil
 }
@@ -236,36 +259,77 @@ func migrate(db *sql.DB) error {
 	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='schema_migrations'`).Scan(&exists); err != nil {
 		return err
 	}
+	current := 0
 	if exists != 0 {
-		var version int
-		if err := db.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&version); err != nil {
+		var first, count int
+		if err := db.QueryRow(`SELECT COALESCE(MIN(version), 0), COALESCE(MAX(version), 0), COUNT(*) FROM schema_migrations`).Scan(&first, &current, &count); err != nil {
 			return err
 		}
-		if version != 1 {
-			return fmt.Errorf("unsupported schema version %d", version)
+		if first != 1 || current > latestSchema || count != current {
+			return fmt.Errorf("unsupported schema version %d", current)
 		}
-		return nil
 	}
-	script, err := migrationFiles.ReadFile("migrations/001_init.sql")
-	if err != nil {
-		return err
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql"}
+	for version := current + 1; version <= latestSchema; version++ {
+		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
+		if err != nil {
+			return err
+		}
+		disableForeignKeys := version == 7
+		if disableForeignKeys {
+			if _, err := db.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
+				return err
+			}
+		}
+		tx, err := db.Begin()
+		if err != nil {
+			if disableForeignKeys {
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+			}
+			return err
+		}
+		if _, err := tx.Exec(string(script)); err != nil {
+			tx.Rollback()
+			if disableForeignKeys {
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+			}
+			return err
+		}
+		if _, err := tx.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)`, version, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+			tx.Rollback()
+			if disableForeignKeys {
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+			}
+			return err
+		}
+		if disableForeignKeys {
+			var violations int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&violations); err != nil || violations != 0 {
+				tx.Rollback()
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+				if err != nil {
+					return err
+				}
+				return fmt.Errorf("paper-order migration foreign-key check failed: violations=%d", violations)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			if disableForeignKeys {
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+			}
+			return err
+		}
+		if disableForeignKeys {
+			if _, err := db.Exec(`PRAGMA foreign_keys=ON`); err != nil {
+				return err
+			}
+		}
 	}
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if _, err := tx.Exec(string(script)); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(1, ?)`, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return nil
 }
 
 func newService(db *sql.DB, now func() time.Time, id func(string) string) *Service {
-	return &Service{db: db, now: now, id: id, ttl: 15 * time.Minute}
+	return &Service{db: db, now: now, id: id, ttl: 15 * time.Minute, executionOwner: randomID("execution_owner")}
 }
 
 func randomID(prefix string) string {
@@ -285,6 +349,7 @@ func (s *Service) routes() http.Handler {
 	})
 	mux.HandleFunc("GET /readyz", s.handleReady)
 	mux.HandleFunc("GET /v1/status", s.handleStatus)
+	mux.HandleFunc("GET /v1/market-data/candles", s.handleMarketDataCandles)
 	mux.HandleFunc("POST /v1/imports/preview", s.handlePreview)
 	mux.HandleFunc("POST /v1/imports/apply", s.handleApply)
 	mux.HandleFunc("GET /v1/portfolio/snapshot", s.handleSnapshot)
@@ -292,13 +357,8 @@ func (s *Service) routes() http.Handler {
 }
 
 func (s *Service) handleReady(w http.ResponseWriter, r *http.Request) {
-	var version int
-	if err := s.db.QueryRowContext(r.Context(), `SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&version); err != nil {
+	if err := requireSchema(s.db); err != nil {
 		writeError(w, readinessError(err))
-		return
-	}
-	if version != 1 {
-		writeError(w, readinessError(fmt.Errorf("unsupported schema version %d", version)))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -580,13 +640,44 @@ func (s *Service) normalize(record []string, value func([]string, string) string
 		errs = append(errs, APIError{"invalid_decimal", "amount must be a canonical decimal", "amount"})
 	}
 	switch tx.Type {
-	case "DEPOSIT":
+	case "DEPOSIT", "WITHDRAWAL", "FEE", "TAX":
 		if tx.Symbol != "" || tx.Quantity != "" || tx.Price != "" || tx.Fee != "" {
-			errs = append(errs, APIError{"invalid_fields", "DEPOSIT trade fields must be empty", "symbol"})
+			errs = append(errs, APIError{"invalid_fields", tx.Type + " trade fields must be empty", "symbol"})
 		}
 		tx.Symbol, tx.Quantity, tx.Price, tx.Fee = "", "", "", ""
+		if err == nil && ((tx.Type == "DEPOSIT" && amount.Sign() <= 0) || (tx.Type != "DEPOSIT" && amount.Sign() >= 0)) {
+			direction := "negative"
+			if tx.Type == "DEPOSIT" {
+				direction = "positive"
+			}
+			errs = append(errs, APIError{"invalid_amount", tx.Type + " amount must be " + direction, "amount"})
+		}
+	case "DIVIDEND":
+		if tx.Symbol == "" {
+			errs = append(errs, APIError{"required", "symbol is required for DIVIDEND", "symbol"})
+		} else {
+			tx.InstrumentID = "instrument_" + strings.ToLower(tx.Symbol)
+		}
+		if tx.Quantity != "" || tx.Price != "" || tx.Fee != "" {
+			errs = append(errs, APIError{"invalid_fields", "DIVIDEND quantity, price, and fee must be empty", "quantity"})
+		}
+		tx.Quantity, tx.Price, tx.Fee = "", "", ""
 		if err == nil && amount.Sign() <= 0 {
-			errs = append(errs, APIError{"invalid_amount", "DEPOSIT amount must be positive", "amount"})
+			errs = append(errs, APIError{"invalid_amount", "DIVIDEND amount must be positive", "amount"})
+		}
+	case "SPLIT":
+		if tx.Symbol == "" {
+			errs = append(errs, APIError{"required", "symbol is required for SPLIT", "symbol"})
+		} else {
+			tx.InstrumentID = "instrument_" + strings.ToLower(tx.Symbol)
+		}
+		positiveDecimal(tx.Quantity, "quantity", &errs)
+		if tx.Price != "" || tx.Fee != "" {
+			errs = append(errs, APIError{"invalid_fields", "SPLIT price and fee must be empty", "price"})
+		}
+		tx.Price, tx.Fee = "", ""
+		if err == nil && amount.Sign() != 0 {
+			errs = append(errs, APIError{"invalid_amount", "SPLIT amount must be zero", "amount"})
 		}
 	case "BUY", "SELL":
 		if tx.Symbol == "" {
@@ -610,7 +701,7 @@ func (s *Service) normalize(record []string, value func([]string, string) string
 			}
 		}
 	default:
-		errs = append(errs, APIError{"invalid_type", "type must be DEPOSIT, BUY, or SELL", "type"})
+		errs = append(errs, APIError{"invalid_type", "unsupported transaction type", "type"})
 	}
 	return tx, errs
 }
@@ -655,7 +746,7 @@ func unresolved(tx *Transaction) *Resolution {
 			RequiredAction: "select_account", CandidateIDs: []string{"account-main"},
 		}
 	}
-	if tx.Type != "DEPOSIT" && tx.Symbol != "AAPL" {
+	if tx.Symbol != "" && tx.Symbol != "AAPL" {
 		return &Resolution{
 			Kind: "instrument", SourceField: "symbol", SourceValue: tx.Symbol,
 			RequiredAction: "select_instrument", CandidateIDs: []string{"instrument_aapl"},
@@ -819,12 +910,24 @@ func snapshotFrom(ctx context.Context, q queryer) (*PortfolioSnapshot, error) {
 		if occurredAt > asOf {
 			asOf = occurredAt
 		}
-		if typ == "DEPOSIT" {
+		switch typ {
+		case "DEPOSIT", "WITHDRAWAL", "DIVIDEND", "FEE", "TAX":
 			continue
 		}
 		quantity, err := parseDecimal(quantityRaw)
 		if err != nil {
 			return nil, err
+		}
+		key := instrument + "\x00" + currency
+		p := positions[key]
+		if typ == "SPLIT" {
+			if p == nil || len(p.lots) == 0 {
+				return nil, fmt.Errorf("SPLIT %s has no open holding", eventID)
+			}
+			for i := range p.lots {
+				p.lots[i].quantity.Mul(p.lots[i].quantity, quantity)
+			}
+			continue
 		}
 		price, err := parseDecimal(priceRaw)
 		if err != nil {
@@ -834,8 +937,6 @@ func snapshotFrom(ctx context.Context, q queryer) (*PortfolioSnapshot, error) {
 		if err != nil {
 			return nil, err
 		}
-		key := instrument + "\x00" + currency
-		p := positions[key]
 		if p == nil {
 			p = &position{instrument: instrument, symbol: symbol, currency: currency}
 			positions[key] = p
@@ -990,13 +1091,43 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err := db.QueryRow(`SELECT revision FROM ledger_meta WHERE singleton=1`).Scan(&sourceRevision); err != nil {
 		return nil, err
 	}
+	sourceOrders, err := proveOrderRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source order recovery proof: %w", err)
+	}
+	sourceBroker, err := proveBrokerRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source broker recovery proof: %w", err)
+	}
+	sourceStrategy, err := proveStrategyRegistryRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source strategy registry recovery proof: %w", err)
+	}
 	createdAt := now().UTC()
 	quoted := strings.ReplaceAll(out, "'", "''")
 	if _, err := db.Exec(`VACUUM INTO '` + quoted + `'`); err != nil {
 		return nil, fmt.Errorf("consistent backup: %w", err)
 	}
-	if err := verifyRestore(out, golden); err != nil {
+	candidateOrders, err := verifyRestoreProof(out, golden)
+	if err != nil {
 		return nil, err
+	}
+	candidateBroker, err := verifyBrokerRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
+	candidateStrategy, err := verifyStrategyRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
+	if sourceOrders != candidateOrders {
+		return nil, errors.New("backup order recovery proof does not match source")
+	}
+	if sourceBroker != candidateBroker {
+		return nil, errors.New("backup broker recovery proof does not match source")
+	}
+	if !sameStrategyRegistryProof(sourceStrategy, candidateStrategy) {
+		return nil, errors.New("backup strategy registry recovery proof does not match source")
 	}
 	dbSHA, size, err := hashFile(out)
 	if err != nil {
@@ -1008,13 +1139,21 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	}
 	verifiedAt := now().UTC()
 	manifest := &BackupManifest{
-		FormatVersion: "omni-folio-backup.v1", SchemaVersion: "ledger.v1", CreatedAt: createdAt.Format(time.RFC3339Nano),
-		SourceLedgerRevision: revision(sourceRevision), DBSHA256: dbSHA, SizeBytes: size, ExpectedSnapshotSHA256: snapshotSHA,
+		FormatVersion: "omni-folio-backup.v5", SchemaVersion: "omni-folio.sqlite.v7", CreatedAt: createdAt.Format(time.RFC3339Nano),
+		SourceLedgerRevision: revision(sourceRevision), OrderStateSHA256: sourceOrders.SHA256, OrderCount: sourceOrders.Orders,
+		OrderEventCount: sourceOrders.Events, ExecutionAuthoritySHA256: sourceOrders.ExecutionAuthoritySHA256,
+		ExecutionAuthorityEventCount: sourceOrders.ExecutionAuthorityEvents, RiskReservationSHA256: sourceOrders.RiskReservationSHA256,
+		RiskReservationCount: sourceOrders.RiskReservations, BrokerStateSHA256: sourceBroker.SHA256, BrokerSnapshotCount: sourceBroker.Snapshots,
+		BrokerReconciliationCount: sourceBroker.Reconciliations,
+		StrategyRegistrySHA256:    sourceStrategy.SHA256, StrategyEvidenceCount: sourceStrategy.Evidence,
+		StrategySelectionEventCount: sourceStrategy.Events, SelectedStrategyResultSHA256: sourceStrategy.SelectedResultSHA256,
+		DBSHA256: dbSHA, SizeBytes: size, ExpectedSnapshotSHA256: snapshotSHA,
 		Encryption: BackupEncryption{Encrypted: false, Algorithm: "none"},
 		VerificationReceipt: VerificationReceipt{
 			ReceiptID: id("backup_verification"), CandidateID: id("restore_candidate"), VerifiedAt: verifiedAt.Format(time.RFC3339Nano),
-			Status: "verified", IntegrityCheck: "ok", GoldenSnapshotCheck: "ok", CandidateDBSHA256: dbSHA,
-			CandidateSnapshotSHA256: snapshotSHA, EligibleForActivation: true, Errors: []string{},
+			Status: "verified", IntegrityCheck: "ok", GoldenSnapshotCheck: "ok", OrderStateCheck: "ok", BrokerStateCheck: "ok", StrategyRegistryCheck: "ok", CandidateDBSHA256: dbSHA,
+			CandidateSnapshotSHA256: snapshotSHA, CandidateOrderStateSHA256: candidateOrders.SHA256,
+			CandidateBrokerStateSHA256: candidateBroker.SHA256, CandidateStrategyRegistrySHA256: candidateStrategy.SHA256, EligibleForActivation: true, Errors: []string{},
 		},
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
@@ -1029,38 +1168,310 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 }
 
 func verifyRestore(path, goldenPath string) error {
+	if _, err := verifyRestoreProof(path, goldenPath); err != nil {
+		return err
+	}
+	if _, err := verifyBrokerRestoreProof(path); err != nil {
+		return err
+	}
+	_, err := verifyStrategyRestoreProof(path)
+	return err
+}
+
+func verifyStrategyRestoreProof(path string) (strategyRegistryRecoveryProof, error) {
 	db, err := openExistingDB(path)
 	if err != nil {
-		return err
+		return strategyRegistryRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := proveStrategyRegistryRecovery(context.Background(), db)
+	if err != nil {
+		return strategyRegistryRecoveryProof{}, fmt.Errorf("candidate strategy registry recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func verifyBrokerRestoreProof(path string) (brokerRecoveryProof, error) {
+	db, err := openExistingDB(path)
+	if err != nil {
+		return brokerRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := proveBrokerRecovery(context.Background(), db)
+	if err != nil {
+		return brokerRecoveryProof{}, fmt.Errorf("candidate broker recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func verifyRestoreProof(path, goldenPath string) (orderRecoveryProof, error) {
+	db, err := openExistingDB(path)
+	if err != nil {
+		return orderRecoveryProof{}, err
 	}
 	defer db.Close()
 	var integrity string
 	if err := db.QueryRow(`PRAGMA integrity_check`).Scan(&integrity); err != nil {
-		return err
+		return orderRecoveryProof{}, err
 	}
 	if integrity != "ok" {
-		return fmt.Errorf("integrity_check: %s", integrity)
+		return orderRecoveryProof{}, fmt.Errorf("integrity_check: %s", integrity)
+	}
+	if err := requireOrderRestoreSchema(db); err != nil {
+		return orderRecoveryProof{}, err
 	}
 	actual, err := snapshotFrom(context.Background(), db)
 	if err != nil {
-		return err
+		return orderRecoveryProof{}, err
 	}
 	goldenBytes, err := os.ReadFile(goldenPath)
 	if err != nil {
-		return err
+		return orderRecoveryProof{}, err
 	}
 	var golden PortfolioSnapshot
 	dec := json.NewDecoder(bytes.NewReader(goldenBytes))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&golden); err != nil {
-		return fmt.Errorf("golden snapshot: %w", err)
+		return orderRecoveryProof{}, fmt.Errorf("golden snapshot: %w", err)
 	}
 	actualJSON, _ := json.Marshal(actual)
 	goldenJSON, _ := json.Marshal(&golden)
 	if !bytes.Equal(actualJSON, goldenJSON) {
-		return fmt.Errorf("restored snapshot does not match golden: got %s", actualJSON)
+		return orderRecoveryProof{}, fmt.Errorf("restored snapshot does not match golden: got %s", actualJSON)
+	}
+	proof, err := proveOrderRecovery(context.Background(), db)
+	if err != nil {
+		return orderRecoveryProof{}, fmt.Errorf("candidate order recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func requireOrderRestoreSchema(db *sql.DB) error {
+	if err := requireSchema(db); err != nil {
+		return fmt.Errorf("restore schema: %w", err)
+	}
+	for _, table := range []string{"order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events"} {
+		var strict int
+		if err := db.QueryRow(`SELECT strict FROM pragma_table_list WHERE schema='main' AND type='table' AND name=?`, table).Scan(&strict); err != nil {
+			return fmt.Errorf("restore order table %s: %w", table, err)
+		}
+		if strict != 1 {
+			return fmt.Errorf("restore order table %s is not strict", table)
+		}
+	}
+	for _, unique := range []struct {
+		table   string
+		columns []string
+		origin  string
+	}{
+		{"order_idempotency", []string{"provider", "mode", "account_ref", "client_order_id"}, "pk"},
+		{"order_idempotency", []string{"order_id"}, "u"},
+		{"order_events", []string{"event_id"}, "u"},
+		{"order_events", []string{"provider_execution_ref"}, "u"},
+		{"execution_authority_events", []string{"event_id"}, "u"},
+		{"execution_authority_events", []string{"account_ref", "fencing_token"}, "u"},
+		{"risk_reservations", []string{"reservation_id"}, "u"},
+		{"risk_reservations", []string{"order_id"}, "u"},
+		{"risk_reservations", []string{"risk_event_id"}, "u"},
+		{"risk_reservations", []string{"dispatch_event_id"}, "u"},
+		{"broker_snapshots", []string{"snapshot_id"}, "u"},
+		{"broker_snapshots", []string{"provider", "environment", "exchange", "account_ref", "fetched_at"}, "u"},
+		{"broker_snapshot_reconciliations", []string{"reconciliation_id"}, "u"},
+		{"broker_snapshot_reconciliations", []string{"snapshot_id", "ledger_account_id", "ledger_revision"}, "u"},
+		{"strategy_research_evidence", []string{"result_sha256"}, "u"},
+		{"strategy_selection_events", []string{"event_id"}, "u"},
+	} {
+		ok, err := hasUniqueIndex(db, unique.table, unique.columns, unique.origin)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("restore order table %s lacks required unique columns %s", unique.table, strings.Join(unique.columns, ","))
+		}
+	}
+	for _, table := range []string{"order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events"} {
+		var sequenceType string
+		var sequencePK, primaryKeyColumns, primaryKeyIndexes int
+		if err := db.QueryRow(`SELECT type, pk FROM pragma_table_info(?) WHERE name='sequence'`, table).Scan(&sequenceType, &sequencePK); err != nil {
+			return fmt.Errorf("restore %s sequence: %w", table, err)
+		}
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE pk>0`, table).Scan(&primaryKeyColumns); err != nil {
+			return fmt.Errorf("restore %s primary key: %w", table, err)
+		}
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_index_list(?) WHERE origin='pk'`, table).Scan(&primaryKeyIndexes); err != nil {
+			return fmt.Errorf("restore %s primary-key index: %w", table, err)
+		}
+		if !strings.EqualFold(sequenceType, "INTEGER") || sequencePK != 1 || primaryKeyColumns != 1 || primaryKeyIndexes != 0 {
+			return fmt.Errorf("restore %s sequence is not the integer primary key", table)
+		}
+	}
+	var foreignKeys, matchingForeignKeys int
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(("table"='order_idempotency' AND "from"='order_id' AND "to"='order_id') OR ("table"='risk_reservations' AND "from"='authority_reservation_id' AND "to"='reservation_id')), 0) FROM pragma_foreign_key_list(?)`, "order_events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore order foreign key: %w", err)
+	}
+	if foreignKeys != 2 || matchingForeignKeys != 2 {
+		return errors.New("restore order events lack required order or authority foreign keys")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(("table"='order_idempotency' AND "from"='order_id' AND "to"='order_id') OR ("table"='execution_authority_events' AND "from"='authority_event_id' AND "to"='event_id')), 0) FROM pragma_foreign_key_list(?)`, "risk_reservations").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore risk reservation foreign keys: %w", err)
+	}
+	if foreignKeys != 2 || matchingForeignKeys != 2 {
+		return errors.New("restore risk reservations lack required order or authority foreign keys")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM("table"='broker_snapshots' AND "from"='snapshot_id' AND "to"='snapshot_id'), 0) FROM pragma_foreign_key_list(?)`, "broker_snapshot_reconciliations").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore broker reconciliation foreign key: %w", err)
+	}
+	if foreignKeys != 1 || matchingForeignKeys != 1 {
+		return errors.New("restore broker reconciliations lack the required snapshot foreign key")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(("table"='strategy_research_evidence' AND "from"='candidate_result_sha256' AND "to"='result_sha256') OR ("table"='strategy_selection_events' AND "from"='source_event_id' AND "to"='event_id')), 0) FROM pragma_foreign_key_list(?)`, "strategy_selection_events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore strategy selection foreign keys: %w", err)
+	}
+	if foreignKeys != 2 || matchingForeignKeys != 2 {
+		return errors.New("restore strategy selection events lack required evidence or source foreign keys")
+	}
+	foreignKeyRows, err := db.Query(`PRAGMA foreign_key_check`)
+	if err != nil {
+		return err
+	}
+	if foreignKeyRows.Next() {
+		foreignKeyRows.Close()
+		return errors.New("restore candidate has broken foreign keys")
+	}
+	if err := foreignKeyRows.Err(); err != nil {
+		foreignKeyRows.Close()
+		return err
+	}
+	if err := foreignKeyRows.Close(); err != nil {
+		return err
+	}
+	required := map[string]struct {
+		table     string
+		operation string
+	}{
+		"order_idempotency_no_update":               {"order_idempotency", "update"},
+		"order_idempotency_no_delete":               {"order_idempotency", "delete"},
+		"order_events_no_update":                    {"order_events", "update"},
+		"order_events_no_delete":                    {"order_events", "delete"},
+		"execution_authority_events_no_update":      {"execution_authority_events", "update"},
+		"execution_authority_events_no_delete":      {"execution_authority_events", "delete"},
+		"risk_reservations_no_update":               {"risk_reservations", "update"},
+		"risk_reservations_no_delete":               {"risk_reservations", "delete"},
+		"broker_snapshots_no_update":                {"broker_snapshots", "update"},
+		"broker_snapshots_no_delete":                {"broker_snapshots", "delete"},
+		"broker_snapshot_reconciliations_no_update": {"broker_snapshot_reconciliations", "update"},
+		"broker_snapshot_reconciliations_no_delete": {"broker_snapshot_reconciliations", "delete"},
+		"events_no_update":                          {"events", "update"},
+		"events_no_delete":                          {"events", "delete"},
+		"strategy_research_evidence_no_update":      {"strategy_research_evidence", "update"},
+		"strategy_research_evidence_no_delete":      {"strategy_research_evidence", "delete"},
+		"strategy_selection_events_no_update":       {"strategy_selection_events", "update"},
+		"strategy_selection_events_no_delete":       {"strategy_selection_events", "delete"},
+	}
+	rows, err := db.Query(`SELECT name, tbl_name, sql FROM sqlite_master WHERE type='trigger'`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name, table, definition string
+		if err := rows.Scan(&name, &table, &definition); err != nil {
+			return err
+		}
+		expected, ok := required[name]
+		normalized := strings.ToLower(strings.Join(strings.Fields(definition), " "))
+		expectedSQL := fmt.Sprintf("create trigger %s before %s on %s begin select raise(abort, '%s is insert-only'); end",
+			name, expected.operation, expected.table, expected.table)
+		if ok && expected.table == table && normalized == expectedSQL {
+			delete(required, name)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if len(required) != 0 {
+		return errors.New("restore candidate is missing insert-only state triggers")
+	}
+	guardSQL := map[string]struct {
+		table string
+		sql   string
+	}{
+		"order_events_risk_reservation_guard":          {"order_events", "create trigger order_events_risk_reservation_guard before insert on order_events when new.event_type = 'risk_approved' begin select case when new.authority_reservation_id is null or not exists ( select 1 from risk_reservations where reservation_id = new.authority_reservation_id and order_id = new.order_id and risk_event_id = new.event_id and reservation_id = json_extract(new.event_json, '$.risk_reservation_id') and policy_version = json_extract(new.event_json, '$.risk_policy_version') and fencing_token = json_extract(new.event_json, '$.fencing_token') ) then raise(abort, 'risk approval requires an authority reservation') end; end"},
+		"order_events_dispatch_reservation_guard":      {"order_events", "create trigger order_events_dispatch_reservation_guard before insert on order_events when new.event_type = 'submit_dispatched' begin select case when new.authority_reservation_id is null or not exists ( select 1 from risk_reservations where reservation_id = new.authority_reservation_id and order_id = new.order_id and dispatch_event_id = new.event_id and reservation_id = json_extract(new.event_json, '$.risk_reservation_id') and policy_version = json_extract(new.event_json, '$.risk_policy_version') and fencing_token = json_extract(new.event_json, '$.fencing_token') ) then raise(abort, 'submit dispatch requires an authority reservation') end; end"},
+		"order_events_non_authority_reservation_guard": {"order_events", "create trigger order_events_non_authority_reservation_guard before insert on order_events when new.event_type not in ('risk_approved', 'submit_dispatched') and new.authority_reservation_id is not null begin select raise(abort, 'authority reservation is invalid for this event'); end"},
+		"strategy_selection_events_state_guard":        {"strategy_selection_events", "create trigger strategy_selection_events_state_guard before insert on strategy_selection_events begin select case when new.expected_current_event_id != coalesce( (select event_id from strategy_selection_events order by sequence desc limit 1), 'no_event' ) then raise(abort, 'strategy selection expected current event is stale') end; select case when new.previous_selected_result_sha256 != coalesce( (select selected_result_sha256 from strategy_selection_events order by sequence desc limit 1), 'no_strategy' ) then raise(abort, 'strategy selection previous result is stale') end; select case when new.event_type = 'select' and ( new.selected_result_sha256 != new.candidate_result_sha256 or not exists ( select 1 from strategy_research_evidence where result_sha256 = new.candidate_result_sha256 and target = 'paper_candidate' ) ) then raise(abort, 'strategy selection requires paper_candidate evidence') end; select case when new.event_type = 'rollback' and new.source_event_id != coalesce( (select event_id from strategy_selection_events order by sequence desc limit 1), 'no_event' ) then raise(abort, 'strategy rollback source is stale') end; end"},
+	}
+	for name, expected := range guardSQL {
+		var definition string
+		if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='trigger' AND name=? AND tbl_name=?`, name, expected.table).Scan(&definition); err != nil {
+			return fmt.Errorf("restore authority guard %s: %w", name, err)
+		}
+		normalized := strings.ToLower(strings.Join(strings.Fields(definition), " "))
+		if normalized != expected.sql {
+			return fmt.Errorf("restore authority guard %s does not match the required definition", name)
+		}
 	}
 	return nil
+}
+
+func hasUniqueIndex(db *sql.DB, table string, expected []string, origin string) (bool, error) {
+	rows, err := db.Query(`SELECT name FROM pragma_index_list(?) WHERE "unique"=1 AND partial=0 AND origin=?`, table, origin)
+	if err != nil {
+		return false, err
+	}
+	var indexes []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return false, err
+		}
+		indexes = append(indexes, name)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return false, err
+	}
+	if err := rows.Close(); err != nil {
+		return false, err
+	}
+	for _, index := range indexes {
+		columnRows, err := db.Query(`SELECT name FROM pragma_index_info(?) ORDER BY seqno`, index)
+		if err != nil {
+			return false, err
+		}
+		var columns []string
+		for columnRows.Next() {
+			var column sql.NullString
+			if err := columnRows.Scan(&column); err != nil {
+				columnRows.Close()
+				return false, err
+			}
+			if column.Valid {
+				columns = append(columns, column.String)
+			}
+		}
+		if err := columnRows.Err(); err != nil {
+			columnRows.Close()
+			return false, err
+		}
+		if err := columnRows.Close(); err != nil {
+			return false, err
+		}
+		if len(columns) == len(expected) {
+			matches := true
+			for i := range columns {
+				matches = matches && columns[i] == expected[i]
+			}
+			if matches {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func verifyManifest(path, goldenPath, manifestPath string) error {
@@ -1074,12 +1485,12 @@ func verifyManifest(path, goldenPath, manifestPath string) error {
 	if err := dec.Decode(&manifest); err != nil {
 		return fmt.Errorf("backup manifest: %w", err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v1" || manifest.SchemaVersion != "ledger.v1" ||
+	if manifest.FormatVersion != "omni-folio-backup.v5" || manifest.SchemaVersion != "omni-folio.sqlite.v7" ||
 		manifest.Encryption.Encrypted || manifest.Encryption.Algorithm != "none" {
 		return errors.New("unsupported backup manifest version or encryption")
 	}
 	receipt := manifest.VerificationReceipt
-	if receipt.Status != "verified" || receipt.IntegrityCheck != "ok" || receipt.GoldenSnapshotCheck != "ok" || !receipt.EligibleForActivation || len(receipt.Errors) != 0 {
+	if receipt.Status != "verified" || receipt.IntegrityCheck != "ok" || receipt.GoldenSnapshotCheck != "ok" || receipt.OrderStateCheck != "ok" || receipt.BrokerStateCheck != "ok" || receipt.StrategyRegistryCheck != "ok" || !receipt.EligibleForActivation || len(receipt.Errors) != 0 {
 		return errors.New("backup manifest is not eligible for activation")
 	}
 	dbSHA, size, err := hashFile(path)
@@ -1096,8 +1507,32 @@ func verifyManifest(path, goldenPath, manifestPath string) error {
 	if manifest.ExpectedSnapshotSHA256 != snapshotSHA || receipt.CandidateSnapshotSHA256 != snapshotSHA {
 		return errors.New("backup snapshot hash mismatch")
 	}
-	if err := verifyRestore(path, goldenPath); err != nil {
+	orders, err := verifyRestoreProof(path, goldenPath)
+	if err != nil {
 		return err
+	}
+	if manifest.OrderStateSHA256 != orders.SHA256 || receipt.CandidateOrderStateSHA256 != orders.SHA256 ||
+		manifest.OrderCount != orders.Orders || manifest.OrderEventCount != orders.Events ||
+		manifest.ExecutionAuthoritySHA256 != orders.ExecutionAuthoritySHA256 || manifest.ExecutionAuthorityEventCount != orders.ExecutionAuthorityEvents ||
+		manifest.RiskReservationSHA256 != orders.RiskReservationSHA256 || manifest.RiskReservationCount != orders.RiskReservations {
+		return errors.New("backup order recovery proof mismatch")
+	}
+	broker, err := verifyBrokerRestoreProof(path)
+	if err != nil {
+		return err
+	}
+	if manifest.BrokerStateSHA256 != broker.SHA256 || receipt.CandidateBrokerStateSHA256 != broker.SHA256 ||
+		manifest.BrokerSnapshotCount != broker.Snapshots || manifest.BrokerReconciliationCount != broker.Reconciliations {
+		return errors.New("backup broker recovery proof mismatch")
+	}
+	strategy, err := verifyStrategyRestoreProof(path)
+	if err != nil {
+		return err
+	}
+	if manifest.StrategyRegistrySHA256 != strategy.SHA256 || receipt.CandidateStrategyRegistrySHA256 != strategy.SHA256 ||
+		manifest.StrategyEvidenceCount != strategy.Evidence || manifest.StrategySelectionEventCount != strategy.Events ||
+		manifest.SelectedStrategyResultSHA256 != strategy.SelectedResultSHA256 {
+		return errors.New("backup strategy registry recovery proof mismatch")
 	}
 	db, err := openExistingDB(path)
 	if err != nil {

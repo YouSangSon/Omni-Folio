@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -18,7 +21,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: omni-core <migrate|serve|backup|verify-restore>")
+		return fmt.Errorf("usage: omni-core <migrate|serve|backup|verify-restore|strategy-register|strategy-status|strategy-select|strategy-rollback>")
 	}
 	switch args[0] {
 	case "migrate":
@@ -38,6 +41,7 @@ func run(args []string) error {
 		dbPath := fs.String("db", "omni-folio.db", "SQLite database path")
 		addr := fs.String("addr", "127.0.0.1:8080", "listen address")
 		allowOrigin := fs.String("allow-origin", "", "exact browser origin allowed for local development")
+		marketFixture := fs.String("market-fixture", "", "optional local market-data CSV fixture path")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -53,6 +57,13 @@ func run(args []string) error {
 			return err
 		}
 		svc := newService(db, time.Now, randomID)
+		if *marketFixture != "" {
+			marketData, err := loadMarketDataFixture(*marketFixture)
+			if err != nil {
+				return err
+			}
+			svc.marketData = marketData
+		}
 		srv := &http.Server{
 			Addr:              *addr,
 			Handler:           withCORS(svc.routes(), *allowOrigin),
@@ -94,6 +105,105 @@ func run(args []string) error {
 			return fmt.Errorf("verify-restore requires -db, -golden, and -manifest")
 		}
 		return verifyManifest(*dbPath, *golden, *manifest)
+	case "strategy-register":
+		fs := flag.NewFlagSet("strategy-register", flag.ContinueOnError)
+		dbPath := fs.String("db", "omni-folio.db", "SQLite database path")
+		artifactPath := fs.String("artifact", "", "local strategy-improvement-result JSON path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *artifactPath == "" || fs.NArg() != 0 {
+			return errors.New("strategy-register requires -artifact and no positional arguments")
+		}
+		artifact, err := readStrategyArtifact(*artifactPath)
+		if err != nil {
+			return err
+		}
+		db, err := openExistingDB(*dbPath)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		if err := requireSchema(db); err != nil {
+			return err
+		}
+		evidence, err := newService(db, time.Now, randomID).registerStrategyEvidence(context.Background(), artifact)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(evidence)
+	case "strategy-status":
+		fs := flag.NewFlagSet("strategy-status", flag.ContinueOnError)
+		dbPath := fs.String("db", "omni-folio.db", "SQLite database path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 {
+			return errors.New("strategy-status accepts no positional arguments")
+		}
+		db, err := openExistingDB(*dbPath)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		if err := requireSchema(db); err != nil {
+			return err
+		}
+		proof, err := proveStrategyRegistryRecovery(context.Background(), db)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(StrategySelectionState{
+			CurrentEventID: proof.CurrentEventID, SelectedResultSHA256: proof.SelectedResultSHA256,
+		})
+	case "strategy-select":
+		fs := flag.NewFlagSet("strategy-select", flag.ContinueOnError)
+		dbPath := fs.String("db", "omni-folio.db", "SQLite database path")
+		resultSHA := fs.String("result-sha256", "", "registered paper_candidate result SHA-256")
+		expected := fs.String("expected-current-event", "", "current selection event ID or no_event")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *resultSHA == "" || *expected == "" || fs.NArg() != 0 {
+			return errors.New("strategy-select requires -result-sha256, -expected-current-event, and no positional arguments")
+		}
+		db, err := openExistingDB(*dbPath)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		if err := requireSchema(db); err != nil {
+			return err
+		}
+		state, err := newService(db, time.Now, randomID).selectPaperCandidate(context.Background(), *resultSHA, *expected)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(state)
+	case "strategy-rollback":
+		fs := flag.NewFlagSet("strategy-rollback", flag.ContinueOnError)
+		dbPath := fs.String("db", "omni-folio.db", "SQLite database path")
+		expected := fs.String("expected-current-event", "", "current selection event ID")
+		source := fs.String("source-event", "", "selection event being rolled back")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *expected == "" || *source == "" || fs.NArg() != 0 {
+			return errors.New("strategy-rollback requires -expected-current-event, -source-event, and no positional arguments")
+		}
+		db, err := openExistingDB(*dbPath)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		if err := requireSchema(db); err != nil {
+			return err
+		}
+		state, err := newService(db, time.Now, randomID).rollbackPaperCandidate(context.Background(), *expected, *source)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(state)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}

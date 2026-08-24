@@ -92,6 +92,10 @@ class ImprovementTest(unittest.TestCase):
         result_schema = json.loads((ROOT / "contracts" / "strategy-improvement-result.schema.json").read_text(encoding="utf-8"))
         config_schema = json.loads((ROOT / "contracts" / "strategy-improvement-config.schema.json").read_text(encoding="utf-8"))
         self.assertEqual(result_schema["properties"]["schema_version"]["const"], first["schema_version"])
+        self.assertFalse(result_schema["additionalProperties"])
+        self.assertIn("execution", result_schema["required"])
+        self.assertFalse(result_schema["properties"]["manifest"]["additionalProperties"])
+        self.assertFalse(result_schema["properties"]["promotion"]["additionalProperties"])
         self.assertEqual(
             result_schema["properties"]["manifest"]["properties"]["evaluation_policy"]["properties"]["version"]["const"],
             first["manifest"]["evaluation_policy"]["version"],
