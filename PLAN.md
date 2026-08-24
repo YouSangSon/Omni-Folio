@@ -43,7 +43,7 @@
 
 - 문서 인덱스: [`docs/README.md`](docs/README.md)
 - Runtime와 monorepo: [`docs/adr/0001-runtime-and-monorepo.md`](docs/adr/0001-runtime-and-monorepo.md)
-- 제품 목표: [`docs/goal-prompt.md`](docs/goal-prompt.md)
+- 제품 목표와 실행 권한: [`goal.md`](goal.md)
 - 상세 계획과 review 기록: [`docs/omni-folio-plan.md`](docs/omni-folio-plan.md)
 - 브로커 우선순위와 Toss-inspired UX: [`docs/broker-priority-and-ux.md`](docs/broker-priority-and-ux.md)
 - Gate 상태: [`GATES.md`](GATES.md)

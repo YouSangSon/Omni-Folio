@@ -4,7 +4,7 @@
 
 ## 처음 읽는 순서
 
-1. [`../goal.md`](../goal.md) — 현재 목표, 실행 권한, 안전 상한
+1. [`../goal.md`](../goal.md) — 제품 목표, 실행 권한, 안전 상한, 아키텍처와 완료 조건의 단일 goal prompt
 2. [`../PLAN.md`](../PLAN.md) — Now/Next/Later 실행 순서
 3. [`../GATES.md`](../GATES.md) — 단계별 promotion tree
 4. [`../DESIGN.md`](../DESIGN.md) — Flutter 제품 경험과 접근성 계약
@@ -15,7 +15,6 @@
 | 목적 | 문서 | 역할 |
 |---|---|---|
 | 도메인 용어·불변식 | [`../CONTEXT.md`](../CONTEXT.md) | ledger, broker truth, reconciliation, live-disabled의 공통 언어 |
-| 구현용 전체 목표 | [`goal-prompt.md`](goal-prompt.md) | 제품·도메인·자동매매·cloud acceptance의 정식 prompt |
 | 상세 실행 계획 | [`omni-folio-plan.md`](omni-folio-plan.md) | 조사, 단계, 위험, review decision ledger |
 | API·오픈소스 조사 | [`omni-folio-research-report.md`](omni-folio-research-report.md) | 공식 소스와 후보 생태계 비교 |
 | 브로커·UX 결정 | [`broker-priority-and-ux.md`](broker-priority-and-ux.md) | 키움 우선, 토스증권 두 번째, Toss-inspired 원칙 |
