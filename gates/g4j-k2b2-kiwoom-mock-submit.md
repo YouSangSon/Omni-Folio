@@ -12,6 +12,8 @@ Scope: Go core internal-only, credential-free synthetic Kiwoom mock `kt10000` LI
   - CHECK: `cd services/core && go test -run '^TestK2B2' -count=1 ./...`
 - [x] **Secret and identity boundary:** raw provider order number, provider messages and access token are absent from durable order state/events and returned errors.
   - CHECK: `cd services/core && go test -run '^TestK2B2' -count=1 ./...`
+- [x] **Read/write identity convergence:** an accepted submit and a later account snapshot derive the same opaque provider order ref from the same account and provider order number.
+  - CHECK: `cd services/core && go test -run '^TestKiwoomSnapshotPaginatesNormalizesAndRedacts$|^TestK2B2MockLimitSubmitAcknowledgesOnceAndRedactsProviderIdentity$' -count=1 ./...`
 
 The request and response fields are pinned to the [official Kiwoom order specification](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/5677b0efedda2525ba278787c24be66b57ef222b/kiwoom_docs/%EC%A3%BC%EB%AC%B8.md) at official repository commit [`5677b0e`](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/commit/5677b0efedda2525ba278787c24be66b57ef222b).
 

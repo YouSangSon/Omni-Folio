@@ -313,6 +313,7 @@ func (c *KiwoomClient) evaluation(ctx context.Context, exchange KiwoomExchange) 
 func (c *KiwoomClient) openOrders(ctx context.Context, rawAccount string) ([]KiwoomOpenOrder, error) {
 	orders := make([]KiwoomOpenOrder, 0)
 	seen := make(map[string]struct{})
+	accountRef := c.alias("account", rawAccount)
 	err := c.accountPages(ctx, "ka10075", map[string]string{"all_stk_tp": "0", "trde_tp": "0", "stex_tp": "1"}, func(body []byte) error {
 		var response kiwoomOpenOrdersResponse
 		if err := kiwoomDecode(body, &response); err != nil {
@@ -329,7 +330,7 @@ func (c *KiwoomClient) openOrders(ctx context.Context, rawAccount string) ([]Kiw
 			if !ok || order.Exchange != string(KiwoomKRX) {
 				return &KiwoomError{Kind: "invalid_order", APIID: "ka10075"}
 			}
-			order.OrderRef = c.alias("order", rawAccount+"\x00"+row.OrderNumber)
+			order.OrderRef = c.orderAlias(accountRef, row.OrderNumber)
 			if _, duplicate := seen[order.OrderRef]; duplicate {
 				return &KiwoomError{Kind: "duplicate_order", APIID: "ka10075"}
 			}
@@ -545,6 +546,10 @@ func (c *KiwoomClient) alias(kind, raw string) string {
 	mac.Write([]byte{0})
 	mac.Write([]byte(raw))
 	return "kiwoom_" + kind + "_" + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)[:18])
+}
+
+func (c *KiwoomClient) orderAlias(accountRef, rawOrderNumber string) string {
+	return c.alias("order", accountRef+"\x00"+rawOrderNumber)
 }
 
 func kiwoomBaseURL(environment KiwoomEnvironment) string {

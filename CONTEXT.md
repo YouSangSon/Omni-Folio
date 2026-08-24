@@ -44,5 +44,5 @@
 - public market series는 `price_adjustment`를 생략하지 않는다. local fixture는 `unspecified`로 고정하고 화면에서도 조정 여부를 확인하지 못했다고 표시한다.
 - synthetic Kiwoom candle 결과는 `provider_adjusted`를 내부 provenance로 보존한다. 공식 문서가 timestamp timezone을 명시하지 않아 Asia/Seoul을 운영 가정으로 해석하며, adjustment event·freshness·실시간성을 주장하지 않는다.
 - `SUBMIT_UNKNOWN`은 실패가 아니다. 같은 주문과 해당 계좌의 신규 submit은 차단하되 이미 알려진 open order의 cancel은 위험 축소 경로로 허용한다. K2B0는 이미 ACK된 주문의 체결만 조정하며, 주문번호 없는 timeout은 종목·방향·수량·가격·시간이 같아도 결합하지 않고 `UNCORRELATED`로 유지한다.
-- K2B2 mock 주문은 token preflight가 성공한 뒤 reservation과 `SUBMIT_DISPATCHED`를 먼저 durable commit하고 broker write를 한 번만 시도한다. write의 401·provider auth code·timeout·network·5xx는 자동 재시도하지 않고 `SUBMIT_UNKNOWN`을 유지한다. 명시적 provider reject만 `REJECTED`로 끝내며 ACK의 원본 주문번호는 계좌 범위 HMAC alias로만 저장한다.
+- K2B2 mock 주문은 token preflight가 성공한 뒤 reservation과 `SUBMIT_DISPATCHED`를 먼저 durable commit하고 broker write를 한 번만 시도한다. write의 401·provider auth code·timeout·network·5xx는 자동 재시도하지 않고 `SUBMIT_UNKNOWN`을 유지한다. 명시적 provider reject만 `REJECTED`로 끝내며 ACK와 account snapshot은 동일한 `opaque account_ref + raw order number` HMAC namespace를 사용한다.
 - K2B1 dated aliases는 environment·account·요청 날짜를 포함한 별도 namespace이며 K2A/K2B0 order event alias로 사용할 수 없다. 요청 날짜와 provider-local execution clock을 결합해 UTC timestamp를 만들거나 terminal pagination을 complete execution history로 승격하지 않는다.

@@ -52,7 +52,7 @@ func (c *KiwoomClient) submitMockLimitOrder(ctx context.Context, intent OrderInt
 	if !kiwoomOrderPattern.MatchString(response.OrderNumber) || (response.Exchange != "" && response.Exchange != string(KiwoomKRX)) {
 		return "", &KiwoomError{Kind: "invalid_response", APIID: apiID}
 	}
-	return c.alias("order", intent.AccountRef+"\x00"+response.OrderNumber), nil
+	return c.orderAlias(intent.AccountRef, response.OrderNumber), nil
 }
 
 func (s *Service) submitAuthorizedKiwoomMockOrder(ctx context.Context, client *KiwoomClient, orderID string, fencingToken int64) (*OrderState, error) {

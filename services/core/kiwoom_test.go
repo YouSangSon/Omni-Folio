@@ -107,6 +107,15 @@ func TestKiwoomSnapshotPaginatesNormalizesAndRedacts(t *testing.T) {
 	if len(snapshot.OpenOrders) != 2 || snapshot.OpenOrders[0].Symbol != "111111" || snapshot.OpenOrders[0].Price != "0" || snapshot.OpenOrders[0].Side != "SELL" || snapshot.OpenOrders[0].Status != "OPEN" || snapshot.OpenOrders[1].Price != "1250" || snapshot.OpenOrders[1].Side != "BUY" {
 		t.Fatalf("orders were not normalized: %#v", snapshot.OpenOrders)
 	}
+	wantRefs := map[string]bool{
+		client.alias("order", snapshot.AccountRef+"\x00"+rawOrderOne): true,
+		client.alias("order", snapshot.AccountRef+"\x00"+rawOrderTwo): true,
+	}
+	for _, order := range snapshot.OpenOrders {
+		if !wantRefs[order.OrderRef] {
+			t.Fatalf("snapshot order ref cannot match a submit ACK: %q", order.OrderRef)
+		}
+	}
 	encoded, err := json.Marshal(snapshot)
 	if err != nil {
 		t.Fatal(err)
