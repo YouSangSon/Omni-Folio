@@ -61,6 +61,20 @@ type strategyRegistryRecoveryProof struct {
 	stack                []string
 }
 
+func validateStrategyOrderSelection(ctx context.Context, q orderQuerier, intent OrderIntent) error {
+	if intent.StrategyResultSHA256 == "" && intent.StrategySelectionEventID == "" {
+		return nil
+	}
+	state, err := replayStrategyRegistry(ctx, q)
+	if err != nil {
+		return err
+	}
+	if state.SelectedResultSHA256 != intent.StrategyResultSHA256 || state.CurrentEventID != intent.StrategySelectionEventID {
+		return errors.New("strategy order is not bound to the current paper candidate")
+	}
+	return nil
+}
+
 func sameStrategyRegistryProof(left, right strategyRegistryRecoveryProof) bool {
 	return left.SHA256 == right.SHA256 && left.Evidence == right.Evidence && left.Events == right.Events &&
 		left.SelectedResultSHA256 == right.SelectedResultSHA256 && left.CurrentEventID == right.CurrentEventID

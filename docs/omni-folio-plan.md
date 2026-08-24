@@ -959,3 +959,11 @@ K2B2 connects the existing K2C durable dispatch to the official Kiwoom mock LIMI
 - Focused K2B2 tests and the full Go core suite pass locally. The official order document is pinned in [`gates/g4j-k2b2-kiwoom-mock-submit.md`](../gates/g4j-k2b2-kiwoom-mock-submit.md).
 
 Still open for K2B: credentialed mock observation, lookup/correlation after a lost submit response, SELL policy, broker-coupled long-running fencing, public OpenAPI/Flutter flow, production risk, market/amend/cancel transport, fill-to-ledger reconciliation and every live-money path.
+
+## 2026-08-24 G3.5 continuation: strategy-selection-bound order authority
+
+G3.5 closes the stale-strategy handoff gap before adding a paper runner. An optional strategy order binding carries both the selected result SHA and exact selection event ID inside the append-only order intent.
+
+- A new strategy-bound intent is recorded only when both identifiers match the current registry replay. An exact idempotent retry still returns its existing order after a later rollback instead of creating a replacement.
+- K2C durable dispatch replays the registry again in the same SQLite transaction and fails closed if the candidate was rolled back or reselected under a newer event. Existing manual synthetic orders remain backward-compatible because empty bindings are omitted from canonical JSON.
+- This is not a paper runner, automatic promotion, paper performance evidence or broker-write race proof. Broker-coupled selection/lease fencing remains required before unattended or live-capable execution.

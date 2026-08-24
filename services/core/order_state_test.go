@@ -65,6 +65,10 @@ func TestK2AIntentValidationAndClientOrderIdempotency(t *testing.T) {
 		{"trailing-zero price", func(v *OrderIntent) { v.LimitPrice = "1000.0" }},
 		{"zero price", func(v *OrderIntent) { v.LimitPrice = "0" }},
 		{"wrong currency", func(v *OrderIntent) { v.Currency = "USD" }},
+		{"partial strategy binding", func(v *OrderIntent) { v.StrategyResultSHA256 = strings.Repeat("a", 64) }},
+		{"malformed strategy binding", func(v *OrderIntent) {
+			v.StrategyResultSHA256, v.StrategySelectionEventID = "not-a-sha", "bad event"
+		}},
 	}
 	for i, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

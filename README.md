@@ -12,7 +12,7 @@
 | G0 아키텍처·계약 | 통과 | versioned OpenAPI/JSON Schema, runtime ADR, root commands |
 | G1 로컬 원장 | 통과 | CSV preview → atomic apply → append-only exact cash/trade/dividend/tax/split replay → snapshot/receipt → schema v5 backup/restore |
 | G2 Flutter client | 부분 통과 | iOS·Android·web release build와 17개 자동 테스트 통과; chart 포함 Android emulator build/raster p95 2회 통과, physical-device·수동 screen-reader 및 test-instrumentation 격리 증거 남음 |
-| G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, Go/SQLite append-only paper-candidate registry와 수동 rollback |
+| G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, Go/SQLite append-only paper-candidate registry·수동 rollback, exact selection-bound order authority |
 | G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot, G4I/K2C 내부 합성 authority, G4J/K2B2 credential-free mock 지정가 submit 계약 통과. 실제 키움 credentialed 시세·모의주문 관찰, freshness/scheduling, unknown-submit 조회 복구, public 주문 UI, production risk와 모든 live gate는 남는다. |
 
 세부 상태와 완료 조건은 [`PLAN.md`](PLAN.md)와 [`GATES.md`](GATES.md)에서 관리합니다.

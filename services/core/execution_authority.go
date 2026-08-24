@@ -172,6 +172,9 @@ func (s *Service) authorizeSyntheticDispatchOnce(ctx context.Context, orderID st
 	if err != nil {
 		return nil, false, err
 	}
+	if err := validateStrategyOrderSelection(ctx, tx, intent); err != nil {
+		return nil, false, err
+	}
 	notional, notionalValue, err := validateSyntheticBuyPolicy(intent)
 	if err != nil {
 		return nil, false, err

@@ -28,6 +28,7 @@
 - **Promotion evidence**: paper, shadow, canary, limited-live 단계의 검증 결과와 승인 기록.
 - **Research evidence**: Python이 만든 immutable `strategy-improvement-result.v1`. 재현 가능한 평가 산출물이지 실행 권한이 아니다.
 - **Selected paper candidate**: Go registry replay가 가리키는 최신 `paper_candidate`; paper에서 실행 중인 champion이나 주문 승인과 동일하지 않다.
+- **Strategy order binding**: 전략이 만든 주문 intent에 선택 result SHA와 exact selection event ID를 함께 보존하는 G3.5 fencing 계약. 신규 intent 기록과 durable dispatch 시점 모두 현재 registry replay와 일치해야 한다.
 - **`no_promotion` / `no_strategy`**: 전자는 한 실험의 gate 실패 결과, 후자는 현재 선택이 없다는 registry sentinel이다.
 - **Live-disabled**: 어떤 UI 설정이나 프로세스 시작만으로도 실주문이 나갈 수 없는 기본 실행 상태.
 
@@ -35,7 +36,7 @@
 
 - 금액, 가격, 수량, 환율은 JSON number나 이진 부동소수점으로 교환하거나 저장하지 않는다.
 - 모바일·웹·Python 연구 프로세스는 broker credential과 주문 제출 권한을 갖지 않는다.
-- strategy registry는 evidence와 선택 이력만 소유한다. 선택 상태만으로 paper/live runner 또는 주문 dispatch를 허용하지 않는다.
+- strategy registry는 evidence와 선택 이력만 소유한다. 선택 상태만으로 paper/live runner 또는 주문 dispatch를 허용하지 않으며, 전략 주문은 exact current selection에 묶인 경우에만 기록·durable dispatch할 수 있다.
 - 주문 timeout은 실패가 아니라 결과 미확정 상태다. 같은 식별자로 조회·reconcile하기 전 재주문하지 않는다.
 - offline 상태에서 주문을 큐에 넣지 않는다.
 - 삭제나 덮어쓰기 대신 correction/event append를 기본으로 한다.

@@ -21,17 +21,19 @@ var (
 )
 
 type OrderIntent struct {
-	ClientOrderID string `json:"client_order_id"`
-	Provider      string `json:"provider"`
-	Mode          string `json:"mode"`
-	AccountRef    string `json:"account_ref"`
-	Symbol        string `json:"symbol"`
-	Exchange      string `json:"exchange"`
-	Side          string `json:"side"`
-	OrderType     string `json:"order_type"`
-	Quantity      string `json:"quantity"`
-	LimitPrice    string `json:"limit_price"`
-	Currency      string `json:"currency"`
+	ClientOrderID            string `json:"client_order_id"`
+	Provider                 string `json:"provider"`
+	Mode                     string `json:"mode"`
+	AccountRef               string `json:"account_ref"`
+	Symbol                   string `json:"symbol"`
+	Exchange                 string `json:"exchange"`
+	Side                     string `json:"side"`
+	OrderType                string `json:"order_type"`
+	Quantity                 string `json:"quantity"`
+	LimitPrice               string `json:"limit_price"`
+	Currency                 string `json:"currency"`
+	StrategyResultSHA256     string `json:"strategy_result_sha256,omitempty"`
+	StrategySelectionEventID string `json:"strategy_selection_event_id,omitempty"`
 }
 
 type OrderEvent struct {
@@ -220,6 +222,9 @@ func (s *Service) recordOrderIntent(ctx context.Context, intent OrderIntent) (*O
 		return loadOrderStateFrom(ctx, tx, priorOrderID)
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	if err := validateStrategyOrderSelection(ctx, tx, intent); err != nil {
 		return nil, err
 	}
 
@@ -527,6 +532,10 @@ func validateOrderIntent(intent OrderIntent) error {
 	price, err := parseDecimal(intent.LimitPrice)
 	if err != nil || price.Sign() <= 0 {
 		return errors.New("limit_price must be a positive canonical decimal")
+	}
+	strategyBound := intent.StrategyResultSHA256 != "" || intent.StrategySelectionEventID != ""
+	if strategyBound && (!strategySHA256Pattern.MatchString(intent.StrategyResultSHA256) || !safeOrderID(intent.StrategySelectionEventID)) {
+		return errors.New("strategy order selection binding is invalid")
 	}
 	return nil
 }
