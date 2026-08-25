@@ -23,6 +23,7 @@ class FakeApi implements OmniApi {
     required this.receiptValue,
     required this.candlesValue,
     this.fail = false,
+    this.failSnapshot = false,
     this.applyFailures = 0,
   });
 
@@ -34,6 +35,7 @@ class FakeApi implements OmniApi {
   Completer<MarketCandles>? candlesCompleter;
   final List<String> applyKeys = [];
   bool fail;
+  bool failSnapshot;
   int applyFailures;
 
   @override
@@ -55,7 +57,9 @@ class FakeApi implements OmniApi {
 
   @override
   Future<PortfolioSnapshot> snapshot() async {
-    if (fail) throw const ApiException('서버를 다시 확인하세요.');
+    if (fail || failSnapshot) {
+      throw const ApiException('서버를 다시 확인하세요.');
+    }
     return snapshotValue;
   }
 
@@ -522,6 +526,20 @@ void main() {
     await pumpUi(tester);
     expect(find.textContaining('실전 주문 꺼짐'), findsOneWidget);
     expect(find.textContaining('로컬 거래 내역 가져오기'), findsOneWidget);
+  });
+
+  testWidgets('missing snapshot links directly to transaction import', (
+    tester,
+  ) async {
+    final api = goldenApi()..failSnapshot = true;
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+
+    await tester.tap(find.text('거래 내역 가져오기'));
+    await pumpUi(tester);
+
+    expect(find.text('거래 내역 가져오기'), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
   });
 
   testWidgets('error offers retry and recovers', (tester) async {

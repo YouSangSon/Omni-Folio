@@ -32,7 +32,10 @@ class _OmniFolioAppState extends State<OmniFolioApp> {
       animation: _portfolio,
       builder: (context, _) {
         final pages = [
-          OverviewPage(controller: _portfolio),
+          OverviewPage(
+            controller: _portfolio,
+            onImport: () => setState(() => _tab = 2),
+          ),
           HoldingsPage(controller: _portfolio),
           ActivityPage(api: widget.api),
           DataPage(api: widget.api),
@@ -251,8 +254,13 @@ Future<_Result<T>> _settle<T>(Future<T> future) async {
 }
 
 class OverviewPage extends StatelessWidget {
-  const OverviewPage({super.key, required this.controller});
+  const OverviewPage({
+    super.key,
+    required this.controller,
+    required this.onImport,
+  });
   final PortfolioController controller;
+  final VoidCallback onImport;
 
   @override
   Widget build(BuildContext context) {
@@ -273,8 +281,8 @@ class OverviewPage extends StatelessWidget {
         icon: Icons.inbox_outlined,
         title: '아직 스냅샷이 없습니다',
         body: '거래 내역을 미리 확인한 뒤 적용하면 현금과 보유 내역이 표시됩니다.',
-        action: controller.refresh,
-        actionLabel: '새로고침',
+        action: onImport,
+        actionLabel: '거래 내역 가져오기',
       );
     }
     return ListView(
