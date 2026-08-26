@@ -9,6 +9,7 @@ abstract interface class OmniApi {
   Future<PortfolioSnapshot> snapshot();
   Future<MarketCandles> candles(String symbol);
   Future<BrokerReconciliation?> latestBrokerReconciliation();
+  Future<LocalOrderLog> localOrders();
   Future<ImportPreview> preview(String csv);
   Future<ApplyReceipt> apply(String previewId, String idempotencyKey);
 }
@@ -124,6 +125,10 @@ class RestOmniApi implements OmniApi {
       throw const ApiException(apiConnectionError);
     }
   }
+
+  @override
+  Future<LocalOrderLog> localOrders() async =>
+      LocalOrderLog.fromJson(await _get('/v1/orders'));
 
   @override
   Future<ImportPreview> preview(String csv) async {

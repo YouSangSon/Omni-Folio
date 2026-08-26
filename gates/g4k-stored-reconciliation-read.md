@@ -12,7 +12,7 @@
 - `TestG4KLatestBrokerReconciliationHTTPIsSanitized` proves exact JSON and forbidden-field absence by construction.
 - `TestG4KLatestBrokerReconciliationHTTPDistinguishesMissingFromCorrupt` proves 404 for true absence and generic 500 for corrupt/orphaned newest evidence.
 - `TestG4KOpenAPIExposesOnlyTheSanitizedReadModel` proves the route points to a closed schema without account/internal snapshot fields.
-- Flutter parser/API/widget tests prove strict canonical DTO validation, fixed no-query route, 404-to-empty mapping, visible stale provenance, exact quantity strings, color-independent status, row semantics, retry and retained known-good state. `flutter analyze` and 23 tests pass locally on 2026-08-26 KST.
+- Flutter parser/API/widget tests prove strict canonical DTO validation, fixed no-query route, 404-to-empty mapping, visible stale provenance, exact quantity strings, color-independent status, row semantics, retry and retained known-good state. The current combined client suite has 29 passing tests on 2026-08-26 KST.
 - 2026-08-26 KST에 `make check`, `make smoke`, `go test -race ./... -count=1`, `govulncheck ./...`, `git diff --check`와 diff secret-pattern scan을 통과했다. Omni-Folio Podman/Kind/process/temp residue는 남지 않았다.
 
 ## Not proven

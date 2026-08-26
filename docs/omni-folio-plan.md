@@ -920,9 +920,20 @@ G4K exposes the existing G4H evidence without adding a broker call, credential, 
 - `GET /v1/broker-reconciliation/latest` reads the newest raw Kiwoom KRX snapshot first and then its newest ledger-revision reconciliation in one read transaction. Missing storage is 404; an orphaned newest snapshot, corrupt hash, noncanonical JSON or metadata mismatch is a generic 500 rather than a silent fallback to older evidence.
 - The closed OpenAPI DTO contains provider/environment/exchange, `freshness=unverified`, fetched/recorded times, ledger revision and exact position differences. Account references, internal snapshot/reconciliation IDs, hashes and raw snapshot data are absent.
 - Flutter `Connections` implements loading, empty, error/retry and retained-known-good states. It renders visible match/mismatch text, exact decimal strings and row semantics, and says `last stored snapshot, not current state`; it does not refresh the broker or submit an order.
-- TDD covers exact HTTP JSON, 404 versus corrupt/orphan 500, closed OpenAPI fields, strict Flutter parsing, fixed route/404 mapping, visible provenance, exact differences, screen-reader row text, retry and retained known-good state. Focused Go tests and Flutter analyze plus the current 25 tests pass locally.
+- TDD covers exact HTTP JSON, 404 versus corrupt/orphan 500, closed OpenAPI fields, strict Flutter parsing, fixed route/404 mapping, visible provenance, exact differences, screen-reader row text, retry and retained known-good state. Focused Go tests and the current combined Flutter suite pass locally.
 
 Still open: authoritative broker freshness, scheduled credentialed refresh, account selection, cash/valuation/fee/open-order/execution reconciliation, broker correction, physical-device accessibility/performance, production risk and every live-money path.
+
+## 2026-08-26 G4L continuation: verified local order lifecycle read view
+
+G4L exposes only the existing append-only order log after the same recovery proof used by backup and startup checks. It adds no credential, broker request, schema migration or order mutation.
+
+- `GET /v1/orders` runs canonical hash, metadata and transition replay checks in one read transaction, then returns newest-first display fields with `source=local_order_log` and `broker_freshness=unverified`. Any corrupt event, hash, metadata or timestamp produces a generic 500 instead of partial history.
+- The closed DTO omits account, client-order, provider-order, execution, reservation, fencing and internal event identifiers. Empty history is a successful `orders=[]` response.
+- Flutter `Connections` implements loading, empty, error/retry and retained-known-good states without raw error text. `SUBMIT_UNKNOWN` is rendered as `브로커 결과 미확정 · 재주문 금지`; no submit, resubmit, cancel or amend action exists.
+- TDD covers exact sanitized HTTP, empty/corrupt behavior, closed OpenAPI, strict Flutter parsing, fixed route, retained refresh failure and visible plus screen-reader safety at 200% text.
+
+Still open: credentialed broker-current lookup, authoritative unknown-submit correlation, public order mutation/confirmation UI, SELL/market/amend/cancel transport, fill-to-ledger reconciliation, physical-device screen-reader evidence, production risk and every live-money path.
 
 ## 2026-08-24 G4I/K2C continuation: credential-free execution authority
 

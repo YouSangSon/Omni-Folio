@@ -105,7 +105,7 @@
 
 - 현재 공식 주문 명세의 신규 매수 `kt10000`, 매도 `kt10001`, 정정 `kt10002`, 취소 `kt10003`과 계좌 명세의 미체결·체결 조회 `ka10075`, `ka10076`, `kt00007`, `kt00009`를 credentialed mock 관찰과 contract fixture로 검증한 뒤 연결한다. ([주문 명세](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/main/kiwoom_docs/%EC%A3%BC%EB%AC%B8.md), [계좌 명세](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/main/kiwoom_docs/%EA%B3%84%EC%A2%8C.md))
 - 공식 주문 요청에 문서화된 client-order idempotency가 없으므로 내부 key를 dispatch 전에 저장하고 timeout 뒤에는 재전송하지 않는다. credentialed mock 관찰로 검증된 broker correlation 근거가 없으면 조회 tuple/time만으로 unknown을 확정하지 않는다.
-- production risk engine, broker-coupled runner lease/fencing, market/amend capability, public API/Flutter 주문 확인, 체결-원장 reconciliation을 이 단계에서 검증한다.
+- G4L의 public API/Flutter 화면은 검증된 로컬 lifecycle을 읽기만 한다. production risk engine, broker-coupled runner lease/fencing, market/amend capability, credentialed broker-current 조회, public 주문 mutation/확인 UI와 체결-원장 reconciliation은 이 단계에서 검증한다.
 - 실제 키와 실전 submit 경로는 owner 승인 전까지 꺼 둔다.
 
 ### T1 — 토스 read-only

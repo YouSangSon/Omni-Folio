@@ -22,10 +22,12 @@ class FakeApi implements OmniApi {
     required this.previewValue,
     required this.receiptValue,
     required this.candlesValue,
+    required this.orderLogValue,
     this.reconciliationValue,
     this.fail = false,
     this.failSnapshot = false,
     this.failReconciliation = false,
+    this.failLocalOrders = false,
     this.applyFailures = 0,
   });
 
@@ -34,12 +36,14 @@ class FakeApi implements OmniApi {
   final ImportPreview previewValue;
   final ApplyReceipt receiptValue;
   MarketCandles candlesValue;
+  LocalOrderLog orderLogValue;
   BrokerReconciliation? reconciliationValue;
   Completer<MarketCandles>? candlesCompleter;
   final List<String> applyKeys = [];
   bool fail;
   bool failSnapshot;
   bool failReconciliation;
+  bool failLocalOrders;
   int applyFailures;
 
   @override
@@ -82,6 +86,14 @@ class FakeApi implements OmniApi {
   }
 
   @override
+  Future<LocalOrderLog> localOrders() async {
+    if (fail || failLocalOrders) {
+      throw const ApiException('kiwoom_account_secret');
+    }
+    return orderLogValue;
+  }
+
+  @override
   Future<ServiceStatus> status() async {
     if (fail) throw const ApiException('서버를 다시 확인하세요.');
     return statusValue;
@@ -106,6 +118,7 @@ FakeApi goldenApi({bool neverVerified = false, ImportPreview? preview}) {
     previewValue: previewValue,
     receiptValue: receipt,
     candlesValue: marketCandles(),
+    orderLogValue: LocalOrderLog.fromJson(localOrderLogJson(orders: const [])),
   );
 }
 
@@ -188,6 +201,27 @@ Json brokerReconciliationJson() => {
       'match': false,
     },
   ],
+};
+
+Json localOrderLogJson({List<Json>? orders}) => {
+  'source': 'local_order_log',
+  'broker_freshness': 'unverified',
+  'orders':
+      orders ??
+      const [
+        {
+          'mode': 'synthetic',
+          'symbol': '005930',
+          'side': 'BUY',
+          'order_type': 'LIMIT',
+          'quantity': '2',
+          'limit_price': '70000',
+          'filled_quantity': '0',
+          'currency': 'KRW',
+          'status': 'SUBMIT_UNKNOWN',
+          'last_recorded_at': '2026-01-10T15:01:00Z',
+        },
+      ],
 };
 
 Future<void> pumpUi(WidgetTester tester) async {
@@ -616,6 +650,48 @@ void main() {
   });
 
   test(
+    'local order lifecycle parser rejects identifiers and invalid state',
+    () {
+      final parsed = LocalOrderLog.fromJson(localOrderLogJson());
+      expect(parsed.orders.single.status, 'SUBMIT_UNKNOWN');
+      expect(
+        () => LocalOrderLog.fromJson({
+          ...localOrderLogJson(),
+          'account_ref': 'kiwoom_account_secret',
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => LocalOrderLog.fromJson({
+          ...localOrderLogJson(),
+          'orders': [
+            {
+              ...(localOrderLogJson()['orders'] as List).single as Json,
+              'status': 'SUCCEEDED',
+            },
+          ],
+        }),
+        throwsFormatException,
+      );
+    },
+  );
+
+  test('local orders use the fixed read-only path', () async {
+    late http.Request request;
+    final api = RestOmniApi(
+      client: MockClient((value) async {
+        request = value;
+        return http.Response(jsonEncode(localOrderLogJson()), 200);
+      }),
+    );
+    final result = await api.localOrders();
+    expect(request.method, 'GET');
+    expect(request.url.path, '/v1/orders');
+    expect(request.url.query, isEmpty);
+    expect(result.orders.single.filledQuantity, '0');
+  });
+
+  test(
     'latest broker reconciliation uses the fixed path and maps 404 to empty',
     () async {
       late Uri request;
@@ -724,6 +800,70 @@ void main() {
 
     expect(find.text('증권사 10 · 원장 7 · 차이 3'), findsOneWidget);
     expect(find.textContaining('마지막 정상 대조 기록은 유지됩니다'), findsOneWidget);
+  });
+
+  testWidgets(
+    'submit unknown forbids resubmit at 200 percent text with semantics',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final semantics = tester.ensureSemantics();
+      try {
+        final api = goldenApi()
+          ..orderLogValue = LocalOrderLog.fromJson(localOrderLogJson());
+        await tester.pumpWidget(OmniFolioApp(api: api));
+        await pumpUi(tester);
+        await tester.tap(find.text('연결'));
+        await pumpUi(tester);
+        await tester.scrollUntilVisible(
+          find.textContaining('같은 주문을 다시 보내면 안 됩니다'),
+          200,
+        );
+        await tester.drag(find.byType(ListView), const Offset(0, -500));
+        await tester.pumpAndSettle();
+
+        expect(find.text('브로커 결과 미확정 · 재주문 금지'), findsOneWidget);
+        expect(find.textContaining('같은 주문을 다시 보내면 안 됩니다'), findsOneWidget);
+        expect(find.textContaining('현재 브로커 상태가 아닙니다'), findsOneWidget);
+        expect(find.textContaining('주문 보내기'), findsNothing);
+        expect(find.textContaining('주문 취소'), findsNothing);
+        expect(
+          find.semantics.byLabel(
+            '합성 테스트 주문, 005930 매수 지정가, 주문 수량 2, 체결 수량 0, KRW 70000, 브로커 결과 미확정, 재주문 금지',
+          ),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets('local order refresh failure retains sanitized stored result', (
+    tester,
+  ) async {
+    final api = goldenApi()
+      ..orderLogValue = LocalOrderLog.fromJson(localOrderLogJson());
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('연결'));
+    await pumpUi(tester);
+
+    api.failLocalOrders = true;
+    final refresh = find.text('로컬 주문 기록 다시 불러오기');
+    await tester.ensureVisible(refresh);
+    await tester.pump();
+    await tester.tap(refresh);
+    await pumpUi(tester);
+
+    expect(find.text('브로커 결과 미확정 · 재주문 금지'), findsOneWidget);
+    expect(find.textContaining('마지막 정상 주문 기록은 유지됩니다'), findsOneWidget);
+    expect(find.textContaining('kiwoom_account_secret'), findsNothing);
   });
 
   testWidgets('missing snapshot links directly to transaction import', (
