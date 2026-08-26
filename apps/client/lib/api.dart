@@ -8,6 +8,7 @@ abstract interface class OmniApi {
   Future<ServiceStatus> status();
   Future<PortfolioSnapshot> snapshot();
   Future<MarketCandles> candles(String symbol);
+  Future<BrokerReconciliation?> latestBrokerReconciliation();
   Future<ImportPreview> preview(String csv);
   Future<ApplyReceipt> apply(String previewId, String idempotencyKey);
 }
@@ -101,6 +102,23 @@ class RestOmniApi implements OmniApi {
         throw const FormatException('Market response does not match request');
       }
       return candles;
+    } catch (error) {
+      if (error is ApiException || error is FormatException) rethrow;
+      throw const ApiException(apiConnectionError);
+    }
+  }
+
+  @override
+  Future<BrokerReconciliation?> latestBrokerReconciliation() async {
+    try {
+      final response = await _client.get(
+        _uri('/v1/broker-reconciliation/latest'),
+      );
+      if (response.statusCode == 404) {
+        final error = decodeObject(response.body);
+        if (error['code'] == 'broker_reconciliation_not_found') return null;
+      }
+      return BrokerReconciliation.fromJson(_object(response));
     } catch (error) {
       if (error is ApiException || error is FormatException) rethrow;
       throw const ApiException(apiConnectionError);

@@ -911,7 +911,18 @@ G4H persists only the existing all-or-nothing synthetic Kiwoom account snapshot.
 - Migration v3 makes ledger events, broker snapshots and broker reconciliations insert-only. Current backup v5 preserves those proofs and adds execution-authority/risk-reservation digest/count plus strict schema/index/rowid/trigger checks and restored latest-record verification.
 - TDD tests cover idempotency, concurrent replay, conflicts, last-known-good retention, arithmetic, DB mutation attempts, runtime/recovery corruption rejection, manifest tampering and weak-trigger restore rejection.
 
-Still open: credentialed Kiwoom observation and scheduled known-good refresh, official freshness/timezone/retention, cash/valuation/open-order/full execution reconciliation, known-good API/UI, production risk, paper runner and all live-money paths.
+Still open: credentialed Kiwoom observation and scheduled known-good refresh, official freshness/timezone/retention, cash/valuation/open-order/full execution reconciliation, production risk, paper runner and all live-money paths. G4K below consumes only the stored position-quantity evidence.
+
+## 2026-08-26 G4K continuation: sanitized stored reconciliation read view
+
+G4K exposes the existing G4H evidence without adding a broker call, credential, schema migration, mutation or current-state claim.
+
+- `GET /v1/broker-reconciliation/latest` reads the newest raw Kiwoom KRX snapshot first and then its newest ledger-revision reconciliation in one read transaction. Missing storage is 404; an orphaned newest snapshot, corrupt hash, noncanonical JSON or metadata mismatch is a generic 500 rather than a silent fallback to older evidence.
+- The closed OpenAPI DTO contains provider/environment/exchange, `freshness=unverified`, fetched/recorded times, ledger revision and exact position differences. Account references, internal snapshot/reconciliation IDs, hashes and raw snapshot data are absent.
+- Flutter `Connections` implements loading, empty, error/retry and retained-known-good states. It renders visible match/mismatch text, exact decimal strings and row semantics, and says `last stored snapshot, not current state`; it does not refresh the broker or submit an order.
+- TDD covers exact HTTP JSON, 404 versus corrupt/orphan 500, closed OpenAPI fields, strict Flutter parsing, fixed route/404 mapping, visible provenance, exact differences, screen-reader row text, retry and retained known-good state. Focused Go tests and Flutter analyze plus 23 tests pass locally.
+
+Still open: authoritative broker freshness, scheduled credentialed refresh, account selection, cash/valuation/fee/open-order/execution reconciliation, broker correction, physical-device accessibility/performance, production risk and every live-money path.
 
 ## 2026-08-24 G4I/K2C continuation: credential-free execution authority
 

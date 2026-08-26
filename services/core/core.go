@@ -350,6 +350,7 @@ func (s *Service) routes() http.Handler {
 	mux.HandleFunc("GET /readyz", s.handleReady)
 	mux.HandleFunc("GET /v1/status", s.handleStatus)
 	mux.HandleFunc("GET /v1/market-data/candles", s.handleMarketDataCandles)
+	mux.HandleFunc("GET /v1/broker-reconciliation/latest", s.handleLatestBrokerReconciliation)
 	mux.HandleFunc("POST /v1/imports/preview", s.handlePreview)
 	mux.HandleFunc("POST /v1/imports/apply", s.handleApply)
 	mux.HandleFunc("GET /v1/portfolio/snapshot", s.handleSnapshot)
@@ -464,6 +465,19 @@ func (s *Service) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func (s *Service) handleLatestBrokerReconciliation(w http.ResponseWriter, r *http.Request) {
+	result, err := s.latestBrokerReconciliation(r.Context())
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, &appError{http.StatusNotFound, APIError{Code: "broker_reconciliation_not_found", Message: "broker reconciliation was not found"}})
+		return
+	}
+	if err != nil {
+		writeError(w, internalError(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) *appError {

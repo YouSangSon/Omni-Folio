@@ -221,6 +221,9 @@ class _ProfileApi implements OmniApi {
   Future<MarketCandles> candles(String symbol) async => _candles;
 
   @override
+  Future<BrokerReconciliation?> latestBrokerReconciliation() async => null;
+
+  @override
   Future<PortfolioSnapshot> snapshot() async => _snapshot;
 
   @override

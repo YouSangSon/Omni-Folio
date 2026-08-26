@@ -30,6 +30,7 @@
 - Strategy/order authority: [`../gates/g3-research.md`](../gates/g3-research.md)
 - 현재 paper execution leaf: [`../gates/g3f-paper-runner-foundation.md`](../gates/g3f-paper-runner-foundation.md)
 - 현재 Kiwoom mock-submit leaf: [`../gates/g4j-k2b2-kiwoom-mock-submit.md`](../gates/g4j-k2b2-kiwoom-mock-submit.md)
+- 현재 stored reconciliation read leaf: [`../gates/g4k-stored-reconciliation-read.md`](../gates/g4k-stored-reconciliation-read.md)
 - Root 검증 명령: `make check && make smoke`
 
 문서가 코드·계약과 충돌하면 실제 동작을 조용히 문서에 맞추지 않습니다. 먼저 충돌을 기록하고 owner 계약과 executable test를 함께 갱신합니다. 브로커 limit·인증·endpoint는 바뀔 수 있으므로 adapter 구현 시 공식 문서와 실제 응답을 다시 확인합니다.

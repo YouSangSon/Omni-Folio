@@ -11,9 +11,9 @@
 |---|---|---|
 | G0 아키텍처·계약 | 통과 | versioned OpenAPI/JSON Schema, runtime ADR, root commands |
 | G1 로컬 원장 | 통과 | CSV preview → atomic apply → append-only exact cash/trade/dividend/tax/split replay → snapshot/receipt → schema v5 backup/restore |
-| G2 Flutter client | 부분 통과 | iOS·Android·web release build와 17개 자동 테스트 통과; chart 포함 Android emulator build/raster p95 2회 통과, physical-device·수동 screen-reader 및 test-instrumentation 격리 증거 남음 |
+| G2 Flutter client | 부분 통과 | iOS·Android·web release build와 23개 자동 테스트 통과; chart 포함 Android emulator build/raster p95 2회 통과, physical-device·수동 screen-reader 및 test-instrumentation 격리 증거 남음 |
 | G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, append-only candidate registry·수동 rollback, exact selection-bound order authority, credential-free paper execution foundation |
-| G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot, G4I/K2C 내부 합성 authority, G4J/K2B2 credential-free mock 지정가 submit 계약 통과. 실제 키움 credentialed 시세·모의주문 관찰, freshness/scheduling, unknown-submit 조회 복구, public 주문 UI, production risk와 모든 live gate는 남는다. |
+| G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot, G4I/K2C 내부 합성 authority, G4J/K2B2 credential-free mock 지정가 submit, G4K 저장된 보유수량 대조 API/Flutter read view 계약 통과. 실제 키움 credentialed 시세·모의주문 관찰, freshness/scheduling, unknown-submit 조회 복구, 주문 UI, production risk와 모든 live gate는 남는다. |
 
 세부 상태와 완료 조건은 [`PLAN.md`](PLAN.md)와 [`GATES.md`](GATES.md)에서 관리합니다.
 
@@ -144,6 +144,16 @@ go test -run '^TestG4H' -count=1 ./...
 ```
 
 현재 schema v7/backup v5는 ledger event, raw broker snapshot, revisioned broker reconciliation, execution-authority event, risk reservation, strategy registry와 synthetic/paper 주문을 insert-only로 보호하고 각각의 digest/count와 replay 가능한 canonical record를 restore 후보에서 검증합니다. G4H 자체는 credential, broker request, scheduling, 공식 freshness/timezone, 현금·평가금액 reconciliation, public API/UI 또는 live readiness를 증명하지 않습니다.
+
+### Stored broker reconciliation read view
+
+G4K는 G4H의 최신 저장 결과를 `GET /v1/broker-reconciliation/latest`로 읽어 Flutter `연결` 화면에 표시합니다. API는 provider/environment/exchange, 저장 시각, ledger revision과 exact 보유수량 diff만 반환하며 account reference, 내부 ID/hash, raw snapshot을 노출하지 않습니다. `freshness=unverified`와 `마지막 저장 스냅샷 · 현재 상태 아님`이 이 결과가 실시간 잔고가 아님을 명시합니다.
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/broker-reconciliation/latest
+```
+
+저장 기록이 없으면 404, 가장 최신 raw snapshot에 대조 record가 없거나 hash/metadata가 손상되었으면 과거 결과로 후퇴하지 않고 일반화된 500으로 fail-closed합니다. 이 화면은 broker refresh나 주문을 실행하지 않고 현금·평가금액·수수료·주문·체결을 대조했다고 표시하지 않습니다.
 
 ### Research와 자동 개선
 

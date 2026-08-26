@@ -6,7 +6,7 @@
 - 한 SQLite transaction이 현재 ledger revision과 KRX/KRW 종목 수량을 읽고 raw snapshot, canonical hashes, 종목별 `broker - ledger` 수량 diff reconciliation을 분리 insert한다.
 - 같은 provider/environment/exchange/account/fetched-at와 같은 payload는 raw snapshot을 중복 저장하지 않는다. 같은 raw snapshot·같은 ledger revision replay는 같은 reconciliation을 반환하고, ledger revision이 바뀌면 새 reconciliation만 append한다. payload 충돌·불완전 snapshot·잘못된 generated ID는 전체 거절한다.
 - 실패한 입력과 더 오래된 snapshot은 최근 fetched-at의 known-good record를 덮어쓰지 않는다.
-- ledger event, broker snapshot, broker reconciliation은 insert-only이고, 현재 backup/restore v4가 broker state digest/count, canonical record hash와 필수 schema/trigger를 검증한다.
+- ledger event, broker snapshot, broker reconciliation은 insert-only이고, 현재 schema v7/backup v5가 broker state digest/count, canonical record hash와 필수 schema/trigger를 검증한다.
 
 ## Evidence
 
