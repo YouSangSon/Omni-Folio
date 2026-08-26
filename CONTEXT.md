@@ -24,6 +24,7 @@
 - **Reconciliation**: 내부 주문·원장 상태를 증권사의 주문·체결·잔고 사실과 비교해 차이를 설명하거나 차단하는 과정.
 - **Stored reconciliation read view**: G4H가 저장한 최신 Kiwoom KRX 보유수량과 특정 ledger revision의 exact diff를 account/internal ID/hash/raw snapshot 없이 조회하는 G4K 결과. `freshness=unverified`이며 broker refresh, 현재 상태, 현금·평가금액·주문·체결 대조를 뜻하지 않는다.
 - **Local order lifecycle read view**: append-only 주문 로그 전체의 canonical hash·metadata·replay를 다시 검증한 뒤 mode/symbol/side/type/수량/가격/체결수량/status/기록시각만 노출하는 G4L 결과. `broker_freshness=unverified`이며 broker 조회, 현재 주문 상태, submit/cancel 권한을 뜻하지 않는다.
+- **Overview reconciliation summary**: G4K 저장 대조 결과의 일치·불일치 수와 증권사 수집·로컬 저장 시각만 홈에 요약하는 G4M read surface. 현재 broker 상태나 현금·평가금액·주문·체결 대조를 뜻하지 않으며 상세 종목 차이는 Connections에만 둔다.
 - **Risk reservation**: 주문 전송 전에 현금, 포지션, 익스포저 한도를 점유해 동시 주문이 한도를 넘지 못하게 하는 상태.
 - **Fencing token**: 현재 실행 권한을 가진 runner 세대만 주문을 전송하게 하는 단조 증가 토큰.
 - **Strategy manifest**: 전략 버전, 파라미터, 데이터 snapshot, 실행 환경을 재현 가능하게 묶는 식별 계약.
@@ -58,3 +59,4 @@
 - K2B1 dated aliases는 environment·account·요청 날짜를 포함한 별도 namespace이며 K2A/K2B0 order event alias로 사용할 수 없다. 요청 날짜와 provider-local execution clock을 결합해 UTC timestamp를 만들거나 terminal pagination을 complete execution history로 승격하지 않는다.
 - G4K는 가장 최신 raw broker snapshot에 대조 record가 없거나 canonical hash·metadata 검증이 실패하면 과거 known-good로 조용히 후퇴하지 않고 fail-closed한다. 응답과 Flutter는 account reference를 포함하지 않는다.
 - G4L은 주문 로그 하나라도 canonical hash·metadata·transition replay 또는 기록시각 검증에 실패하면 목록 전체를 일반화된 500으로 fail-closed한다. `SUBMIT_UNKNOWN`은 Flutter에서 `브로커 결과 미확정 · 재주문 금지`로 표시하며 account/client/provider/internal ID와 mutation action을 노출하지 않는다.
+- G4M은 G4K와 같은 저장 대조 객체를 홈과 Connections가 공유하고 새 API나 broker refresh를 만들지 않는다. 홈은 `현재 상태 아님`과 마지막 수집·저장 시각을 생략하지 않으며, 새로고침 실패 시 raw 오류 대신 마지막 정상 요약을 유지한다.

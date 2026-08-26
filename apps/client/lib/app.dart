@@ -35,10 +35,11 @@ class _OmniFolioAppState extends State<OmniFolioApp> {
           OverviewPage(
             controller: _portfolio,
             onImport: () => setState(() => _tab = 2),
+            onConnections: () => setState(() => _tab = 3),
           ),
           HoldingsPage(controller: _portfolio),
           ActivityPage(api: widget.api),
-          DataPage(api: widget.api),
+          DataPage(api: widget.api, controller: _portfolio),
         ];
         return Scaffold(
           appBar: AppBar(
@@ -196,14 +197,21 @@ class PortfolioController extends ChangeNotifier {
   final OmniApi api;
   ServiceStatus? status;
   PortfolioSnapshot? snapshot;
+  BrokerReconciliation? reconciliation;
   String? error;
+  var reconciliationFailed = false;
   var busy = false;
+  var reconciliationBusy = false;
+  var _disposed = false;
 
   Future<void> refresh() async {
     if (busy) return;
     busy = true;
     error = null;
-    notifyListeners();
+    _notify();
+    final reconciliationRefresh = reconciliationBusy
+        ? null
+        : refreshReconciliation();
     final results = await Future.wait([
       _settle(api.status()),
       _settle(api.snapshot()),
@@ -214,7 +222,33 @@ class PortfolioController extends ChangeNotifier {
     if (snapshotResult.value != null) snapshot = snapshotResult.value;
     error = statusResult.error ?? snapshotResult.error;
     busy = false;
-    notifyListeners();
+    _notify();
+    await reconciliationRefresh;
+  }
+
+  Future<void> refreshReconciliation() async {
+    if (reconciliationBusy) return;
+    reconciliationBusy = true;
+    reconciliationFailed = false;
+    _notify();
+    try {
+      reconciliation = await api.latestBrokerReconciliation();
+    } catch (_) {
+      reconciliationFailed = true;
+    } finally {
+      reconciliationBusy = false;
+      _notify();
+    }
+  }
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 
   DataState get state {
@@ -258,9 +292,11 @@ class OverviewPage extends StatelessWidget {
     super.key,
     required this.controller,
     required this.onImport,
+    required this.onConnections,
   });
   final PortfolioController controller;
   final VoidCallback onImport;
+  final VoidCallback onConnections;
 
   @override
   Widget build(BuildContext context) {
@@ -292,6 +328,9 @@ class OverviewPage extends StatelessWidget {
           state: controller.state,
           status: controller.status,
           retainedError: controller.error,
+          reconciliation: controller.reconciliation,
+          reconciliationFailed: controller.reconciliationFailed,
+          reconciliationBusy: controller.reconciliationBusy,
         ),
         const SizedBox(height: 12),
         _SectionCard(
@@ -321,6 +360,13 @@ class OverviewPage extends StatelessWidget {
               ),
             ],
           ),
+        ),
+        const SizedBox(height: 12),
+        _OverviewReconciliationCard(
+          reconciliation: controller.reconciliation,
+          retainedError: controller.reconciliationFailed,
+          busy: controller.reconciliationBusy,
+          onDetails: onConnections,
         ),
         const SizedBox(height: 12),
         const _SectionCard(
@@ -893,15 +939,125 @@ class _TableCell extends StatelessWidget {
   );
 }
 
+class _OverviewReconciliationCard extends StatelessWidget {
+  const _OverviewReconciliationCard({
+    required this.reconciliation,
+    required this.retainedError,
+    required this.busy,
+    required this.onDetails,
+  });
+
+  final BrokerReconciliation? reconciliation;
+  final bool retainedError;
+  final bool busy;
+  final VoidCallback onDetails;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = reconciliation;
+    if (busy && value == null) {
+      return const _SectionCard(
+        title: '증권사 잔고 대조',
+        child: _Loading(compact: true),
+      );
+    }
+    if (value == null) {
+      return _SectionCard(
+        title: '증권사 잔고 대조',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(retainedError ? '대조 결과를 불러오지 못했습니다.' : '아직 저장된 대조 기록이 없습니다.'),
+            const SizedBox(height: 4),
+            Text(
+              '로컬 원장 확인과 증권사 잔고 대조는 별개입니다.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: onDetails,
+              child: const Text('연결에서 자세히 보기'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final differences = value.positionDifferences;
+    final mismatchCount = differences.where((item) => !item.match).length;
+    final status = differences.isEmpty
+        ? '대조할 보유 종목 없음'
+        : value.allPositionsMatch
+        ? '${differences.length}개 모두 일치'
+        : '${differences.length}개 중 $mismatchCount개 불일치';
+    final fetchedAt = _time(DateTime.parse(value.fetchedAt));
+    final recordedAt = _time(DateTime.parse(value.recordedAt));
+    final semantics =
+        '증권사 잔고 대조, 마지막 저장 기록, 현재 상태 아님, $status, 증권사 $fetchedAt, 저장 $recordedAt';
+    return _SectionCard(
+      title: '증권사 잔고 대조',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            container: true,
+            excludeSemantics: true,
+            label: semantics,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '마지막 저장 기록 · 현재 상태 아님',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 8),
+                Text(status, style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 4),
+                Text(
+                  '증권사 $fetchedAt · 저장 $recordedAt',
+                  style: _tabular(context),
+                ),
+              ],
+            ),
+          ),
+          if (busy) ...[
+            const SizedBox(height: 12),
+            const _ReconciliationRefreshingNotice(),
+          ],
+          if (retainedError) ...[
+            const SizedBox(height: 12),
+            _Notice(
+              icon: Icons.warning_amber_rounded,
+              text: '새로고침에 실패해 마지막 정상 대조 기록을 유지합니다.',
+              color: Theme.of(context).colorScheme.error,
+            ),
+          ],
+          const SizedBox(height: 12),
+          OutlinedButton(
+            onPressed: onDetails,
+            child: const Text('연결에서 자세히 보기'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TrustBanner extends StatelessWidget {
   const _TrustBanner({
     required this.state,
     required this.status,
     required this.retainedError,
+    required this.reconciliation,
+    required this.reconciliationFailed,
+    required this.reconciliationBusy,
   });
   final DataState state;
   final ServiceStatus? status;
   final String? retainedError;
+  final BrokerReconciliation? reconciliation;
+  final bool reconciliationFailed;
+  final bool reconciliationBusy;
 
   @override
   Widget build(BuildContext context) {
@@ -925,7 +1081,17 @@ class _TrustBanner extends StatelessWidget {
     final error = retainedError == null
         ? ''
         : '\n새로고침 실패: ${retainedError!}\n마지막 정상 스냅샷은 유지됩니다.';
-    final text = '데이터 상태: $label\n증권사 잔고 대조 전 · 마지막 확인 $verified$error';
+    final reconciliationText = reconciliation == null
+        ? reconciliationBusy
+              ? '증권사 잔고 대조 확인 중'
+              : !reconciliationFailed
+              ? '증권사 잔고 대조 기록 없음'
+              : '증권사 잔고 대조 확인 실패'
+        : reconciliationBusy
+        ? '증권사 잔고 대조 저장 기록 다시 확인 중 · 현재 상태 아님'
+        : '증권사 잔고 대조 저장 기록 · 현재 상태 아님';
+    final text =
+        '데이터 상태: $label\n로컬 원장 마지막 확인 $verified\n$reconciliationText$error';
     return Semantics(
       container: true,
       excludeSemantics: true,
@@ -1084,17 +1250,15 @@ class _ActivityPageState extends State<ActivityPage> {
 }
 
 class DataPage extends StatefulWidget {
-  const DataPage({super.key, required this.api});
+  const DataPage({super.key, required this.api, required this.controller});
   final OmniApi api;
+  final PortfolioController controller;
 
   @override
   State<DataPage> createState() => _DataPageState();
 }
 
 class _DataPageState extends State<DataPage> {
-  BrokerReconciliation? _reconciliation;
-  String? _reconciliationError;
-  var _reconciliationBusy = true;
   LocalOrderLog? _orderLog;
   var _orderLogFailed = false;
   var _orderLogBusy = true;
@@ -1102,30 +1266,7 @@ class _DataPageState extends State<DataPage> {
   @override
   void initState() {
     super.initState();
-    _loadReconciliation();
     _loadLocalOrders();
-  }
-
-  Future<void> _loadReconciliation() async {
-    if (!_reconciliationBusy) {
-      setState(() {
-        _reconciliationBusy = true;
-        _reconciliationError = null;
-      });
-    }
-    try {
-      final result = await widget.api.latestBrokerReconciliation();
-      if (mounted) {
-        setState(() {
-          _reconciliation = result;
-          _reconciliationError = null;
-        });
-      }
-    } catch (error) {
-      if (mounted) setState(() => _reconciliationError = error.toString());
-    } finally {
-      if (mounted) setState(() => _reconciliationBusy = false);
-    }
   }
 
   Future<void> _loadLocalOrders() async {
@@ -1231,28 +1372,23 @@ class _DataPageState extends State<DataPage> {
   }
 
   Widget _buildReconciliation(BuildContext context) {
-    final reconciliation = _reconciliation;
-    if (_reconciliationBusy && reconciliation == null) {
+    final reconciliation = widget.controller.reconciliation;
+    if (widget.controller.reconciliationBusy && reconciliation == null) {
       return const _SectionCard(
         title: '증권사 잔고 대조',
         child: _Loading(compact: true),
       );
     }
-    if (_reconciliationError != null && reconciliation == null) {
+    if (widget.controller.reconciliationFailed && reconciliation == null) {
       return _SectionCard(
         title: '증권사 잔고 대조',
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('대조 결과를 불러오지 못했습니다'),
-            const SizedBox(height: 4),
-            Text(
-              _reconciliationError!,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
             const SizedBox(height: 12),
             ElevatedButton(
-              onPressed: _loadReconciliation,
+              onPressed: widget.controller.refreshReconciliation,
               child: const Text('대조 결과 다시 불러오기'),
             ),
           ],
@@ -1277,9 +1413,9 @@ class _DataPageState extends State<DataPage> {
     }
     return _BrokerReconciliationCard(
       reconciliation: reconciliation,
-      retainedError: _reconciliationError,
-      busy: _reconciliationBusy,
-      onRefresh: _loadReconciliation,
+      retainedError: widget.controller.reconciliationFailed,
+      busy: widget.controller.reconciliationBusy,
+      onRefresh: widget.controller.refreshReconciliation,
     );
   }
 }
@@ -1394,7 +1530,7 @@ class _BrokerReconciliationCard extends StatelessWidget {
   });
 
   final BrokerReconciliation reconciliation;
-  final String? retainedError;
+  final bool retainedError;
   final bool busy;
   final VoidCallback onRefresh;
 
@@ -1438,11 +1574,15 @@ class _BrokerReconciliationCard extends StatelessWidget {
             const Divider(height: 24),
             _BrokerDifferenceRow(difference: difference),
           ],
-          if (retainedError != null) ...[
+          if (busy) ...[
+            const SizedBox(height: 12),
+            const _ReconciliationRefreshingNotice(),
+          ],
+          if (retainedError) ...[
             const SizedBox(height: 12),
             _Notice(
               icon: Icons.warning_amber_rounded,
-              text: '새로고침 실패: $retainedError\n마지막 정상 대조 기록은 유지됩니다.',
+              text: '대조 결과 새로고침에 실패했습니다.\n마지막 정상 대조 기록은 유지됩니다.',
               color: Theme.of(context).colorScheme.error,
             ),
           ],
@@ -1456,6 +1596,21 @@ class _BrokerReconciliationCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ReconciliationRefreshingNotice extends StatelessWidget {
+  const _ReconciliationRefreshingNotice();
+
+  static const text = '저장된 대조를 다시 불러오는 중입니다. 마지막 정상 기록을 유지합니다.';
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    container: true,
+    excludeSemantics: true,
+    liveRegion: true,
+    label: text,
+    child: _Notice(icon: Icons.sync, text: text, color: _warningColor(context)),
+  );
 }
 
 class _BrokerDifferenceRow extends StatelessWidget {
