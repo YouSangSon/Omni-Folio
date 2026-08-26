@@ -206,10 +206,14 @@ func (s *Service) rollbackPaperCandidate(ctx context.Context, expectedCurrentEve
 	if len(nextStack) != 0 {
 		selected = nextStack[len(nextStack)-1]
 	}
+	now := s.now().UTC()
+	if err := s.haltAllSyntheticExecutionTx(ctx, tx, now); err != nil {
+		return nil, err
+	}
 	event := StrategySelectionEvent{
 		EventID: s.id("strategy_selection"), EventType: "ROLLBACK", ExpectedCurrentEventID: expectedCurrentEventID,
 		SourceEventID: sourceEventID, PreviousSelectedResultSHA256: state.SelectedResultSHA256,
-		SelectedResultSHA256: selected, ReasonCode: "manual_rollback", RecordedAt: s.now().UTC().Format(time.RFC3339Nano),
+		SelectedResultSHA256: selected, ReasonCode: "manual_rollback", RecordedAt: now.Format(time.RFC3339Nano),
 	}
 	if err := insertStrategySelectionEvent(ctx, tx, event); err != nil {
 		return nil, err

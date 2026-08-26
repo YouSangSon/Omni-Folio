@@ -41,6 +41,7 @@
 - 모바일·웹·Python 연구 프로세스는 broker credential과 주문 제출 권한을 갖지 않는다.
 - strategy registry는 evidence와 선택 이력만 소유한다. 선택 상태만으로 paper/live runner 또는 주문 dispatch를 허용하지 않으며, 전략 주문은 exact current selection에 묶인 경우에만 기록·durable dispatch할 수 있다.
 - 새 paper 주문은 현재 selection, 유효한 signal, K2C lease/fencing과 risk reservation을 모두 요구한다. 이미 durable dispatch된 paper 주문은 selection rollback이나 signal 만료 뒤에도 같은 관찰의 idempotent replay와 잔여 체결 복구를 계속한다.
+- 신규 paper intent 기록은 현재 process가 소유한 만료 전 lease와 exact fencing token을 검증하고 K2C 승인·durable dispatch까지 같은 transaction에 append한다. 수동 strategy rollback은 모든 활성 execution authority를 fencing halt하고 rollback event를 같은 transaction에 append하며, 어느 한 기록이라도 실패하면 둘 다 남기지 않는다.
 - Go는 같은 paper 계좌·종목의 체결 수량과 미완결 BUY 전체 수량을 목표에서 원자적으로 차감해 양수 delta만 `OrderIntent`로 만든다. 동시·반복 신호는 같은 목표를 중복 주문하지 않으며 `paper-signal.v1`은 복구만 허용한다.
 - paper mode는 Kiwoom mock/production transport에 진입하지 않는다. G3.6의 local fixture 체결은 수수료·세금·slippage·quote stream·실제 성능 또는 live parity를 증명하지 않는다.
 - 주문 timeout은 실패가 아니라 결과 미확정 상태다. 같은 식별자로 조회·reconcile하기 전 재주문하지 않는다.

@@ -227,3 +227,138 @@ func TestG3PaperRunnerSerializesConcurrentTargets(t *testing.T) {
 		t.Fatalf("concurrent targets were not serialized: filled=%d no_op=%d orders=%d err=%v", filled, noOp, orders, err)
 	}
 }
+
+func TestG3PaperRunnerRequiresCurrentLeaseBeforeRecording(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	now := mustTime("2026-01-10T15:00:00Z")
+	svc.now = func() time.Time { return now }
+	evidence, err := svc.registerStrategyEvidence(context.Background(), strategyArtifact(t, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, err := svc.selectPaperCandidate(context.Background(), evidence.ResultSHA256, noStrategySelectionEvent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signal := PaperSignal{
+		SchemaVersion: paperSignalSchema, SignalID: "paper-requires-lease",
+		StrategyResultSHA256: evidence.ResultSHA256, StrategySelectionEventID: selected.CurrentEventID,
+		DataSHA256: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+		Symbol:     "005930", TargetQuantity: "1", DataAsOf: "2026-01-10T14:59:00Z",
+		GeneratedAt: "2026-01-10T14:59:01Z", ExpiresAt: "2026-01-10T15:01:00Z",
+	}
+	observation := PaperMarketObservation{
+		Source: "local_fixture", Symbol: signal.Symbol, ObservedAt: "2026-01-10T15:00:00Z",
+		AskPrice: "999", AvailableQuantity: "1",
+	}
+	armed, err := svc.setSyntheticExecutionArmed(context.Background(), k2aAccountRef, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.runPaperSignal(context.Background(), k2aAccountRef, signal, observation, armed.FencingToken); err == nil {
+		t.Fatal("paper signal without a current lease was recorded")
+	}
+	var orders int
+	if err := svc.db.QueryRow(`SELECT COUNT(*) FROM order_idempotency WHERE mode='paper'`).Scan(&orders); err != nil || orders != 0 {
+		t.Fatalf("lease rejection left a paper order: count=%d err=%v", orders, err)
+	}
+	lease, err := svc.acquireSyntheticExecutionLease(context.Background(), k2aAccountRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := svc.runPaperSignal(context.Background(), k2aAccountRef, signal, observation, lease.FencingToken)
+	if err != nil || state.Status != "FILLED" {
+		t.Fatalf("current lease did not admit paper order: state=%+v err=%v", state, err)
+	}
+}
+
+func TestG3PaperRunnerRollsBackIntentWhenDispatchAuthorizationFails(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	now := mustTime("2026-01-10T15:00:00Z")
+	svc.now = func() time.Time { return now }
+	evidence, err := svc.registerStrategyEvidence(context.Background(), strategyArtifact(t, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, err := svc.selectPaperCandidate(context.Background(), evidence.ResultSHA256, noStrategySelectionEvent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease := mustK2CLease(t, svc, k2aAccountRef)
+	unresolved, err := svc.recordOrderIntent(context.Background(), k2aIntent("paper-account-blocker"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.authorizeSyntheticDispatch(context.Background(), unresolved.OrderID, lease.FencingToken); err != nil {
+		t.Fatal(err)
+	}
+	signal := PaperSignal{
+		SchemaVersion: paperSignalSchema, SignalID: "paper-authorization-fails",
+		StrategyResultSHA256: evidence.ResultSHA256, StrategySelectionEventID: selected.CurrentEventID,
+		DataSHA256: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+		Symbol:     "000660", TargetQuantity: "1", DataAsOf: "2026-01-10T14:59:00Z",
+		GeneratedAt: "2026-01-10T14:59:01Z", ExpiresAt: "2026-01-10T15:01:00Z",
+	}
+	observation := PaperMarketObservation{
+		Source: "local_fixture", Symbol: signal.Symbol, ObservedAt: "2026-01-10T15:00:00Z",
+		AskPrice: "999", AvailableQuantity: "1",
+	}
+	if _, err := svc.runPaperSignal(context.Background(), k2aAccountRef, signal, observation, lease.FencingToken); err == nil {
+		t.Fatal("account block did not reject paper dispatch")
+	}
+	var orders int
+	if err := svc.db.QueryRow(`SELECT COUNT(*) FROM order_idempotency WHERE mode='paper'`).Scan(&orders); err != nil || orders != 0 {
+		t.Fatalf("failed dispatch left a paper intent: count=%d err=%v", orders, err)
+	}
+}
+
+func TestG3PaperRollbackAtomicallyHaltsExecution(t *testing.T) {
+	setup := func(t *testing.T) (*Service, *StrategySelectionState, *ExecutionAuthorityState) {
+		t.Helper()
+		svc, _ := testService(t, nil, nil)
+		svc.now = func() time.Time { return mustTime("2026-01-10T15:00:00Z") }
+		evidence, err := svc.registerStrategyEvidence(context.Background(), strategyArtifact(t, nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		selected, err := svc.selectPaperCandidate(context.Background(), evidence.ResultSHA256, noStrategySelectionEvent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return svc, selected, mustK2CLease(t, svc, k2aAccountRef)
+	}
+
+	t.Run("success", func(t *testing.T) {
+		svc, selected, lease := setup(t)
+		secondAccount := "kiwoom_account_BBBBBBBBBBBBBBBBBBBBBBBB"
+		secondLease := mustK2CLease(t, svc, secondAccount)
+		rolledBack, err := svc.rollbackPaperCandidate(context.Background(), selected.CurrentEventID, selected.CurrentEventID)
+		if err != nil || rolledBack.SelectedResultSHA256 != noStrategySelection {
+			t.Fatalf("strategy rollback state=%+v err=%v", rolledBack, err)
+		}
+		authority, err := loadExecutionAuthoritySnapshot(context.Background(), svc.db, k2aAccountRef)
+		if err != nil || authority.Armed || authority.LeaseOwner != "" || authority.LeaseExpiresAt != "" || authority.FencingToken != lease.FencingToken+1 {
+			t.Fatalf("rollback did not halt and fence execution: authority=%+v err=%v", authority, err)
+		}
+		authority, err = loadExecutionAuthoritySnapshot(context.Background(), svc.db, secondAccount)
+		if err != nil || authority.Armed || authority.LeaseOwner != "" || authority.LeaseExpiresAt != "" || authority.FencingToken != secondLease.FencingToken+1 {
+			t.Fatalf("rollback did not halt every execution account: authority=%+v err=%v", authority, err)
+		}
+	})
+
+	t.Run("failure rolls back halt", func(t *testing.T) {
+		svc, selected, lease := setup(t)
+		svc.id = func(string) string { return selected.CurrentEventID }
+		if _, err := svc.rollbackPaperCandidate(context.Background(), selected.CurrentEventID, selected.CurrentEventID); err == nil {
+			t.Fatal("duplicate rollback event unexpectedly committed")
+		}
+		authority, err := loadExecutionAuthoritySnapshot(context.Background(), svc.db, k2aAccountRef)
+		if err != nil || !authority.Armed || authority.LeaseOwner == "" || authority.FencingToken != lease.FencingToken {
+			t.Fatalf("failed rollback leaked execution halt: authority=%+v err=%v", authority, err)
+		}
+		registry, err := replayStrategyRegistry(context.Background(), svc.db)
+		if err != nil || registry.CurrentEventID != selected.CurrentEventID || registry.SelectedResultSHA256 != selected.SelectedResultSHA256 {
+			t.Fatalf("failed rollback changed strategy registry: state=%+v err=%v", registry, err)
+		}
+	})
+}

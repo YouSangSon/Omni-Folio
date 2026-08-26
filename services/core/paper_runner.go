@@ -53,7 +53,7 @@ func (s *Service) runPaperSignal(ctx context.Context, accountRef string, signal 
 		return nil, err
 	}
 	now := s.now().UTC()
-	state, err := s.recordPaperTarget(ctx, accountRef, signal, observation.AskPrice, target, generatedAt, expiresAt, now)
+	state, err := s.recordPaperTarget(ctx, accountRef, signal, observation.AskPrice, target, generatedAt, expiresAt, now, fencingToken)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +134,7 @@ func paperOrderIntent(accountRef string, signal PaperSignal, quantity, limitPric
 	}
 }
 
-func (s *Service) recordPaperTarget(ctx context.Context, accountRef string, signal PaperSignal, limitPrice string, target *big.Int, generatedAt, expiresAt, now time.Time) (*OrderState, error) {
+func (s *Service) recordPaperTarget(ctx context.Context, accountRef string, signal PaperSignal, limitPrice string, target *big.Int, generatedAt, expiresAt, now time.Time, fencingToken int64) (*OrderState, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -167,6 +167,10 @@ func (s *Service) recordPaperTarget(ctx context.Context, accountRef string, sign
 		return nil, err
 	}
 	state, err := s.recordOrderIntentTx(ctx, tx, intent)
+	if err != nil {
+		return nil, err
+	}
+	state, _, err = s.authorizeSyntheticDispatchOnceTx(ctx, tx, state.OrderID, fencingToken)
 	if err != nil {
 		return nil, err
 	}

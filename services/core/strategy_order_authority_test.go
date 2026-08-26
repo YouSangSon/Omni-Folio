@@ -59,6 +59,7 @@ func TestG3StrategyOrderRequiresCurrentSelectionAtRecordAndDispatch(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	lease = mustK2CLease(t, svc, currentOrder.AccountRef)
 	state, err = svc.authorizeSyntheticDispatch(context.Background(), currentOrder.OrderID, lease.FencingToken)
 	if err != nil || state.Status != "SUBMIT_UNKNOWN" {
 		t.Fatalf("current strategy did not reach guarded dispatch: state=%+v err=%v", state, err)

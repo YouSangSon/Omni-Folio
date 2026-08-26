@@ -1,6 +1,6 @@
 # Omni Folio 구현 계획
 
-상태: G0·G1·G3 로컬 통과(G3.6 credential-free paper execution foundation 포함), G2 build/widget/browser·자동 accessibility/reduced-motion 증거 확보 및 physical profile/screen-reader 증거 보강 중
+상태: G0·G1·G3 로컬 통과(G3.7 atomic paper halt/rollback safety 포함), G2 build/widget/browser·자동 accessibility/reduced-motion 증거 확보 및 physical profile/screen-reader 증거 보강 중
 기준일: 2026-08-24
 
 ## 목표
@@ -990,3 +990,11 @@ G3.6 adds the smallest paper execution adapter that can reuse the selected-strat
 - Focused G3.6 tests, full Go tests, root checks, smoke, race and vulnerability checks are the delivery evidence.
 
 Still open: scheduled signals and quote stream, external holding/cash integration, multi-strategy capital allocation, fees/tax/slippage/latency, automatic paper performance/degradation evidence, shadow promotion, broker-write fencing, credentialed broker observation and every live-money path.
+
+## 2026-08-26 G3.7 continuation: atomic paper halt/rollback safety
+
+G3.7 closes the gap between paper intent recording and K2C dispatch authorization without adding a scheduler, detector, credential or public surface.
+
+- A new paper intent, current process-owned unexpired lease and exact fencing validation, K2C reservation and durable dispatch now commit in one SQLite transaction. Authorization failure leaves no `RECORDED` target that could block later netting; exact replay of an already durable order remains available for reconciliation.
+- Manual strategy rollback appends `manual_halt` with a higher fencing token for every armed execution account and appends the strategy rollback in one transaction. An injected strategy-event collision proves that a failed rollback leaves both authority and selection unchanged.
+- Existing durable partial-fill recovery after strategy rollback remains covered. This is the operator-triggered safety primitive, not evidence of automatic degradation detection or paper performance.
