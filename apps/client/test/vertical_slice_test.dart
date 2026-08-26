@@ -38,6 +38,8 @@ class FakeApi implements OmniApi {
   MarketCandles candlesValue;
   LocalOrderLog orderLogValue;
   BrokerReconciliation? reconciliationValue;
+  Completer<BrokerReconciliation?>? reconciliationCompleter;
+  int reconciliationCalls = 0;
   Completer<MarketCandles>? candlesCompleter;
   final List<String> applyKeys = [];
   bool fail;
@@ -79,10 +81,11 @@ class FakeApi implements OmniApi {
 
   @override
   Future<BrokerReconciliation?> latestBrokerReconciliation() async {
+    reconciliationCalls += 1;
     if (fail || failReconciliation) {
       throw const ApiException('서버를 다시 확인하세요.');
     }
-    return reconciliationValue;
+    return reconciliationCompleter?.future ?? reconciliationValue;
   }
 
   @override
@@ -727,11 +730,132 @@ void main() {
     await pumpUi(tester);
 
     expect(find.textContaining('아직 확인되지 않음'), findsOneWidget);
+    expect(find.textContaining('증권사 잔고 대조 기록 없음'), findsOneWidget);
     await tester.tap(find.text('연결'));
     await pumpUi(tester);
     expect(find.textContaining('실전 주문 꺼짐'), findsOneWidget);
     expect(find.textContaining('로컬 거래 내역 가져오기'), findsOneWidget);
     expect(find.text('아직 증권사 대조 기록이 없습니다'), findsOneWidget);
+  });
+
+  testWidgets(
+    'overview stored reconciliation stays usable at 200 percent text',
+    (tester) async {
+      tester.view.physicalSize = const Size(375, 812);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final semantics = tester.ensureSemantics();
+      try {
+        final api = goldenApi()
+          ..reconciliationValue = BrokerReconciliation.fromJson(
+            brokerReconciliationJson(),
+          );
+        await tester.pumpWidget(OmniFolioApp(api: api));
+        await pumpUi(tester);
+        expect(api.reconciliationCalls, 1);
+
+        await tester.drag(find.byType(ListView), const Offset(0, -900));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('마지막 저장 기록 · 현재 상태 아님'), findsOneWidget);
+        expect(find.textContaining('2개 중 2개 불일치'), findsOneWidget);
+        expect(
+          find.semantics.byLabel(
+            RegExp(r'증권사 잔고 대조.*2개 중 2개 불일치', dotAll: true),
+          ),
+          findsOneWidget,
+        );
+
+        final details = find.text('연결에서 자세히 보기');
+        await tester.ensureVisible(details);
+        await tester.pump();
+        await tester.tap(details);
+        await pumpUi(tester);
+        expect(api.reconciliationCalls, 1);
+
+        await tester.drag(find.byType(ListView), const Offset(0, -900));
+        await tester.pumpAndSettle();
+        expect(find.text('증권사 10 · 원장 7 · 차이 3'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets(
+    'slow reconciliation does not block the portfolio at 200 percent text',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final pending = Completer<BrokerReconciliation?>();
+      final api = goldenApi()..reconciliationCompleter = pending;
+
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+
+      expect(find.byType(ListView), findsOneWidget);
+      expect(find.textContaining('데이터 상태: 로컬 기록 확인 완료'), findsOneWidget);
+      expect(find.textContaining('증권사 잔고 대조 확인 중'), findsOneWidget);
+      await tester.drag(find.byType(ListView), const Offset(0, -500));
+      await tester.pump();
+      expect(find.text('USD 778'), findsOneWidget);
+      expect(api.reconciliationCalls, 1);
+      final refresh = find.byTooltip('데이터 새로고침');
+      expect(
+        tester.widget<IconButton>(find.byType(IconButton)).onPressed,
+        isNotNull,
+      );
+      await tester.tap(refresh);
+      await pumpUi(tester);
+      expect(api.reconciliationCalls, 1);
+
+      pending.complete(
+        BrokerReconciliation.fromJson(brokerReconciliationJson()),
+      );
+      await pumpUi(tester);
+      expect(api.reconciliationCalls, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('pending reconciliation may complete after app disposal', (
+    tester,
+  ) async {
+    final pending = Completer<BrokerReconciliation?>();
+    final api = goldenApi()..reconciliationCompleter = pending;
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    pending.complete(null);
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('overview distinguishes no positions from a successful match', (
+    tester,
+  ) async {
+    final api = goldenApi()
+      ..reconciliationValue = BrokerReconciliation.fromJson({
+        ...brokerReconciliationJson(),
+        'all_positions_match': true,
+        'position_differences': const [],
+      });
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.drag(find.byType(ListView), const Offset(0, -900));
+    await tester.pumpAndSettle();
+
+    expect(find.text('대조할 보유 종목 없음'), findsOneWidget);
+    expect(find.textContaining('0개 모두 일치'), findsNothing);
   });
 
   testWidgets(
@@ -769,6 +893,7 @@ void main() {
       );
     await tester.pumpWidget(OmniFolioApp(api: api));
     await pumpUi(tester);
+    expect(find.textContaining('증권사 잔고 대조 확인 실패'), findsOneWidget);
     await tester.tap(find.text('연결'));
     await pumpUi(tester);
 
@@ -791,15 +916,29 @@ void main() {
     await tester.tap(find.text('연결'));
     await pumpUi(tester);
 
-    api.failReconciliation = true;
+    final pending = Completer<BrokerReconciliation?>();
+    api.reconciliationCompleter = pending;
     final refresh = find.text('저장된 대조 다시 불러오기');
     await tester.ensureVisible(refresh);
     await tester.pump();
     await tester.tap(refresh);
+    await tester.pump();
+
+    expect(find.text('증권사 10 · 원장 7 · 차이 3'), findsOneWidget);
+    expect(find.textContaining('저장된 대조를 다시 불러오는 중'), findsOneWidget);
+
+    pending.completeError(const ApiException('서버를 다시 확인하세요.'));
     await pumpUi(tester);
 
     expect(find.text('증권사 10 · 원장 7 · 차이 3'), findsOneWidget);
     expect(find.textContaining('마지막 정상 대조 기록은 유지됩니다'), findsOneWidget);
+
+    await tester.tap(find.text('홈'));
+    await pumpUi(tester);
+    await tester.drag(find.byType(ListView), const Offset(0, -900));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('2개 중 2개 불일치'), findsOneWidget);
+    expect(find.textContaining('마지막 정상 대조 기록을 유지합니다'), findsOneWidget);
   });
 
   testWidgets(

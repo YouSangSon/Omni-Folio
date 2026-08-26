@@ -935,6 +935,17 @@ G4L exposes only the existing append-only order log after the same recovery proo
 
 Still open: credentialed broker-current lookup, authoritative unknown-submit correlation, public order mutation/confirmation UI, SELL/market/amend/cancel transport, fill-to-ledger reconciliation, physical-device screen-reader evidence, production risk and every live-money path.
 
+## 2026-08-26 G4M continuation: overview stored-reconciliation trust summary
+
+G4M reuses the existing sanitized G4K read model in the Flutter home trust surface. It adds no API, broker call, credential, schema migration, dependency or mutation.
+
+- `PortfolioController` retains one single-flight known-good reconciliation object for Overview and Connections, so opening Connections no longer creates a duplicate read and both surfaces preserve the same failure state. The optional read publishes independently and cannot hold the portfolio snapshot or its refresh behind the cold-start loader; completion after client disposal is ignored safely. A visible live-region notice announces a known-good result being refreshed.
+- Overview shows only `현재 상태 아님`, match/mismatch count, broker-fetched and local-recorded times, then routes to the existing per-symbol Connections details.
+- Missing/error states remain explicit and raw errors are not rendered. Refresh failure keeps the last normal result.
+- TDD proves the home summary, exact one-read details navigation at 375 logical pixels/200% text, non-blocking loading at 320/200%, disposal safety and a distinct no-position state. The existing strict parser, 404, retry and known-good retention tests remain the contract.
+
+Still open: credentialed/current broker observation, automatic refresh scheduling, account selection, cash/valuation/order/execution reconciliation, physical-device screen-reader evidence and every live-money path.
+
 ## 2026-08-24 G4I/K2C continuation: credential-free execution authority
 
 K2C adds the smallest internal authority that can prevent accidental synthetic dispatch without creating a broker transport or public order surface.

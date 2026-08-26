@@ -37,6 +37,8 @@ Cash-flow correction rows stay inside Import review. Show the original source ID
 
 Connections may show the verified local order log as read-only history. It must say that no broker refresh occurred, hide account/client/provider/internal identifiers, retain the last known-good view after refresh failure, and expose no submit, retry-submit, cancel, or amend action. `SUBMIT_UNKNOWN` uses the fixed warning `브로커 결과 미확정 · 재주문 금지` in visible and screen-reader text.
 
+Overview may summarize the stored broker-to-ledger position reconciliation, but it must say `현재 상태 아님`, show match or mismatch count plus broker-fetched and locally-recorded times, and link to Connections for per-symbol details. It reuses the same retained known-good object as Connections, never performs an extra broker refresh, and never exposes raw errors or internal/account identifiers.
+
 ## Interaction and accessibility
 
 - Minimum 48×48 logical-pixel interactive targets, which also clears the 44pt iOS floor; default text/control size 16 logical px or larger.
