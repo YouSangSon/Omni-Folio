@@ -88,8 +88,9 @@ class FakeApi implements OmniApi {
   }
 }
 
-FakeApi goldenApi({bool neverVerified = false}) {
-  final preview = ImportPreview.fromJson(fixture('golden-preview.json'));
+FakeApi goldenApi({bool neverVerified = false, ImportPreview? preview}) {
+  final previewValue =
+      preview ?? ImportPreview.fromJson(fixture('golden-preview.json'));
   final snapshot = PortfolioSnapshot.fromJson(fixture('golden-snapshot.json'));
   final receipt = ApplyReceipt.fromJson(fixture('golden-apply.json'));
   return FakeApi(
@@ -102,7 +103,7 @@ FakeApi goldenApi({bool neverVerified = false}) {
       'issues': const [],
     }),
     snapshotValue: snapshot,
-    previewValue: preview,
+    previewValue: previewValue,
     receiptValue: receipt,
     candlesValue: marketCandles(),
   );
@@ -431,6 +432,31 @@ void main() {
         'low': '1',
         'close': '1',
         'volume': '1',
+      }),
+      throwsFormatException,
+    );
+  });
+
+  test('cash void preview requires a closed correction target', () {
+    expect(
+      () => ImportPreview.fromJson({
+        ...fixture('golden-preview.json'),
+        'rows': [
+          {
+            'row_number': 2,
+            'status': 'new',
+            'transaction': {
+              'event_id': 'event-cash-void-001',
+              'source_event_id': 'cash-void-001',
+              'account_id': 'account-main',
+              'type': 'CASH_VOID',
+              'occurred_at': '2026-01-03T00:00:00Z',
+              'currency': 'USD',
+              'amount': '5',
+              'corrects_source_event_id': 'fee-001',
+            },
+          },
+        ],
       }),
       throwsFormatException,
     );
@@ -862,6 +888,76 @@ void main() {
     expect(api.applyKeys, hasLength(2));
     expect(api.applyKeys, everyElement('import-${api.previewValue.previewId}'));
   });
+
+  testWidgets(
+    'cash void preview preserves the original disclosure at 200 percent text',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final semantics = tester.ensureSemantics();
+
+      final preview = ImportPreview.fromJson({
+        ...fixture('golden-preview.json'),
+        'mapping_version': 'canonical-transaction.v3',
+        'rows': [
+          {
+            'row_number': 2,
+            'status': 'new',
+            'transaction': {
+              'event_id': 'event-cash-void-001',
+              'source_event_id': 'cash-void-001',
+              'account_id': 'account-main',
+              'type': 'CASH_VOID',
+              'occurred_at': '2026-01-03T00:00:00Z',
+              'currency': 'USD',
+              'amount': '5',
+              'corrects_source_event_id': 'fee-001',
+            },
+            'correction_target': {
+              'source_event_id': 'fee-001',
+              'type': 'FEE',
+              'currency': 'USD',
+              'amount': '-5',
+            },
+          },
+        ],
+        'totals': {
+          'total_rows': 1,
+          'new_rows': 1,
+          'duplicate_rows': 0,
+          'error_rows': 0,
+          'unresolved_rows': 0,
+        },
+      });
+      await tester.pumpWidget(OmniFolioApp(api: goldenApi(preview: preview)));
+      await pumpUi(tester);
+      await tester.tap(find.text('내역'));
+      await pumpUi(tester);
+      await tester.enterText(find.byType(TextField), 'header\nrow');
+      await tester.ensureVisible(find.text('미리보기 만들기'));
+      await tester.pump();
+      await tester.tap(find.text('미리보기 만들기'));
+      await pumpUi(tester);
+
+      expect(find.text('원본 기록은 보존되고 반대 금액으로 상쇄됩니다.'), findsOneWidget);
+      expect(find.text('원본 FEE · USD -5 · source fee-001'), findsOneWidget);
+      expect(find.text('정정 CASH_VOID · USD 5'), findsOneWidget);
+      await tester.ensureVisible(find.text('원본 기록은 보존되고 반대 금액으로 상쇄됩니다.'));
+      await tester.pump();
+      expect(
+        find.semantics.byLabel(
+          '정정 행 2, 원본 FEE, USD -5, source fee-001, 반전 USD 5',
+        ),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+      semantics.dispose();
+    },
+  );
 
   testWidgets('editing CSV invalidates an existing preview', (tester) async {
     final api = goldenApi();

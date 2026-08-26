@@ -920,7 +920,7 @@ G4K exposes the existing G4H evidence without adding a broker call, credential, 
 - `GET /v1/broker-reconciliation/latest` reads the newest raw Kiwoom KRX snapshot first and then its newest ledger-revision reconciliation in one read transaction. Missing storage is 404; an orphaned newest snapshot, corrupt hash, noncanonical JSON or metadata mismatch is a generic 500 rather than a silent fallback to older evidence.
 - The closed OpenAPI DTO contains provider/environment/exchange, `freshness=unverified`, fetched/recorded times, ledger revision and exact position differences. Account references, internal snapshot/reconciliation IDs, hashes and raw snapshot data are absent.
 - Flutter `Connections` implements loading, empty, error/retry and retained-known-good states. It renders visible match/mismatch text, exact decimal strings and row semantics, and says `last stored snapshot, not current state`; it does not refresh the broker or submit an order.
-- TDD covers exact HTTP JSON, 404 versus corrupt/orphan 500, closed OpenAPI fields, strict Flutter parsing, fixed route/404 mapping, visible provenance, exact differences, screen-reader row text, retry and retained known-good state. Focused Go tests and Flutter analyze plus 23 tests pass locally.
+- TDD covers exact HTTP JSON, 404 versus corrupt/orphan 500, closed OpenAPI fields, strict Flutter parsing, fixed route/404 mapping, visible provenance, exact differences, screen-reader row text, retry and retained known-good state. Focused Go tests and Flutter analyze plus the current 25 tests pass locally.
 
 Still open: authoritative broker freshness, scheduled credentialed refresh, account selection, cash/valuation/fee/open-order/execution reconciliation, broker correction, physical-device accessibility/performance, production risk and every live-money path.
 
@@ -945,7 +945,7 @@ The original G1 golden slice proved deposits and fee-aware FIFO trades, but the 
 - Migration v5 rebuilds only the constrained `events` table, preserves existing v1-v4 rows, enforces event shape/cash direction with native CHECK constraints and restores insert-only triggers. At that checkpoint backup format was v4 and SQLite schema was v5; the G3 registry continuation below supersedes them with backup v5/schema v6 while leaving the ledger event contract at v5.
 - OpenAPI and backup contracts advance with the runtime. Focused cash/split, invalid-direction, rollback and v1-to-v5 migration tests pass with the existing order, broker snapshot and execution-authority recovery suite.
 
-Still open: FX rates/conversions, correction events, dividend reinvestment, jurisdiction-specific tax classification, credentialed broker fill/cash reconciliation and every live-money path.
+Still open after G1.6 below: FX rates/conversions, trade/split/corporate-action correction, dividend reinvestment, jurisdiction-specific tax classification, credentialed broker fill/cash reconciliation and every live-money path.
 
 ## 2026-08-24 G3 continuation: append-only paper-candidate registry
 
@@ -998,3 +998,15 @@ G3.7 closes the gap between paper intent recording and K2C dispatch authorizatio
 - A new paper intent, current process-owned unexpired lease and exact fencing validation, K2C reservation and durable dispatch now commit in one SQLite transaction. Authorization failure leaves no `RECORDED` target that could block later netting; exact replay of an already durable order remains available for reconciliation.
 - Manual strategy rollback appends `manual_halt` with a higher fencing token for every armed execution account and appends the strategy rollback in one transaction. An injected strategy-event collision proves that a failed rollback leaves both authority and selection unchanged.
 - Existing durable partial-fill recovery after strategy rollback remains covered. This is the operator-triggered safety primitive, not evidence of automatic degradation detection or paper performance.
+
+## 2026-08-26 G1.6 continuation: append-only cash-flow void
+
+G1.6 closes only the safe local cash-flow correction leaf. It does not create a generic ledger edit, broker correction engine or trade-lot rewrite.
+
+- CSV v1 gains optional `corrects_source_event_id`; mapping v3 invalidates stale previews. `CASH_VOID` must be the exact opposite amount of one already committed same-account, same-currency `DEPOSIT`, `WITHDRAWAL`, `DIVIDEND`, `FEE` or `TAX`, at the same or a later economic time.
+- The original event is never updated or deleted. Replay naturally sums the reversing amount, while both events and receipts remain in snapshot provenance. A replacement value is a separate normal event in the same atomic apply.
+- Missing, future, trade/split, changed-amount/currency, already-corrected, chained, same-preview-new and same-preview-double targets fail closed. A reused `(account_id, source_event_id)` with different normalized data is now an error instead of a silent duplicate.
+- Migration v8 preserves v1-v7 events and adds a nullable composite self-FK, one-void-per-target uniqueness, exact inverse/type/currency/time insert guard and existing insert-only protection. Backup JSON remains v5 but requires schema v8; restore rejects a missing/changed guard.
+- OpenAPI and Flutter use a closed correction target DTO without internal event/account IDs. Import review shows the preserved source/type/currency/amount and reversing amount with visible and screen-reader text at 200% scaling.
+
+Still open: FX, trade/split/corporate-action correction, dividend reinvestment, jurisdiction-specific tax classification, credentialed broker cash/fill reconciliation, physical-device screen-reader evidence and every live-money path.

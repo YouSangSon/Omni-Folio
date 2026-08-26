@@ -7,7 +7,7 @@
 - 신규 intent 기록, 현재 process의 만료 전 K2C lease·exact fencing 검증, risk reservation과 durable dispatch를 한 transaction으로 묶는다.
 - 같은 `OrderIntent`/`OrderEvent` 상태 머신에서 결정적 ACK, 부분 체결, 완전 체결과 idempotent observation replay를 검증한다.
 - selection rollback 또는 signal 만료는 새 주문을 차단하되 이미 durable dispatch된 주문의 잔여 체결 복구를 막지 않는다.
-- paper 주문은 Kiwoom mock·production transport에 진입하지 않고 schema v7/backup v5 restore 뒤에도 같은 상태로 replay된다.
+- paper 주문은 Kiwoom mock·production transport에 진입하지 않고 schema v8/backup v5 restore 뒤에도 같은 상태로 replay된다.
 
 ## Evidence
 

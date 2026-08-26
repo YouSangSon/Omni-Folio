@@ -31,10 +31,10 @@ import (
 const (
 	maxBodyBytes  = 1 << 20
 	maxImportRows = 10_000
-	latestSchema  = 7
+	latestSchema  = 8
 	zeroTime      = "1970-01-01T00:00:00Z"
 	csvSchema     = "omni-folio.csv.v1"
-	mappingSchema = "canonical-transaction.v2"
+	mappingSchema = "canonical-transaction.v3"
 )
 
 //go:embed migrations/*.sql
@@ -58,27 +58,36 @@ type APIError struct {
 }
 
 type Transaction struct {
-	EventID       string `json:"event_id"`
-	SourceEventID string `json:"source_event_id"`
-	AccountID     string `json:"account_id"`
-	Type          string `json:"type"`
-	OccurredAt    string `json:"occurred_at"`
-	InstrumentID  string `json:"instrument_id,omitempty"`
-	Symbol        string `json:"symbol,omitempty"`
-	Quantity      string `json:"quantity,omitempty"`
-	Price         string `json:"price,omitempty"`
-	Fee           string `json:"fee,omitempty"`
-	Currency      string `json:"currency"`
-	Amount        string `json:"amount"`
+	EventID               string `json:"event_id"`
+	SourceEventID         string `json:"source_event_id"`
+	AccountID             string `json:"account_id"`
+	Type                  string `json:"type"`
+	OccurredAt            string `json:"occurred_at"`
+	InstrumentID          string `json:"instrument_id,omitempty"`
+	Symbol                string `json:"symbol,omitempty"`
+	Quantity              string `json:"quantity,omitempty"`
+	Price                 string `json:"price,omitempty"`
+	Fee                   string `json:"fee,omitempty"`
+	Currency              string `json:"currency"`
+	Amount                string `json:"amount"`
+	CorrectsSourceEventID string `json:"corrects_source_event_id,omitempty"`
 }
 
 type PreviewRow struct {
-	RowNumber   int          `json:"row_number"`
-	Status      string       `json:"status"`
-	Transaction *Transaction `json:"transaction,omitempty"`
-	DuplicateOf string       `json:"duplicate_of,omitempty"`
-	Errors      []APIError   `json:"errors,omitempty"`
-	Resolution  *Resolution  `json:"resolution,omitempty"`
+	RowNumber        int               `json:"row_number"`
+	Status           string            `json:"status"`
+	Transaction      *Transaction      `json:"transaction,omitempty"`
+	CorrectionTarget *CorrectionTarget `json:"correction_target,omitempty"`
+	DuplicateOf      string            `json:"duplicate_of,omitempty"`
+	Errors           []APIError        `json:"errors,omitempty"`
+	Resolution       *Resolution       `json:"resolution,omitempty"`
+}
+
+type CorrectionTarget struct {
+	SourceEventID string `json:"source_event_id"`
+	Type          string `json:"type"`
+	Currency      string `json:"currency"`
+	Amount        string `json:"amount"`
 }
 
 type Resolution struct {
@@ -269,13 +278,14 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("unsupported schema version %d", current)
 		}
 	}
-	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql"}
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql"}
 	for version := current + 1; version <= latestSchema; version++ {
 		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
 		if err != nil {
 			return err
 		}
 		disableForeignKeys := version == 7
+		checkForeignKeys := version >= 7
 		if disableForeignKeys {
 			if _, err := db.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
 				return err
@@ -302,7 +312,7 @@ func migrate(db *sql.DB) error {
 			}
 			return err
 		}
-		if disableForeignKeys {
+		if checkForeignKeys {
 			var violations int
 			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&violations); err != nil || violations != 0 {
 				tx.Rollback()
@@ -310,7 +320,7 @@ func migrate(db *sql.DB) error {
 				if err != nil {
 					return err
 				}
-				return fmt.Errorf("paper-order migration foreign-key check failed: violations=%d", violations)
+				return fmt.Errorf("migration %d foreign-key check failed: violations=%d", version, violations)
 			}
 		}
 		if err := tx.Commit(); err != nil {
@@ -584,13 +594,14 @@ func (s *Service) parseCSV(ctx context.Context, q queryer, body []byte) ([]Previ
 		}
 	}
 	value := func(record []string, name string) string {
-		i := columns[name]
-		if i >= len(record) {
+		i, ok := columns[name]
+		if !ok || i >= len(record) {
 			return ""
 		}
 		return record[i]
 	}
-	seen := map[string]string{}
+	seen := map[string]PreviewRow{}
+	seenCorrectionTargets := map[string]bool{}
 	result := make([]PreviewRow, 0, len(records)-1)
 	for i, record := range records[1:] {
 		row := PreviewRow{RowNumber: i + 2}
@@ -606,26 +617,112 @@ func (s *Service) parseCSV(ctx context.Context, q queryer, body []byte) ([]Previ
 			continue
 		}
 		key := tx.AccountID + "\x00" + tx.SourceEventID
-		if duplicateOf, ok := seen[key]; ok {
-			row.Status, row.Transaction, row.DuplicateOf = "duplicate", tx, duplicateOf
+		if prior, ok := seen[key]; ok {
+			if !sameTransaction(prior.Transaction, tx) {
+				row.Status, row.Transaction, row.Errors = "error", tx, []APIError{{Code: "source_event_conflict", Message: "source_event_id was already used with different transaction data", Field: "source_event_id"}}
+			} else {
+				tx.EventID = prior.Transaction.EventID
+				row.Status, row.Transaction, row.CorrectionTarget, row.DuplicateOf = "duplicate", tx, prior.CorrectionTarget, tx.EventID
+			}
 			result = append(result, row)
 			continue
 		}
-		var duplicateOf string
-		err := q.QueryRowContext(ctx, `SELECT event_id FROM events WHERE account_id=? AND source_event_id=?`, tx.AccountID, tx.SourceEventID).Scan(&duplicateOf)
+		stored, err := loadTransactionBySource(ctx, q, tx.AccountID, tx.SourceEventID)
 		switch {
 		case err == nil:
-			tx.EventID = duplicateOf
-			row.Status, row.Transaction, row.DuplicateOf = "duplicate", tx, duplicateOf
+			if !sameTransaction(stored, tx) {
+				row.Status, row.Transaction, row.Errors = "error", tx, []APIError{{Code: "source_event_conflict", Message: "source_event_id was already used with different transaction data", Field: "source_event_id"}}
+				break
+			}
+			tx.EventID = stored.EventID
+			row.Status, row.Transaction, row.DuplicateOf = "duplicate", tx, stored.EventID
+			if tx.Type == "CASH_VOID" {
+				target, validationErr, err := validateCashVoid(ctx, q, tx, false)
+				if err != nil {
+					return nil, internalError(err)
+				}
+				if validationErr != nil {
+					return nil, internalError(errors.New("stored cash void failed validation"))
+				}
+				row.CorrectionTarget = target
+			}
 		case errors.Is(err, sql.ErrNoRows):
 			row.Status, row.Transaction = "new", tx
+			if tx.Type == "CASH_VOID" {
+				target, validationErr, err := validateCashVoid(ctx, q, tx, true)
+				if err != nil {
+					return nil, internalError(err)
+				}
+				if validationErr != nil {
+					row.Status, row.Errors = "error", []APIError{*validationErr}
+				} else {
+					targetKey := tx.AccountID + "\x00" + tx.CorrectsSourceEventID
+					if seenCorrectionTargets[targetKey] {
+						row.Status, row.Errors = "error", []APIError{*invalidCorrection()}
+					} else {
+						seenCorrectionTargets[targetKey] = true
+						row.CorrectionTarget = target
+					}
+				}
+			}
 		case err != nil:
 			return nil, internalError(err)
 		}
-		seen[key] = tx.EventID
+		if row.Status != "error" {
+			seen[key] = row
+		}
 		result = append(result, row)
 	}
 	return result, nil
+}
+
+func loadTransactionBySource(ctx context.Context, q queryer, accountID, sourceEventID string) (*Transaction, error) {
+	var tx Transaction
+	err := q.QueryRowContext(ctx, `SELECT event_id,source_event_id,account_id,type,occurred_at,COALESCE(instrument_id,''),COALESCE(symbol,''),COALESCE(quantity,''),COALESCE(price,''),COALESCE(fee,''),currency,amount,COALESCE(corrects_source_event_id,'') FROM events WHERE account_id=? AND source_event_id=?`, accountID, sourceEventID).Scan(
+		&tx.EventID, &tx.SourceEventID, &tx.AccountID, &tx.Type, &tx.OccurredAt, &tx.InstrumentID, &tx.Symbol, &tx.Quantity, &tx.Price, &tx.Fee, &tx.Currency, &tx.Amount, &tx.CorrectsSourceEventID,
+	)
+	return &tx, err
+}
+
+func sameTransaction(a, b *Transaction) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	left, right := *a, *b
+	left.EventID, right.EventID = "", ""
+	return left == right
+}
+
+func validateCashVoid(ctx context.Context, q queryer, correction *Transaction, requireUnused bool) (*CorrectionTarget, *APIError, error) {
+	target, err := loadTransactionBySource(ctx, q, correction.AccountID, correction.CorrectsSourceEventID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, invalidCorrection(), nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	eligible := target.Type == "DEPOSIT" || target.Type == "WITHDRAWAL" || target.Type == "DIVIDEND" || target.Type == "FEE" || target.Type == "TAX"
+	targetTime, targetTimeErr := time.Parse(time.RFC3339Nano, target.OccurredAt)
+	correctionTime, correctionTimeErr := time.Parse(time.RFC3339Nano, correction.OccurredAt)
+	targetAmount, targetAmountErr := parseDecimal(target.Amount)
+	correctionAmount, correctionAmountErr := parseDecimal(correction.Amount)
+	if !eligible || target.Currency != correction.Currency || targetTimeErr != nil || correctionTimeErr != nil || correctionTime.Before(targetTime) || targetAmountErr != nil || correctionAmountErr != nil || new(big.Rat).Add(targetAmount, correctionAmount).Sign() != 0 {
+		return nil, invalidCorrection(), nil
+	}
+	if requireUnused {
+		var count int
+		if err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE account_id=? AND corrects_source_event_id=?`, correction.AccountID, correction.CorrectsSourceEventID).Scan(&count); err != nil {
+			return nil, nil, err
+		}
+		if count != 0 {
+			return nil, invalidCorrection(), nil
+		}
+	}
+	return &CorrectionTarget{SourceEventID: target.SourceEventID, Type: target.Type, Currency: target.Currency, Amount: target.Amount}, nil, nil
+}
+
+func invalidCorrection() *APIError {
+	return &APIError{Code: "invalid_correction", Message: "cash void does not exactly reverse one eligible existing cash event", Field: "corrects_source_event_id"}
 }
 
 func (s *Service) normalize(record []string, value func([]string, string) string) (*Transaction, []APIError) {
@@ -633,7 +730,7 @@ func (s *Service) normalize(record []string, value func([]string, string) string
 	tx := &Transaction{
 		EventID: s.id("event"), SourceEventID: get("source_event_id"), AccountID: get("account_id"),
 		Type: get("type"), OccurredAt: get("occurred_at"), Symbol: get("symbol"), Quantity: get("quantity"),
-		Price: get("price"), Fee: get("fee"), Currency: get("currency"), Amount: get("amount"),
+		Price: get("price"), Fee: get("fee"), Currency: get("currency"), Amount: get("amount"), CorrectsSourceEventID: get("corrects_source_event_id"),
 	}
 	var errs []APIError
 	for _, field := range []struct{ name, value string }{{"source_event_id", tx.SourceEventID}, {"account_id", tx.AccountID}} {
@@ -652,6 +749,9 @@ func (s *Service) normalize(record []string, value func([]string, string) string
 	amount, err := parseDecimal(tx.Amount)
 	if err != nil {
 		errs = append(errs, APIError{"invalid_decimal", "amount must be a canonical decimal", "amount"})
+	}
+	if tx.Type != "CASH_VOID" && tx.CorrectsSourceEventID != "" {
+		errs = append(errs, APIError{"invalid_fields", "corrects_source_event_id is only valid for CASH_VOID", "corrects_source_event_id"})
 	}
 	switch tx.Type {
 	case "DEPOSIT", "WITHDRAWAL", "FEE", "TAX":
@@ -692,6 +792,17 @@ func (s *Service) normalize(record []string, value func([]string, string) string
 		tx.Price, tx.Fee = "", ""
 		if err == nil && amount.Sign() != 0 {
 			errs = append(errs, APIError{"invalid_amount", "SPLIT amount must be zero", "amount"})
+		}
+	case "CASH_VOID":
+		if tx.Symbol != "" || tx.Quantity != "" || tx.Price != "" || tx.Fee != "" {
+			errs = append(errs, APIError{"invalid_fields", "CASH_VOID trade fields must be empty", "symbol"})
+		}
+		tx.Symbol, tx.Quantity, tx.Price, tx.Fee = "", "", "", ""
+		if tx.CorrectsSourceEventID == "" {
+			errs = append(errs, APIError{"required", "corrects_source_event_id is required for CASH_VOID", "corrects_source_event_id"})
+		}
+		if err == nil && amount.Sign() == 0 {
+			errs = append(errs, APIError{"invalid_amount", "CASH_VOID amount must be non-zero", "amount"})
 		}
 	case "BUY", "SELL":
 		if tx.Symbol == "" {
@@ -849,8 +960,8 @@ func (s *Service) apply(ctx context.Context, req ApplyRequest) (*ApplyReceipt, *
 		if e == nil {
 			return nil, internalError(errors.New("preview new row has no transaction"))
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO events(event_id,source_event_id,account_id,type,occurred_at,instrument_id,symbol,quantity,price,fee,currency,amount,receipt_id,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			e.EventID, e.SourceEventID, e.AccountID, e.Type, e.OccurredAt, nullable(e.InstrumentID), nullable(e.Symbol), nullable(e.Quantity), nullable(e.Price), nullable(e.Fee), e.Currency, e.Amount, receiptID, recorded.Format(time.RFC3339Nano)); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO events(event_id,source_event_id,account_id,type,occurred_at,instrument_id,symbol,quantity,price,fee,currency,amount,corrects_source_event_id,receipt_id,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			e.EventID, e.SourceEventID, e.AccountID, e.Type, e.OccurredAt, nullable(e.InstrumentID), nullable(e.Symbol), nullable(e.Quantity), nullable(e.Price), nullable(e.Fee), e.Currency, e.Amount, nullable(e.CorrectsSourceEventID), receiptID, recorded.Format(time.RFC3339Nano)); err != nil {
 			return nil, internalError(err)
 		}
 		applied++
@@ -925,7 +1036,7 @@ func snapshotFrom(ctx context.Context, q queryer) (*PortfolioSnapshot, error) {
 			asOf = occurredAt
 		}
 		switch typ {
-		case "DEPOSIT", "WITHDRAWAL", "DIVIDEND", "FEE", "TAX":
+		case "DEPOSIT", "WITHDRAWAL", "DIVIDEND", "FEE", "TAX", "CASH_VOID":
 			continue
 		}
 		quantity, err := parseDecimal(quantityRaw)
@@ -1153,7 +1264,7 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	}
 	verifiedAt := now().UTC()
 	manifest := &BackupManifest{
-		FormatVersion: "omni-folio-backup.v5", SchemaVersion: "omni-folio.sqlite.v7", CreatedAt: createdAt.Format(time.RFC3339Nano),
+		FormatVersion: "omni-folio-backup.v5", SchemaVersion: "omni-folio.sqlite.v8", CreatedAt: createdAt.Format(time.RFC3339Nano),
 		SourceLedgerRevision: revision(sourceRevision), OrderStateSHA256: sourceOrders.SHA256, OrderCount: sourceOrders.Orders,
 		OrderEventCount: sourceOrders.Events, ExecutionAuthoritySHA256: sourceOrders.ExecutionAuthoritySHA256,
 		ExecutionAuthorityEventCount: sourceOrders.ExecutionAuthorityEvents, RiskReservationSHA256: sourceOrders.RiskReservationSHA256,
@@ -1264,7 +1375,7 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	if err := requireSchema(db); err != nil {
 		return fmt.Errorf("restore schema: %w", err)
 	}
-	for _, table := range []string{"order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events"} {
+	for _, table := range []string{"events", "order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events"} {
 		var strict int
 		if err := db.QueryRow(`SELECT strict FROM pragma_table_list WHERE schema='main' AND type='table' AND name=?`, table).Scan(&strict); err != nil {
 			return fmt.Errorf("restore order table %s: %w", table, err)
@@ -1280,6 +1391,8 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	}{
 		{"order_idempotency", []string{"provider", "mode", "account_ref", "client_order_id"}, "pk"},
 		{"order_idempotency", []string{"order_id"}, "u"},
+		{"events", []string{"account_id", "source_event_id"}, "u"},
+		{"events", []string{"account_id", "corrects_source_event_id"}, "u"},
 		{"order_events", []string{"event_id"}, "u"},
 		{"order_events", []string{"provider_execution_ref"}, "u"},
 		{"execution_authority_events", []string{"event_id"}, "u"},
@@ -1303,7 +1416,7 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 			return fmt.Errorf("restore order table %s lacks required unique columns %s", unique.table, strings.Join(unique.columns, ","))
 		}
 	}
-	for _, table := range []string{"order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events"} {
+	for _, table := range []string{"events", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events"} {
 		var sequenceType string
 		var sequencePK, primaryKeyColumns, primaryKeyIndexes int
 		if err := db.QueryRow(`SELECT type, pk FROM pragma_table_info(?) WHERE name='sequence'`, table).Scan(&sequenceType, &sequencePK); err != nil {
@@ -1343,6 +1456,12 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	}
 	if foreignKeys != 2 || matchingForeignKeys != 2 {
 		return errors.New("restore strategy selection events lack required evidence or source foreign keys")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(("table"='events' AND "from"='account_id' AND "to"='account_id') OR ("table"='events' AND "from"='corrects_source_event_id' AND "to"='source_event_id')), 0) FROM pragma_foreign_key_list(?)`, "events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore cash void foreign key: %w", err)
+	}
+	if foreignKeys != 2 || matchingForeignKeys != 2 {
+		return errors.New("restore events lack the required cash-void foreign key")
 	}
 	foreignKeyRows, err := db.Query(`PRAGMA foreign_key_check`)
 	if err != nil {
@@ -1417,6 +1536,7 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		"order_events_dispatch_reservation_guard":      {"order_events", "create trigger order_events_dispatch_reservation_guard before insert on order_events when new.event_type = 'submit_dispatched' begin select case when new.authority_reservation_id is null or not exists ( select 1 from risk_reservations where reservation_id = new.authority_reservation_id and order_id = new.order_id and dispatch_event_id = new.event_id and reservation_id = json_extract(new.event_json, '$.risk_reservation_id') and policy_version = json_extract(new.event_json, '$.risk_policy_version') and fencing_token = json_extract(new.event_json, '$.fencing_token') ) then raise(abort, 'submit dispatch requires an authority reservation') end; end"},
 		"order_events_non_authority_reservation_guard": {"order_events", "create trigger order_events_non_authority_reservation_guard before insert on order_events when new.event_type not in ('risk_approved', 'submit_dispatched') and new.authority_reservation_id is not null begin select raise(abort, 'authority reservation is invalid for this event'); end"},
 		"strategy_selection_events_state_guard":        {"strategy_selection_events", "create trigger strategy_selection_events_state_guard before insert on strategy_selection_events begin select case when new.expected_current_event_id != coalesce( (select event_id from strategy_selection_events order by sequence desc limit 1), 'no_event' ) then raise(abort, 'strategy selection expected current event is stale') end; select case when new.previous_selected_result_sha256 != coalesce( (select selected_result_sha256 from strategy_selection_events order by sequence desc limit 1), 'no_strategy' ) then raise(abort, 'strategy selection previous result is stale') end; select case when new.event_type = 'select' and ( new.selected_result_sha256 != new.candidate_result_sha256 or not exists ( select 1 from strategy_research_evidence where result_sha256 = new.candidate_result_sha256 and target = 'paper_candidate' ) ) then raise(abort, 'strategy selection requires paper_candidate evidence') end; select case when new.event_type = 'rollback' and new.source_event_id != coalesce( (select event_id from strategy_selection_events order by sequence desc limit 1), 'no_event' ) then raise(abort, 'strategy rollback source is stale') end; end"},
+		"events_cash_void_guard":                       {"events", "create trigger events_cash_void_guard before insert on events when new.type = 'cash_void' begin select case when not exists ( select 1 from events target where target.account_id = new.account_id and target.source_event_id = new.corrects_source_event_id and target.type in ('deposit', 'withdrawal', 'dividend', 'fee', 'tax') and target.currency = new.currency and target.occurred_at <= new.occurred_at and new.amount = case when target.amount glob '-*' then substr(target.amount, 2) else '-' || target.amount end ) then raise(abort, 'cash void must exactly reverse an eligible event') end; end"},
 	}
 	for name, expected := range guardSQL {
 		var definition string
@@ -1499,7 +1619,7 @@ func verifyManifest(path, goldenPath, manifestPath string) error {
 	if err := dec.Decode(&manifest); err != nil {
 		return fmt.Errorf("backup manifest: %w", err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v5" || manifest.SchemaVersion != "omni-folio.sqlite.v7" ||
+	if manifest.FormatVersion != "omni-folio-backup.v5" || manifest.SchemaVersion != "omni-folio.sqlite.v8" ||
 		manifest.Encryption.Encrypted || manifest.Encryption.Algorithm != "none" {
 		return errors.New("unsupported backup manifest version or encryption")
 	}

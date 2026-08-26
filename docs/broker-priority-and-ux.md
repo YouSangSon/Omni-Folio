@@ -68,7 +68,7 @@
 - 기존 credential-free 합성 `KiwoomSnapshot` 중 `complete=true`인 KRX/KRW 결과만 identity, canonical UTC/decimal, unique ascending position/open-order 계약을 다시 검증해 Go/SQLite에 저장한다.
 - 한 transaction에서 현재 ledger revision과 `account-main`의 KRX/KRW 종목 수량을 읽고 raw snapshot과 `broker - ledger` exact quantity diff reconciliation을 분리 insert한다. 이는 비교 evidence이며 원장을 자동 보정하지 않는다.
 - 같은 fetched-at와 같은 payload는 raw snapshot을 중복 저장하지 않는다. 같은 raw snapshot·같은 ledger revision replay는 같은 reconciliation을 반환하고, ledger revision이 바뀌면 새 reconciliation만 append한다. payload 충돌, 불완전 snapshot, 잘못된 generated ID는 전체 거절하고 최근 fetched-at의 known-good를 유지한다.
-- 현재 schema v7/backup v5는 ledger event, broker snapshot, broker reconciliation, execution-authority event, risk reservation과 synthetic/paper 주문을 insert-only로 보호하고 각 state digest/count, canonical row hash와 restore schema/trigger를 검증한다.
+- 현재 schema v8/backup v5는 ledger event, broker snapshot, broker reconciliation, execution-authority event, risk reservation과 synthetic/paper 주문을 insert-only로 보호하고 각 state digest/count, canonical row hash와 restore schema/trigger를 검증한다.
 - credential, 실제 broker request, scheduling, freshness/timezone, 현금·평가금액 reconciliation, public API/UI 또는 risk authority는 증명하지 않는다. 실행 증거는 [`../gates/g4h-kiwoom-known-good-snapshot.md`](../gates/g4h-kiwoom-known-good-snapshot.md)에 기록한다.
 
 ### K2A — 내부 합성 주문 상태 로그
@@ -76,7 +76,7 @@
 - Go 내부에서만 `kiwoom`/`synthetic`/`KRX`/`KRW` 지정가 매수·매도 intent를 기록한다. client-order ID, event ID와 provider execution alias의 동일 payload replay만 허용하고 충돌은 거절한다.
 - risk verdict 순서 뒤 submit dispatch를 append하고 즉시 `SUBMIT_UNKNOWN`으로 보존한다. 같은 주문의 blind resubmit과 해당 계좌의 신규 submit을 차단하지만, 이미 알려진 open order의 cancel은 위험 축소 경로로 허용한다.
 - explicit ack/reject/fill/cancel event만 상태를 확정한다. provider에서 찾지 못했다는 사실만으로 unknown을 성공·실패로 바꾸지 않는다.
-- 현재 SQLite schema v7/backup v5는 append-only order log의 exact row hash/metadata, replay, STRICT/UNIQUE/FK/rowid sequence/trigger를 source와 restore 후보에서 계속 검증한다.
+- 현재 SQLite schema v8/backup v5는 append-only order log의 exact row hash/metadata, replay, STRICT/UNIQUE/FK/rowid sequence/trigger를 source와 restore 후보에서 계속 검증한다.
 - K2A leaf 자체는 risk verdict의 **순서만** 증명했다. 이후 K2C가 별도 credential-free 고정 BUY policy와 lease/fencing을 추가했지만 broker network, credential, public route/UI, production risk, 시장가·정정 또는 ledger reconciliation 증거는 아니다. K2A 실행 증거는 [`../gates/g4e-kiwoom-synthetic-order-state.md`](../gates/g4e-kiwoom-synthetic-order-state.md)에 기록한다.
 
 ### G4I/K2C — 내부 합성 execution authority

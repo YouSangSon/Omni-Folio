@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Omni-Folio Core API",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "description": "Minimal cross-runtime contract for trust status, CSV import, deterministic portfolio snapshots, explicitly labeled sample market data, and sanitized stored broker reconciliation. JSON decimals are canonical strings; IDs are opaque strings."
   },
   "paths": {
@@ -517,7 +517,7 @@
           },
           "type": {
             "type": "string",
-            "enum": ["BUY", "SELL", "DEPOSIT", "WITHDRAWAL", "DIVIDEND", "FEE", "TAX", "SPLIT"]
+            "enum": ["BUY", "SELL", "DEPOSIT", "WITHDRAWAL", "DIVIDEND", "FEE", "TAX", "SPLIT", "CASH_VOID"]
           },
           "occurred_at": {
             "$ref": "#/components/schemas/OccurredAt"
@@ -545,6 +545,51 @@
           "amount": {
             "$ref": "#/components/schemas/Decimal",
             "description": "Signed net cash impact of the event, including fees."
+          },
+          "corrects_source_event_id": {
+            "$ref": "#/components/schemas/OpaqueId",
+            "description": "Required only for CASH_VOID and identifies the same-account source event being exactly reversed."
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": ["type"],
+              "properties": {
+                "type": {
+                  "const": "CASH_VOID"
+                }
+              }
+            },
+            "then": {
+              "required": ["corrects_source_event_id"]
+            },
+            "else": {
+              "not": {
+                "required": ["corrects_source_event_id"]
+              }
+            }
+          }
+        ]
+      },
+      "CorrectionTarget": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_event_id", "type", "currency", "amount"],
+        "properties": {
+          "source_event_id": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["DEPOSIT", "WITHDRAWAL", "DIVIDEND", "FEE", "TAX"]
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Decimal"
           }
         }
       },
@@ -564,6 +609,10 @@
           "transaction": {
             "$ref": "#/components/schemas/NormalizedTransaction"
           },
+          "correction_target": {
+            "$ref": "#/components/schemas/CorrectionTarget",
+            "description": "Present for CASH_VOID rows so clients can disclose the preserved original without internal event identifiers."
+          },
           "duplicate_of": {
             "$ref": "#/components/schemas/OpaqueId"
           },
@@ -577,7 +626,33 @@
           "resolution": {
             "$ref": "#/components/schemas/PreviewResolution"
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": ["transaction"],
+              "properties": {
+                "transaction": {
+                  "type": "object",
+                  "required": ["type"],
+                  "properties": {
+                    "type": {
+                      "const": "CASH_VOID"
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "required": ["correction_target"]
+            },
+            "else": {
+              "not": {
+                "required": ["correction_target"]
+              }
+            }
+          }
+        ]
       },
       "PreviewResolution": {
         "type": "object",

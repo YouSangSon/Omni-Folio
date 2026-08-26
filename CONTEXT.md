@@ -47,6 +47,7 @@
 - 주문 timeout은 실패가 아니라 결과 미확정 상태다. 같은 식별자로 조회·reconcile하기 전 재주문하지 않는다.
 - offline 상태에서 주문을 큐에 넣지 않는다.
 - 삭제나 덮어쓰기 대신 correction/event append를 기본으로 한다.
+- G1.6 cash-flow correction은 같은 계좌·통화의 이미 적용된 `DEPOSIT`, `WITHDRAWAL`, `DIVIDEND`, `FEE`, `TAX`만 `CASH_VOID`로 exact 반전한다. 원본과 두 receipt의 provenance를 유지하고 동일 target 중복, chain, trade/split target, 미래 target, 다른 금액·통화를 preview와 schema v8에서 모두 거절한다. replacement 값은 별도 정상 event로 같은 atomic apply에 넣는다.
 - 현금 event의 부호와 분할의 0 cash impact를 신뢰하지 않고 import 경계와 SQLite CHECK에서 검증한다. 분할은 실현손익을 만들거나 기존 FIFO 총원가를 바꾸지 않는다.
 - sample market data는 live/current 상태로 승격하거나 실제 market source와 조용히 혼합하지 않는다.
 - public market series는 `price_adjustment`를 생략하지 않는다. local fixture는 `unspecified`로 고정하고 화면에서도 조정 여부를 확인하지 못했다고 표시한다.

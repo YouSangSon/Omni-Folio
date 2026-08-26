@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://omni-folio.local/contracts/backup-manifest.v5.schema.json",
   "title": "Omni-Folio Backup Manifest v5",
-  "description": "CLI contract for a separately restored schema-v7 backup candidate. Schema validity never authorizes replacing the active DB: database, ledger snapshot, replayable order state, execution authority, risk reservations, known-good broker snapshots, and strategy-registry proofs must match and verification_receipt must be verified and eligible_for_activation before replacement.",
+  "description": "CLI contract for a separately restored schema-v8 backup candidate. Schema validity never authorizes replacing the active DB: database, ledger snapshot, replayable order state, execution authority, risk reservations, known-good broker snapshots, and strategy-registry proofs must match and verification_receipt must be verified and eligible_for_activation before replacement.",
   "type": "object",
   "additionalProperties": false,
   "required": ["format_version", "schema_version", "created_at", "source_ledger_revision", "order_state_sha256", "order_count", "order_event_count", "execution_authority_sha256", "execution_authority_event_count", "risk_reservation_sha256", "risk_reservation_count", "broker_state_sha256", "broker_snapshot_count", "broker_reconciliation_count", "strategy_registry_sha256", "strategy_evidence_count", "strategy_selection_event_count", "selected_strategy_result_sha256", "db_sha256", "size_bytes", "expected_snapshot_sha256", "encryption", "verification_receipt"],
@@ -11,7 +11,7 @@
       "const": "omni-folio-backup.v5"
     },
     "schema_version": {
-      "const": "omni-folio.sqlite.v7"
+      "const": "omni-folio.sqlite.v8"
     },
     "created_at": {
       "$ref": "#/$defs/timestamp"
