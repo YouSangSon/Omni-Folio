@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -96,6 +99,110 @@ func TestG4HKnownGoodSnapshotPersistsAndDiffsLedger(t *testing.T) {
 	}
 	if err := svc.db.QueryRow(`SELECT COUNT(*) FROM broker_snapshot_reconciliations`).Scan(&reconciliations); err != nil || reconciliations != 2 {
 		t.Fatalf("failed sync mutated reconciliations: count=%d err=%v", reconciliations, err)
+	}
+}
+
+func TestG4KLatestBrokerReconciliationHTTPIsSanitized(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	seedKRXLedger(t, svc)
+	if _, err := svc.recordKiwoomSnapshot(context.Background(), "account-main", g4hSnapshot("2026-01-10T15:00:59Z")); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	svc.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/broker-reconciliation/latest", nil))
+	const want = "{\"provider\":\"kiwoom\",\"environment\":\"mock\",\"exchange\":\"KRX\",\"freshness\":\"unverified\",\"fetched_at\":\"2026-01-10T15:00:59Z\",\"recorded_at\":\"2026-01-10T15:01:00Z\",\"ledger_revision\":\"rev_0000000002\",\"all_positions_match\":false,\"position_differences\":[{\"symbol\":\"000660\",\"broker_quantity\":\"2\",\"ledger_quantity\":\"0\",\"difference\":\"2\",\"match\":false},{\"symbol\":\"005930\",\"broker_quantity\":\"10\",\"ledger_quantity\":\"7\",\"difference\":\"3\",\"match\":false}]}\n"
+	if w.Code != http.StatusOK || w.Body.String() != want {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestG4KLatestBrokerReconciliationHTTPDistinguishesMissingFromCorrupt(t *testing.T) {
+	request := func(t *testing.T, svc *Service) (int, string) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		svc.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/broker-reconciliation/latest", nil))
+		return w.Code, w.Body.String()
+	}
+	t.Run("missing", func(t *testing.T) {
+		svc, _ := testService(t, nil, nil)
+		status, body := request(t, svc)
+		if status != http.StatusNotFound || body != "{\"code\":\"broker_reconciliation_not_found\",\"message\":\"broker reconciliation was not found\"}\n" {
+			t.Fatalf("status=%d body=%s", status, body)
+		}
+	})
+	t.Run("corrupt", func(t *testing.T) {
+		svc, _ := testService(t, nil, nil)
+		seedKRXLedger(t, svc)
+		stored, err := svc.recordKiwoomSnapshot(context.Background(), "account-main", g4hSnapshot("2026-01-10T15:00:59Z"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.db.Exec(`DROP TRIGGER broker_snapshot_reconciliations_no_update`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.db.Exec(`UPDATE broker_snapshot_reconciliations SET record_sha256=? WHERE reconciliation_id=?`, strings.Repeat("0", 64), stored.ReconciliationID); err != nil {
+			t.Fatal(err)
+		}
+		status, body := request(t, svc)
+		if status != http.StatusInternalServerError || body != "{\"code\":\"internal_error\",\"message\":\"internal server error\"}\n" {
+			t.Fatalf("status=%d body=%s", status, body)
+		}
+	})
+	t.Run("newest snapshot has no reconciliation", func(t *testing.T) {
+		svc, _ := testService(t, nil, nil)
+		seedKRXLedger(t, svc)
+		if _, err := svc.recordKiwoomSnapshot(context.Background(), "account-main", g4hSnapshot("2026-01-10T15:00:59Z")); err != nil {
+			t.Fatal(err)
+		}
+		orphan := g4hSnapshot("2026-01-10T15:01:01Z")
+		raw, sha, err := orderJSONHash(orphan)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.db.Exec(`INSERT INTO broker_snapshots(snapshot_id,provider,environment,exchange,account_ref,fetched_at,snapshot_sha256,snapshot_json,recorded_at) VALUES(?,?,?,?,?,?,?,?,?)`,
+			"broker_snapshot_orphan", "kiwoom", orphan.Environment, orphan.Exchange, orphan.AccountRef, orphan.FetchedAt, sha, string(raw), "2026-01-10T15:01:01Z"); err != nil {
+			t.Fatal(err)
+		}
+		status, body := request(t, svc)
+		if status != http.StatusInternalServerError || body != "{\"code\":\"internal_error\",\"message\":\"internal server error\"}\n" {
+			t.Fatalf("status=%d body=%s", status, body)
+		}
+	})
+}
+
+func TestG4KOpenAPIExposesOnlyTheSanitizedReadModel(t *testing.T) {
+	raw, err := os.ReadFile("../../contracts/openapi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	paths := document["paths"].(map[string]any)
+	path, ok := paths["/v1/broker-reconciliation/latest"].(map[string]any)
+	if !ok {
+		t.Fatal("broker reconciliation path is missing")
+	}
+	operation, ok := path["get"].(map[string]any)
+	if !ok {
+		t.Fatal("broker reconciliation path is missing")
+	}
+	response := operation["responses"].(map[string]any)["200"].(map[string]any)
+	schemaRef := response["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)["$ref"]
+	if schemaRef != "#/components/schemas/BrokerReconciliation" {
+		t.Fatalf("unexpected response schema: %v", schemaRef)
+	}
+	schemas := document["components"].(map[string]any)["schemas"].(map[string]any)
+	schema := schemas["BrokerReconciliation"].(map[string]any)
+	properties := schema["properties"].(map[string]any)
+	for _, forbidden := range []string{"snapshot_id", "reconciliation_id", "account_ref", "ledger_account_id", "snapshot_sha256", "snapshot"} {
+		if _, found := properties[forbidden]; found {
+			t.Fatalf("public schema exposes %s", forbidden)
+		}
+	}
+	if schema["additionalProperties"] != false {
+		t.Fatal("broker reconciliation schema must be closed")
 	}
 }
 

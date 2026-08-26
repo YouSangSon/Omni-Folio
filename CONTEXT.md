@@ -22,6 +22,7 @@
 - **Order intent**: 전략 또는 사용자가 원하는 주문을 표현하지만 아직 증권사에 전송되지 않은 명령.
 - **Execution event**: 접수, 부분체결, 체결, 취소, 거절처럼 증권사에서 관찰한 append-only 주문 사실.
 - **Reconciliation**: 내부 주문·원장 상태를 증권사의 주문·체결·잔고 사실과 비교해 차이를 설명하거나 차단하는 과정.
+- **Stored reconciliation read view**: G4H가 저장한 최신 Kiwoom KRX 보유수량과 특정 ledger revision의 exact diff를 account/internal ID/hash/raw snapshot 없이 조회하는 G4K 결과. `freshness=unverified`이며 broker refresh, 현재 상태, 현금·평가금액·주문·체결 대조를 뜻하지 않는다.
 - **Risk reservation**: 주문 전송 전에 현금, 포지션, 익스포저 한도를 점유해 동시 주문이 한도를 넘지 못하게 하는 상태.
 - **Fencing token**: 현재 실행 권한을 가진 runner 세대만 주문을 전송하게 하는 단조 증가 토큰.
 - **Strategy manifest**: 전략 버전, 파라미터, 데이터 snapshot, 실행 환경을 재현 가능하게 묶는 식별 계약.
@@ -52,3 +53,4 @@
 - `SUBMIT_UNKNOWN`은 실패가 아니다. 같은 주문과 해당 계좌의 신규 submit은 차단하되 이미 알려진 open order의 cancel은 위험 축소 경로로 허용한다. K2B0는 이미 ACK된 주문의 체결만 조정하며, 주문번호 없는 timeout은 종목·방향·수량·가격·시간이 같아도 결합하지 않고 `UNCORRELATED`로 유지한다.
 - K2B2 mock 주문은 token preflight가 성공한 뒤 reservation과 `SUBMIT_DISPATCHED`를 먼저 durable commit하고 broker write를 한 번만 시도한다. write의 401·provider auth code·timeout·network·5xx는 자동 재시도하지 않고 `SUBMIT_UNKNOWN`을 유지한다. 명시적 provider reject만 `REJECTED`로 끝내며 ACK와 account snapshot은 동일한 `opaque account_ref + raw order number` HMAC namespace를 사용한다.
 - K2B1 dated aliases는 environment·account·요청 날짜를 포함한 별도 namespace이며 K2A/K2B0 order event alias로 사용할 수 없다. 요청 날짜와 provider-local execution clock을 결합해 UTC timestamp를 만들거나 terminal pagination을 complete execution history로 승격하지 않는다.
+- G4K는 가장 최신 raw broker snapshot에 대조 record가 없거나 canonical hash·metadata 검증이 실패하면 과거 known-good로 조용히 후퇴하지 않고 fail-closed한다. 응답과 Flutter는 account reference를 포함하지 않는다.

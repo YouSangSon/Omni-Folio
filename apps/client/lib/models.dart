@@ -2,6 +2,12 @@ import 'dart:convert';
 
 typedef Json = Map<String, dynamic>;
 
+void _requireExactKeys(Json value, Set<String> keys) {
+  if (value.length != keys.length || !value.keys.every(keys.contains)) {
+    throw const FormatException('Unexpected object fields');
+  }
+}
+
 String _text(Json value, String key) {
   final result = value[key];
   if (result is! String || result.isEmpty) {
@@ -506,6 +512,126 @@ class MarketCandles {
   final String fetchedAt;
   final List<MarketIssue> issues;
   final List<MarketBar> bars;
+}
+
+class BrokerPositionDifference {
+  const BrokerPositionDifference({
+    required this.symbol,
+    required this.brokerQuantity,
+    required this.ledgerQuantity,
+    required this.difference,
+    required this.match,
+  });
+
+  factory BrokerPositionDifference.fromJson(Json json) {
+    _requireExactKeys(json, const {
+      'symbol',
+      'broker_quantity',
+      'ledger_quantity',
+      'difference',
+      'match',
+    });
+    final symbol = _text(json, 'symbol');
+    final brokerQuantity = _decimal(json, 'broker_quantity');
+    final ledgerQuantity = _decimal(json, 'ledger_quantity');
+    final difference = _decimal(json, 'difference');
+    final match = _bool(json, 'match');
+    if (!RegExp(r'^[0-9]{6}$').hasMatch(symbol) ||
+        brokerQuantity.startsWith('-') ||
+        ledgerQuantity.startsWith('-') ||
+        match != (difference == '0')) {
+      throw const FormatException('Invalid broker reconciliation row');
+    }
+    return BrokerPositionDifference(
+      symbol: symbol,
+      brokerQuantity: brokerQuantity,
+      ledgerQuantity: ledgerQuantity,
+      difference: difference,
+      match: match,
+    );
+  }
+
+  final String symbol;
+  final String brokerQuantity;
+  final String ledgerQuantity;
+  final String difference;
+  final bool match;
+}
+
+class BrokerReconciliation {
+  const BrokerReconciliation({
+    required this.provider,
+    required this.environment,
+    required this.exchange,
+    required this.freshness,
+    required this.fetchedAt,
+    required this.recordedAt,
+    required this.ledgerRevision,
+    required this.allPositionsMatch,
+    required this.positionDifferences,
+  });
+
+  factory BrokerReconciliation.fromJson(Json json) {
+    _requireExactKeys(json, const {
+      'provider',
+      'environment',
+      'exchange',
+      'freshness',
+      'fetched_at',
+      'recorded_at',
+      'ledger_revision',
+      'all_positions_match',
+      'position_differences',
+    });
+    final provider = _text(json, 'provider');
+    final environment = _text(json, 'environment');
+    final exchange = _text(json, 'exchange');
+    final freshness = _text(json, 'freshness');
+    final ledgerRevision = _text(json, 'ledger_revision');
+    final allPositionsMatch = _bool(json, 'all_positions_match');
+    final differences = _jsonList(
+      json,
+      'position_differences',
+    ).map(BrokerPositionDifference.fromJson).toList(growable: false);
+    var previousSymbol = '';
+    for (final difference in differences) {
+      if (difference.symbol.compareTo(previousSymbol) <= 0) {
+        throw const FormatException(
+          'Broker reconciliation symbols must be ordered',
+        );
+      }
+      previousSymbol = difference.symbol;
+    }
+    if (provider != 'kiwoom' ||
+        !const {'mock', 'production'}.contains(environment) ||
+        exchange != 'KRX' ||
+        freshness != 'unverified' ||
+        !RegExp(r'^rev_[0-9]{10}$').hasMatch(ledgerRevision) ||
+        allPositionsMatch != differences.every((item) => item.match)) {
+      throw const FormatException('Invalid broker reconciliation');
+    }
+    return BrokerReconciliation(
+      provider: provider,
+      environment: environment,
+      exchange: exchange,
+      freshness: freshness,
+      fetchedAt: _rfc3339Text(json['fetched_at']),
+      recordedAt: _rfc3339Text(json['recorded_at']),
+      ledgerRevision: ledgerRevision,
+      allPositionsMatch: allPositionsMatch,
+      positionDifferences: differences,
+    );
+  }
+
+  final String provider;
+  final String environment;
+  final String exchange;
+  final String freshness;
+  final String fetchedAt;
+  final String recordedAt;
+  final String ledgerRevision;
+  final bool allPositionsMatch;
+  final List<BrokerPositionDifference> positionDifferences;
 }
 
 Json decodeObject(String body) {

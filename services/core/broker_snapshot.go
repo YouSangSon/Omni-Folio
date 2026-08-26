@@ -44,6 +44,18 @@ type BrokerKnownGoodSnapshot struct {
 	Snapshot            KiwoomSnapshot             `json:"snapshot"`
 }
 
+type BrokerReconciliationView struct {
+	Provider            string                     `json:"provider"`
+	Environment         KiwoomEnvironment          `json:"environment"`
+	Exchange            KiwoomExchange             `json:"exchange"`
+	Freshness           string                     `json:"freshness"`
+	FetchedAt           string                     `json:"fetched_at"`
+	RecordedAt          string                     `json:"recorded_at"`
+	LedgerRevision      string                     `json:"ledger_revision"`
+	AllPositionsMatch   bool                       `json:"all_positions_match"`
+	PositionDifferences []BrokerPositionDifference `json:"position_differences"`
+}
+
 type brokerReconciliationRecord struct {
 	ReconciliationID    string                     `json:"reconciliation_id"`
 	SnapshotID          string                     `json:"snapshot_id"`
@@ -241,6 +253,59 @@ func (s *Service) latestKiwoomSnapshot(ctx context.Context, environment KiwoomEn
 		return nil, err
 	}
 	return knownGoodSnapshot(record, snapshot, snapshotSHA), nil
+}
+
+func (s *Service) latestBrokerReconciliation(ctx context.Context) (*BrokerReconciliationView, error) {
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	var snapshotID, accountRef, fetchedAt, snapshotSHA, snapshotJSON string
+	var environment KiwoomEnvironment
+	var exchange KiwoomExchange
+	if err := tx.QueryRowContext(ctx, `SELECT snapshot_id,environment,exchange,account_ref,fetched_at,snapshot_sha256,snapshot_json
+		FROM broker_snapshots WHERE provider='kiwoom' AND exchange='KRX'
+		ORDER BY fetched_at DESC,sequence DESC LIMIT 1`).Scan(
+		&snapshotID, &environment, &exchange, &accountRef, &fetchedAt, &snapshotSHA, &snapshotJSON,
+	); err != nil {
+		return nil, err
+	}
+	snapshot, err := decodeStoredBrokerSnapshot(snapshotJSON, snapshotSHA)
+	if err != nil {
+		return nil, err
+	}
+	if !safeOrderID(snapshotID) || snapshot.Environment != environment || snapshot.Exchange != exchange ||
+		snapshot.AccountRef != accountRef || snapshot.FetchedAt != fetchedAt {
+		return nil, errors.New("stored broker snapshot metadata mismatch")
+	}
+	var ledgerAccountID, recordSHA, recordJSON, recordRecordedAt string
+	var ledgerRevision int64
+	if err := tx.QueryRowContext(ctx, `SELECT ledger_account_id,ledger_revision,record_sha256,record_json,recorded_at
+		FROM broker_snapshot_reconciliations WHERE snapshot_id=?
+		ORDER BY ledger_revision DESC,sequence DESC LIMIT 1`, snapshotID).Scan(
+		&ledgerAccountID, &ledgerRevision, &recordSHA, &recordJSON, &recordRecordedAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("latest broker snapshot has no reconciliation")
+		}
+		return nil, err
+	}
+	record, err := decodeBrokerReconciliation(recordJSON, recordSHA, snapshot)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireReconciliationIdentity(record, snapshotID, ledgerAccountID, ledgerRevision, recordRecordedAt); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return &BrokerReconciliationView{
+		Provider: "kiwoom", Environment: environment, Exchange: exchange, Freshness: "unverified",
+		FetchedAt: fetchedAt, RecordedAt: record.RecordedAt, LedgerRevision: record.LedgerRevision,
+		AllPositionsMatch: record.AllPositionsMatch, PositionDifferences: record.PositionDifferences,
+	}, nil
 }
 
 func sameKiwoomSnapshotIdentity(left, right *KiwoomSnapshot) bool {

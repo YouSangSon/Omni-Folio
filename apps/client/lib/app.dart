@@ -1083,14 +1083,51 @@ class _ActivityPageState extends State<ActivityPage> {
   );
 }
 
-class DataPage extends StatelessWidget {
+class DataPage extends StatefulWidget {
   const DataPage({super.key, required this.api});
   final OmniApi api;
 
   @override
+  State<DataPage> createState() => _DataPageState();
+}
+
+class _DataPageState extends State<DataPage> {
+  BrokerReconciliation? _reconciliation;
+  String? _reconciliationError;
+  var _reconciliationBusy = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReconciliation();
+  }
+
+  Future<void> _loadReconciliation() async {
+    if (!_reconciliationBusy) {
+      setState(() {
+        _reconciliationBusy = true;
+        _reconciliationError = null;
+      });
+    }
+    try {
+      final result = await widget.api.latestBrokerReconciliation();
+      if (mounted) {
+        setState(() {
+          _reconciliation = result;
+          _reconciliationError = null;
+        });
+      }
+    } catch (error) {
+      if (mounted) setState(() => _reconciliationError = error.toString());
+    } finally {
+      if (mounted) setState(() => _reconciliationBusy = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final baseUrl = api is RestOmniApi
-        ? (api as RestOmniApi).baseUrl
+    final baseUrl = widget.api is RestOmniApi
+        ? (widget.api as RestOmniApi).baseUrl
         : '테스트 API';
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -1114,7 +1151,163 @@ class DataPage extends StatelessWidget {
             ],
           ),
         ),
+        const SizedBox(height: 12),
+        _buildReconciliation(context),
       ],
+    );
+  }
+
+  Widget _buildReconciliation(BuildContext context) {
+    final reconciliation = _reconciliation;
+    if (_reconciliationBusy && reconciliation == null) {
+      return const _SectionCard(
+        title: '증권사 잔고 대조',
+        child: _Loading(compact: true),
+      );
+    }
+    if (_reconciliationError != null && reconciliation == null) {
+      return _SectionCard(
+        title: '증권사 잔고 대조',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('대조 결과를 불러오지 못했습니다'),
+            const SizedBox(height: 4),
+            Text(
+              _reconciliationError!,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              onPressed: _loadReconciliation,
+              child: const Text('대조 결과 다시 불러오기'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (reconciliation == null) {
+      return _SectionCard(
+        title: '증권사 잔고 대조',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('아직 증권사 대조 기록이 없습니다'),
+            const SizedBox(height: 4),
+            Text(
+              '로컬 원장 확인과 증권사 잔고 대조는 별개입니다.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      );
+    }
+    return _BrokerReconciliationCard(
+      reconciliation: reconciliation,
+      retainedError: _reconciliationError,
+      busy: _reconciliationBusy,
+      onRefresh: _loadReconciliation,
+    );
+  }
+}
+
+class _BrokerReconciliationCard extends StatelessWidget {
+  const _BrokerReconciliationCard({
+    required this.reconciliation,
+    required this.retainedError,
+    required this.busy,
+    required this.onRefresh,
+  });
+
+  final BrokerReconciliation reconciliation;
+  final String? retainedError;
+  final bool busy;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final differences = reconciliation.positionDifferences;
+    final mismatchCount = differences.where((item) => !item.match).length;
+    final status = reconciliation.allPositionsMatch
+        ? '일치 · ${differences.length}종목의 보유 수량이 원장과 같습니다.'
+        : '불일치 · $mismatchCount/${differences.length}종목의 보유 수량이 다릅니다.';
+    final environment = reconciliation.environment == 'mock' ? '모의투자' : '실전';
+    return _SectionCard(
+      title: '증권사 잔고 대조',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _Notice(
+            icon: Icons.history,
+            text:
+                '마지막 저장 스냅샷 · 현재 상태 아님\n현재 대조 범위는 보유 수량입니다. 현금, 평가금액, 수수료, 주문 체결은 대조하지 않았습니다.',
+            color: _warningColor(context),
+          ),
+          const SizedBox(height: 12),
+          Text('키움 · $environment · ${reconciliation.exchange}'),
+          const SizedBox(height: 4),
+          Text(
+            '증권사 ${_time(DateTime.parse(reconciliation.fetchedAt))} · 저장 ${_time(DateTime.parse(reconciliation.recordedAt))}\n원장 ${reconciliation.ledgerRevision}',
+            style: _tabular(context),
+          ),
+          const SizedBox(height: 12),
+          Semantics(
+            container: true,
+            label: status,
+            child: Text(status, style: Theme.of(context).textTheme.titleMedium),
+          ),
+          if (differences.isEmpty) ...[
+            const SizedBox(height: 8),
+            const Text('현재 대조할 보유 종목이 없습니다.'),
+          ],
+          for (final difference in differences) ...[
+            const Divider(height: 24),
+            _BrokerDifferenceRow(difference: difference),
+          ],
+          if (retainedError != null) ...[
+            const SizedBox(height: 12),
+            _Notice(
+              icon: Icons.warning_amber_rounded,
+              text: '새로고침 실패: $retainedError\n마지막 정상 대조 기록은 유지됩니다.',
+              color: Theme.of(context).colorScheme.error,
+            ),
+          ],
+          const SizedBox(height: 12),
+          ElevatedButton.icon(
+            onPressed: busy ? null : onRefresh,
+            icon: const Icon(Icons.refresh),
+            label: const Text('저장된 대조 다시 불러오기'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BrokerDifferenceRow extends StatelessWidget {
+  const _BrokerDifferenceRow({required this.difference});
+  final BrokerPositionDifference difference;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = difference.match ? '일치' : '불일치';
+    final semantics =
+        '${difference.symbol} $status, 증권사 수량 ${difference.brokerQuantity}, 원장 수량 ${difference.ledgerQuantity}, 차이 ${difference.difference}';
+    return Semantics(
+      container: true,
+      excludeSemantics: true,
+      label: semantics,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('${difference.symbol} · $status'),
+          const SizedBox(height: 4),
+          Text(
+            '증권사 ${difference.brokerQuantity} · 원장 ${difference.ledgerQuantity} · 차이 ${difference.difference}',
+            style: _tabular(context),
+          ),
+        ],
+      ),
     );
   }
 }

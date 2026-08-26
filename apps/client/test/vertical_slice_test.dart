@@ -22,8 +22,10 @@ class FakeApi implements OmniApi {
     required this.previewValue,
     required this.receiptValue,
     required this.candlesValue,
+    this.reconciliationValue,
     this.fail = false,
     this.failSnapshot = false,
+    this.failReconciliation = false,
     this.applyFailures = 0,
   });
 
@@ -32,10 +34,12 @@ class FakeApi implements OmniApi {
   final ImportPreview previewValue;
   final ApplyReceipt receiptValue;
   MarketCandles candlesValue;
+  BrokerReconciliation? reconciliationValue;
   Completer<MarketCandles>? candlesCompleter;
   final List<String> applyKeys = [];
   bool fail;
   bool failSnapshot;
+  bool failReconciliation;
   int applyFailures;
 
   @override
@@ -67,6 +71,14 @@ class FakeApi implements OmniApi {
   Future<MarketCandles> candles(String symbol) async {
     if (fail) throw const ApiException('서버를 다시 확인하세요.');
     return candlesCompleter?.future ?? candlesValue;
+  }
+
+  @override
+  Future<BrokerReconciliation?> latestBrokerReconciliation() async {
+    if (fail || failReconciliation) {
+      throw const ApiException('서버를 다시 확인하세요.');
+    }
+    return reconciliationValue;
   }
 
   @override
@@ -149,6 +161,33 @@ MarketCandles marketCandles({
           },
         ],
 });
+
+Json brokerReconciliationJson() => {
+  'provider': 'kiwoom',
+  'environment': 'mock',
+  'exchange': 'KRX',
+  'freshness': 'unverified',
+  'fetched_at': '2026-01-10T15:00:59Z',
+  'recorded_at': '2026-01-10T15:01:00Z',
+  'ledger_revision': 'rev_0000000002',
+  'all_positions_match': false,
+  'position_differences': const [
+    {
+      'symbol': '000660',
+      'broker_quantity': '2',
+      'ledger_quantity': '0',
+      'difference': '2',
+      'match': false,
+    },
+    {
+      'symbol': '005930',
+      'broker_quantity': '10',
+      'ledger_quantity': '7',
+      'difference': '3',
+      'match': false,
+    },
+  ],
+};
 
 Future<void> pumpUi(WidgetTester tester) async {
   await tester.pump();
@@ -516,6 +555,70 @@ void main() {
     await expectLater(api.candles('AAPL'), throwsFormatException);
   });
 
+  test('broker reconciliation parser rejects unsafe or inconsistent data', () {
+    final parsed = BrokerReconciliation.fromJson(brokerReconciliationJson());
+    expect(parsed.positionDifferences.last.difference, '3');
+    expect(parsed.allPositionsMatch, isFalse);
+    expect(
+      () => BrokerReconciliation.fromJson({
+        ...brokerReconciliationJson(),
+        'account_ref': 'kiwoom_account_secret',
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => BrokerReconciliation.fromJson({
+        ...brokerReconciliationJson(),
+        'position_differences': [
+          {
+            ...((brokerReconciliationJson()['position_differences'] as List)
+                    .first
+                as Json),
+            'broker_quantity': 2,
+          },
+        ],
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => BrokerReconciliation.fromJson({
+        ...brokerReconciliationJson(),
+        'all_positions_match': true,
+      }),
+      throwsFormatException,
+    );
+  });
+
+  test(
+    'latest broker reconciliation uses the fixed path and maps 404 to empty',
+    () async {
+      late Uri request;
+      final api = RestOmniApi(
+        client: MockClient((value) async {
+          request = value.url;
+          return http.Response(jsonEncode(brokerReconciliationJson()), 200);
+        }),
+      );
+      final result = await api.latestBrokerReconciliation();
+      expect(request.path, '/v1/broker-reconciliation/latest');
+      expect(request.query, isEmpty);
+      expect(result!.ledgerRevision, 'rev_0000000002');
+
+      final empty = RestOmniApi(
+        client: MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'code': 'broker_reconciliation_not_found',
+              'message': 'broker reconciliation was not found',
+            }),
+            404,
+          ),
+        ),
+      );
+      expect(await empty.latestBrokerReconciliation(), isNull);
+    },
+  );
+
   testWidgets('live-disabled trust banner remains explicit', (tester) async {
     final api = goldenApi(neverVerified: true);
     await tester.pumpWidget(OmniFolioApp(api: api));
@@ -526,6 +629,75 @@ void main() {
     await pumpUi(tester);
     expect(find.textContaining('실전 주문 꺼짐'), findsOneWidget);
     expect(find.textContaining('로컬 거래 내역 가져오기'), findsOneWidget);
+    expect(find.text('아직 증권사 대조 기록이 없습니다'), findsOneWidget);
+  });
+
+  testWidgets(
+    'connections show sanitized stored reconciliation with text semantics',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        final api = goldenApi()
+          ..reconciliationValue = BrokerReconciliation.fromJson(
+            brokerReconciliationJson(),
+          );
+        await tester.pumpWidget(OmniFolioApp(api: api));
+        await pumpUi(tester);
+        await tester.tap(find.text('연결'));
+        await pumpUi(tester);
+
+        expect(find.textContaining('마지막 저장 스냅샷 · 현재 상태 아님'), findsOneWidget);
+        expect(find.textContaining('불일치 · 2/2종목'), findsOneWidget);
+        expect(find.text('증권사 10 · 원장 7 · 차이 3'), findsOneWidget);
+        expect(
+          find.semantics.byLabel('005930 불일치, 증권사 수량 10, 원장 수량 7, 차이 3'),
+          findsOneWidget,
+        );
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets('reconciliation error offers a retry', (tester) async {
+    final api = goldenApi()
+      ..failReconciliation = true
+      ..reconciliationValue = BrokerReconciliation.fromJson(
+        brokerReconciliationJson(),
+      );
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('연결'));
+    await pumpUi(tester);
+
+    expect(find.text('대조 결과를 불러오지 못했습니다'), findsOneWidget);
+    api.failReconciliation = false;
+    await tester.tap(find.text('대조 결과 다시 불러오기'));
+    await pumpUi(tester);
+    expect(find.textContaining('불일치 · 2/2종목'), findsOneWidget);
+  });
+
+  testWidgets('reconciliation refresh failure retains the stored result', (
+    tester,
+  ) async {
+    final api = goldenApi()
+      ..reconciliationValue = BrokerReconciliation.fromJson(
+        brokerReconciliationJson(),
+      );
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('연결'));
+    await pumpUi(tester);
+
+    api.failReconciliation = true;
+    final refresh = find.text('저장된 대조 다시 불러오기');
+    await tester.ensureVisible(refresh);
+    await tester.pump();
+    await tester.tap(refresh);
+    await pumpUi(tester);
+
+    expect(find.text('증권사 10 · 원장 7 · 차이 3'), findsOneWidget);
+    expect(find.textContaining('마지막 정상 대조 기록은 유지됩니다'), findsOneWidget);
   });
 
   testWidgets('missing snapshot links directly to transaction import', (
