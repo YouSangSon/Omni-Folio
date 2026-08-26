@@ -281,16 +281,40 @@ class PreviewRow {
     required this.rowNumber,
     required this.status,
     this.symbol,
+    this.transactionType,
+    this.currency,
+    this.amount,
+    this.correctionTarget,
     this.errors = const [],
   });
   factory PreviewRow.fromJson(Json json) {
     final transaction = json['transaction'];
+    if (transaction != null && transaction is! Json) {
+      throw const FormatException('Invalid transaction');
+    }
+    final transactionType = transaction is Json
+        ? _text(transaction, 'type')
+        : null;
+    final targetJson = json['correction_target'];
+    if (targetJson != null && targetJson is! Json) {
+      throw const FormatException('Invalid correction target');
+    }
+    final correctionTarget = targetJson is Json
+        ? CorrectionTarget.fromJson(targetJson)
+        : null;
+    if ((transactionType == 'CASH_VOID') != (correctionTarget != null)) {
+      throw const FormatException('CASH_VOID requires one correction target');
+    }
     return PreviewRow(
       rowNumber: _count(json, 'row_number'),
       status: _text(json, 'status'),
       symbol: transaction is Json && transaction['symbol'] is String
           ? transaction['symbol'] as String
           : null,
+      transactionType: transactionType,
+      currency: transaction is Json ? _text(transaction, 'currency') : null,
+      amount: transaction is Json ? _decimal(transaction, 'amount') : null,
+      correctionTarget: correctionTarget,
       errors: _optionalJsonList(
         json,
         'errors',
@@ -301,7 +325,40 @@ class PreviewRow {
   final int rowNumber;
   final String status;
   final String? symbol;
+  final String? transactionType;
+  final String? currency;
+  final String? amount;
+  final CorrectionTarget? correctionTarget;
   final List<String> errors;
+}
+
+class CorrectionTarget {
+  const CorrectionTarget({
+    required this.sourceEventId,
+    required this.type,
+    required this.currency,
+    required this.amount,
+  });
+
+  factory CorrectionTarget.fromJson(Json json) {
+    _requireExactKeys(json, const {
+      'source_event_id',
+      'type',
+      'currency',
+      'amount',
+    });
+    return CorrectionTarget(
+      sourceEventId: _text(json, 'source_event_id'),
+      type: _text(json, 'type'),
+      currency: _text(json, 'currency'),
+      amount: _decimal(json, 'amount'),
+    );
+  }
+
+  final String sourceEventId;
+  final String type;
+  final String currency;
+  final String amount;
 }
 
 class ApplyReceipt {

@@ -8,7 +8,8 @@
 - key 재사용과 다른 payload는 conflict이며 부분 mutation이 없다.
 - FIFO snapshot에서 보유 수량, 현금, 실현손익, provenance가 golden fixture와 일치한다.
 - exact-decimal cash-flow는 입금·출금·현금배당·수수료·세금의 부호를 fail-closed하고, stock split은 열린 FIFO lot 수량만 조정하며 총원가와 cash를 보존한다.
-- backup candidate를 별도 DB에 복원해 integrity와 golden snapshot을 검증하기 전 active DB를 바꾸지 않는다. 현재 backup v5는 주문 schema/hash/replay, known-good broker snapshot, execution-authority와 risk-reservation digest/count도 함께 검증한다.
+- `CASH_VOID`는 이미 적용된 같은 계좌·통화의 입금·출금·현금배당·수수료·세금 하나만 exact 반전한다. 원본 event는 보존하고 거래·분할·같은-preview target·중복 void·chain을 차단한다.
+- backup candidate를 별도 DB에 복원해 integrity와 golden snapshot을 검증하기 전 active DB를 바꾸지 않는다. 현재 schema v8/backup v5는 cash-void self-FK/unique/guard와 주문 schema/hash/replay, known-good broker snapshot, execution-authority와 risk-reservation digest/count도 함께 검증한다.
 
 ## Evidence
 
@@ -16,8 +17,8 @@
 - `make smoke` passes health, status, CSV preview, atomic apply, receipt, and resulting snapshot against a temporary DB.
 - `TestGoldenVerticalSliceAndBackupRestore` verifies FIFO values, a transaction-consistent backup candidate, manifest, integrity check, golden snapshot, invalid manifest rejection, and restored DB without replacing the active DB. Current backup v5 evidence is in [`g4e-kiwoom-synthetic-order-state.md`](g4e-kiwoom-synthetic-order-state.md), [`g4h-kiwoom-known-good-snapshot.md`](g4h-kiwoom-known-good-snapshot.md), and [`g4i-k2c-execution-authority.md`](g4i-k2c-execution-authority.md).
 - Idempotency replay/conflict, stale preview, rollback, oversell, canonical decimal, request-size, CORS, readiness, and non-leaking error paths have runnable tests.
-- `TestCashFlowsAndSplitReplayExactly`, `TestExtendedLedgerTypesRejectInvalidCashDirection`, `TestSplitWithoutOpenHoldingRollsBack`, `TestSchemaV5RejectsInvalidExtendedLedgerRows`, and `TestSchemaMigratesV1ToV5AndReadinessRequiresV5` cover schema v5 cash/corporate-action replay, API/DB trust-boundary rejection, atomic rollback, and migration preservation.
+- `TestCashFlowsAndSplitReplayExactly`, `TestCashVoid*`, `TestImportSourceEventConflictIsNotSilentlyDuplicate`, `TestSchemaV8EnforcesCashVoidGuard`, `TestOpenAPIExposesClosedCashVoidContract`, and `TestSchemaMigratesV1ToV8AndReadinessRequiresV8` cover exact replay, API/DB trust-boundary rejection, append-only provenance, migration preservation and weakened-restore rejection. 세부 증거는 [`g1b-cash-void-correction.md`](g1b-cash-void-correction.md)에 있다.
 
 ## Still open
 
-- FX rates/conversions, correction events, dividend reinvestment, jurisdiction-specific tax classification, and credentialed broker execution/cash reconciliation.
+- FX rates/conversions, trade/split/corporate-action correction, dividend reinvestment, jurisdiction-specific tax classification, and credentialed broker execution/cash reconciliation.

@@ -33,6 +33,8 @@ Mobile has four persistent destinations: Home, Holdings, History, Connections. D
 
 Each data screen implements `loading`, `empty`, `error`, `partial`, `stale`, and `success`. Retain known-good data during refresh or partial failure; name the affected broker/account, last successful timestamp, impact, and recovery action. Gains/losses require sign and text as well as color.
 
+Cash-flow correction rows stay inside Import review. Show the original source ID, type, currency and amount beside the exact reversing amount, and state that the original record is preserved and offset. Do not expose internal event/account IDs or imply that trade, split, FX, or broker reconciliation correction is supported.
+
 ## Interaction and accessibility
 
 - Minimum 48×48 logical-pixel interactive targets, which also clears the 44pt iOS floor; default text/control size 16 logical px or larger.

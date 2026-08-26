@@ -1339,17 +1339,40 @@ class _PreviewCard extends StatelessWidget {
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
-        ...preview.rows
-            .take(5)
-            .map(
-              (row) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  '행 ${row.rowNumber}: ${row.status}${row.symbol == null ? '' : ' · ${row.symbol!}'}${row.errors.isEmpty ? '' : ' · ${row.errors.join(', ')}'}',
-                  style: _tabular(context),
-                ),
-              ),
-            ),
+        ...preview.rows.take(5).map((row) {
+          final target = row.correctionTarget;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: target == null
+                ? Text(
+                    '행 ${row.rowNumber}: ${row.status}${row.symbol == null ? '' : ' · ${row.symbol!}'}${row.errors.isEmpty ? '' : ' · ${row.errors.join(', ')}'}',
+                    style: _tabular(context),
+                  )
+                : Semantics(
+                    container: true,
+                    excludeSemantics: true,
+                    label:
+                        '정정 행 ${row.rowNumber}, 원본 ${target.type}, ${target.currency} ${target.amount}, source ${target.sourceEventId}, 반전 ${row.currency} ${row.amount}',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('행 ${row.rowNumber}: ${row.status} · 정정'),
+                        const SizedBox(height: 4),
+                        const Text('원본 기록은 보존되고 반대 금액으로 상쇄됩니다.'),
+                        const SizedBox(height: 4),
+                        Text(
+                          '원본 ${target.type} · ${target.currency} ${target.amount} · source ${target.sourceEventId}',
+                          style: _tabular(context),
+                        ),
+                        Text(
+                          '정정 ${row.transactionType} · ${row.currency} ${row.amount}',
+                          style: _tabular(context),
+                        ),
+                      ],
+                    ),
+                  ),
+          );
+        }),
         const SizedBox(height: 8),
         ElevatedButton.icon(
           onPressed: preview.canApply ? onApply : null,

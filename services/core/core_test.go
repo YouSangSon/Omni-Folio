@@ -80,7 +80,7 @@ func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
 	}
 	properties := schema["properties"].(map[string]any)
 	if properties["format_version"].(map[string]any)["const"] != "omni-folio-backup.v5" ||
-		properties["schema_version"].(map[string]any)["const"] != "omni-folio.sqlite.v7" {
+		properties["schema_version"].(map[string]any)["const"] != "omni-folio.sqlite.v8" {
 		t.Fatal("backup contract version drifted from the runtime")
 	}
 
@@ -418,7 +418,7 @@ func TestHealthAndReadinessAreSeparate(t *testing.T) {
 	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(1, ?)`, "2026-01-10T15:00:00Z"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(8, ?)`, "2026-01-10T15:01:00Z"); err != nil {
+	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(9, ?)`, "2026-01-10T15:01:00Z"); err != nil {
 		t.Fatal(err)
 	}
 	if w := request("/readyz"); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), `"code":"not_ready"`) {
@@ -530,7 +530,7 @@ func TestStatusUnresolvedLimitsAndFingerprintBinding(t *testing.T) {
 	if err := svc.db.QueryRow(`SELECT preview_json FROM previews WHERE preview_id=?`, valid.PreviewID).Scan(&stored); err != nil {
 		t.Fatal(err)
 	}
-	stored = strings.Replace(stored, `"mapping_version":"canonical-transaction.v2"`, `"mapping_version":"changed.v3"`, 1)
+	stored = strings.Replace(stored, `"mapping_version":"canonical-transaction.v3"`, `"mapping_version":"changed.v4"`, 1)
 	if _, err := svc.db.Exec(`UPDATE previews SET preview_json=? WHERE preview_id=?`, stored, valid.PreviewID); err != nil {
 		t.Fatal(err)
 	}

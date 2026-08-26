@@ -312,7 +312,7 @@ func TestK2AOrderTablesAreInsertOnly(t *testing.T) {
 	}
 }
 
-func TestSchemaMigratesV1ToV7AndReadinessRequiresV7(t *testing.T) {
+func TestSchemaMigratesV1ToV8AndReadinessRequiresV8(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v1.db")
 	db, err := openDB(path)
 	if err != nil {
@@ -340,11 +340,22 @@ func TestSchemaMigratesV1ToV7AndReadinessRequiresV7(t *testing.T) {
 	if err := db.QueryRow(`SELECT MAX(version), COUNT(*) FROM schema_migrations`).Scan(&version, &migrations); err != nil {
 		t.Fatal(err)
 	}
-	if version != 7 || migrations != 7 {
-		t.Fatalf("schema version=(%d,%d), want latest=7 with seven migrations", version, migrations)
+	if version != 8 || migrations != 8 {
+		t.Fatalf("schema version=(%d,%d), want latest=8 with eight migrations", version, migrations)
 	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM events WHERE event_id='preserved'`).Scan(&preserved); err != nil || preserved != 1 {
 		t.Fatalf("v1 data was not preserved: count=%d err=%v", preserved, err)
+	}
+	var preservedTarget string
+	if err := db.QueryRow(`SELECT COALESCE(corrects_source_event_id, '') FROM events WHERE event_id='preserved'`).Scan(&preservedTarget); err != nil || preservedTarget != "" {
+		t.Fatalf("v1 event gained a correction target: target=%q err=%v", preservedTarget, err)
+	}
+	var strict, guard int
+	if err := db.QueryRow(`SELECT strict FROM pragma_table_list WHERE schema='main' AND type='table' AND name='events'`).Scan(&strict); err != nil || strict != 1 {
+		t.Fatalf("v8 events table is not strict: strict=%d err=%v", strict, err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name='events_cash_void_guard'`).Scan(&guard); err != nil || guard != 1 {
+		t.Fatalf("v8 cash-void guard is missing: count=%d err=%v", guard, err)
 	}
 	for _, table := range []string{"order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events"} {
 		var exists int
@@ -360,7 +371,7 @@ func TestSchemaMigratesV1ToV7AndReadinessRequiresV7(t *testing.T) {
 	w := httptest.NewRecorder()
 	svc.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if w.Code != http.StatusOK {
-		t.Fatalf("v7 schema was not ready: status=%d body=%s", w.Code, w.Body.String())
+		t.Fatalf("v8 schema was not ready: status=%d body=%s", w.Code, w.Body.String())
 	}
 }
 
