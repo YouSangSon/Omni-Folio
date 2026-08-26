@@ -571,6 +571,111 @@ class MarketCandles {
   final List<MarketBar> bars;
 }
 
+class LocalOrderView {
+  const LocalOrderView({
+    required this.mode,
+    required this.symbol,
+    required this.side,
+    required this.orderType,
+    required this.quantity,
+    required this.limitPrice,
+    required this.filledQuantity,
+    required this.currency,
+    required this.status,
+    required this.lastRecordedAt,
+  });
+
+  factory LocalOrderView.fromJson(Json json) {
+    _requireExactKeys(json, const {
+      'mode',
+      'symbol',
+      'side',
+      'order_type',
+      'quantity',
+      'limit_price',
+      'filled_quantity',
+      'currency',
+      'status',
+      'last_recorded_at',
+    });
+    final mode = _text(json, 'mode');
+    final symbol = _text(json, 'symbol');
+    final side = _text(json, 'side');
+    final orderType = _text(json, 'order_type');
+    final quantity = _text(json, 'quantity');
+    final limitPrice = _decimal(json, 'limit_price');
+    final filledQuantity = _decimal(json, 'filled_quantity');
+    final currency = _text(json, 'currency');
+    final status = _text(json, 'status');
+    if (!const {'synthetic', 'paper'}.contains(mode) ||
+        !RegExp(r'^[0-9]{6}$').hasMatch(symbol) ||
+        !const {'BUY', 'SELL'}.contains(side) ||
+        orderType != 'LIMIT' ||
+        !RegExp(r'^[1-9][0-9]*$').hasMatch(quantity) ||
+        limitPrice == '0' ||
+        limitPrice.startsWith('-') ||
+        filledQuantity.startsWith('-') ||
+        _comparePositiveDecimal(filledQuantity, quantity) > 0 ||
+        currency != 'KRW' ||
+        !const {
+          'RECORDED',
+          'READY',
+          'RISK_REJECTED',
+          'SUBMIT_UNKNOWN',
+          'OPEN',
+          'REJECTED',
+          'PARTIALLY_FILLED',
+          'CANCEL_UNKNOWN',
+          'CANCELED',
+          'FILLED',
+        }.contains(status)) {
+      throw const FormatException('Invalid local order lifecycle row');
+    }
+    return LocalOrderView(
+      mode: mode,
+      symbol: symbol,
+      side: side,
+      orderType: orderType,
+      quantity: quantity,
+      limitPrice: limitPrice,
+      filledQuantity: filledQuantity,
+      currency: currency,
+      status: status,
+      lastRecordedAt: _rfc3339Text(json['last_recorded_at']),
+    );
+  }
+
+  final String mode;
+  final String symbol;
+  final String side;
+  final String orderType;
+  final String quantity;
+  final String limitPrice;
+  final String filledQuantity;
+  final String currency;
+  final String status;
+  final String lastRecordedAt;
+}
+
+class LocalOrderLog {
+  const LocalOrderLog({required this.orders});
+
+  factory LocalOrderLog.fromJson(Json json) {
+    _requireExactKeys(json, const {'source', 'broker_freshness', 'orders'});
+    if (_text(json, 'source') != 'local_order_log' ||
+        _text(json, 'broker_freshness') != 'unverified') {
+      throw const FormatException('Invalid local order provenance');
+    }
+    final orders = _jsonList(
+      json,
+      'orders',
+    ).map(LocalOrderView.fromJson).toList(growable: false);
+    return LocalOrderLog(orders: orders);
+  }
+
+  final List<LocalOrderView> orders;
+}
+
 class BrokerPositionDifference {
   const BrokerPositionDifference({
     required this.symbol,

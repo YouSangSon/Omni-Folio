@@ -35,6 +35,8 @@ Each data screen implements `loading`, `empty`, `error`, `partial`, `stale`, and
 
 Cash-flow correction rows stay inside Import review. Show the original source ID, type, currency and amount beside the exact reversing amount, and state that the original record is preserved and offset. Do not expose internal event/account IDs or imply that trade, split, FX, or broker reconciliation correction is supported.
 
+Connections may show the verified local order log as read-only history. It must say that no broker refresh occurred, hide account/client/provider/internal identifiers, retain the last known-good view after refresh failure, and expose no submit, retry-submit, cancel, or amend action. `SUBMIT_UNKNOWN` uses the fixed warning `브로커 결과 미확정 · 재주문 금지` in visible and screen-reader text.
+
 ## Interaction and accessibility
 
 - Minimum 48×48 logical-pixel interactive targets, which also clears the 44pt iOS floor; default text/control size 16 logical px or larger.

@@ -224,6 +224,9 @@ class _ProfileApi implements OmniApi {
   Future<BrokerReconciliation?> latestBrokerReconciliation() async => null;
 
   @override
+  Future<LocalOrderLog> localOrders() async => const LocalOrderLog(orders: []);
+
+  @override
   Future<PortfolioSnapshot> snapshot() async => _snapshot;
 
   @override
