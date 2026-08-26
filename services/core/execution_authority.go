@@ -145,14 +145,25 @@ func (s *Service) authorizeSyntheticDispatch(ctx context.Context, orderID string
 }
 
 func (s *Service) authorizeSyntheticDispatchOnce(ctx context.Context, orderID string, fencingToken int64) (*OrderState, bool, error) {
-	if !safeOrderID(orderID) || fencingToken <= 0 {
-		return nil, false, errors.New("execution authorization identifiers are invalid")
-	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, false, err
 	}
 	defer tx.Rollback()
+	state, dispatched, err := s.authorizeSyntheticDispatchOnceTx(ctx, tx, orderID, fencingToken)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, false, err
+	}
+	return state, dispatched, nil
+}
+
+func (s *Service) authorizeSyntheticDispatchOnceTx(ctx context.Context, tx *sql.Tx, orderID string, fencingToken int64) (*OrderState, bool, error) {
+	if !safeOrderID(orderID) || fencingToken <= 0 {
+		return nil, false, errors.New("execution authorization identifiers are invalid")
+	}
 	reservation, found, err := loadRiskReservationByOrder(ctx, tx, orderID)
 	if err != nil {
 		return nil, false, err
@@ -179,15 +190,10 @@ func (s *Service) authorizeSyntheticDispatchOnce(ctx context.Context, orderID st
 	if err != nil {
 		return nil, false, err
 	}
-	authority, err := loadExecutionAuthoritySnapshot(ctx, tx, intent.AccountRef)
+	now := s.now().UTC()
+	authority, err := s.requireCurrentSyntheticExecutionLease(ctx, tx, intent.AccountRef, fencingToken, now)
 	if err != nil {
 		return nil, false, err
-	}
-	now := s.now().UTC()
-	expires, expiryOK := canonicalUTCTime(authority.LeaseExpiresAt)
-	if !authority.Armed || authority.LeaseOwner != s.executionOwner || authority.FencingToken != fencingToken ||
-		!expiryOK || !now.Before(expires) {
-		return nil, false, errors.New("execution authority is halted, stale, expired, or owned by another process")
 	}
 	blocked, err := accountHasUnresolvedOrder(ctx, tx, intent.AccountRef)
 	if err != nil {
@@ -239,10 +245,60 @@ func (s *Service) authorizeSyntheticDispatchOnce(ctx context.Context, orderID st
 	if dispatchSequence != riskSequence+1 {
 		return nil, false, errors.New("authorized order events are not consecutive")
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, false, err
-	}
 	return state, true, nil
+}
+
+func (s *Service) requireCurrentSyntheticExecutionLease(ctx context.Context, q orderQuerier, accountRef string, fencingToken int64, now time.Time) (executionAuthoritySnapshot, error) {
+	authority, err := loadExecutionAuthoritySnapshot(ctx, q, accountRef)
+	if err != nil {
+		return executionAuthoritySnapshot{}, err
+	}
+	expires, expiryOK := canonicalUTCTime(authority.LeaseExpiresAt)
+	if !authority.Armed || authority.LeaseOwner != s.executionOwner || authority.FencingToken != fencingToken ||
+		!expiryOK || !now.Before(expires) {
+		return executionAuthoritySnapshot{}, errors.New("execution authority is halted, stale, expired, or owned by another process")
+	}
+	return authority, nil
+}
+
+func (s *Service) haltAllSyntheticExecutionTx(ctx context.Context, tx *sql.Tx, now time.Time) error {
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT account_ref FROM execution_authority_events ORDER BY account_ref`)
+	if err != nil {
+		return err
+	}
+	var accountRefs []string
+	for rows.Next() {
+		var accountRef string
+		if err := rows.Scan(&accountRef); err != nil {
+			rows.Close()
+			return err
+		}
+		accountRefs = append(accountRefs, accountRef)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	recordedAt := now.Format(time.RFC3339Nano)
+	for _, accountRef := range accountRefs {
+		current, err := loadExecutionAuthoritySnapshot(ctx, tx, accountRef)
+		if err != nil {
+			return err
+		}
+		if !current.Armed {
+			continue
+		}
+		if err := insertExecutionAuthorityRecord(ctx, tx, executionAuthorityRecord{
+			EventID: s.id("execution_authority"), AccountRef: accountRef,
+			FencingToken: current.FencingToken + 1, ReasonCode: "manual_halt", RecordedAt: recordedAt,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func validateSyntheticBuyPolicy(intent OrderIntent) (string, *big.Rat, error) {

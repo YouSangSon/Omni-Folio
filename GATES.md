@@ -30,7 +30,8 @@ G3 research vertical slice
 ├─ G3.3 no credential/order permission proof
 ├─ G3.4 Go/SQLite append-only paper-candidate registry and rollback proof
 ├─ G3.5 strategy-selection-bound order record and durable-dispatch proof
-└─ G3.6 credential-free target-netted paper fill, replay and restore proof
+├─ G3.6 credential-free target-netted paper fill, replay and restore proof
+└─ G3.7 atomic execution halt and strategy rollback proof
    |
 G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4A Kiwoom K0 read contract

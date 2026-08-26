@@ -43,3 +43,5 @@ Each data screen implements `loading`, `empty`, `error`, `partial`, `stale`, and
 ## Live-order boundary in the UI
 
 The app may display a live capability but never owns it. A live confirmation shows owner-approved broker/account/strategy scope and expiry, while the server independently checks approval, allowlist, promotion evidence, and kill switch for every order. Mobile background behavior is limited to cache refresh and push; it cannot run order submission, reconciliation, or kill-switch authority.
+
+Strategy rollback is a server-owned safety action: it atomically halts and fences every armed execution account before changing the selected strategy. The client may request and display that result, but it never emulates the halt locally.
