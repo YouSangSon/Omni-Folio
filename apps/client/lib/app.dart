@@ -282,8 +282,8 @@ class _Result<T> {
 Future<_Result<T>> _settle<T>(Future<T> future) async {
   try {
     return _Result.value(await future);
-  } catch (error) {
-    return _Result.error(error.toString());
+  } catch (_) {
+    return const _Result.error('데이터를 불러오지 못했습니다. 다시 시도하세요.');
   }
 }
 
@@ -480,8 +480,10 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     try {
       final candles = await widget.api.candles(widget.holding.symbol);
       if (mounted) setState(() => _candles = candles);
-    } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = '시세를 불러오지 못했습니다. 다시 시도하세요.');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1145,9 +1147,13 @@ class _ActivityPageState extends State<ActivityPage> {
       } else if (mounted) {
         setState(() => _error = 'CSV 내용이 변경되어 이전 미리보기는 무효입니다. 새 미리보기를 만드세요.');
       }
-    } catch (error) {
+    } catch (_) {
       if (mounted) {
-        setState(() => _error = '$error\n이전 미리보기는 유지됩니다.');
+        setState(
+          () => _error =
+              '미리보기를 완료하지 못했습니다. 입력을 확인한 뒤 다시 시도하세요.\n'
+              '이전 미리보기는 유지됩니다.',
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1167,10 +1173,12 @@ class _ActivityPageState extends State<ActivityPage> {
         'import-${preview.previewId}',
       );
       if (mounted) setState(() => _receipt = receipt);
-    } catch (error) {
+    } catch (_) {
       if (mounted) {
         setState(
-          () => _error = '$error\n같은 미리보기와 멱등성 키로 다시 시도해도 중복 반영되지 않습니다.',
+          () => _error =
+              '거래 내역을 적용하지 못했습니다. 다시 시도하세요.\n'
+              '같은 미리보기와 멱등성 키로 다시 시도해도 중복 반영되지 않습니다.',
         );
       }
     } finally {
@@ -1226,10 +1234,15 @@ class _ActivityPageState extends State<ActivityPage> {
       if (_error != null)
         Padding(
           padding: const EdgeInsets.only(top: 12),
-          child: _Notice(
-            icon: Icons.error_outline,
-            text: _error!,
-            color: Theme.of(context).colorScheme.error,
+          child: Semantics(
+            key: const Key('import-error'),
+            container: true,
+            liveRegion: true,
+            child: _Notice(
+              icon: Icons.error_outline,
+              text: _error!,
+              color: Theme.of(context).colorScheme.error,
+            ),
           ),
         ),
       if (_preview != null)

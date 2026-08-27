@@ -29,6 +29,7 @@ class FakeApi implements OmniApi {
     this.failReconciliation = false,
     this.failLocalOrders = false,
     this.applyFailures = 0,
+    this.failureMessage = '서버를 다시 확인하세요.',
   });
 
   final ServiceStatus statusValue;
@@ -47,35 +48,36 @@ class FakeApi implements OmniApi {
   bool failReconciliation;
   bool failLocalOrders;
   int applyFailures;
+  String failureMessage;
 
   @override
   Future<ApplyReceipt> apply(String previewId, String idempotencyKey) async {
     applyKeys.add(idempotencyKey);
     if (applyFailures > 0) {
       applyFailures -= 1;
-      throw const ApiException('서버를 다시 확인하세요.');
+      throw ApiException(failureMessage);
     }
-    if (fail) throw const ApiException('서버를 다시 확인하세요.');
+    if (fail) throw ApiException(failureMessage);
     return receiptValue;
   }
 
   @override
   Future<ImportPreview> preview(String csv) async {
-    if (fail) throw const ApiException('서버를 다시 확인하세요.');
+    if (fail) throw ApiException(failureMessage);
     return previewValue;
   }
 
   @override
   Future<PortfolioSnapshot> snapshot() async {
     if (fail || failSnapshot) {
-      throw const ApiException('서버를 다시 확인하세요.');
+      throw ApiException(failureMessage);
     }
     return snapshotValue;
   }
 
   @override
   Future<MarketCandles> candles(String symbol) async {
-    if (fail) throw const ApiException('서버를 다시 확인하세요.');
+    if (fail) throw ApiException(failureMessage);
     return candlesCompleter?.future ?? candlesValue;
   }
 
@@ -83,7 +85,7 @@ class FakeApi implements OmniApi {
   Future<BrokerReconciliation?> latestBrokerReconciliation() async {
     reconciliationCalls += 1;
     if (fail || failReconciliation) {
-      throw const ApiException('서버를 다시 확인하세요.');
+      throw ApiException(failureMessage);
     }
     return reconciliationCompleter?.future ?? reconciliationValue;
   }
@@ -98,7 +100,7 @@ class FakeApi implements OmniApi {
 
   @override
   Future<ServiceStatus> status() async {
-    if (fail) throw const ApiException('서버를 다시 확인하세요.');
+    if (fail) throw ApiException(failureMessage);
     return statusValue;
   }
 }
@@ -1031,6 +1033,19 @@ void main() {
     expect(find.textContaining('데이터 상태: 로컬 기록 확인 완료'), findsOneWidget);
   });
 
+  testWidgets('overview never renders upstream error details', (tester) async {
+    const secret = 'kiwoom_account_1234 provider_trace_5678';
+    final api = goldenApi()
+      ..failureMessage = secret
+      ..fail = true;
+
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+
+    expect(find.textContaining(secret), findsNothing);
+    expect(find.textContaining('데이터를 불러오지 못했습니다.'), findsOneWidget);
+  });
+
   testWidgets('refresh failure keeps the last known snapshot visible', (
     tester,
   ) async {
@@ -1255,6 +1270,41 @@ void main() {
     expect(find.textContaining('이전 미리보기는 무효'), findsOneWidget);
   });
 
+  testWidgets('import operations never render upstream error details', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    const secret = 'account-main provider-request-42';
+    final api = goldenApi()..failureMessage = secret;
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('내역'));
+    await pumpUi(tester);
+    await tester.enterText(find.byType(TextField), 'header\nrow');
+
+    api.fail = true;
+    await tester.tap(find.text('미리보기 만들기'));
+    await pumpUi(tester);
+    expect(find.textContaining(secret), findsNothing);
+    expect(find.textContaining('미리보기를 완료하지 못했습니다.'), findsOneWidget);
+    expect(
+      tester.getSemantics(find.byKey(const Key('import-error'))),
+      matchesSemantics(isLiveRegion: true),
+    );
+
+    api.fail = false;
+    await tester.tap(find.text('미리보기 만들기'));
+    await pumpUi(tester);
+    api.applyFailures = 1;
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pump();
+    await tester.tap(find.text('원자적으로 적용'));
+    await pumpUi(tester);
+    expect(find.textContaining(secret), findsNothing);
+    expect(find.textContaining('거래 내역을 적용하지 못했습니다.'), findsOneWidget);
+    semantics.dispose();
+  });
+
   testWidgets(
     'holding opens stale sample chart with semantics and exact table',
     (tester) async {
@@ -1358,6 +1408,28 @@ void main() {
     await tester.tap(find.text('다시 시도'));
     await pumpUi(tester);
     expect(find.text('시세 차트'), findsOneWidget);
+  });
+
+  testWidgets('asset detail never renders upstream error details', (
+    tester,
+  ) async {
+    const secret = 'kiwoom_account_1234 raw_provider_message';
+    final pending = Completer<MarketCandles>();
+    final api = goldenApi()
+      ..failureMessage = secret
+      ..candlesCompleter = pending;
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('보유'));
+    await pumpUi(tester);
+    await tester.tap(find.text('AAPL'));
+    await tester.pump();
+
+    pending.completeError(ApiException(secret));
+    await pumpUi(tester);
+
+    expect(find.textContaining(secret), findsNothing);
+    expect(find.textContaining('시세를 불러오지 못했습니다.'), findsOneWidget);
   });
 
   testWidgets(
