@@ -1042,3 +1042,15 @@ G1.6 closes only the safe local cash-flow correction leaf. It does not create a 
 - OpenAPI and Flutter use a closed correction target DTO without internal event/account IDs. Import review shows the preserved source/type/currency/amount and reversing amount with visible and screen-reader text at 200% scaling.
 
 Still open: FX, trade/split/corporate-action correction, dividend reinvestment, jurisdiction-specific tax classification, credentialed broker cash/fill reconciliation, physical-device screen-reader evidence and every live-money path.
+
+## 2026-08-27 G4O continuation: local daily chart display range
+
+G4O closes only the credential-free period-selection UI gap over the already loaded daily candle response. It adds no API, schema, dependency, credential, broker request, interval selection, cache or current-price claim.
+
+- Flutter offers `30일`, `90일`, `365일`, and `전체`. A finite range is calculated from the last received bar rather than the device clock, includes a bar exactly on the cutoff, and keeps the original validated order.
+- The selected subset is the single input for both the native candle painter and the exact OHLCV table. Visible range text and chart semantics include the selected horizon, first/last timestamps and bar count.
+- `Wrap` plus 48dp Material choices preserves touch and 200% text layout. The selected state is exposed through button and selected semantics instead of color alone.
+- Existing sample, stale, source/as-of/fetched-at, issue and price-adjustment disclosures remain unchanged. Filtering does not trigger another HTTP request or assert candle completeness.
+- TDD first failed because `chart-range-30d` did not exist, then passed with inclusive 30/90/365-day fixtures and one candle read across every selection. Independent review then reproduced a finite-range refresh into a valid empty series crashing on `bars.last`; a second RED/GREEN test added the empty-list guard. The full Flutter analyzer and 44 parser/widget tests pass locally.
+
+Still open: real Kiwoom candle wiring and authoritative time/freshness, interval switching, physical-device profile and VoiceOver/TalkBack evidence, average-cost currency/rounding semantics, a sanitized actual-fill timestamp contract, and every live-money path.

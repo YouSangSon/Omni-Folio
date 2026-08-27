@@ -1,6 +1,6 @@
 # Omni Folio Client
 
-Flutter client for iOS, Android, and app-centric web. The current slice shows ledger trust state, holdings, a clearly labeled local-sample asset chart with an exact OHLCV alternative, CSV preview, and idempotent apply receipts; it never submits orders.
+Flutter client for iOS, Android, and app-centric web. The current slice shows ledger trust state, holdings, a clearly labeled local-sample asset chart with client-side 30/90/365-day/all display ranges and a matching exact OHLCV alternative, CSV preview, and idempotent apply receipts; it never submits orders.
 
 Use the repository root commands:
 
@@ -12,7 +12,7 @@ make check
 
 The API defaults to `http://127.0.0.1:8080`. Override it with `API_URL=... make run-client`; never put broker credentials in Dart defines or the client bundle.
 
-Profile the representative G2 list/import surface and the G4 maximum 500-bar chart/table envelope on a connected device:
+Profile the representative G2 list/import surface and the G4 500-bar chart followed by its selected 31-bar exact table on a connected device:
 
 ```sh
 FLUTTER_TEST_OUTPUTS_DIR="$PWD/../../output/g2-profile" \

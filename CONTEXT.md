@@ -9,6 +9,7 @@
 - **Market series**: 한 종목·거래소·시간대·interval에 속한 순서 보장 OHLCV bar와 source/as-of/freshness/price adjustment를 묶은 provider-neutral 조회 결과. 브로커 pagination·TR 필드는 포함하지 않는다.
 - **Price adjustment**: OHLCV 가격의 조정 기준. `unspecified`는 조정 여부를 확인하지 못했다는 뜻이고, `provider_adjusted`는 공급자에게 조정 가격을 요청했다는 뜻일 뿐 기업행사 반영 정확성을 증명하지 않는다.
 - **Sample market data**: 계약과 UI를 검증하기 위한 로컬 fixture. API의 machine-readable provenance와 화면의 명시적 문구로 실시간·투자 판단용 데이터가 아님을 항상 표시한다.
+- **Chart display range**: 이미 받은 daily bar 중 마지막 수신 봉을 기준으로 `30/90/365일` 또는 전체를 Flutter에서 고르는 G4O 표시 상태. 새 조회 범위·interval·broker freshness를 만들지 않으며 차트와 정확한 OHLCV 표가 같은 부분집합을 사용한다.
 - **Synthetic Kiwoom candle contract**: credential·broker 요청 없이 `POST /api/dostk/chart`의 `ka10080`/`ka10081` 경계를 재현하는 K1 adapter 계약. KRX 여섯 자리 symbol, `1d` 및 `1/3/5/10/15/30/45/60m`, canonical OHLCV만 노출하며 public route가 아니다.
 - **Synthetic Kiwoom order state**: broker 요청 없이 Go 내부에서만 실행하는 K2A `LIMIT`/`KRW`/`KRX` 주문 intent/event replay 계약. 실제 risk engine·broker submit/query·public route/UI·원장 반영은 포함하지 않는다.
 - **Known-order execution reconciliation**: 명시적 broker ACK로 opaque provider order ref가 이미 묶인 주문에 대해, 완결된 조회의 식별 가능한 체결만 기존 append-only 주문 이벤트에 반영하는 K2B0 계약. 주문번호 없는 unknown submit을 속성 유사도로 결합하지 않는다.
@@ -54,6 +55,7 @@
 - G1.6 cash-flow correction은 같은 계좌·통화의 이미 적용된 `DEPOSIT`, `WITHDRAWAL`, `DIVIDEND`, `FEE`, `TAX`만 `CASH_VOID`로 exact 반전한다. 원본과 두 receipt의 provenance를 유지하고 동일 target 중복, chain, trade/split target, 미래 target, 다른 금액·통화를 preview와 schema v8에서 모두 거절한다. replacement 값은 별도 정상 event로 같은 atomic apply에 넣는다.
 - 현금 event의 부호와 분할의 0 cash impact를 신뢰하지 않고 import 경계와 SQLite CHECK에서 검증한다. 분할은 실현손익을 만들거나 기존 FIFO 총원가를 바꾸지 않는다.
 - sample market data는 live/current 상태로 승격하거나 실제 market source와 조용히 혼합하지 않는다.
+- G4O 범위 선택은 기기 현재 시각이 아니라 마지막 수신 봉을 기준으로 cutoff를 계산하고 경계 timestamp를 포함한다. 선택은 client display state일 뿐 broker 기간 조회, candle completeness, 실시간성 또는 새 provenance가 아니다.
 - public market series는 `price_adjustment`를 생략하지 않는다. local fixture는 `unspecified`로 고정하고 화면에서도 조정 여부를 확인하지 못했다고 표시한다.
 - synthetic Kiwoom candle 결과는 `provider_adjusted`를 내부 provenance로 보존한다. 공식 문서가 timestamp timezone을 명시하지 않아 Asia/Seoul을 운영 가정으로 해석하며, adjustment event·freshness·실시간성을 주장하지 않는다.
 - `SUBMIT_UNKNOWN`은 실패가 아니다. 같은 주문과 해당 계좌의 신규 submit은 차단하되 이미 알려진 open order의 cancel은 위험 축소 경로로 허용한다. K2B0는 이미 ACK된 주문의 체결만 조정하며, 주문번호 없는 timeout은 종목·방향·수량·가격·시간이 같아도 결합하지 않고 `UNCORRELATED`로 유지한다.
