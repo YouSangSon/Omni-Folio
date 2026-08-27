@@ -23,6 +23,7 @@ type LocalOrderView struct {
 	FilledQuantity string `json:"filled_quantity"`
 	Currency       string `json:"currency"`
 	Status         string `json:"status"`
+	PendingAction  string `json:"pending_action"`
 	LastRecordedAt string `json:"last_recorded_at"`
 }
 
@@ -84,10 +85,14 @@ func (s *Service) localOrderLog(ctx context.Context) (*LocalOrderLog, error) {
 		if err != nil {
 			return nil, err
 		}
+		pendingAction := state.PendingAction
+		if pendingAction == "" {
+			pendingAction = "none"
+		}
 		result.Orders = append(result.Orders, LocalOrderView{
 			Mode: intent.Mode, Symbol: intent.Symbol, Side: intent.Side, OrderType: intent.OrderType,
 			Quantity: state.Quantity, LimitPrice: state.LimitPrice, FilledQuantity: state.FilledQuantity,
-			Currency: intent.Currency, Status: state.Status, LastRecordedAt: entry.recordedAt,
+			Currency: intent.Currency, Status: state.Status, PendingAction: pendingAction, LastRecordedAt: entry.recordedAt,
 		})
 	}
 	if err := tx.Commit(); err != nil {

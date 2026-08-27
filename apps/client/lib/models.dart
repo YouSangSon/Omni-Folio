@@ -582,6 +582,7 @@ class LocalOrderView {
     required this.filledQuantity,
     required this.currency,
     required this.status,
+    required this.pendingAction,
     required this.lastRecordedAt,
   });
 
@@ -596,6 +597,7 @@ class LocalOrderView {
       'filled_quantity',
       'currency',
       'status',
+      'pending_action',
       'last_recorded_at',
     });
     final mode = _text(json, 'mode');
@@ -607,6 +609,13 @@ class LocalOrderView {
     final filledQuantity = _decimal(json, 'filled_quantity');
     final currency = _text(json, 'currency');
     final status = _text(json, 'status');
+    final pendingAction = _text(json, 'pending_action');
+    final pendingActionMatchesStatus = switch (pendingAction) {
+      'SUBMIT' => status == 'SUBMIT_UNKNOWN',
+      'CANCEL' => status == 'CANCEL_UNKNOWN' || status == 'FILLED',
+      'none' => status != 'SUBMIT_UNKNOWN' && status != 'CANCEL_UNKNOWN',
+      _ => false,
+    };
     if (!const {'synthetic', 'paper'}.contains(mode) ||
         !RegExp(r'^[0-9]{6}$').hasMatch(symbol) ||
         !const {'BUY', 'SELL'}.contains(side) ||
@@ -617,6 +626,7 @@ class LocalOrderView {
         filledQuantity.startsWith('-') ||
         _comparePositiveDecimal(filledQuantity, quantity) > 0 ||
         currency != 'KRW' ||
+        !pendingActionMatchesStatus ||
         !const {
           'RECORDED',
           'READY',
@@ -641,6 +651,7 @@ class LocalOrderView {
       filledQuantity: filledQuantity,
       currency: currency,
       status: status,
+      pendingAction: pendingAction,
       lastRecordedAt: _rfc3339Text(json['last_recorded_at']),
     );
   }
@@ -654,6 +665,7 @@ class LocalOrderView {
   final String filledQuantity;
   final String currency;
   final String status;
+  final String pendingAction;
   final String lastRecordedAt;
 }
 

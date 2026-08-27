@@ -12,8 +12,10 @@
 8. G4J/K2B2 credential-free Kiwoom mock LIMIT submit transport.
 9. G4K sanitized stored position-reconciliation HTTP/Flutter read view.
 10. G4L verified local order-lifecycle HTTP/Flutter read view.
-11. K2B credentialed mock observation, query transport and lookup recovery.
-12. Toss Securities read-only adapter using the same canonical contracts.
+11. G4M stored-reconciliation Overview trust summary.
+12. G4N local order pending-action and Overview warning contract.
+13. K2B credentialed mock observation, query transport and lookup recovery.
+14. Toss Securities read-only adapter using the same canonical contracts.
 
 ## Pass when
 
@@ -27,6 +29,8 @@
 - G4H proves only atomic retention of a complete synthetic raw snapshot and revision-bound KRX/KRW quantity reconciliation; failed inputs preserve last-known-good and never auto-correct the ledger.
 - G4K proves only a read-only consumer of that stored G4H evidence. It exposes no account reference, internal ID, hash or raw snapshot; `freshness=unverified` and visible UI text prevent a current-state claim.
 - G4L proves only a read-only consumer of the existing append-only order log after full recovery proof. It exposes no account/client/provider/internal identifier; `broker_freshness=unverified` and fixed unknown-state text prevent a broker-current or mutation claim.
+- G4M proves only a shared Overview summary of the stored G4K result; it adds no broker refresh, identifier or mutation.
+- G4N proves only a required sanitized pending-action field plus a shared Overview warning for unresolved local submit/cancel actions. Empty history is not a broker-safety claim, and no broker refresh or order mutation is added.
 - K2C proves only credential-free internal execution authority: default-off kill switch, process owner, 30-second SQLite lease/fencing, fixed BUY limits, immutable reservation, DB bypass rejection and backup v5 recovery. It is not production risk and does not send broker orders.
 - K2B2 proves only the official mock `kt10000` LIMIT BUY request shape on an in-memory transport, with token preflight, durable dispatch-before-write, no write retry, opaque ACK and conservative unknown/reject outcomes. It uses no real credential or external broker request.
 - K2B must prove credentialed mock submit/query, broker-coupled runner fencing, public order flow, and broker/ledger reconciliation.
@@ -45,4 +49,6 @@
 - G4J/K2B2 passes the credential-free Kiwoom mock LIMIT BUY submit contract. Synthetic transport proves the exact request, one-shot write, raw identifier/message/token redaction, definitive rejection and unresolved network/auth outcomes without enabling a route, runner or live authority.
 - G4K passes a sanitized `GET /v1/broker-reconciliation/latest` contract and Flutter Connections read view. Missing evidence is empty/404, corrupt or orphaned newest evidence fails with a generic 500, and exact decimal strings plus text semantics show stored position differences without refreshing a broker.
 - G4L passes a sanitized `GET /v1/orders` contract and Flutter Connections read view. Empty history is `orders=[]`; corrupt hash, metadata, replay or timestamp fails with a generic 500; retained known-good UI and 200% text semantics forbid resubmission after `SUBMIT_UNKNOWN`.
+- G4M passes the shared stored-reconciliation Overview summary and existing Connections details route without a duplicate read or current-state claim.
+- G4N passes required `pending_action=SUBMIT|CANCEL|none`, preserves unresolved cancel after a full fill, and shares one retained local-order read across Overview and Connections. Tests cover non-blocking loading, no false empty-history safety claim, retained refresh failure and 200% text semantics without mutation controls.
 - G4 remains open: real Kiwoom candle/realtime behavior, scheduled credentialed persistence, full broker/ledger reconciliation, physical-device profile, manual VoiceOver/TalkBack, K2B credentialed observation/unknown correlation/public mutation UI/broker-coupled risk, and every live-order gate are unproven.
