@@ -1363,7 +1363,7 @@ func verifyRestoreProof(path, goldenPath string) (orderRecoveryProof, error) {
 	actualJSON, _ := json.Marshal(actual)
 	goldenJSON, _ := json.Marshal(&golden)
 	if !bytes.Equal(actualJSON, goldenJSON) {
-		return orderRecoveryProof{}, fmt.Errorf("restored snapshot does not match golden: got %s", actualJSON)
+		return orderRecoveryProof{}, errors.New("restored snapshot does not match golden")
 	}
 	proof, err := proveOrderRecovery(context.Background(), db)
 	if err != nil {
