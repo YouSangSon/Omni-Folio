@@ -1,6 +1,6 @@
 # Omni Folio Execution Plan
 
-상태: G0·G1·G3 로컬 통과(G1.6 append-only cash-flow void와 G3.7 atomic paper halt/rollback safety 포함), G2 자동 접근성·reduced-motion 통과 및 native profile·screen-reader 증거 보강 중, G4A 키움 K0 합성 계약 통과, G4B local sample OHLCV 수직 슬라이스 통과, G4C K1 credential-free candle 합성 계약 통과, G4D price-adjustment consumer contract 통과, G4E/K2A 내부 합성 Kiwoom 주문 상태 로그 통과, G4F/K2B0 알려진 주문 체결 조정 계약 통과, G4G/K2B1 날짜 지정 체결 스캔 합성 계약 통과, G4H credential-free known-good broker snapshot 영속화·원장 수량 diff 통과, G4I/K2C credential-free execution authority 통과, G4J/K2B2 credential-free 키움 mock 지정가 submit transport 계약 통과, G4K 저장된 증권사-원장 보유수량 대조 read model·Flutter 연결 화면 통과, G4L 무결성 검증된 로컬 주문 lifecycle read API·Flutter 연결 화면 통과, G4M 저장 대조 홈 신뢰 요약·연결 상세 이동 통과
+상태: G0·G1·G3 로컬 통과(G1.6 append-only cash-flow void와 G3.7 atomic paper halt/rollback safety 포함), G2 자동 접근성·reduced-motion 통과 및 native profile·screen-reader 증거 보강 중, G4A 키움 K0 합성 계약 통과, G4B local sample OHLCV 수직 슬라이스 통과, G4C K1 credential-free candle 합성 계약 통과, G4D price-adjustment consumer contract 통과, G4E/K2A 내부 합성 Kiwoom 주문 상태 로그 통과, G4F/K2B0 알려진 주문 체결 조정 계약 통과, G4G/K2B1 날짜 지정 체결 스캔 통과, G4H credential-free known-good broker snapshot 영속화·원장 수량 diff 통과, G4I/K2C credential-free execution authority 통과, G4J/K2B2 credential-free 키움 mock 지정가 submit transport 계약 통과, G4K 저장된 증권사-원장 보유수량 대조 read model·Flutter 연결 화면 통과, G4L 무결성 검증된 로컬 주문 lifecycle read API·Flutter 연결 화면 통과, G4M 저장 대조 홈 신뢰 요약·연결 상세 이동 통과, G4N 로컬 주문 pending action DTO·홈 안전 경고·연결 상세 이동 통과
 
 ## Now
 
@@ -25,6 +25,7 @@
 - [x] G4K credential-free stored reconciliation read view: 최신 raw snapshot의 canonical hash·metadata와 ledger-revision 수량 diff를 fail-closed 재검증하고 account/internal ID/hash/raw snapshot을 제거한 `freshness=unverified` HTTP DTO와 Flutter loading/empty/error/retry/일치·불일치 text semantics를 검증
 - [x] G4L credential-free local order lifecycle read view: 기존 주문 recovery proof로 전체 append-only log를 fail-closed 재검증하고 account/client/provider/internal ID를 제거한 `broker_freshness=unverified` HTTP DTO와 Flutter loading/empty/error/retry/known-good 유지·200% text·unknown 재주문 금지 semantics를 검증
 - [x] G4M Flutter overview reconciliation trust summary: G4K 저장 결과를 공유해 현재 상태가 아님을 유지하면서 일치·불일치 수와 수집·저장 시각을 홈에 요약하고 기존 연결 상세로 이동하며 375px·200% text semantics를 검증
+- [x] G4N local order pending-action and overview warning contract: G4L DTO가 `pending_action=SUBMIT|CANCEL|none`을 필수로 노출해 `FILLED` 상태에 남은 cancel 결과 대기를 숨기지 않고, Flutter가 연결 상세와 홈에서 현재 broker 상태가 아닌 미확정 건수·추가 조작 금지 문구를 표시하며 account/client/provider/internal ID를 계속 제거
 - [x] G4I/K2C 내부 합성 execution authority: default-off kill switch, process owner, 30초 lease/fencing, 고정 BUY 한도, immutable reservation과 승인/dispatch 원자성, DB 우회 차단, backup v5 복구 증명
 - [x] G4J/K2B2 credential-free 키움 mock LIMIT BUY submit transport: token preflight, durable dispatch-before-write, write 무재시도, snapshot-compatible opaque ACK, definitive reject와 `SUBMIT_UNKNOWN` 보존
 - [x] G1.6 append-only cash-flow correction: 같은 계좌·통화의 기존 입출금·배당·수수료·세금을 exact 반전하는 `CASH_VOID`, 원본 provenance 보존, 중복/chain/trade target 차단, schema v8/backup v5 restore와 Flutter 보존 disclosure

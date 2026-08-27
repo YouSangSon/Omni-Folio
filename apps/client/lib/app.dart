@@ -198,10 +198,13 @@ class PortfolioController extends ChangeNotifier {
   ServiceStatus? status;
   PortfolioSnapshot? snapshot;
   BrokerReconciliation? reconciliation;
+  LocalOrderLog? orderLog;
   String? error;
   var reconciliationFailed = false;
+  var orderLogFailed = false;
   var busy = false;
   var reconciliationBusy = false;
+  var orderLogBusy = false;
   var _disposed = false;
 
   Future<void> refresh() async {
@@ -209,9 +212,10 @@ class PortfolioController extends ChangeNotifier {
     busy = true;
     error = null;
     _notify();
-    final reconciliationRefresh = reconciliationBusy
-        ? null
-        : refreshReconciliation();
+    final optionalRefreshes = <Future<void>>[
+      if (!reconciliationBusy) refreshReconciliation(),
+      if (!orderLogBusy) refreshLocalOrders(),
+    ];
     final results = await Future.wait([
       _settle(api.status()),
       _settle(api.snapshot()),
@@ -223,7 +227,7 @@ class PortfolioController extends ChangeNotifier {
     error = statusResult.error ?? snapshotResult.error;
     busy = false;
     _notify();
-    await reconciliationRefresh;
+    await Future.wait(optionalRefreshes);
   }
 
   Future<void> refreshReconciliation() async {
@@ -237,6 +241,21 @@ class PortfolioController extends ChangeNotifier {
       reconciliationFailed = true;
     } finally {
       reconciliationBusy = false;
+      _notify();
+    }
+  }
+
+  Future<void> refreshLocalOrders() async {
+    if (orderLogBusy) return;
+    orderLogBusy = true;
+    orderLogFailed = false;
+    _notify();
+    try {
+      orderLog = await api.localOrders();
+    } catch (_) {
+      orderLogFailed = true;
+    } finally {
+      orderLogBusy = false;
       _notify();
     }
   }
@@ -302,23 +321,39 @@ class OverviewPage extends StatelessWidget {
   Widget build(BuildContext context) {
     if (controller.state == DataState.loading) return const _Loading();
     if (controller.state == DataState.error) {
-      return _Message(
-        icon: Icons.cloud_off,
-        title: '스냅샷을 불러오지 못했습니다',
-        body:
-            '${controller.error ?? '알 수 없는 오류'}\n저장된 데이터는 없으며 원장은 변경되지 않았습니다.',
-        action: controller.refresh,
-        actionLabel: '다시 시도',
+      return _FallbackWithOrderRisk(
+        orderRisk: _OverviewOrderRiskCard(
+          orderLog: controller.orderLog,
+          retainedError: controller.orderLogFailed,
+          busy: controller.orderLogBusy,
+          onDetails: onConnections,
+        ),
+        message: _Message(
+          icon: Icons.cloud_off,
+          title: '스냅샷을 불러오지 못했습니다',
+          body:
+              '${controller.error ?? '알 수 없는 오류'}\n저장된 데이터는 없으며 원장은 변경되지 않았습니다.',
+          action: controller.refresh,
+          actionLabel: '다시 시도',
+        ),
       );
     }
     final snapshot = controller.snapshot;
     if (snapshot == null) {
-      return _Message(
-        icon: Icons.inbox_outlined,
-        title: '아직 스냅샷이 없습니다',
-        body: '거래 내역을 미리 확인한 뒤 적용하면 현금과 보유 내역이 표시됩니다.',
-        action: onImport,
-        actionLabel: '거래 내역 가져오기',
+      return _FallbackWithOrderRisk(
+        orderRisk: _OverviewOrderRiskCard(
+          orderLog: controller.orderLog,
+          retainedError: controller.orderLogFailed,
+          busy: controller.orderLogBusy,
+          onDetails: onConnections,
+        ),
+        message: _Message(
+          icon: Icons.inbox_outlined,
+          title: '아직 스냅샷이 없습니다',
+          body: '거래 내역을 미리 확인한 뒤 적용하면 현금과 보유 내역이 표시됩니다.',
+          action: onImport,
+          actionLabel: '거래 내역 가져오기',
+        ),
       );
     }
     return ListView(
@@ -331,6 +366,12 @@ class OverviewPage extends StatelessWidget {
           reconciliation: controller.reconciliation,
           reconciliationFailed: controller.reconciliationFailed,
           reconciliationBusy: controller.reconciliationBusy,
+        ),
+        _OverviewOrderRiskCard(
+          orderLog: controller.orderLog,
+          retainedError: controller.orderLogFailed,
+          busy: controller.orderLogBusy,
+          onDetails: onConnections,
         ),
         const SizedBox(height: 12),
         _SectionCard(
@@ -941,6 +982,188 @@ class _TableCell extends StatelessWidget {
   );
 }
 
+class _FallbackWithOrderRisk extends StatelessWidget {
+  const _FallbackWithOrderRisk({
+    required this.orderRisk,
+    required this.message,
+  });
+
+  final Widget orderRisk;
+  final Widget message;
+
+  @override
+  Widget build(BuildContext context) => ListView(
+    padding: const EdgeInsets.all(16),
+    children: [message, const SizedBox(height: 12), orderRisk],
+  );
+}
+
+class _OverviewOrderRiskCard extends StatelessWidget {
+  const _OverviewOrderRiskCard({
+    required this.orderLog,
+    required this.retainedError,
+    required this.busy,
+    required this.onDetails,
+  });
+
+  final LocalOrderLog? orderLog;
+  final bool retainedError;
+  final bool busy;
+  final VoidCallback onDetails;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget spaced(Widget child) =>
+        Padding(padding: const EdgeInsets.only(top: 12), child: child);
+
+    final value = orderLog;
+    if (busy && value == null) {
+      return spaced(
+        const _SectionCard(title: '로컬 주문 기록', child: _Loading(compact: true)),
+      );
+    }
+    if (value == null) {
+      return spaced(
+        _SectionCard(
+          title: '로컬 주문 기록',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Semantics(
+                container: true,
+                liveRegion: retainedError,
+                child: Text(
+                  retainedError
+                      ? '주문 기록을 불러오지 못했습니다.'
+                      : '아직 주문 기록을 확인하지 못했습니다.',
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '로컬 주문 기록과 현재 브로커 상태는 별개입니다.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: onDetails,
+                child: const Text('주문 기록 자세히 보기'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final submitUnknown = value.orders
+        .where((order) => order.pendingAction == 'SUBMIT')
+        .length;
+    final cancelUnknown = value.orders
+        .where((order) => order.pendingAction == 'CANCEL')
+        .length;
+    final unresolved = submitUnknown + cancelUnknown;
+    if (unresolved == 0 && !busy && !retainedError) {
+      return const SizedBox.shrink();
+    }
+    if (unresolved == 0) {
+      final text = retainedError
+          ? '새로고침에 실패해 마지막 정상 로컬 주문 기록을 유지합니다.'
+          : '로컬 주문 기록을 다시 확인하는 중입니다.';
+      return spaced(
+        _SectionCard(
+          title: '로컬 주문 기록',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Semantics(container: true, liveRegion: true, child: Text(text)),
+              const SizedBox(height: 4),
+              Text(
+                '현재 브로커 상태를 새로 확인한 결과가 아닙니다.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: onDetails,
+                child: const Text('주문 기록 자세히 보기'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    final unresolvedOrders = value.orders.where(
+      (order) => order.pendingAction != 'none',
+    );
+    final lastRecordedAt = unresolvedOrders
+        .map((order) => DateTime.parse(order.lastRecordedAt))
+        .reduce((left, right) => left.isAfter(right) ? left : right);
+    final status = '확인 필요한 주문 $unresolved건';
+    final detail = '접수 미확정 $submitUnknown건 · 취소 미확정 $cancelUnknown건';
+    final lastRecord = '마지막 로컬 기록 ${_time(lastRecordedAt)}';
+    final semantics =
+        '로컬 주문 기록, 현재 브로커 상태 아님, $status, $detail, 재주문·추가 조작 금지, $lastRecord';
+    return spaced(
+      _SectionCard(
+        title: '로컬 주문 기록',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Semantics(
+              container: true,
+              excludeSemantics: true,
+              liveRegion: unresolved > 0 || retainedError,
+              label: semantics,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '로컬 주문 기록 · 현재 브로커 상태 아님',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(status, style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  Text(detail, style: _tabular(context)),
+                  const SizedBox(height: 8),
+                  Text(
+                    '재주문·추가 조작 금지',
+                    style: TextStyle(color: _warningColor(context)),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    lastRecord,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            if (busy) ...[
+              const SizedBox(height: 12),
+              _Notice(
+                icon: Icons.sync,
+                text: '로컬 주문 기록을 다시 확인하는 중입니다.',
+                color: _warningColor(context),
+              ),
+            ],
+            if (retainedError) ...[
+              const SizedBox(height: 12),
+              _Notice(
+                icon: Icons.warning_amber_rounded,
+                text: '새로고침에 실패해 마지막 정상 주문 기록을 유지합니다.',
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ],
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: onDetails,
+              child: const Text('주문 기록 자세히 보기'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _OverviewReconciliationCard extends StatelessWidget {
   const _OverviewReconciliationCard({
     required this.reconciliation,
@@ -1262,52 +1485,15 @@ class _ActivityPageState extends State<ActivityPage> {
   );
 }
 
-class DataPage extends StatefulWidget {
+class DataPage extends StatelessWidget {
   const DataPage({super.key, required this.api, required this.controller});
   final OmniApi api;
   final PortfolioController controller;
 
   @override
-  State<DataPage> createState() => _DataPageState();
-}
-
-class _DataPageState extends State<DataPage> {
-  LocalOrderLog? _orderLog;
-  var _orderLogFailed = false;
-  var _orderLogBusy = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadLocalOrders();
-  }
-
-  Future<void> _loadLocalOrders() async {
-    if (!_orderLogBusy) {
-      setState(() {
-        _orderLogBusy = true;
-        _orderLogFailed = false;
-      });
-    }
-    try {
-      final result = await widget.api.localOrders();
-      if (mounted) {
-        setState(() {
-          _orderLog = result;
-          _orderLogFailed = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _orderLogFailed = true);
-    } finally {
-      if (mounted) setState(() => _orderLogBusy = false);
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final baseUrl = widget.api is RestOmniApi
-        ? (widget.api as RestOmniApi).baseUrl
+    final baseUrl = api is RestOmniApi
+        ? (api as RestOmniApi).baseUrl
         : '테스트 API';
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -1340,14 +1526,14 @@ class _DataPageState extends State<DataPage> {
   }
 
   Widget _buildLocalOrders(BuildContext context) {
-    final orderLog = _orderLog;
-    if (_orderLogBusy && orderLog == null) {
+    final orderLog = controller.orderLog;
+    if (controller.orderLogBusy && orderLog == null) {
       return const _SectionCard(
         title: '로컬 주문 기록',
         child: _Loading(compact: true),
       );
     }
-    if (_orderLogFailed && orderLog == null) {
+    if (controller.orderLogFailed && orderLog == null) {
       return _SectionCard(
         title: '로컬 주문 기록',
         child: Column(
@@ -1356,43 +1542,31 @@ class _DataPageState extends State<DataPage> {
             const Text('주문 기록을 불러오지 못했습니다.'),
             const SizedBox(height: 12),
             ElevatedButton(
-              onPressed: _loadLocalOrders,
+              onPressed: controller.refreshLocalOrders,
               child: const Text('로컬 주문 기록 다시 불러오기'),
             ),
           ],
         ),
       );
     }
-    if (orderLog == null || orderLog.orders.isEmpty) {
-      return const _SectionCard(
-        title: '로컬 주문 기록',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('아직 저장된 주문 기록이 없습니다'),
-            SizedBox(height: 4),
-            Text('로컬 주문 기록과 현재 증권사 주문 상태는 별개입니다.'),
-          ],
-        ),
-      );
-    }
+    if (orderLog == null) return const SizedBox.shrink();
     return _LocalOrderLogCard(
       orderLog: orderLog,
-      retainedError: _orderLogFailed,
-      busy: _orderLogBusy,
-      onRefresh: _loadLocalOrders,
+      retainedError: controller.orderLogFailed,
+      busy: controller.orderLogBusy,
+      onRefresh: controller.refreshLocalOrders,
     );
   }
 
   Widget _buildReconciliation(BuildContext context) {
-    final reconciliation = widget.controller.reconciliation;
-    if (widget.controller.reconciliationBusy && reconciliation == null) {
+    final reconciliation = controller.reconciliation;
+    if (controller.reconciliationBusy && reconciliation == null) {
       return const _SectionCard(
         title: '증권사 잔고 대조',
         child: _Loading(compact: true),
       );
     }
-    if (widget.controller.reconciliationFailed && reconciliation == null) {
+    if (controller.reconciliationFailed && reconciliation == null) {
       return _SectionCard(
         title: '증권사 잔고 대조',
         child: Column(
@@ -1401,7 +1575,7 @@ class _DataPageState extends State<DataPage> {
             const Text('대조 결과를 불러오지 못했습니다'),
             const SizedBox(height: 12),
             ElevatedButton(
-              onPressed: widget.controller.refreshReconciliation,
+              onPressed: controller.refreshReconciliation,
               child: const Text('대조 결과 다시 불러오기'),
             ),
           ],
@@ -1426,9 +1600,9 @@ class _DataPageState extends State<DataPage> {
     }
     return _BrokerReconciliationCard(
       reconciliation: reconciliation,
-      retainedError: widget.controller.reconciliationFailed,
-      busy: widget.controller.reconciliationBusy,
-      onRefresh: widget.controller.refreshReconciliation,
+      retainedError: controller.reconciliationFailed,
+      busy: controller.reconciliationBusy,
+      onRefresh: controller.refreshReconciliation,
     );
   }
 }
@@ -1457,9 +1631,21 @@ class _LocalOrderLogCard extends StatelessWidget {
           text: '로컬 주문 기록 · 현재 브로커 상태가 아닙니다.\n이 화면은 증권사를 새로 조회하지 않습니다.',
           color: _warningColor(context),
         ),
+        if (orderLog.orders.isEmpty) ...[
+          const SizedBox(height: 12),
+          const Text('아직 저장된 주문 기록이 없습니다'),
+        ],
         for (final order in orderLog.orders) ...[
           const Divider(height: 24),
           _LocalOrderRow(order: order),
+        ],
+        if (busy) ...[
+          const SizedBox(height: 12),
+          _Notice(
+            icon: Icons.sync,
+            text: '로컬 주문 기록을 다시 확인하는 중입니다. 마지막 정상 기록을 유지합니다.',
+            color: _warningColor(context),
+          ),
         ],
         if (retainedError) ...[
           const SizedBox(height: 12),
@@ -1489,8 +1675,11 @@ class _LocalOrderRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final mode = order.mode == 'synthetic' ? '합성 테스트' : '로컬 페이퍼';
     final side = order.side == 'BUY' ? '매수' : '매도';
-    final status = _localOrderStatus(order.status);
-    final semanticsStatus = order.status == 'SUBMIT_UNKNOWN'
+    final status = _localOrderStatus(order.status, order.pendingAction);
+    final semanticsStatus =
+        order.pendingAction == 'CANCEL' && order.status == 'FILLED'
+        ? '체결됨, 취소 결과 확인 중, 추가 조작 금지'
+        : order.status == 'SUBMIT_UNKNOWN'
         ? '브로커 결과 미확정, 재주문 금지'
         : status.$1;
     return Semantics(
@@ -1517,22 +1706,30 @@ class _LocalOrderRow extends StatelessWidget {
   }
 }
 
-(String, String) _localOrderStatus(String status) => switch (status) {
-  'RECORDED' => ('로컬 기록 저장', '주문 의도가 로컬 로그에 저장되었습니다.'),
-  'READY' => ('로컬 전송 준비', '위험 검사를 통과한 로컬 기록입니다.'),
-  'RISK_REJECTED' => ('위험 검사 차단', '위험 규칙이 주문 전송을 차단했습니다.'),
-  'SUBMIT_UNKNOWN' => (
-    '브로커 결과 미확정 · 재주문 금지',
-    '증권사 접수 결과를 아직 확인하지 못했습니다. 같은 주문을 다시 보내면 안 됩니다.',
-  ),
-  'OPEN' => ('로컬 기록: 접수', '저장된 이벤트에서 접수 상태로 재생되었습니다.'),
-  'REJECTED' => ('로컬 기록: 거절', '저장된 이벤트에서 거절 상태로 재생되었습니다.'),
-  'PARTIALLY_FILLED' => ('로컬 기록: 일부 체결', '저장된 이벤트에서 일부 체결로 재생되었습니다.'),
-  'CANCEL_UNKNOWN' => ('취소 결과 미확정 · 추가 조작 금지', '증권사 취소 결과를 아직 확인하지 못했습니다.'),
-  'CANCELED' => ('로컬 기록: 취소', '저장된 이벤트에서 취소 상태로 재생되었습니다.'),
-  'FILLED' => ('로컬 기록: 체결', '저장된 이벤트에서 체결 상태로 재생되었습니다.'),
-  _ => throw StateError('validated local order status required'),
-};
+(String, String) _localOrderStatus(String status, String pendingAction) {
+  if (pendingAction == 'CANCEL' && status == 'FILLED') {
+    return (
+      '체결됨 · 취소 결과 확인 중',
+      '주문은 로컬 기록상 전량 체결됐지만 증권사 취소 결과를 아직 확인하지 못했습니다. 추가 조작 금지.',
+    );
+  }
+  return switch (status) {
+    'RECORDED' => ('로컬 기록 저장', '주문 의도가 로컬 로그에 저장되었습니다.'),
+    'READY' => ('로컬 전송 준비', '위험 검사를 통과한 로컬 기록입니다.'),
+    'RISK_REJECTED' => ('위험 검사 차단', '위험 규칙이 주문 전송을 차단했습니다.'),
+    'SUBMIT_UNKNOWN' => (
+      '브로커 결과 미확정 · 재주문 금지',
+      '증권사 접수 결과를 아직 확인하지 못했습니다. 같은 주문을 다시 보내면 안 됩니다.',
+    ),
+    'OPEN' => ('로컬 기록: 접수', '저장된 이벤트에서 접수 상태로 재생되었습니다.'),
+    'REJECTED' => ('로컬 기록: 거절', '저장된 이벤트에서 거절 상태로 재생되었습니다.'),
+    'PARTIALLY_FILLED' => ('로컬 기록: 일부 체결', '저장된 이벤트에서 일부 체결로 재생되었습니다.'),
+    'CANCEL_UNKNOWN' => ('취소 결과 미확정 · 추가 조작 금지', '증권사 취소 결과를 아직 확인하지 못했습니다.'),
+    'CANCELED' => ('로컬 기록: 취소', '저장된 이벤트에서 취소 상태로 재생되었습니다.'),
+    'FILLED' => ('로컬 기록: 체결', '저장된 이벤트에서 체결 상태로 재생되었습니다.'),
+    _ => throw StateError('validated local order status required'),
+  };
+}
 
 class _BrokerReconciliationCard extends StatelessWidget {
   const _BrokerReconciliationCard({

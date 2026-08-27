@@ -41,6 +41,8 @@ class FakeApi implements OmniApi {
   BrokerReconciliation? reconciliationValue;
   Completer<BrokerReconciliation?>? reconciliationCompleter;
   int reconciliationCalls = 0;
+  Completer<LocalOrderLog>? localOrdersCompleter;
+  int localOrderCalls = 0;
   Completer<MarketCandles>? candlesCompleter;
   final List<String> applyKeys = [];
   bool fail;
@@ -92,10 +94,11 @@ class FakeApi implements OmniApi {
 
   @override
   Future<LocalOrderLog> localOrders() async {
+    localOrderCalls += 1;
     if (fail || failLocalOrders) {
       throw const ApiException('kiwoom_account_secret');
     }
-    return orderLogValue;
+    return localOrdersCompleter?.future ?? orderLogValue;
   }
 
   @override
@@ -224,6 +227,7 @@ Json localOrderLogJson({List<Json>? orders}) => {
           'filled_quantity': '0',
           'currency': 'KRW',
           'status': 'SUBMIT_UNKNOWN',
+          'pending_action': 'SUBMIT',
           'last_recorded_at': '2026-01-10T15:01:00Z',
         },
       ],
@@ -659,6 +663,20 @@ void main() {
     () {
       final parsed = LocalOrderLog.fromJson(localOrderLogJson());
       expect(parsed.orders.single.status, 'SUBMIT_UNKNOWN');
+      expect(parsed.orders.single.pendingAction, 'SUBMIT');
+      final resolved = LocalOrderLog.fromJson(
+        localOrderLogJson(
+          orders: [
+            {
+              ...(localOrderLogJson()['orders'] as List).single as Json,
+              'status': 'FILLED',
+              'filled_quantity': '2',
+              'pending_action': 'none',
+            },
+          ],
+        ),
+      );
+      expect(resolved.orders.single.pendingAction, 'none');
       expect(
         () => LocalOrderLog.fromJson({
           ...localOrderLogJson(),
@@ -673,6 +691,32 @@ void main() {
             {
               ...(localOrderLogJson()['orders'] as List).single as Json,
               'status': 'SUCCEEDED',
+            },
+          ],
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => LocalOrderLog.fromJson({
+          ...localOrderLogJson(),
+          'orders': [
+            {
+              ...(localOrderLogJson()['orders'] as List).single as Json,
+              'pending_action': 'RETRY',
+            },
+          ],
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => LocalOrderLog.fromJson({
+          ...localOrderLogJson(),
+          'orders': [
+            {
+              ...(localOrderLogJson()['orders'] as List).single as Json,
+              'status': 'FILLED',
+              'filled_quantity': '2',
+              'pending_action': 'SUBMIT',
             },
           ],
         }),
@@ -784,6 +828,129 @@ void main() {
       } finally {
         semantics.dispose();
       }
+    },
+  );
+
+  testWidgets(
+    'overview local order risk summary stays usable at 200 percent text',
+    (tester) async {
+      tester.view.physicalSize = const Size(375, 812);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final semantics = tester.ensureSemantics();
+      try {
+        final api = goldenApi()
+          ..orderLogValue = LocalOrderLog.fromJson(
+            localOrderLogJson(
+              orders: const [
+                {
+                  'mode': 'synthetic',
+                  'symbol': '005930',
+                  'side': 'BUY',
+                  'order_type': 'LIMIT',
+                  'quantity': '2',
+                  'limit_price': '70000',
+                  'filled_quantity': '1',
+                  'currency': 'KRW',
+                  'status': 'SUBMIT_UNKNOWN',
+                  'pending_action': 'SUBMIT',
+                  'last_recorded_at': '2026-01-10T15:01:00Z',
+                },
+                {
+                  'mode': 'synthetic',
+                  'symbol': '005930',
+                  'side': 'SELL',
+                  'order_type': 'LIMIT',
+                  'quantity': '1',
+                  'limit_price': '71000',
+                  'filled_quantity': '0',
+                  'currency': 'KRW',
+                  'status': 'FILLED',
+                  'pending_action': 'CANCEL',
+                  'last_recorded_at': '2026-01-10T15:02:00Z',
+                },
+              ],
+            ),
+          );
+
+        await tester.pumpWidget(OmniFolioApp(api: api));
+        await pumpUi(tester);
+
+        expect(api.localOrderCalls, 1);
+        expect(find.text('로컬 주문 기록 · 현재 브로커 상태 아님'), findsOneWidget);
+        expect(find.text('확인 필요한 주문 2건'), findsOneWidget);
+        expect(find.text('접수 미확정 1건 · 취소 미확정 1건'), findsOneWidget);
+        expect(find.textContaining('재주문·추가 조작 금지'), findsOneWidget);
+        expect(find.textContaining('마지막 로컬 기록'), findsOneWidget);
+        expect(
+          find.semantics.byLabel(
+            RegExp(r'로컬 주문 기록.*현재 브로커 상태 아님.*확인 필요한 주문 2건', dotAll: true),
+          ),
+          findsOneWidget,
+        );
+
+        final details = find.text('주문 기록 자세히 보기');
+        await tester.ensureVisible(details);
+        await tester.pump();
+        await tester.tap(details);
+        await pumpUi(tester);
+        expect(api.localOrderCalls, 1);
+        await tester.drag(find.byType(ListView), const Offset(0, -1200));
+        await tester.pumpAndSettle();
+        expect(find.text('브로커 결과 미확정 · 재주문 금지'), findsOneWidget);
+        expect(find.text('체결됨 · 취소 결과 확인 중'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets(
+    'overview hides an empty local history instead of claiming safety',
+    (tester) async {
+      await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+      await pumpUi(tester);
+
+      expect(find.text('로컬 기록에는 미확정 주문이 없습니다'), findsNothing);
+      expect(find.text('로컬 주문 기록 · 현재 브로커 상태 아님'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'slow local orders do not block the portfolio or duplicate refreshes',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final pending = Completer<LocalOrderLog>();
+      final api = goldenApi()..localOrdersCompleter = pending;
+
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+
+      expect(find.byType(ListView), findsOneWidget);
+      expect(find.textContaining('데이터 상태: 로컬 기록 확인 완료'), findsOneWidget);
+      await tester.drag(find.byType(ListView), const Offset(0, -500));
+      await tester.pump();
+      expect(find.text('USD 778'), findsOneWidget);
+      expect(api.localOrderCalls, 1);
+
+      await tester.tap(find.byTooltip('데이터 새로고침'));
+      await pumpUi(tester);
+      expect(api.localOrderCalls, 1);
+
+      pending.complete(LocalOrderLog.fromJson(localOrderLogJson()));
+      await pumpUi(tester);
+      expect(api.localOrderCalls, 1);
+      expect(find.textContaining('확인 필요한 주문 1건'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     },
   );
 
@@ -985,6 +1152,57 @@ void main() {
     },
   );
 
+  testWidgets(
+    'filled order with pending cancel warns against additional action',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        final api = goldenApi()
+          ..orderLogValue = LocalOrderLog.fromJson(
+            localOrderLogJson(
+              orders: const [
+                {
+                  'mode': 'synthetic',
+                  'symbol': '005930',
+                  'side': 'BUY',
+                  'order_type': 'LIMIT',
+                  'quantity': '10',
+                  'limit_price': '70000',
+                  'filled_quantity': '10',
+                  'currency': 'KRW',
+                  'status': 'FILLED',
+                  'pending_action': 'CANCEL',
+                  'last_recorded_at': '2026-01-10T15:02:00Z',
+                },
+              ],
+            ),
+          );
+        await tester.pumpWidget(OmniFolioApp(api: api));
+        await pumpUi(tester);
+        await tester.tap(find.text('연결'));
+        await pumpUi(tester);
+        expect(find.text('체결됨 · 취소 결과 확인 중'), findsOneWidget);
+        await tester.scrollUntilVisible(
+          find.textContaining('취소 결과를 아직 확인하지 못했습니다'),
+          200,
+        );
+
+        expect(find.text('체결됨 · 취소 결과 확인 중'), findsOneWidget);
+        expect(find.textContaining('추가 조작 금지'), findsOneWidget);
+        expect(find.textContaining('주문 취소'), findsNothing);
+        expect(
+          find.semantics.byLabel(
+            '합성 테스트 주문, 005930 매수 지정가, 주문 수량 10, 체결 수량 10, KRW 70000, 체결됨, 취소 결과 확인 중, 추가 조작 금지',
+          ),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
   testWidgets('local order refresh failure retains sanitized stored result', (
     tester,
   ) async {
@@ -1007,6 +1225,28 @@ void main() {
     expect(find.textContaining('kiwoom_account_secret'), findsNothing);
   });
 
+  testWidgets(
+    'empty local order refresh failure remains visible and retryable',
+    (tester) async {
+      final api = goldenApi();
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+      await tester.tap(find.text('연결'));
+      await pumpUi(tester);
+
+      api.failLocalOrders = true;
+      final refresh = find.text('로컬 주문 기록 다시 불러오기');
+      await tester.ensureVisible(refresh);
+      await tester.pump();
+      await tester.tap(refresh);
+      await pumpUi(tester);
+
+      expect(find.textContaining('마지막 정상 주문 기록은 유지됩니다'), findsOneWidget);
+      expect(find.text('로컬 주문 기록 다시 불러오기'), findsOneWidget);
+      expect(find.textContaining('kiwoom_account_secret'), findsNothing);
+    },
+  );
+
   testWidgets('missing snapshot links directly to transaction import', (
     tester,
   ) async {
@@ -1019,6 +1259,47 @@ void main() {
 
     expect(find.text('거래 내역 가져오기'), findsOneWidget);
     expect(find.byType(TextField), findsOneWidget);
+  });
+
+  testWidgets('missing snapshot still surfaces unresolved local orders', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final api = goldenApi()
+      ..failSnapshot = true
+      ..orderLogValue = LocalOrderLog.fromJson(
+        localOrderLogJson(
+          orders: const [
+            {
+              'mode': 'paper',
+              'symbol': '005930',
+              'side': 'BUY',
+              'order_type': 'LIMIT',
+              'quantity': '1',
+              'limit_price': '71000',
+              'filled_quantity': '0',
+              'currency': 'KRW',
+              'status': 'SUBMIT_UNKNOWN',
+              'pending_action': 'SUBMIT',
+              'last_recorded_at': '2026-01-10T15:01:00Z',
+            },
+          ],
+        ),
+      );
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+
+    expect(find.text('아직 스냅샷이 없습니다'), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -700));
+    await tester.pumpAndSettle();
+    expect(find.text('확인 필요한 주문 1건'), findsOneWidget);
+    expect(find.textContaining('재주문·추가 조작 금지'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('error offers retry and recovers', (tester) async {

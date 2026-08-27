@@ -35,9 +35,11 @@ Each data screen implements `loading`, `empty`, `error`, `partial`, `stale`, and
 
 Cash-flow correction rows stay inside Import review. Show the original source ID, type, currency and amount beside the exact reversing amount, and state that the original record is preserved and offset. Do not expose internal event/account IDs or imply that trade, split, FX, or broker reconciliation correction is supported.
 
-Connections may show the verified local order log as read-only history. It must say that no broker refresh occurred, hide account/client/provider/internal identifiers, retain the last known-good view after refresh failure, and expose no submit, retry-submit, cancel, or amend action. `SUBMIT_UNKNOWN` uses the fixed warning `브로커 결과 미확정 · 재주문 금지` in visible and screen-reader text.
+Connections may show the verified local order log as read-only history. It must say that no broker refresh occurred, hide account/client/provider/internal identifiers, retain the last known-good view after refresh failure, and expose no submit, retry-submit, cancel, or amend action. `SUBMIT_UNKNOWN` uses the fixed warning `브로커 결과 미확정 · 재주문 금지` in visible and screen-reader text. If a locally filled order still has `pending_action=CANCEL`, show that the order is filled but cancel confirmation is still unknown and prohibit further action.
 
 Overview may summarize the stored broker-to-ledger position reconciliation, but it must say `현재 상태 아님`, show match or mismatch count plus broker-fetched and locally-recorded times, and link to Connections for per-symbol details. It reuses the same retained known-good object as Connections, never performs an extra broker refresh, and never exposes raw errors or internal/account identifiers.
+
+Overview may also warn about unresolved local submit or cancel actions from the same retained order log used by Connections. It must label the source as local and not current broker state, prohibit resubmission or further manipulation, avoid claiming safety when the log is empty or unavailable, and add no order mutation.
 
 ## Interaction and accessibility
 

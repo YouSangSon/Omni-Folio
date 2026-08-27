@@ -946,6 +946,16 @@ G4M reuses the existing sanitized G4K read model in the Flutter home trust surfa
 
 Still open: credentialed/current broker observation, automatic refresh scheduling, account selection, cash/valuation/order/execution reconciliation, physical-device screen-reader evidence and every live-money path.
 
+## 2026-08-27 G4N continuation: local order pending-action contract
+
+G4N keeps G4L's read-only local order lifecycle surface but closes one consumer gap: status alone is not enough when a cancel command remains unresolved after a full fill. The HTTP DTO now requires `pending_action=SUBMIT|CANCEL|none` while still omitting account, client-order, provider-order, execution, reservation, strategy-authority and fencing identifiers.
+
+- Go replays the real append-only order state and maps empty internal pending action to `none`; it does not add a projection, schema migration, broker request, credential, route or mutation.
+- Flutter strictly parses the required field. `SUBMIT_UNKNOWN` keeps the fixed resubmit warning, and `FILLED + pending_action=CANCEL` is rendered as filled but cancel confirmation still unknown with additional action prohibited. Overview and Connections share one retained local-order object; unresolved counts are shown on Home without a second read, while known empty data never claims broker safety.
+- TDD proves the real race path `OPEN -> CANCEL_DISPATCHED -> FILL_RECORDED(full)` returns `status=FILLED` and `pending_action=CANCEL`, the OpenAPI schema is closed and required, and Flutter semantics expose the warning and details route at 375 logical pixels/200% text without mutation controls. Slow optional reads do not block the portfolio and retained empty-history refresh failures remain visible.
+
+Still open: credentialed mock observations, authoritative broker cancel/filled correlation, public order mutation UI, broker-coupled runner fencing, physical-device/manual screen-reader proof, fill-to-ledger reconciliation and every live-money path.
+
 ## 2026-08-24 G4I/K2C continuation: credential-free execution authority
 
 K2C adds the smallest internal authority that can prevent accidental synthetic dispatch without creating a broker transport or public order surface.

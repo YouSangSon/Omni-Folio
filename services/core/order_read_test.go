@@ -41,6 +41,7 @@ func TestG4LLocalOrderLifecycleHTTPReplaysUnknownWithoutAuthorityIdentifiers(t *
 			"filled_quantity":  "0",
 			"currency":         "KRW",
 			"status":           "SUBMIT_UNKNOWN",
+			"pending_action":   "SUBMIT",
 			"last_recorded_at": "2026-01-10T15:01:00Z",
 		}},
 	}
@@ -48,6 +49,48 @@ func TestG4LLocalOrderLifecycleHTTPReplaysUnknownWithoutAuthorityIdentifiers(t *
 		t.Fatalf("local order response mismatch:\n got: %#v\nwant: %#v", actual, want)
 	}
 	for _, secret := range []string{order.OrderID, order.ClientOrderID, order.AccountRef, "risk_reservation", "fencing_token", "provider_order_ref"} {
+		if strings.Contains(response.Body.String(), secret) {
+			t.Fatalf("local order response leaked %q: %s", secret, response.Body.String())
+		}
+	}
+}
+
+func TestG4LLocalOrderLifecycleHTTPKeepsPendingCancelOnFilledOrder(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	order := mustReadyAndDispatchK2AOrder(t, svc, "client-local-filled-cancel-pending", "filled-cancel-pending")
+	ack := k2aEvent("filled-cancel-pending-ack", order.OrderID, "SUBMIT_ACKNOWLEDGED")
+	ack.ProviderOrderRef = k2aOrderRef
+	mustAppendK2AEvent(t, svc, ack, "OPEN")
+	mustAppendK2AEvent(t, svc, k2aEvent("filled-cancel-pending-cancel", order.OrderID, "CANCEL_DISPATCHED"), "CANCEL_UNKNOWN")
+	mustAppendK2AEvent(t, svc, k2aFill("filled-cancel-pending-fill", order.OrderID, "kiwoom_execution_ZZZZZZZZZZZZZZZZZZZZZZZZ", "10", "1000"), "FILLED")
+
+	response := httptest.NewRecorder()
+	svc.routes().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/orders", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("local order route status=%d body=%s", response.Code, response.Body.String())
+	}
+	var actual struct {
+		Orders []struct {
+			Status        string `json:"status"`
+			PendingAction string `json:"pending_action"`
+		} `json:"orders"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &actual); err != nil {
+		t.Fatal(err)
+	}
+	if len(actual.Orders) != 1 || actual.Orders[0].Status != "FILLED" || actual.Orders[0].PendingAction != "CANCEL" {
+		t.Fatalf("filled order lost pending cancel: %+v body=%s", actual.Orders, response.Body.String())
+	}
+	mustAppendK2AEvent(t, svc, k2aEvent("filled-cancel-resolved-ack", order.OrderID, "CANCEL_ACKNOWLEDGED"), "FILLED")
+	response = httptest.NewRecorder()
+	svc.routes().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/orders", nil))
+	if err := json.Unmarshal(response.Body.Bytes(), &actual); err != nil {
+		t.Fatal(err)
+	}
+	if len(actual.Orders) != 1 || actual.Orders[0].Status != "FILLED" || actual.Orders[0].PendingAction != "none" {
+		t.Fatalf("resolved cancel did not map to none: %+v body=%s", actual.Orders, response.Body.String())
+	}
+	for _, secret := range []string{order.OrderID, order.ClientOrderID, order.AccountRef, k2aOrderRef, "kiwoom_execution_ZZZZZZZZZZZZZZZZZZZZZZZZ"} {
 		if strings.Contains(response.Body.String(), secret) {
 			t.Fatalf("local order response leaked %q: %s", secret, response.Body.String())
 		}
@@ -74,6 +117,10 @@ func TestG4LOpenAPIExposesClosedLocalOrderLifecycle(t *testing.T) {
 		t.Fatal("OpenAPI local order lifecycle schemas are not closed")
 	}
 	properties := viewSchema["properties"].(map[string]any)
+	required := viewSchema["required"].([]any)
+	if properties["pending_action"] == nil || !reflect.DeepEqual(required, []any{"mode", "symbol", "side", "order_type", "quantity", "limit_price", "filled_quantity", "currency", "status", "pending_action", "last_recorded_at"}) {
+		t.Fatalf("OpenAPI local order view does not require pending_action")
+	}
 	for _, forbidden := range []string{"order_id", "client_order_id", "account_ref", "provider_order_ref", "provider_execution_ref", "risk_reservation_id", "fencing_token"} {
 		if properties[forbidden] != nil {
 			t.Fatalf("OpenAPI local order view exposes %s", forbidden)
