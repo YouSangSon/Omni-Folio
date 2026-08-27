@@ -41,6 +41,8 @@ Overview may summarize the stored broker-to-ledger position reconciliation, but 
 
 Overview may also warn about unresolved local submit or cancel actions from the same retained order log used by Connections. It must label the source as local and not current broker state, prohibit resubmission or further manipulation, avoid claiming safety when the log is empty or unavailable, and add no order mutation.
 
+On first run, `never_verified` with an empty snapshot is an empty state rather than a successful zero-portfolio summary. Overview offers one primary action to open the existing transaction import flow; a non-empty unverified snapshot remains visible with its trust warning.
+
 ## Interaction and accessibility
 
 - Minimum 48×48 logical-pixel interactive targets, which also clears the 44pt iOS floor; default text/control size 16 logical px or larger.

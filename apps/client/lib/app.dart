@@ -339,7 +339,13 @@ class OverviewPage extends StatelessWidget {
       );
     }
     final snapshot = controller.snapshot;
-    if (snapshot == null) {
+    final isFirstRunEmpty =
+        controller.state == DataState.neverVerified &&
+        snapshot != null &&
+        snapshot.cash.isEmpty &&
+        snapshot.holdings.isEmpty &&
+        snapshot.realizedPnl.isEmpty;
+    if (snapshot == null || isFirstRunEmpty) {
       return _FallbackWithOrderRisk(
         orderRisk: _OverviewOrderRiskCard(
           orderLog: controller.orderLog,
@@ -349,7 +355,7 @@ class OverviewPage extends StatelessWidget {
         ),
         message: _Message(
           icon: Icons.inbox_outlined,
-          title: '아직 스냅샷이 없습니다',
+          title: isFirstRunEmpty ? '첫 거래 내역을 가져오세요' : '아직 스냅샷이 없습니다',
           body: '거래 내역을 미리 확인한 뒤 적용하면 현금과 보유 내역이 표시됩니다.',
           action: onImport,
           actionLabel: '거래 내역 가져오기',

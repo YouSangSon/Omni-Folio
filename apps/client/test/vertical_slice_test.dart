@@ -110,10 +110,15 @@ class FakeApi implements OmniApi {
   }
 }
 
-FakeApi goldenApi({bool neverVerified = false, ImportPreview? preview}) {
+FakeApi goldenApi({
+  bool neverVerified = false,
+  ImportPreview? preview,
+  PortfolioSnapshot? snapshot,
+}) {
   final previewValue =
       preview ?? ImportPreview.fromJson(fixture('golden-preview.json'));
-  final snapshot = PortfolioSnapshot.fromJson(fixture('golden-snapshot.json'));
+  final snapshotValue =
+      snapshot ?? PortfolioSnapshot.fromJson(fixture('golden-snapshot.json'));
   final receipt = ApplyReceipt.fromJson(fixture('golden-apply.json'));
   return FakeApi(
     statusValue: ServiceStatus.fromJson({
@@ -124,7 +129,7 @@ FakeApi goldenApi({bool neverVerified = false, ImportPreview? preview}) {
       'last_verified_at': neverVerified ? null : '2026-08-23T03:05:00Z',
       'issues': const [],
     }),
-    snapshotValue: snapshot,
+    snapshotValue: snapshotValue,
     previewValue: previewValue,
     receiptValue: receipt,
     candlesValue: marketCandles(),
@@ -786,6 +791,134 @@ void main() {
     expect(find.textContaining('실전 주문 꺼짐'), findsOneWidget);
     expect(find.textContaining('로컬 거래 내역 가져오기'), findsOneWidget);
     expect(find.text('아직 증권사 대조 기록이 없습니다'), findsOneWidget);
+  });
+
+  testWidgets('first-run empty snapshot links to import at 200 percent text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final semantics = tester.ensureSemantics();
+    try {
+      final api = goldenApi(
+        neverVerified: true,
+        snapshot: PortfolioSnapshot.fromJson({
+          ...fixture('golden-snapshot.json'),
+          'ledger_revision': 'rev_0000000000',
+          'cash': const [],
+          'holdings': const [],
+          'realized_pnl': const [],
+          'provenance': {'event_ids': const [], 'receipt_ids': const []},
+        }),
+      );
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+
+      final import = find.widgetWithText(ElevatedButton, '거래 내역 가져오기');
+      expect(import, findsOneWidget);
+      expect(tester.getSize(import).height, greaterThanOrEqualTo(48));
+      expect(find.semantics.byLabel('거래 내역 가져오기'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.ensureVisible(import);
+      await tester.pump();
+      await tester.tap(import);
+      await pumpUi(tester);
+
+      expect(find.byType(TextField), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('verified empty snapshot remains a verified portfolio', (
+    tester,
+  ) async {
+    final api = goldenApi(
+      snapshot: PortfolioSnapshot.fromJson({
+        ...fixture('golden-snapshot.json'),
+        'cash': const [],
+        'holdings': const [],
+        'realized_pnl': const [],
+        'provenance': {'event_ids': const [], 'receipt_ids': const []},
+      }),
+    );
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+
+    expect(find.textContaining('로컬 기록 확인 완료'), findsOneWidget);
+    expect(find.text('거래 내역 가져오기'), findsNothing);
+  });
+
+  testWidgets('unverified snapshot keeps any retained financial data visible', (
+    tester,
+  ) async {
+    PortfolioSnapshot snapshot({
+      List<Json> cash = const [],
+      List<Json> holdings = const [],
+      List<Json> realizedPnl = const [],
+    }) => PortfolioSnapshot.fromJson({
+      ...fixture('golden-snapshot.json'),
+      'cash': cash,
+      'holdings': holdings,
+      'realized_pnl': realizedPnl,
+      'provenance': {'event_ids': const [], 'receipt_ids': const []},
+    });
+
+    final cases = <(String, PortfolioSnapshot)>[
+      (
+        'cash',
+        snapshot(
+          cash: const [
+            {'currency': 'USD', 'amount': '1'},
+          ],
+        ),
+      ),
+      (
+        'holding',
+        snapshot(
+          holdings: const [
+            {
+              'instrument_id': 'instrument_aapl',
+              'symbol': 'AAPL',
+              'quantity': '1',
+              'cost_basis': '1',
+              'currency': 'USD',
+            },
+          ],
+        ),
+      ),
+      (
+        'realized PnL',
+        snapshot(
+          realizedPnl: const [
+            {'currency': 'USD', 'amount': '1'},
+          ],
+        ),
+      ),
+    ];
+
+    for (final (name, value) in cases) {
+      await tester.pumpWidget(
+        OmniFolioApp(
+          key: ValueKey(name),
+          api: goldenApi(neverVerified: true, snapshot: value),
+        ),
+      );
+      await pumpUi(tester);
+
+      expect(find.textContaining('아직 확인되지 않음'), findsOneWidget);
+      expect(
+        find.text('거래 내역 가져오기'),
+        findsNothing,
+        reason: '$name must not be hidden behind the first-run CTA',
+      );
+    }
   });
 
   testWidgets(

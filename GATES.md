@@ -50,6 +50,7 @@ G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4M overview stored-reconciliation trust summary
 ├─ G4N local order pending-action and overview warning contract
 ├─ G4O local daily chart display-range selection
+├─ G4P first-run empty-snapshot import recovery
 ├─ K2B Kiwoom mock-order broker transport and lookup recovery
 └─ then Toss Securities read-only as the second adapter
    |
