@@ -1054,3 +1054,14 @@ G4O closes only the credential-free period-selection UI gap over the already loa
 - TDD first failed because `chart-range-30d` did not exist, then passed with inclusive 30/90/365-day fixtures and one candle read across every selection. Independent review then reproduced a finite-range refresh into a valid empty series crashing on `bars.last`; a second RED/GREEN test added the empty-list guard. The full Flutter analyzer and 44 parser/widget tests pass locally.
 
 Still open: real Kiwoom candle wiring and authoritative time/freshness, interval switching, physical-device profile and VoiceOver/TalkBack evidence, average-cost currency/rounding semantics, a sanitized actual-fill timestamp contract, and every live-money path.
+
+## 2026-08-27 G4P continuation: first-run import recovery
+
+G4P closes a Flutter onboarding gap without changing the API. The core already returns `trust_state=never_verified` and a valid empty portfolio snapshot on first run, but Overview previously offered the import action only when snapshot loading failed or returned no object.
+
+- Overview now treats only `never_verified` snapshots with empty cash, holdings, and realized PnL as the first-run empty state and reuses the existing `거래 내역 가져오기` action.
+- Non-empty unverified snapshots remain visible with the existing trust warning; the fix does not erase retained local data.
+- The widget regression test mirrors the real empty snapshot shape and verifies 320px, 200% text, 48dp minimum target, semantics, vertical reachability, and navigation to the existing CSV field.
+- TDD first failed because the CTA was absent, then passed after the single Overview branch changed. Mutation checks then proved the trust-state and each retained financial collection guard are protected. Flutter analyze and all 47 parser/widget tests pass locally.
+
+Still open: physical-device and VoiceOver/TalkBack evidence, keyboard traversal evidence, import-row recovery beyond the first five preview rows, credentialed broker data, and every live-money path.
