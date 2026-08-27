@@ -44,6 +44,7 @@ class FakeApi implements OmniApi {
   Completer<LocalOrderLog>? localOrdersCompleter;
   int localOrderCalls = 0;
   Completer<MarketCandles>? candlesCompleter;
+  int candleCalls = 0;
   final List<String> applyKeys = [];
   bool fail;
   bool failSnapshot;
@@ -79,6 +80,7 @@ class FakeApi implements OmniApi {
 
   @override
   Future<MarketCandles> candles(String symbol) async {
+    candleCalls += 1;
     if (fail) throw ApiException(failureMessage);
     return candlesCompleter?.future ?? candlesValue;
   }
@@ -137,6 +139,7 @@ MarketCandles marketCandles({
   String source = 'local_fixture',
   String? sourceAsOf = '2026-08-22T20:00:00Z',
   bool includeIssues = true,
+  List<Json>? bars,
 }) => MarketCandles.fromJson({
   'symbol': 'AAPL',
   'venue': 'XNAS',
@@ -164,24 +167,25 @@ MarketCandles marketCandles({
       : const [],
   'bars': state == 'empty'
       ? const []
-      : [
-          {
-            'at': '2026-08-21T20:00:00Z',
-            'open': '100',
-            'high': '110',
-            'low': '90',
-            'close': '105',
-            'volume': '1200',
-          },
-          {
-            'at': '2026-08-22T20:00:00Z',
-            'open': '105',
-            'high': '112',
-            'low': '100',
-            'close': '101',
-            'volume': '900',
-          },
-        ],
+      : bars ??
+            [
+              {
+                'at': '2026-08-21T20:00:00Z',
+                'open': '100',
+                'high': '110',
+                'low': '90',
+                'close': '105',
+                'volume': '1200',
+              },
+              {
+                'at': '2026-08-22T20:00:00Z',
+                'open': '105',
+                'high': '112',
+                'low': '100',
+                'close': '101',
+                'volume': '900',
+              },
+            ],
 });
 
 Json brokerReconciliationJson() => {
@@ -1605,8 +1609,12 @@ void main() {
         find.semantics.byLabel(RegExp(r'AAPL 1d 캔들 차트.*정확한 OHLCV 표 보기')),
         findsOneWidget,
       );
-      await tester.drag(find.byType(ListView).last, const Offset(0, -500));
-      await tester.pump();
+      await tester.fling(
+        find.byType(ListView).last,
+        const Offset(0, -900),
+        2000,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.text('정확한 OHLCV 표 보기'));
       await tester.pump();
       expect(find.byKey(const Key('ohlcv-table-rows')), findsOneWidget);
@@ -1629,6 +1637,175 @@ void main() {
       await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
     },
   );
+
+  testWidgets('chart range selection updates chart and exact table together', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(375, 900);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final semantics = tester.ensureSemantics();
+    final api = goldenApi()
+      ..candlesValue = marketCandles(
+        bars: const [
+          {
+            'at': '2025-08-21T20:00:00Z',
+            'open': '95',
+            'high': '101',
+            'low': '94',
+            'close': '100',
+            'volume': '800',
+          },
+          {
+            'at': '2026-05-23T20:00:00Z',
+            'open': '100',
+            'high': '103',
+            'low': '98',
+            'close': '102',
+            'volume': '900',
+          },
+          {
+            'at': '2026-05-24T20:00:00Z',
+            'open': '102',
+            'high': '106',
+            'low': '101',
+            'close': '104',
+            'volume': '1000',
+          },
+          {
+            'at': '2026-07-23T20:00:00Z',
+            'open': '104',
+            'high': '108',
+            'low': '103',
+            'close': '107',
+            'volume': '1100',
+          },
+          {
+            'at': '2026-08-01T20:00:00Z',
+            'open': '107',
+            'high': '110',
+            'low': '105',
+            'close': '108',
+            'volume': '1200',
+          },
+          {
+            'at': '2026-08-22T20:00:00Z',
+            'open': '108',
+            'high': '112',
+            'low': '106',
+            'close': '111',
+            'volume': '1300',
+          },
+        ],
+      );
+
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('보유'));
+    await pumpUi(tester);
+    await tester.tap(find.text('AAPL'));
+    await pumpUi(tester);
+    await tester.fling(
+      find.byKey(const Key('asset-detail-scroll')),
+      const Offset(0, -1200),
+      2000,
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('chart-range-30d')), findsOneWidget);
+    expect(
+      find.semantics.byLabel(RegExp(r'AAPL 1d 캔들 차트.*6개 봉')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const Key('chart-range-365d')));
+    await tester.pump();
+    expect(
+      find.semantics.byLabel(RegExp(r'AAPL 1d 캔들 차트.*5개 봉')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const Key('chart-range-90d')));
+    await tester.pump();
+    expect(
+      find.semantics.byLabel(RegExp(r'AAPL 1d 캔들 차트.*4개 봉')),
+      findsOneWidget,
+    );
+    await tester.dragUntilVisible(
+      find.byKey(const Key('chart-range-30d')),
+      find.byKey(const Key('asset-detail-scroll')),
+      const Offset(0, -200),
+    );
+    await tester.tap(find.byKey(const Key('chart-range-30d')));
+    await tester.pump();
+
+    expect(
+      find.semantics.byLabel(
+        RegExp(
+          r'AAPL 1d 캔들 차트.*3개 봉.*2026-07-23T20:00:00Z부터 2026-08-22T20:00:00Z까지',
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('최근 30일 · 2026-07-23'), findsOneWidget);
+    expect(
+      tester.getSemantics(find.byKey(const Key('chart-range-30d'))),
+      matchesSemantics(
+        label: '최근 30일',
+        isButton: true,
+        hasSelectedState: true,
+        isSelected: true,
+        hasTapAction: true,
+      ),
+    );
+    await tester.dragUntilVisible(
+      find.text('정확한 OHLCV 표 보기'),
+      find.byKey(const Key('asset-detail-scroll')),
+      const Offset(0, -200),
+    );
+    await tester.tap(find.text('정확한 OHLCV 표 보기'));
+    await tester.pump();
+    expect(find.text('2026-05-24T20:00:00Z'), findsNothing);
+    expect(find.text('2026-07-23T20:00:00Z'), findsOneWidget);
+    expect(api.candleCalls, 1);
+    expect(tester.takeException(), isNull);
+    await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+    semantics.dispose();
+  });
+
+  testWidgets('finite chart range preserves a valid empty refresh state', (
+    tester,
+  ) async {
+    final api = goldenApi();
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('보유'));
+    await pumpUi(tester);
+    await tester.tap(find.text('AAPL'));
+    await pumpUi(tester);
+    await tester.fling(
+      find.byKey(const Key('asset-detail-scroll')),
+      const Offset(0, -900),
+      2000,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('chart-range-30d')));
+    await tester.pump();
+
+    api.candlesValue = marketCandles(
+      state: 'empty',
+      sample: false,
+      priceAdjustment: 'provider_adjusted',
+      source: 'kiwoom',
+      sourceAsOf: null,
+      includeIssues: false,
+    );
+    await tester.tap(find.byTooltip('차트 새로고침'));
+    await pumpUi(tester);
+
+    expect(find.text('표시할 봉이 없습니다'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'asset detail handles empty partial and retained refresh failure',

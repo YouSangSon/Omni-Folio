@@ -66,7 +66,23 @@ void main() {
       await tester.tap(find.text('KRX000'));
       await tester.pumpAndSettle();
       expect(find.text('시세 차트'), findsOneWidget);
-      await tester.drag(find.byType(ListView).last, const Offset(0, -600));
+      await tester.fling(
+        find.byType(ListView).last,
+        const Offset(0, -900),
+        2000,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('chart-range-30d')));
+      await tester.pumpAndSettle();
+      expect(
+        find.semantics.byLabel(RegExp(r'KRX000 1d 캔들 차트.*31개 봉')),
+        findsOneWidget,
+      );
+      await tester.fling(
+        find.byType(ListView).last,
+        const Offset(0, -900),
+        2000,
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.text('정확한 OHLCV 표 보기'));
       await tester.pumpAndSettle();
@@ -127,7 +143,7 @@ void main() {
             '${logicalSize.height.toStringAsFixed(2)}',
         'device_pixel_ratio': view.devicePixelRatio,
         'fixture':
-            '120 holdings list scroll plus import screen transition plus 500-bar asset chart and exact table',
+            '120 holdings list scroll plus import screen transition plus 500-bar asset chart, 30-day selection and exact table',
         'network_db_excluded': true,
         'table_scroll_exercised': tableScrollExercised,
         'sample_count': timings.length,

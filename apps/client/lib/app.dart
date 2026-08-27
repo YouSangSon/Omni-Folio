@@ -505,6 +505,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   String? _error;
   var _busy = true;
   var _tableVisible = false;
+  var _range = _ChartRange.all;
 
   @override
   void initState() {
@@ -557,6 +558,7 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
       );
     }
     final candles = _candles!;
+    final visibleBars = _rangeBars(candles.bars);
     return ListView(
       key: const Key('asset-detail-scroll'),
       padding: const EdgeInsets.all(16),
@@ -622,7 +624,12 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             ),
             const SizedBox(height: 12),
           ],
-          _CandleChart(candles: candles),
+          _CandleChart(
+            candles: candles,
+            bars: visibleBars,
+            range: _range,
+            onRangeSelected: (range) => setState(() => _range = range),
+          ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: () => setState(() => _tableVisible = !_tableVisible),
@@ -631,13 +638,29 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
           ),
           if (_tableVisible) ...[
             const SizedBox(height: 12),
-            _OhlcvTable(candles: candles),
+            _OhlcvTable(bars: visibleBars),
           ],
         ],
       ],
     );
   }
+
+  List<MarketBar> _rangeBars(List<MarketBar> bars) {
+    final days = switch (_range) {
+      _ChartRange.days30 => 30,
+      _ChartRange.days90 => 90,
+      _ChartRange.days365 => 365,
+      _ChartRange.all => null,
+    };
+    if (bars.isEmpty || days == null) return bars;
+    final cutoff = DateTime.parse(bars.last.at).subtract(Duration(days: days));
+    return bars
+        .where((bar) => !DateTime.parse(bar.at).isBefore(cutoff))
+        .toList(growable: false);
+  }
 }
+
+enum _ChartRange { days30, days90, days365, all }
 
 class _MarketMetadata extends StatelessWidget {
   const _MarketMetadata({required this.candles});
@@ -657,28 +680,87 @@ class _MarketMetadata extends StatelessWidget {
 }
 
 class _CandleChart extends StatelessWidget {
-  const _CandleChart({required this.candles});
+  const _CandleChart({
+    required this.candles,
+    required this.bars,
+    required this.range,
+    required this.onRangeSelected,
+  });
   final MarketCandles candles;
+  final List<MarketBar> bars;
+  final _ChartRange range;
+  final ValueChanged<_ChartRange> onRangeSelected;
 
   @override
   Widget build(BuildContext context) {
+    final rangeLabel = switch (range) {
+      _ChartRange.days30 => '최근 30일',
+      _ChartRange.days90 => '최근 90일',
+      _ChartRange.days365 => '최근 365일',
+      _ChartRange.all => '전체 기간',
+    };
+    Widget choice(String label, String semanticsLabel, _ChartRange value) {
+      final selected = range == value;
+      final key = switch (value) {
+        _ChartRange.days30 => const Key('chart-range-30d'),
+        _ChartRange.days90 => const Key('chart-range-90d'),
+        _ChartRange.days365 => const Key('chart-range-365d'),
+        _ChartRange.all => const Key('chart-range-all'),
+      };
+      return Semantics(
+        key: key,
+        label: semanticsLabel,
+        button: true,
+        selected: selected,
+        onTap: () => onRangeSelected(value),
+        excludeSemantics: true,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48),
+          child: ChoiceChip(
+            label: Text(label),
+            selected: selected,
+            onSelected: (_) => onRangeSelected(value),
+          ),
+        ),
+      );
+    }
+
     final summary =
         '${candles.symbol} ${candles.interval} 캔들 차트. '
-        '${candles.bars.length}개 봉, 상태 ${candles.state}. '
-        '시가 ${candles.bars.first.open}, 종가 ${candles.bars.last.close}. '
-        '정확한 OHLCV 표 보기 버튼으로 모든 값을 확인할 수 있습니다.';
+        '$rangeLabel, ${bars.length}개 봉, 상태 ${candles.state}. '
+        '${bars.first.at}부터 ${bars.last.at}까지. '
+        '시가 ${bars.first.open}, 종가 ${bars.last.close}. '
+        '정확한 OHLCV 표 보기 버튼으로 선택한 범위의 모든 값을 확인할 수 있습니다.';
     return _SectionCard(
       title: '시세 차트',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text('표시 범위', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              choice('30일', '최근 30일', _ChartRange.days30),
+              choice('90일', '최근 90일', _ChartRange.days90),
+              choice('365일', '최근 365일', _ChartRange.days365),
+              choice('전체', '전체 기간', _ChartRange.all),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$rangeLabel · ${bars.first.at} ~ ${bars.last.at} · ${bars.length}개 봉',
+            style: _tabular(context),
+          ),
+          const SizedBox(height: 12),
           Semantics(
             container: true,
             label: summary,
             child: ExcludeSemantics(
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final minimumWidth = candles.bars.length * 4.0;
+                  final minimumWidth = bars.length * 4.0;
                   final chartWidth = minimumWidth > constraints.maxWidth
                       ? minimumWidth
                       : constraints.maxWidth;
@@ -690,7 +772,7 @@ class _CandleChart extends StatelessWidget {
                       child: RepaintBoundary(
                         child: CustomPaint(
                           painter: _CandlePainter(
-                            bars: candles.bars,
+                            bars: bars,
                             bull: _positiveColor(context),
                             bear: Theme.of(context).colorScheme.error,
                             axis: Theme.of(
@@ -857,8 +939,8 @@ class _CandlePainter extends CustomPainter {
 }
 
 class _OhlcvTable extends StatelessWidget {
-  const _OhlcvTable({required this.candles});
-  final MarketCandles candles;
+  const _OhlcvTable({required this.bars});
+  final List<MarketBar> bars;
 
   @override
   Widget build(BuildContext context) => _SectionCard(
@@ -877,9 +959,8 @@ class _OhlcvTable extends StatelessWidget {
                 child: ListView.builder(
                   key: const Key('ohlcv-table-rows'),
                   itemExtent: 56,
-                  itemCount: candles.bars.length,
-                  itemBuilder: (context, index) =>
-                      _OhlcvRow(bar: candles.bars[index]),
+                  itemCount: bars.length,
+                  itemBuilder: (context, index) => _OhlcvRow(bar: bars[index]),
                 ),
               ),
             ],
