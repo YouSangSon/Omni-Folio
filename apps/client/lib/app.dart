@@ -1967,6 +1967,30 @@ class _PreviewCard extends StatelessWidget {
         const SizedBox(height: 12),
         ...preview.rows.take(5).map((row) {
           final target = row.correctionTarget;
+          if (row.transactionType == 'FX_EXCHANGE') {
+            final soldAmount = row.amount!.substring(1);
+            final label =
+                '환전 행 ${row.rowNumber}, ${row.currency} $soldAmount 매도, ${row.counterCurrency} ${row.counterAmount} 매수';
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Semantics(
+                container: true,
+                excludeSemantics: true,
+                label: label,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '환전 · ${row.currency} $soldAmount 매도 → ${row.counterCurrency} ${row.counterAmount} 매수',
+                      style: _tabular(context),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text('환율을 계산하거나 현재 시세를 뜻하지 않습니다.'),
+                  ],
+                ),
+              ),
+            );
+          }
           return Padding(
             padding: const EdgeInsets.only(bottom: 4),
             child: target == null

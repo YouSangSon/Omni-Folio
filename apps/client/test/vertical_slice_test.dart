@@ -1614,7 +1614,7 @@ void main() {
 
       final preview = ImportPreview.fromJson({
         ...fixture('golden-preview.json'),
-        'mapping_version': 'canonical-transaction.v3',
+        'mapping_version': 'canonical-transaction.v4',
         'rows': [
           {
             'row_number': 2,
@@ -1670,6 +1670,116 @@ void main() {
       semantics.dispose();
     },
   );
+
+  test('FX preview requires valid opposite cash legs', () {
+    Map<String, dynamic> previewWith(Map<String, dynamic> transaction) => {
+      ...fixture('golden-preview.json'),
+      'mapping_version': 'canonical-transaction.v4',
+      'rows': [
+        {'row_number': 2, 'status': 'new', 'transaction': transaction},
+      ],
+      'totals': {
+        'total_rows': 1,
+        'new_rows': 1,
+        'duplicate_rows': 0,
+        'error_rows': 0,
+        'unresolved_rows': 0,
+      },
+    };
+    final validTransaction = <String, dynamic>{
+      'event_id': 'event-fx-001',
+      'source_event_id': 'fx-001',
+      'account_id': 'account-main',
+      'type': 'FX_EXCHANGE',
+      'occurred_at': '2026-01-03T00:00:00Z',
+      'currency': 'USD',
+      'amount': '-100',
+      'counter_currency': 'KRW',
+      'counter_amount': '137000',
+    };
+    final complete = ImportPreview.fromJson(previewWith(validTransaction));
+    expect(complete.rows.single.counterCurrency, 'KRW');
+    expect(complete.rows.single.counterAmount, '137000');
+
+    final invalidChanges = <Map<String, dynamic>>[
+      {'counter_amount': null},
+      {'amount': null},
+      {'amount': '100'},
+      {'counter_amount': '0'},
+      {'counter_amount': '-137000'},
+      {'counter_currency': 'USD'},
+      {'type': 'DEPOSIT'},
+    ];
+    for (final changes in invalidChanges) {
+      final invalid = {...validTransaction, ...changes};
+      invalid.removeWhere((_, value) => value == null);
+      expect(
+        () => ImportPreview.fromJson(previewWith(invalid)),
+        throwsFormatException,
+        reason: 'accepted invalid FX fields: $changes',
+      );
+    }
+  });
+
+  testWidgets('FX preview discloses both cash legs at 200 percent text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final semantics = tester.ensureSemantics();
+    final preview = ImportPreview.fromJson({
+      ...fixture('golden-preview.json'),
+      'mapping_version': 'canonical-transaction.v4',
+      'rows': [
+        {
+          'row_number': 2,
+          'status': 'new',
+          'transaction': {
+            'event_id': 'event-fx-001',
+            'source_event_id': 'fx-001',
+            'account_id': 'account-main',
+            'type': 'FX_EXCHANGE',
+            'occurred_at': '2026-01-03T00:00:00Z',
+            'currency': 'USD',
+            'amount': '-100',
+            'counter_currency': 'KRW',
+            'counter_amount': '137000',
+          },
+        },
+      ],
+      'totals': {
+        'total_rows': 1,
+        'new_rows': 1,
+        'duplicate_rows': 0,
+        'error_rows': 0,
+        'unresolved_rows': 0,
+      },
+    });
+    await tester.pumpWidget(OmniFolioApp(api: goldenApi(preview: preview)));
+    await pumpUi(tester);
+    await tester.tap(find.text('내역'));
+    await pumpUi(tester);
+    await tester.enterText(find.byType(TextField), 'header\nrow');
+    await tester.ensureVisible(find.text('미리보기 만들기'));
+    await tester.pump();
+    await tester.tap(find.text('미리보기 만들기'));
+    await pumpUi(tester);
+
+    expect(find.text('환전 · USD 100 매도 → KRW 137000 매수'), findsOneWidget);
+    expect(find.text('환율을 계산하거나 현재 시세를 뜻하지 않습니다.'), findsOneWidget);
+    await tester.ensureVisible(find.text('환전 · USD 100 매도 → KRW 137000 매수'));
+    await tester.pump();
+    expect(
+      find.semantics.byLabel('환전 행 2, USD 100 매도, KRW 137000 매수'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+    semantics.dispose();
+  });
 
   testWidgets('editing CSV invalidates an existing preview', (tester) async {
     final api = goldenApi();

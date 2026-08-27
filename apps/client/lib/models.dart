@@ -284,6 +284,8 @@ class PreviewRow {
     this.transactionType,
     this.currency,
     this.amount,
+    this.counterCurrency,
+    this.counterAmount,
     this.correctionTarget,
     this.errors = const [],
   });
@@ -302,6 +304,29 @@ class PreviewRow {
     final correctionTarget = targetJson is Json
         ? CorrectionTarget.fromJson(targetJson)
         : null;
+    final counterCurrency =
+        transaction is Json && transaction['counter_currency'] is String
+        ? _text(transaction, 'counter_currency')
+        : null;
+    final counterAmount =
+        transaction is Json && transaction['counter_amount'] is String
+        ? _decimal(transaction, 'counter_amount')
+        : null;
+    if ((counterCurrency == null) != (counterAmount == null) ||
+        (transactionType == 'FX_EXCHANGE') != (counterCurrency != null)) {
+      throw const FormatException(
+        'FX_EXCHANGE requires one complete counter leg',
+      );
+    }
+    final amount = transaction is Json ? _decimal(transaction, 'amount') : null;
+    if (transactionType == 'FX_EXCHANGE' &&
+        (amount == null ||
+            !amount.startsWith('-') ||
+            counterAmount == '0' ||
+            counterAmount!.startsWith('-') ||
+            counterCurrency == _text(transaction as Json, 'currency'))) {
+      throw const FormatException('Invalid FX_EXCHANGE cash legs');
+    }
     if ((transactionType == 'CASH_VOID') != (correctionTarget != null)) {
       throw const FormatException('CASH_VOID requires one correction target');
     }
@@ -313,7 +338,9 @@ class PreviewRow {
           : null,
       transactionType: transactionType,
       currency: transaction is Json ? _text(transaction, 'currency') : null,
-      amount: transaction is Json ? _decimal(transaction, 'amount') : null,
+      amount: amount,
+      counterCurrency: counterCurrency,
+      counterAmount: counterAmount,
       correctionTarget: correctionTarget,
       errors: _optionalJsonList(
         json,
@@ -328,6 +355,8 @@ class PreviewRow {
   final String? transactionType;
   final String? currency;
   final String? amount;
+  final String? counterCurrency;
+  final String? counterAmount;
   final CorrectionTarget? correctionTarget;
   final List<String> errors;
 }

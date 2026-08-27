@@ -24,7 +24,7 @@ func TestCashVoidPreservesOriginalAndReplaysExactly(t *testing.T) {
 	if appErr != nil {
 		t.Fatal(appErr)
 	}
-	if !preview.CanApply || preview.MappingVersion != "canonical-transaction.v3" || preview.Totals.NewRows != 2 {
+	if !preview.CanApply || preview.MappingVersion != "canonical-transaction.v4" || preview.Totals.NewRows != 2 {
 		t.Fatalf("cash void preview was not applicable: %+v", preview)
 	}
 	encoded, err := json.Marshal(preview.Rows[0])
@@ -184,7 +184,7 @@ func TestImportSourceEventConflictIsNotSilentlyDuplicate(t *testing.T) {
 	}
 }
 
-func TestSchemaV8EnforcesCashVoidGuard(t *testing.T) {
+func TestSchemaV9EnforcesCashVoidGuard(t *testing.T) {
 	svc, _ := testService(t, nil, nil)
 	applyTestCSV(t, svc, "schema-cash-void-base", testCSV("f1,account-main,FEE,2026-01-01T00:00:00Z,,,,,USD,-5"))
 	insert := func(eventID, sourceID, occurredAt, currency, amount, target string) error {

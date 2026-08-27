@@ -185,7 +185,7 @@ func TestG3RegistryBackupRestoresSelectionProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v5" || manifest.SchemaVersion != "omni-folio.sqlite.v8" ||
+	if manifest.FormatVersion != "omni-folio-backup.v5" || manifest.SchemaVersion != "omni-folio.sqlite.v9" ||
 		manifest.StrategyRegistrySHA256 == "" || manifest.StrategyEvidenceCount != 1 || manifest.StrategySelectionEventCount != 1 ||
 		manifest.SelectedStrategyResultSHA256 != evidence.ResultSHA256 {
 		t.Fatalf("backup omitted strategy registry proof: %+v", manifest)
