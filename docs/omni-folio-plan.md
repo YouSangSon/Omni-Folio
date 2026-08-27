@@ -1065,3 +1065,16 @@ G4P closes a Flutter onboarding gap without changing the API. The core already r
 - TDD first failed because the CTA was absent, then passed after the single Overview branch changed. Mutation checks then proved the trust-state and each retained financial collection guard are protected. Flutter analyze and all 47 parser/widget tests pass locally.
 
 Still open: physical-device and VoiceOver/TalkBack evidence, keyboard traversal evidence, import-row recovery beyond the first five preview rows, credentialed broker data, and every live-money path.
+
+## 2026-08-27 G1.8 continuation: exact two-leg FX exchange
+
+G1.8 closes only exact append-only cash movement between two currencies. It does not add an exchange-rate table, current quote, base-currency valuation, tax interpretation, broker reconciliation or live authority.
+
+- CSV v1 adds optional `counter_currency` and `counter_amount`; mapping v4 requires both only for `FX_EXCHANGE`. The sold leg is a negative canonical amount, the bought leg is a positive canonical amount in a distinct three-letter uppercase currency, and fees remain separate `FEE` events.
+- Migration v9 preserves v1-v8 data and every existing insert-only, cash-void, order, broker, execution-authority and strategy guard. SQLite also rejects incomplete, same-currency, wrong-sign and non-FX counter legs when the application boundary is bypassed.
+- Snapshot replay applies both cash legs without creating a holding or realized PnL. Exact source-event replay stays idempotent, while a changed counter leg is a source-event conflict.
+- Backup JSON stays v5. New artifacts declare schema v9; a signed schema-v8 artifact is hash-checked in place, copied to an owned temporary directory, migrated and verified through the current proof without modifying its source or leaving the copy behind.
+- OpenAPI closes the conditional counter-leg shape. Flutter shows both legs and states that they neither calculate an exchange rate nor represent a current quote, including 320px, 200% text and screen-reader semantics.
+- RED/GREEN tests and mutations prove failed backup-candidate cleanup, the second replay leg, the distinct-currency DB guard and the Flutter type/leg binding. Full regression, race, smoke, vulnerability and resource-cleanup evidence is recorded in [`../gates/g1d-fx-exchange.md`](../gates/g1d-fx-exchange.md).
+
+Still open: FX rate series and base-currency valuation, FX correction, broker cash reconciliation, jurisdiction-specific tax classification, physical-device screen-reader evidence and every live-money path.

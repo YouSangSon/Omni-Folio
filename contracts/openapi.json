@@ -575,7 +575,7 @@
           },
           "type": {
             "type": "string",
-            "enum": ["BUY", "SELL", "DEPOSIT", "WITHDRAWAL", "DIVIDEND", "FEE", "TAX", "SPLIT", "CASH_VOID"]
+            "enum": ["BUY", "SELL", "DEPOSIT", "WITHDRAWAL", "DIVIDEND", "FEE", "TAX", "SPLIT", "CASH_VOID", "FX_EXCHANGE"]
           },
           "occurred_at": {
             "$ref": "#/components/schemas/OccurredAt"
@@ -604,6 +604,15 @@
             "$ref": "#/components/schemas/Decimal",
             "description": "Signed net cash impact of the event, including fees."
           },
+          "counter_currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "description": "Required only for FX_EXCHANGE; the distinct currency bought by the atomic exchange."
+          },
+          "counter_amount": {
+            "$ref": "#/components/schemas/Decimal",
+            "description": "Required only for FX_EXCHANGE; the positive exact cash amount bought. It does not imply a quoted or current exchange rate."
+          },
           "corrects_source_event_id": {
             "$ref": "#/components/schemas/OpaqueId",
             "description": "Required only for CASH_VOID and identifies the same-account source event being exactly reversed."
@@ -625,6 +634,27 @@
             "else": {
               "not": {
                 "required": ["corrects_source_event_id"]
+              }
+            }
+          },
+          {
+            "if": {
+              "required": ["type"],
+              "properties": {
+                "type": {
+                  "const": "FX_EXCHANGE"
+                }
+              }
+            },
+            "then": {
+              "required": ["counter_currency", "counter_amount"]
+            },
+            "else": {
+              "not": {
+                "anyOf": [
+                  {"required": ["counter_currency"]},
+                  {"required": ["counter_amount"]}
+                ]
               }
             }
           }

@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -29,12 +30,15 @@ import (
 )
 
 const (
-	maxBodyBytes  = 1 << 20
-	maxImportRows = 10_000
-	latestSchema  = 8
-	zeroTime      = "1970-01-01T00:00:00Z"
-	csvSchema     = "omni-folio.csv.v1"
-	mappingSchema = "canonical-transaction.v3"
+	maxBodyBytes       = 1 << 20
+	maxImportRows      = 10_000
+	latestSchema       = 9
+	zeroTime           = "1970-01-01T00:00:00Z"
+	csvSchema          = "omni-folio.csv.v1"
+	mappingSchema      = "canonical-transaction.v4"
+	backupFormat       = "omni-folio-backup.v5"
+	backupSchema       = "omni-folio.sqlite.v9"
+	legacyBackupSchema = "omni-folio.sqlite.v8"
 )
 
 //go:embed migrations/*.sql
@@ -70,6 +74,8 @@ type Transaction struct {
 	Fee                   string `json:"fee,omitempty"`
 	Currency              string `json:"currency"`
 	Amount                string `json:"amount"`
+	CounterCurrency       string `json:"counter_currency,omitempty"`
+	CounterAmount         string `json:"counter_amount,omitempty"`
 	CorrectsSourceEventID string `json:"corrects_source_event_id,omitempty"`
 }
 
@@ -278,7 +284,7 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("unsupported schema version %d", current)
 		}
 	}
-	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql"}
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql"}
 	for version := current + 1; version <= latestSchema; version++ {
 		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
 		if err != nil {
@@ -679,8 +685,8 @@ func (s *Service) parseCSV(ctx context.Context, q queryer, body []byte) ([]Previ
 
 func loadTransactionBySource(ctx context.Context, q queryer, accountID, sourceEventID string) (*Transaction, error) {
 	var tx Transaction
-	err := q.QueryRowContext(ctx, `SELECT event_id,source_event_id,account_id,type,occurred_at,COALESCE(instrument_id,''),COALESCE(symbol,''),COALESCE(quantity,''),COALESCE(price,''),COALESCE(fee,''),currency,amount,COALESCE(corrects_source_event_id,'') FROM events WHERE account_id=? AND source_event_id=?`, accountID, sourceEventID).Scan(
-		&tx.EventID, &tx.SourceEventID, &tx.AccountID, &tx.Type, &tx.OccurredAt, &tx.InstrumentID, &tx.Symbol, &tx.Quantity, &tx.Price, &tx.Fee, &tx.Currency, &tx.Amount, &tx.CorrectsSourceEventID,
+	err := q.QueryRowContext(ctx, `SELECT event_id,source_event_id,account_id,type,occurred_at,COALESCE(instrument_id,''),COALESCE(symbol,''),COALESCE(quantity,''),COALESCE(price,''),COALESCE(fee,''),currency,amount,COALESCE(counter_currency,''),COALESCE(counter_amount,''),COALESCE(corrects_source_event_id,'') FROM events WHERE account_id=? AND source_event_id=?`, accountID, sourceEventID).Scan(
+		&tx.EventID, &tx.SourceEventID, &tx.AccountID, &tx.Type, &tx.OccurredAt, &tx.InstrumentID, &tx.Symbol, &tx.Quantity, &tx.Price, &tx.Fee, &tx.Currency, &tx.Amount, &tx.CounterCurrency, &tx.CounterAmount, &tx.CorrectsSourceEventID,
 	)
 	return &tx, err
 }
@@ -731,7 +737,8 @@ func (s *Service) normalize(record []string, value func([]string, string) string
 	tx := &Transaction{
 		EventID: s.id("event"), SourceEventID: get("source_event_id"), AccountID: get("account_id"),
 		Type: get("type"), OccurredAt: get("occurred_at"), Symbol: get("symbol"), Quantity: get("quantity"),
-		Price: get("price"), Fee: get("fee"), Currency: get("currency"), Amount: get("amount"), CorrectsSourceEventID: get("corrects_source_event_id"),
+		Price: get("price"), Fee: get("fee"), Currency: get("currency"), Amount: get("amount"),
+		CounterCurrency: get("counter_currency"), CounterAmount: get("counter_amount"), CorrectsSourceEventID: get("corrects_source_event_id"),
 	}
 	var errs []APIError
 	for _, field := range []struct{ name, value string }{{"source_event_id", tx.SourceEventID}, {"account_id", tx.AccountID}} {
@@ -753,6 +760,9 @@ func (s *Service) normalize(record []string, value func([]string, string) string
 	}
 	if tx.Type != "CASH_VOID" && tx.CorrectsSourceEventID != "" {
 		errs = append(errs, APIError{"invalid_fields", "corrects_source_event_id is only valid for CASH_VOID", "corrects_source_event_id"})
+	}
+	if tx.Type != "FX_EXCHANGE" && (tx.CounterCurrency != "" || tx.CounterAmount != "") {
+		errs = append(errs, APIError{"invalid_fields", "counter currency and amount are only valid for FX_EXCHANGE", "counter_currency"})
 	}
 	switch tx.Type {
 	case "DEPOSIT", "WITHDRAWAL", "FEE", "TAX":
@@ -804,6 +814,28 @@ func (s *Service) normalize(record []string, value func([]string, string) string
 		}
 		if err == nil && amount.Sign() == 0 {
 			errs = append(errs, APIError{"invalid_amount", "CASH_VOID amount must be non-zero", "amount"})
+		}
+	case "FX_EXCHANGE":
+		if tx.Symbol != "" || tx.Quantity != "" || tx.Price != "" || tx.Fee != "" {
+			errs = append(errs, APIError{"invalid_fields", "FX_EXCHANGE trade fields must be empty", "symbol"})
+		}
+		tx.Symbol, tx.Quantity, tx.Price, tx.Fee = "", "", "", ""
+		if err == nil && amount.Sign() >= 0 {
+			errs = append(errs, APIError{"invalid_amount", "FX_EXCHANGE amount must be negative", "amount"})
+		}
+		if tx.CounterCurrency == "" {
+			errs = append(errs, APIError{"required", "counter_currency is required for FX_EXCHANGE", "counter_currency"})
+		} else if len(tx.CounterCurrency) != 3 || tx.CounterCurrency != strings.ToUpper(tx.CounterCurrency) || strings.IndexFunc(tx.CounterCurrency, func(r rune) bool { return r < 'A' || r > 'Z' }) >= 0 {
+			errs = append(errs, APIError{"invalid_currency", "counter_currency must be a three-letter uppercase code", "counter_currency"})
+		} else if tx.CounterCurrency == tx.Currency {
+			errs = append(errs, APIError{"invalid_currency", "FX_EXCHANGE currencies must be different", "counter_currency"})
+		}
+		if tx.CounterAmount == "" {
+			errs = append(errs, APIError{"required", "counter_amount is required for FX_EXCHANGE", "counter_amount"})
+		} else if counterAmount, counterErr := parseDecimal(tx.CounterAmount); counterErr != nil {
+			errs = append(errs, APIError{"invalid_decimal", "counter_amount must be a canonical decimal", "counter_amount"})
+		} else if counterAmount.Sign() <= 0 {
+			errs = append(errs, APIError{"invalid_amount", "FX_EXCHANGE counter_amount must be positive", "counter_amount"})
 		}
 	case "BUY", "SELL":
 		if tx.Symbol == "" {
@@ -961,8 +993,8 @@ func (s *Service) apply(ctx context.Context, req ApplyRequest) (*ApplyReceipt, *
 		if e == nil {
 			return nil, internalError(errors.New("preview new row has no transaction"))
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO events(event_id,source_event_id,account_id,type,occurred_at,instrument_id,symbol,quantity,price,fee,currency,amount,corrects_source_event_id,receipt_id,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			e.EventID, e.SourceEventID, e.AccountID, e.Type, e.OccurredAt, nullable(e.InstrumentID), nullable(e.Symbol), nullable(e.Quantity), nullable(e.Price), nullable(e.Fee), e.Currency, e.Amount, nullable(e.CorrectsSourceEventID), receiptID, recorded.Format(time.RFC3339Nano)); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO events(event_id,source_event_id,account_id,type,occurred_at,instrument_id,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id,receipt_id,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			e.EventID, e.SourceEventID, e.AccountID, e.Type, e.OccurredAt, nullable(e.InstrumentID), nullable(e.Symbol), nullable(e.Quantity), nullable(e.Price), nullable(e.Fee), e.Currency, e.Amount, nullable(e.CounterCurrency), nullable(e.CounterAmount), nullable(e.CorrectsSourceEventID), receiptID, recorded.Format(time.RFC3339Nano)); err != nil {
 			return nil, internalError(err)
 		}
 		applied++
@@ -1006,7 +1038,7 @@ func snapshotFrom(ctx context.Context, q queryer) (*PortfolioSnapshot, error) {
 	if err := q.QueryRowContext(ctx, `SELECT revision, recorded_at FROM ledger_meta WHERE singleton=1`).Scan(&rev, &recorded); err != nil {
 		return nil, err
 	}
-	rows, err := q.QueryContext(ctx, `SELECT event_id,type,occurred_at,COALESCE(instrument_id,''),COALESCE(symbol,''),COALESCE(quantity,''),COALESCE(price,''),COALESCE(fee,''),currency,amount,receipt_id FROM events ORDER BY occurred_at, sequence`)
+	rows, err := q.QueryContext(ctx, `SELECT event_id,type,occurred_at,COALESCE(instrument_id,''),COALESCE(symbol,''),COALESCE(quantity,''),COALESCE(price,''),COALESCE(fee,''),currency,amount,COALESCE(counter_currency,''),COALESCE(counter_amount,''),receipt_id FROM events ORDER BY occurred_at, sequence`)
 	if err != nil {
 		return nil, err
 	}
@@ -1019,8 +1051,8 @@ func snapshotFrom(ctx context.Context, q queryer) (*PortfolioSnapshot, error) {
 	seenReceipt := map[string]bool{}
 	asOf := zeroTime
 	for rows.Next() {
-		var eventID, typ, occurredAt, instrument, symbol, quantityRaw, priceRaw, feeRaw, currency, amountRaw, receiptID string
-		if err := rows.Scan(&eventID, &typ, &occurredAt, &instrument, &symbol, &quantityRaw, &priceRaw, &feeRaw, &currency, &amountRaw, &receiptID); err != nil {
+		var eventID, typ, occurredAt, instrument, symbol, quantityRaw, priceRaw, feeRaw, currency, amountRaw, counterCurrency, counterAmountRaw, receiptID string
+		if err := rows.Scan(&eventID, &typ, &occurredAt, &instrument, &symbol, &quantityRaw, &priceRaw, &feeRaw, &currency, &amountRaw, &counterCurrency, &counterAmountRaw, &receiptID); err != nil {
 			return nil, err
 		}
 		amount, err := parseDecimal(amountRaw)
@@ -1035,6 +1067,14 @@ func snapshotFrom(ctx context.Context, q queryer) (*PortfolioSnapshot, error) {
 		}
 		if occurredAt > asOf {
 			asOf = occurredAt
+		}
+		if typ == "FX_EXCHANGE" {
+			counterAmount, err := parseDecimal(counterAmountRaw)
+			if err != nil {
+				return nil, fmt.Errorf("event %s counter amount: %w", eventID, err)
+			}
+			addRat(cash, counterCurrency, counterAmount)
+			continue
 		}
 		switch typ {
 		case "DEPOSIT", "WITHDRAWAL", "DIVIDEND", "FEE", "TAX", "CASH_VOID":
@@ -1202,7 +1242,7 @@ func backupAndVerify(db *sql.DB, out, golden string) error {
 	return err
 }
 
-func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.Time, id func(string) string) (*BackupManifest, error) {
+func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.Time, id func(string) string) (_ *BackupManifest, resultErr error) {
 	if _, err := os.Stat(out); err == nil {
 		return nil, fmt.Errorf("backup target already exists: %s", out)
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -1213,6 +1253,26 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
+	candidateCreated, manifestCreated := false, false
+	defer func() {
+		if resultErr == nil {
+			return
+		}
+		var cleanupErr error
+		if manifestCreated {
+			if err := os.Remove(manifestPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+				cleanupErr = errors.Join(cleanupErr, err)
+			}
+		}
+		if candidateCreated {
+			if err := os.Remove(out); err != nil && !errors.Is(err, os.ErrNotExist) {
+				cleanupErr = errors.Join(cleanupErr, err)
+			}
+		}
+		if cleanupErr != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("discard failed backup candidate: %w", cleanupErr))
+		}
+	}()
 	var sourceRevision int64
 	if err := db.QueryRow(`SELECT revision FROM ledger_meta WHERE singleton=1`).Scan(&sourceRevision); err != nil {
 		return nil, err
@@ -1234,6 +1294,7 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if _, err := db.Exec(`VACUUM INTO '` + quoted + `'`); err != nil {
 		return nil, fmt.Errorf("consistent backup: %w", err)
 	}
+	candidateCreated = true
 	candidateOrders, err := verifyRestoreProof(out, golden)
 	if err != nil {
 		return nil, err
@@ -1265,7 +1326,7 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	}
 	verifiedAt := now().UTC()
 	manifest := &BackupManifest{
-		FormatVersion: "omni-folio-backup.v5", SchemaVersion: "omni-folio.sqlite.v8", CreatedAt: createdAt.Format(time.RFC3339Nano),
+		FormatVersion: backupFormat, SchemaVersion: backupSchema, CreatedAt: createdAt.Format(time.RFC3339Nano),
 		SourceLedgerRevision: revision(sourceRevision), OrderStateSHA256: sourceOrders.SHA256, OrderCount: sourceOrders.Orders,
 		OrderEventCount: sourceOrders.Events, ExecutionAuthoritySHA256: sourceOrders.ExecutionAuthoritySHA256,
 		ExecutionAuthorityEventCount: sourceOrders.ExecutionAuthorityEvents, RiskReservationSHA256: sourceOrders.RiskReservationSHA256,
@@ -1287,7 +1348,16 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 		return nil, err
 	}
 	encoded = append(encoded, '\n')
-	if err := os.WriteFile(manifestPath, encoded, 0o600); err != nil {
+	manifestFile, err := os.OpenFile(manifestPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	manifestCreated = true
+	if _, err := manifestFile.Write(encoded); err != nil {
+		_ = manifestFile.Close()
+		return nil, err
+	}
+	if err := manifestFile.Close(); err != nil {
 		return nil, err
 	}
 	return manifest, nil
@@ -1383,6 +1453,21 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		}
 		if strict != 1 {
 			return fmt.Errorf("restore order table %s is not strict", table)
+		}
+	}
+	var eventsDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='events'`).Scan(&eventsDefinition); err != nil {
+		return fmt.Errorf("restore events definition: %w", err)
+	}
+	normalizedEvents := strings.ToLower(strings.Join(strings.Fields(eventsDefinition), " "))
+	for _, required := range []string{
+		"counter_currency text", "counter_amount text", "'fx_exchange'",
+		"or (type = 'fx_exchange' and corrects_source_event_id is null",
+		"amount <> '0' and amount <> '-0' and amount glob '-*'", "counter_currency <> currency",
+		"counter_amount is not null and counter_amount <> '0' and counter_amount not glob '-*')",
+	} {
+		if !strings.Contains(normalizedEvents, required) {
+			return errors.New("restore events lack the required FX exchange guard")
 		}
 	}
 	for _, unique := range []struct {
@@ -1609,7 +1694,7 @@ func hasUniqueIndex(db *sql.DB, table string, expected []string, origin string) 
 	return false, nil
 }
 
-func verifyManifest(path, goldenPath, manifestPath string) error {
+func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	manifestBytes, err := os.ReadFile(manifestPath)
 	if err != nil {
 		return err
@@ -1620,7 +1705,7 @@ func verifyManifest(path, goldenPath, manifestPath string) error {
 	if err := dec.Decode(&manifest); err != nil {
 		return fmt.Errorf("backup manifest: %w", err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v5" || manifest.SchemaVersion != "omni-folio.sqlite.v8" ||
+	if manifest.FormatVersion != backupFormat || (manifest.SchemaVersion != backupSchema && manifest.SchemaVersion != legacyBackupSchema) ||
 		manifest.Encryption.Encrypted || manifest.Encryption.Algorithm != "none" {
 		return errors.New("unsupported backup manifest version or encryption")
 	}
@@ -1642,7 +1727,56 @@ func verifyManifest(path, goldenPath, manifestPath string) error {
 	if manifest.ExpectedSnapshotSHA256 != snapshotSHA || receipt.CandidateSnapshotSHA256 != snapshotSHA {
 		return errors.New("backup snapshot hash mismatch")
 	}
-	orders, err := verifyRestoreProof(path, goldenPath)
+	sourceDB, err := openExistingDB(path)
+	if err != nil {
+		return err
+	}
+	var firstSchema, sourceSchema, schemaCount int
+	if err := sourceDB.QueryRow(`SELECT COALESCE(MIN(version), 0), COALESCE(MAX(version), 0), COUNT(*) FROM schema_migrations`).Scan(&firstSchema, &sourceSchema, &schemaCount); err != nil {
+		_ = sourceDB.Close()
+		return err
+	}
+	if err := sourceDB.Close(); err != nil {
+		return err
+	}
+	declaredSchema := fmt.Sprintf("omni-folio.sqlite.v%d", sourceSchema)
+	if firstSchema != 1 || schemaCount != sourceSchema || manifest.SchemaVersion != declaredSchema {
+		return errors.New("backup manifest schema does not match candidate")
+	}
+
+	verificationPath := path
+	temporaryDir := ""
+	defer func() {
+		if temporaryDir == "" {
+			return
+		}
+		if err := os.RemoveAll(temporaryDir); err != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("remove migrated restore candidate: %w", err))
+		}
+	}()
+	if manifest.SchemaVersion == legacyBackupSchema {
+		temporaryDir, err = os.MkdirTemp("", "omni-folio-restore-v8.*")
+		if err != nil {
+			return err
+		}
+		verificationPath = filepath.Join(temporaryDir, "candidate.db")
+		if err := copyFile(path, verificationPath); err != nil {
+			return err
+		}
+		candidateDB, err := openExistingDB(verificationPath)
+		if err != nil {
+			return err
+		}
+		if err := migrate(candidateDB); err != nil {
+			_ = candidateDB.Close()
+			return fmt.Errorf("migrate restored schema-v8 candidate: %w", err)
+		}
+		if err := candidateDB.Close(); err != nil {
+			return err
+		}
+	}
+
+	orders, err := verifyRestoreProof(verificationPath, goldenPath)
 	if err != nil {
 		return err
 	}
@@ -1652,7 +1786,7 @@ func verifyManifest(path, goldenPath, manifestPath string) error {
 		manifest.RiskReservationSHA256 != orders.RiskReservationSHA256 || manifest.RiskReservationCount != orders.RiskReservations {
 		return errors.New("backup order recovery proof mismatch")
 	}
-	broker, err := verifyBrokerRestoreProof(path)
+	broker, err := verifyBrokerRestoreProof(verificationPath)
 	if err != nil {
 		return err
 	}
@@ -1660,7 +1794,7 @@ func verifyManifest(path, goldenPath, manifestPath string) error {
 		manifest.BrokerSnapshotCount != broker.Snapshots || manifest.BrokerReconciliationCount != broker.Reconciliations {
 		return errors.New("backup broker recovery proof mismatch")
 	}
-	strategy, err := verifyStrategyRestoreProof(path)
+	strategy, err := verifyStrategyRestoreProof(verificationPath)
 	if err != nil {
 		return err
 	}
@@ -1669,7 +1803,7 @@ func verifyManifest(path, goldenPath, manifestPath string) error {
 		manifest.SelectedStrategyResultSHA256 != strategy.SelectedResultSHA256 {
 		return errors.New("backup strategy registry recovery proof mismatch")
 	}
-	db, err := openExistingDB(path)
+	db, err := openExistingDB(verificationPath)
 	if err != nil {
 		return err
 	}
@@ -1682,6 +1816,21 @@ func verifyManifest(path, goldenPath, manifestPath string) error {
 		return errors.New("backup ledger revision mismatch")
 	}
 	return nil
+}
+
+func copyFile(source, target string) (resultErr error) {
+	in, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer func() { resultErr = errors.Join(resultErr, in.Close()) }()
+	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	defer func() { resultErr = errors.Join(resultErr, out.Close()) }()
+	_, err = io.Copy(out, in)
+	return err
 }
 
 func hashFile(path string) (string, int64, error) {

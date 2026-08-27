@@ -19,7 +19,8 @@ G1 ledger vertical slice
 ├─ G1.4 backup + verified restore
 ├─ G1.5 exact cash flows + stock-split replay
 ├─ G1.6 append-only cash-flow void + schema v8 restore proof
-└─ G1.7 restore mismatch error redaction
+├─ G1.7 restore mismatch error redaction
+└─ G1.8 exact two-leg FX exchange + schema v9/v8 restore proof
    |
 G2 client vertical slice
 ├─ G2.1 Flutter iOS/Android/web build
@@ -44,7 +45,7 @@ G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4F/K2B0 Kiwoom known-order execution reconciliation
 ├─ G4G/K2B1 Kiwoom synthetic dated execution scan
 ├─ G4H Kiwoom broker known-good snapshot persistence
-├─ G4I/K2C internal synthetic execution authority and schema v8/backup v5 proof
+├─ G4I/K2C internal synthetic execution authority and current schema v9/backup v5 proof
 ├─ G4J/K2B2 credential-free Kiwoom mock LIMIT submit transport
 ├─ G4K stored broker/ledger position reconciliation read view
 ├─ G4L verified local order-lifecycle read view

@@ -22,7 +22,7 @@
 - The backtest golden manifest covers delayed next-eligible-bar fills, fee, tax, slippage, participation-based partial fills, canonical decimals, and zero lookahead violations.
 - The improvement runner uses two expanding walk-forward folds and one final holdout, finite SMA candidates, a buy-and-hold baseline, deterministic selection/hash, and fails closed on short folds, zero delay, failed validation/holdout/baseline gates.
 - Fixture result: `strategy-improvement-result.v1`, policy `sma-expanding-walk-forward.v1`, target `paper_candidate`, SHA-256 `bf00a8e0d6c59a58f53e7dbe772ad6d235f385ebf4341aa4f451774a9a935513`. This is research evidence, not expected return or live authorization.
-- `TestG3Registry*`는 실제 Python CLI→Go ingest의 cross-runtime hash, idempotent registration, stale selection, rejected-candidate 차단, 이전 선택/`no_strategy` rollback, insert-only/replay와 schema v8/backup v5 복구를 검증한다.
+- `TestG3Registry*`는 실제 Python CLI→Go ingest의 cross-runtime hash, idempotent registration, stale selection, rejected-candidate 차단, 이전 선택/`no_strategy` rollback, insert-only/replay와 현재 schema v9/backup v5 복구를 검증한다.
 - `TestG3StrategyOrderRequiresCurrentSelectionAtRecordAndDispatch`는 이미 기록된 intent의 idempotent retry를 보존하면서 stale 신규 기록과 rollback된 전략의 durable dispatch를 차단하고, 새 selection event에 묶인 주문만 허용함을 검증한다.
 - `TestG3PaperRunner*`는 선택 target→원자 delta/netting→record-time lease/fencing→같은 transaction의 K2C reservation·durable dispatch→공통 order replay→부분/완전 체결→backup/restore와 만료·rollback·동시 중복·Kiwoom transport 차단을 검증한다.
 - 현재 paper adapter는 local fixture 한 건만 처리한다. 수수료·세금·slippage·quote stream, 자동 scheduling, 실제 paper 성능 관찰·성능저하 rollback 또는 broker-write 순간까지의 selection/lease race 차단은 제공하지 않는다.

@@ -2,9 +2,9 @@
   "preview_id": "preview_edge_001",
   "file_sha256": "a0f634507833bbb83b580a8c6eedb29bd64c726b34a36ca6f7b3bb735869119c",
   "schema_version": "omni-folio.csv.v1",
-  "mapping_version": "canonical-transaction.v3",
+  "mapping_version": "canonical-transaction.v4",
   "ledger_revision": "rev_0000000003",
-  "preview_fingerprint": "ea446be174c847b1e99767f5c693deccab6f0abd36ec9af64cffe969cf1b0c62",
+  "preview_fingerprint": "1c5367f49de68b4a9178764499068b74dca7fcec6f4c90fac82a61b99c77fb60",
   "can_apply": false,
   "rows": [
     {

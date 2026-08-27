@@ -29,6 +29,7 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 - 거래 원장을 source of truth로 삼고 잔고·손익·성과는 원장에서 결정적으로 계산한다.
 - 금액·수량 계산은 부동소수점이 아닌 Decimal을 사용한다.
 - import와 주문 요청은 멱등성을 보장하고, 정정은 원본 삭제보다 append-only correction을 우선한다.
+- 환전 원장 event는 실제로 매도한 통화·금액과 매수한 통화·금액을 하나의 atomic record로 보존한다. 두 금액에서 환율을 역산해 현재 시세나 평가환율로 승격하지 않으며, 수수료가 있으면 별도 `FEE` event로 기록한다.
 - 클라이언트는 asdf로 stable 버전을 고정한 Flutter 하나로 iOS·Android·app-centric web을 제공한다. 공개 리서치·문서형 콘텐츠나 SEO 요구가 실제로 생길 때만 Next.js를 별도 web surface로 추가하며 Flutter 제품 화면을 중복 구현하지 않는다. 이전 React/PWA 우선 권장은 **superseded**다.
 - Flutter UX는 영웅문을 복제하지 않는다. 토스증권에서 참고한 쉬운 용어, 한 화면 한 결정, 점진적 상세 공개, 국내·미국의 일관된 흐름, 읽기 쉬운 차트, 명확한 주문 확인과 접근성을 Omni Folio 고유 디자인으로 구현한다.
 - Go 모듈러 모놀리스가 ledger, order, risk, broker credential과 broker submit authority를 소유한다. Python은 research/backtest와 재현 가능한 산출물만 담당하며 broker credential, 운영 DB 쓰기, order-submit 권한을 갖지 않는다.
