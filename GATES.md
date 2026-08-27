@@ -18,7 +18,8 @@ G1 ledger vertical slice
 ├─ G1.3 FIFO snapshot + provenance
 ├─ G1.4 backup + verified restore
 ├─ G1.5 exact cash flows + stock-split replay
-└─ G1.6 append-only cash-flow void + schema v8 restore proof
+├─ G1.6 append-only cash-flow void + schema v8 restore proof
+└─ G1.7 restore mismatch error redaction
    |
 G2 client vertical slice
 ├─ G2.1 Flutter iOS/Android/web build

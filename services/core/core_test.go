@@ -69,6 +69,61 @@ func TestGoldenVerticalSliceAndBackupRestore(t *testing.T) {
 	}
 }
 
+func TestVerifyRestoreMismatchRedactsPortfolioData(t *testing.T) {
+	svc, _ := testService(t,
+		[]time.Time{
+			mustTime("2026-01-10T15:00:30Z"),
+			mustTime("2026-01-10T15:01:00Z"),
+			mustTime("2026-01-10T15:01:00.125Z"),
+		},
+		map[string][]string{
+			"event":   {"event_cash_001", "event_trade_001", "event_trade_002"},
+			"preview": {"preview_golden_001"},
+			"receipt": {"receipt_golden_001"},
+		},
+	)
+	preview, appErr := svc.preview(context.Background(), fixture(t, "golden-import.csv"))
+	if appErr != nil {
+		t.Fatal(appErr)
+	}
+	if _, appErr := svc.apply(context.Background(), ApplyRequest{PreviewID: preview.PreviewID, IdempotencyKey: "restore-redaction"}); appErr != nil {
+		t.Fatal(appErr)
+	}
+
+	backup := filepath.Join(t.TempDir(), "restore-redaction.db")
+	manifestPath := backup + ".manifest.json"
+	if _, err := createBackup(svc.db, backup, fixturePath("golden-snapshot.json"), manifestPath, time.Now, randomID); err != nil {
+		t.Fatal(err)
+	}
+	mismatched := bytes.Replace(fixture(t, "golden-snapshot.json"), []byte(`"amount": "778"`), []byte(`"amount": "779"`), 1)
+	goldenPath := filepath.Join(t.TempDir(), "mismatched-golden.json")
+	if err := os.WriteFile(goldenPath, mismatched, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	snapshotSHA, _, err := hashFile(goldenPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := readJSONMap(t, manifestPath)
+	manifest["expected_snapshot_sha256"] = snapshotSHA
+	manifest["verification_receipt"].(map[string]any)["candidate_snapshot_sha256"] = snapshotSHA
+	tamperedManifestPath := filepath.Join(t.TempDir(), "mismatched-golden-manifest.json")
+	writeJSONFile(t, tamperedManifestPath, manifest)
+
+	err = run([]string{"verify-restore", "-db", backup, "-golden", goldenPath, "-manifest", tamperedManifestPath})
+	if err == nil {
+		t.Fatal("mismatched restore snapshot was accepted")
+	}
+	if got, want := err.Error(), "restored snapshot does not match golden"; got != want {
+		t.Fatal("restore mismatch error was not redacted")
+	}
+	for _, forbidden := range []string{`"cash"`, "778", "AAPL", "78.6", "event_cash_001", "receipt_golden_001"} {
+		if strings.Contains(err.Error(), forbidden) {
+			t.Fatalf("restore mismatch error leaked %q", forbidden)
+		}
+	}
+}
+
 func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
 	var schema map[string]any
 	contract, err := os.ReadFile(filepath.Join("..", "..", "contracts", "backup-manifest.schema.json"))

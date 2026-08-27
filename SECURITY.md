@@ -23,6 +23,7 @@ Omni-Folio는 계좌·거래·주문 데이터를 다루는 개인용 금융 프
 - 실제 broker secret과 token은 Git, Flutter bundle, Python research, fixture, crash report에 들어가면 안 됩니다.
 - 키움 OAuth의 read-only scope는 공식 공개 문서에서 확인되지 않았습니다. 따라서 초기 adapter는 고정된 조회 API-ID만 호출하고 submit method·route를 갖지 않으며, key 자체는 주문 권한이 있을 수 있는 고위험 secret으로 취급합니다.
 - 원계좌번호와 broker 주문번호는 Go 경계에서 별도 alias key로 불투명 식별자로 바꾸고, client에는 필요한 경우 server가 만든 마스킹 표시값만 전달합니다.
+- restore snapshot 불일치 오류와 CLI log는 고정된 비민감 문구만 사용하며 cash, holdings, realized PnL과 event/receipt provenance를 포함하지 않습니다.
 - `.env.example`에는 비밀값이 없는 local reference만 둡니다. 실제 secret은 개발 시 OS keychain, cloud 전환 시 secret manager가 소유합니다.
 - 현재 Compose profile에는 인증·TLS가 없고 `127.0.0.1` 전용입니다. 외부 공개는 지원하지 않습니다.
 - 실거래는 아직 구현·활성화돼 있지 않습니다. 향후에도 server-side 승인, allowlist, promotion evidence, kill switch를 매 주문마다 검증해야 합니다.
