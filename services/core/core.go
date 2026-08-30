@@ -32,13 +32,13 @@ import (
 const (
 	maxBodyBytes       = 1 << 20
 	maxImportRows      = 10_000
-	latestSchema       = 9
+	latestSchema       = 10
 	zeroTime           = "1970-01-01T00:00:00Z"
 	csvSchema          = "omni-folio.csv.v1"
 	mappingSchema      = "canonical-transaction.v4"
-	backupFormat       = "omni-folio-backup.v5"
-	backupSchema       = "omni-folio.sqlite.v9"
-	legacyBackupSchema = "omni-folio.sqlite.v8"
+	backupFormat       = "omni-folio-backup.v6"
+	backupSchema       = "omni-folio.sqlite.v10"
+	legacyBackupFormat = "omni-folio-backup.v5"
 )
 
 //go:embed migrations/*.sql
@@ -193,6 +193,8 @@ type BackupManifest struct {
 	StrategyEvidenceCount        int                 `json:"strategy_evidence_count"`
 	StrategySelectionEventCount  int                 `json:"strategy_selection_event_count"`
 	SelectedStrategyResultSHA256 string              `json:"selected_strategy_result_sha256"`
+	FXObservationStateSHA256     string              `json:"fx_observation_state_sha256"`
+	FXObservationCount           int                 `json:"fx_observation_count"`
 	DBSHA256                     string              `json:"db_sha256"`
 	SizeBytes                    int64               `json:"size_bytes"`
 	ExpectedSnapshotSHA256       string              `json:"expected_snapshot_sha256"`
@@ -206,22 +208,24 @@ type BackupEncryption struct {
 }
 
 type VerificationReceipt struct {
-	ReceiptID                       string   `json:"receipt_id"`
-	CandidateID                     string   `json:"candidate_id"`
-	VerifiedAt                      string   `json:"verified_at"`
-	Status                          string   `json:"status"`
-	IntegrityCheck                  string   `json:"integrity_check"`
-	GoldenSnapshotCheck             string   `json:"golden_snapshot_check"`
-	OrderStateCheck                 string   `json:"order_state_check"`
-	BrokerStateCheck                string   `json:"broker_state_check"`
-	StrategyRegistryCheck           string   `json:"strategy_registry_check"`
-	CandidateDBSHA256               string   `json:"candidate_db_sha256"`
-	CandidateSnapshotSHA256         string   `json:"candidate_snapshot_sha256"`
-	CandidateOrderStateSHA256       string   `json:"candidate_order_state_sha256"`
-	CandidateBrokerStateSHA256      string   `json:"candidate_broker_state_sha256"`
-	CandidateStrategyRegistrySHA256 string   `json:"candidate_strategy_registry_sha256"`
-	EligibleForActivation           bool     `json:"eligible_for_activation"`
-	Errors                          []string `json:"errors"`
+	ReceiptID                         string   `json:"receipt_id"`
+	CandidateID                       string   `json:"candidate_id"`
+	VerifiedAt                        string   `json:"verified_at"`
+	Status                            string   `json:"status"`
+	IntegrityCheck                    string   `json:"integrity_check"`
+	GoldenSnapshotCheck               string   `json:"golden_snapshot_check"`
+	OrderStateCheck                   string   `json:"order_state_check"`
+	BrokerStateCheck                  string   `json:"broker_state_check"`
+	StrategyRegistryCheck             string   `json:"strategy_registry_check"`
+	FXObservationCheck                string   `json:"fx_observation_check"`
+	CandidateDBSHA256                 string   `json:"candidate_db_sha256"`
+	CandidateSnapshotSHA256           string   `json:"candidate_snapshot_sha256"`
+	CandidateOrderStateSHA256         string   `json:"candidate_order_state_sha256"`
+	CandidateBrokerStateSHA256        string   `json:"candidate_broker_state_sha256"`
+	CandidateStrategyRegistrySHA256   string   `json:"candidate_strategy_registry_sha256"`
+	CandidateFXObservationStateSHA256 string   `json:"candidate_fx_observation_state_sha256"`
+	EligibleForActivation             bool     `json:"eligible_for_activation"`
+	Errors                            []string `json:"errors"`
 }
 
 type appError struct {
@@ -285,7 +289,7 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("unsupported schema version %d", current)
 		}
 	}
-	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql"}
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql"}
 	for version := current + 1; version <= latestSchema; version++ {
 		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
 		if err != nil {
@@ -372,6 +376,7 @@ func (s *Service) routes() http.Handler {
 	mux.HandleFunc("GET /readyz", s.handleReady)
 	mux.HandleFunc("GET /v1/status", s.handleStatus)
 	mux.HandleFunc("GET /v1/market-data/candles", s.handleMarketDataCandles)
+	mux.HandleFunc("GET /v1/market-data/fx/latest", s.handleLatestFXObservation)
 	mux.HandleFunc("GET /v1/broker-reconciliation/latest", s.handleLatestBrokerReconciliation)
 	mux.HandleFunc("GET /v1/orders", s.handleLocalOrders)
 	mux.HandleFunc("GET /v1/ledger/activities", s.handleLedgerActivities)
@@ -1296,6 +1301,10 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err != nil {
 		return nil, fmt.Errorf("source strategy registry recovery proof: %w", err)
 	}
+	sourceFX, err := proveFXObservationRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source FX observation recovery proof: %w", err)
+	}
 	createdAt := now().UTC()
 	quoted := strings.ReplaceAll(out, "'", "''")
 	if _, err := db.Exec(`VACUUM INTO '` + quoted + `'`); err != nil {
@@ -1314,6 +1323,10 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err != nil {
 		return nil, err
 	}
+	candidateFX, err := verifyFXObservationRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
 	if sourceOrders != candidateOrders {
 		return nil, errors.New("backup order recovery proof does not match source")
 	}
@@ -1322,6 +1335,9 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	}
 	if !sameStrategyRegistryProof(sourceStrategy, candidateStrategy) {
 		return nil, errors.New("backup strategy registry recovery proof does not match source")
+	}
+	if sourceFX != candidateFX {
+		return nil, errors.New("backup FX observation recovery proof does not match source")
 	}
 	dbSHA, size, err := hashFile(out)
 	if err != nil {
@@ -1341,13 +1357,15 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 		BrokerReconciliationCount: sourceBroker.Reconciliations,
 		StrategyRegistrySHA256:    sourceStrategy.SHA256, StrategyEvidenceCount: sourceStrategy.Evidence,
 		StrategySelectionEventCount: sourceStrategy.Events, SelectedStrategyResultSHA256: sourceStrategy.SelectedResultSHA256,
+		FXObservationStateSHA256: sourceFX.SHA256, FXObservationCount: sourceFX.Observations,
 		DBSHA256: dbSHA, SizeBytes: size, ExpectedSnapshotSHA256: snapshotSHA,
 		Encryption: BackupEncryption{Encrypted: false, Algorithm: "none"},
 		VerificationReceipt: VerificationReceipt{
 			ReceiptID: id("backup_verification"), CandidateID: id("restore_candidate"), VerifiedAt: verifiedAt.Format(time.RFC3339Nano),
-			Status: "verified", IntegrityCheck: "ok", GoldenSnapshotCheck: "ok", OrderStateCheck: "ok", BrokerStateCheck: "ok", StrategyRegistryCheck: "ok", CandidateDBSHA256: dbSHA,
+			Status: "verified", IntegrityCheck: "ok", GoldenSnapshotCheck: "ok", OrderStateCheck: "ok", BrokerStateCheck: "ok", StrategyRegistryCheck: "ok", FXObservationCheck: "ok", CandidateDBSHA256: dbSHA,
 			CandidateSnapshotSHA256: snapshotSHA, CandidateOrderStateSHA256: candidateOrders.SHA256,
-			CandidateBrokerStateSHA256: candidateBroker.SHA256, CandidateStrategyRegistrySHA256: candidateStrategy.SHA256, EligibleForActivation: true, Errors: []string{},
+			CandidateBrokerStateSHA256: candidateBroker.SHA256, CandidateStrategyRegistrySHA256: candidateStrategy.SHA256,
+			CandidateFXObservationStateSHA256: candidateFX.SHA256, EligibleForActivation: true, Errors: []string{},
 		},
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
@@ -1377,8 +1395,24 @@ func verifyRestore(path, goldenPath string) error {
 	if _, err := verifyBrokerRestoreProof(path); err != nil {
 		return err
 	}
-	_, err := verifyStrategyRestoreProof(path)
+	if _, err := verifyStrategyRestoreProof(path); err != nil {
+		return err
+	}
+	_, err := verifyFXObservationRestoreProof(path)
 	return err
+}
+
+func verifyFXObservationRestoreProof(path string) (fxObservationRecoveryProof, error) {
+	db, err := openExistingDB(path)
+	if err != nil {
+		return fxObservationRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := proveFXObservationRecovery(context.Background(), db)
+	if err != nil {
+		return fxObservationRecoveryProof{}, fmt.Errorf("candidate FX observation recovery proof: %w", err)
+	}
+	return proof, nil
 }
 
 func verifyStrategyRestoreProof(path string) (strategyRegistryRecoveryProof, error) {
@@ -1453,7 +1487,7 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	if err := requireSchema(db); err != nil {
 		return fmt.Errorf("restore schema: %w", err)
 	}
-	for _, table := range []string{"events", "order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events"} {
+	for _, table := range []string{"events", "order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "fx_observations"} {
 		var strict int
 		if err := db.QueryRow(`SELECT strict FROM pragma_table_list WHERE schema='main' AND type='table' AND name=?`, table).Scan(&strict); err != nil {
 			return fmt.Errorf("restore order table %s: %w", table, err)
@@ -1500,6 +1534,9 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		{"broker_snapshot_reconciliations", []string{"snapshot_id", "ledger_account_id", "ledger_revision"}, "u"},
 		{"strategy_research_evidence", []string{"result_sha256"}, "u"},
 		{"strategy_selection_events", []string{"event_id"}, "u"},
+		{"fx_observations", []string{"observation_id"}, "u"},
+		{"fx_observations", []string{"source", "source_observation_id"}, "u"},
+		{"fx_observations", []string{"source", "base_currency", "quote_currency", "observed_at"}, "u"},
 	} {
 		ok, err := hasUniqueIndex(db, unique.table, unique.columns, unique.origin)
 		if err != nil {
@@ -1509,7 +1546,15 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 			return fmt.Errorf("restore order table %s lacks required unique columns %s", unique.table, strings.Join(unique.columns, ","))
 		}
 	}
-	for _, table := range []string{"events", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events"} {
+	var fxIndexDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='index' AND name='fx_observations_latest_idx' AND tbl_name='fx_observations'`).Scan(&fxIndexDefinition); err != nil {
+		return fmt.Errorf("restore FX observation latest index: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(fxIndexDefinition), " ")) !=
+		"create index fx_observations_latest_idx on fx_observations(source, base_currency, quote_currency, observed_at desc, sequence desc)" {
+		return errors.New("restore FX observations lack the required latest index")
+	}
+	for _, table := range []string{"events", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "fx_observations"} {
 		var sequenceType string
 		var sequencePK, primaryKeyColumns, primaryKeyIndexes int
 		if err := db.QueryRow(`SELECT type, pk FROM pragma_table_info(?) WHERE name='sequence'`, table).Scan(&sequenceType, &sequencePK); err != nil {
@@ -1593,6 +1638,8 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		"strategy_research_evidence_no_delete":      {"strategy_research_evidence", "delete"},
 		"strategy_selection_events_no_update":       {"strategy_selection_events", "update"},
 		"strategy_selection_events_no_delete":       {"strategy_selection_events", "delete"},
+		"fx_observations_no_update":                 {"fx_observations", "update"},
+		"fx_observations_no_delete":                 {"fx_observations", "delete"},
 	}
 	rows, err := db.Query(`SELECT name, tbl_name, sql FROM sqlite_master WHERE type='trigger'`)
 	if err != nil {
@@ -1712,12 +1759,31 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err := dec.Decode(&manifest); err != nil {
 		return fmt.Errorf("backup manifest: %w", err)
 	}
-	if manifest.FormatVersion != backupFormat || (manifest.SchemaVersion != backupSchema && manifest.SchemaVersion != legacyBackupSchema) ||
-		manifest.Encryption.Encrypted || manifest.Encryption.Algorithm != "none" {
+	currentManifest := manifest.FormatVersion == backupFormat && manifest.SchemaVersion == backupSchema
+	legacyManifest := manifest.FormatVersion == legacyBackupFormat &&
+		(manifest.SchemaVersion == "omni-folio.sqlite.v8" || manifest.SchemaVersion == "omni-folio.sqlite.v9")
+	if (!currentManifest && !legacyManifest) || manifest.Encryption.Encrypted || manifest.Encryption.Algorithm != "none" {
 		return errors.New("unsupported backup manifest version or encryption")
 	}
+	if legacyManifest {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(manifestBytes, &fields); err != nil {
+			return fmt.Errorf("backup manifest fields: %w", err)
+		}
+		if fields["fx_observation_state_sha256"] != nil || fields["fx_observation_count"] != nil {
+			return errors.New("legacy backup manifest contains current FX observation fields")
+		}
+		var receiptFields map[string]json.RawMessage
+		if err := json.Unmarshal(fields["verification_receipt"], &receiptFields); err != nil {
+			return fmt.Errorf("backup verification receipt fields: %w", err)
+		}
+		if receiptFields["fx_observation_check"] != nil || receiptFields["candidate_fx_observation_state_sha256"] != nil {
+			return errors.New("legacy backup receipt contains current FX observation fields")
+		}
+	}
 	receipt := manifest.VerificationReceipt
-	if receipt.Status != "verified" || receipt.IntegrityCheck != "ok" || receipt.GoldenSnapshotCheck != "ok" || receipt.OrderStateCheck != "ok" || receipt.BrokerStateCheck != "ok" || receipt.StrategyRegistryCheck != "ok" || !receipt.EligibleForActivation || len(receipt.Errors) != 0 {
+	if receipt.Status != "verified" || receipt.IntegrityCheck != "ok" || receipt.GoldenSnapshotCheck != "ok" || receipt.OrderStateCheck != "ok" || receipt.BrokerStateCheck != "ok" || receipt.StrategyRegistryCheck != "ok" ||
+		(currentManifest && receipt.FXObservationCheck != "ok") || !receipt.EligibleForActivation || len(receipt.Errors) != 0 {
 		return errors.New("backup manifest is not eligible for activation")
 	}
 	dbSHA, size, err := hashFile(path)
@@ -1761,8 +1827,8 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 			resultErr = errors.Join(resultErr, fmt.Errorf("remove migrated restore candidate: %w", err))
 		}
 	}()
-	if manifest.SchemaVersion == legacyBackupSchema {
-		temporaryDir, err = os.MkdirTemp("", "omni-folio-restore-v8.*")
+	if manifest.SchemaVersion != backupSchema {
+		temporaryDir, err = os.MkdirTemp("", "omni-folio-restore-legacy.*")
 		if err != nil {
 			return err
 		}
@@ -1776,7 +1842,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 		}
 		if err := migrate(candidateDB); err != nil {
 			_ = candidateDB.Close()
-			return fmt.Errorf("migrate restored schema-v8 candidate: %w", err)
+			return fmt.Errorf("migrate restored legacy candidate: %w", err)
 		}
 		if err := candidateDB.Close(); err != nil {
 			return err
@@ -1809,6 +1875,18 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 		manifest.StrategyEvidenceCount != strategy.Evidence || manifest.StrategySelectionEventCount != strategy.Events ||
 		manifest.SelectedStrategyResultSHA256 != strategy.SelectedResultSHA256 {
 		return errors.New("backup strategy registry recovery proof mismatch")
+	}
+	fx, err := verifyFXObservationRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if currentManifest {
+		if manifest.FXObservationStateSHA256 != fx.SHA256 || receipt.CandidateFXObservationStateSHA256 != fx.SHA256 ||
+			manifest.FXObservationCount != fx.Observations {
+			return errors.New("backup FX observation recovery proof mismatch")
+		}
+	} else if fx.Observations != 0 || fx.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
+		return errors.New("legacy backup unexpectedly contains FX observations")
 	}
 	db, err := openExistingDB(verificationPath)
 	if err != nil {

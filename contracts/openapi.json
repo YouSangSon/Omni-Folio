@@ -164,6 +164,33 @@
         }
       }
     },
+    "/v1/market-data/fx/latest": {
+      "get": {
+        "operationId": "getLatestDirectFXObservation",
+        "description": "Returns one directly stored local-fixture FX observation at or before as_of. The direction is exact: rate is quote-currency units per one base-currency unit. No inverse, cross, interpolation, FX_EXCHANGE inference, valuation, or live-freshness claim is provided.",
+        "parameters": [
+          {"name": "source", "in": "query", "required": true, "schema": {"const": "local_fixture"}},
+          {"name": "base_currency", "in": "query", "required": true, "schema": {"type": "string", "pattern": "^[A-Z]{3}$"}},
+          {"name": "quote_currency", "in": "query", "required": true, "schema": {"type": "string", "pattern": "^[A-Z]{3}$"}},
+          {"name": "as_of", "in": "query", "required": true, "schema": {"type": "string", "format": "date-time"}}
+        ],
+        "responses": {
+          "200": {
+            "description": "A directly observed local sample with stale/sample provenance.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LocalFixtureFXObservation"}}}
+          },
+          "400": {"$ref": "#/components/responses/BadRequest"},
+          "404": {
+            "description": "No eligible observation exists for the exact source, direction, and cutoff.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "500": {
+            "description": "Stored observation state failed canonical validation.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          }
+        }
+      }
+    },
     "/v1/broker-reconciliation/latest": {
       "get": {
         "operationId": "getLatestBrokerReconciliation",
@@ -526,6 +553,24 @@
             }
           }
         ]
+      },
+      "LocalFixtureFXObservation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["observation_id", "source", "base_currency", "quote_currency", "rate", "observed_at", "fetched_at", "recorded_at", "sample", "state", "issues"],
+        "properties": {
+          "observation_id": {"$ref": "#/components/schemas/OpaqueId"},
+          "source": {"const": "local_fixture"},
+          "base_currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+          "quote_currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+          "rate": {"$ref": "#/components/schemas/Decimal", "description": "Exact quote-currency units per one base-currency unit."},
+          "observed_at": {"type": "string", "format": "date-time"},
+          "fetched_at": {"type": "string", "format": "date-time"},
+          "recorded_at": {"type": "string", "format": "date-time"},
+          "sample": {"const": true},
+          "state": {"const": "stale"},
+          "issues": {"type": "array", "minItems": 1, "items": {"$ref": "#/components/schemas/Error"}}
+        }
       },
       "BrokerPositionDifference": {
         "type": "object",

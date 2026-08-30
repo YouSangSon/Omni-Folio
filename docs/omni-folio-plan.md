@@ -1091,3 +1091,14 @@ G1.9 closes the import-only History gap without adding a mutation surface, broke
 - The current single-process profile keeps the cursor encryption key in memory, so a restart invalidates outstanding cursors. A shared secret-manager key is required before claiming restart-stable or multi-replica pagination.
 
 Still open: full history browsing/search/export, source-level drill-down, FX rate series and base-currency valuation, trade/split/FX correction, broker cash/fill reconciliation, physical-device screen-reader evidence and every live-money path.
+
+## 2026-08-28 G1.10 continuation: append-only direct FX observations
+
+G1.10 closes the first durable prerequisite for valuation without changing portfolio math. A stored observation has one explicit direction: `rate` is quote-currency units per one base-currency unit. It is never inferred from an `FX_EXCHANGE` event and no inverse, cross, interpolation or fallback row is created.
+
+- Migration v10 adds a `STRICT`, insert-only `fx_observations` series with core-generated opaque ID, source observation identity, distinct uppercase currencies, positive canonical decimal, canonical UTC observed/fetched/recorded times and a canonical row hash. Exact source replay is idempotent; changed payloads and same-source pair/time conflicts fail closed.
+- `GET /v1/market-data/fx/latest` requires source, exact base/quote direction and an explicit as-of cutoff. Both observed and fetched time must be at or before the cutoff. It returns no account/source-private ID or converted portfolio amount and always labels the current local source `sample=true`, `state=stale`.
+- Backup v6/schema v10 adds the FX series digest/count to the verification receipt. Legacy v5/schema-v8 and schema-v9 artifacts are hash-checked in place, copied to an owned temporary directory, migrated through v10, verified with an empty FX proof, and removed without mutating their source.
+- `PortfolioSnapshot.valuation_status` stays `unavailable`; Flutter, broker/provider ingestion, scheduler, price observations, valuation, PnL and performance are unchanged.
+
+Still open: a versioned as-of/freshness policy, cash-only base-currency valuation, security-price observations and holding valuation, base-currency cost/PnL, TWR/XIRR, provider ingestion, correction, broker cash reconciliation, UI and every live-money path.

@@ -61,7 +61,7 @@ func TestFXExchangePreviewApplyReplayAndBackupRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v5" || manifest.SchemaVersion != "omni-folio.sqlite.v9" {
+	if manifest.FormatVersion != "omni-folio-backup.v6" || manifest.SchemaVersion != "omni-folio.sqlite.v10" {
 		t.Fatalf("FX backup versions drifted: %+v", manifest)
 	}
 	if err := verifyManifest(backup, golden, manifestPath); err != nil {
@@ -161,7 +161,37 @@ func TestOpenAPIExposesClosedFXExchangeContract(t *testing.T) {
 
 func TestVerifyManifestMigratesV8BackupCopy(t *testing.T) {
 	db, backup, golden, manifestPath := legacyV8Backup(t)
-	temporaryBefore, err := filepath.Glob(filepath.Join(os.TempDir(), "omni-folio-restore-v8.*"))
+	verifyLegacyBackupCopy(t, db, 8, backup, golden, manifestPath)
+}
+
+func TestVerifyManifestMigratesV9BackupCopy(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	golden := writeCurrentSnapshot(t, svc.db)
+	if _, err := svc.db.Exec(`DROP TRIGGER fx_observations_no_update; DROP TRIGGER fx_observations_no_delete; DROP TABLE fx_observations; DELETE FROM schema_migrations WHERE version=10`); err != nil {
+		t.Fatal(err)
+	}
+	backup := filepath.Join(t.TempDir(), "legacy-v9.db")
+	if _, err := svc.db.Exec(`VACUUM INTO '` + strings.ReplaceAll(backup, "'", "''") + `'`); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := writeLegacyV5Manifest(t, svc.db, backup, golden, "omni-folio.sqlite.v9")
+	verifyLegacyBackupCopy(t, svc.db, 9, backup, golden, manifestPath)
+	mixed := readJSONMap(t, manifestPath)
+	mixed["fx_observation_state_sha256"] = strings.Repeat("0", 64)
+	mixed["fx_observation_count"] = float64(0)
+	receipt := mixed["verification_receipt"].(map[string]any)
+	receipt["fx_observation_check"] = "ok"
+	receipt["candidate_fx_observation_state_sha256"] = strings.Repeat("0", 64)
+	mixedPath := filepath.Join(t.TempDir(), "mixed-v5-v6-manifest.json")
+	writeJSONFile(t, mixedPath, mixed)
+	if err := verifyManifest(backup, golden, mixedPath); err == nil {
+		t.Fatal("legacy manifest with v6-only FX fields was accepted")
+	}
+}
+
+func verifyLegacyBackupCopy(t *testing.T, db *sql.DB, wantVersion int, backup, golden, manifestPath string) {
+	t.Helper()
+	temporaryBefore, err := filepath.Glob(filepath.Join(os.TempDir(), "omni-folio-restore-legacy.*"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,12 +209,12 @@ func TestVerifyManifestMigratesV8BackupCopy(t *testing.T) {
 	if beforeSHA != afterSHA || beforeSize != afterSize {
 		t.Fatal("legacy backup was modified during verification")
 	}
-	temporaryAfter, err := filepath.Glob(filepath.Join(os.TempDir(), "omni-folio-restore-v8.*"))
+	temporaryAfter, err := filepath.Glob(filepath.Join(os.TempDir(), "omni-folio-restore-legacy.*"))
 	if err != nil || !reflect.DeepEqual(temporaryAfter, temporaryBefore) {
 		t.Fatalf("legacy verification left a temporary candidate: before=%v after=%v err=%v", temporaryBefore, temporaryAfter, err)
 	}
 	var version int
-	if err := db.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 8 {
+	if err := db.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != wantVersion {
 		t.Fatalf("legacy source database was migrated in place: version=%d err=%v", version, err)
 	}
 }
@@ -247,6 +277,12 @@ func legacyV8Backup(t *testing.T) (*sql.DB, string, string, string) {
 		Provenance: Provenance{EventIDs: []string{"legacy-event"}, ReceiptIDs: []string{"legacy-receipt"}},
 	})
 
+	manifestPath := writeLegacyV5Manifest(t, db, backup, golden, "omni-folio.sqlite.v8")
+	return db, backup, golden, manifestPath
+}
+
+func writeLegacyV5Manifest(t *testing.T, db *sql.DB, backup, golden, schema string) string {
+	t.Helper()
 	orders, err := proveOrderRecovery(context.Background(), db)
 	if err != nil {
 		t.Fatal(err)
@@ -267,8 +303,12 @@ func legacyV8Backup(t *testing.T) (*sql.DB, string, string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var sourceRevision int64
+	if err := db.QueryRow(`SELECT revision FROM ledger_meta WHERE singleton=1`).Scan(&sourceRevision); err != nil {
+		t.Fatal(err)
+	}
 	manifest := &BackupManifest{
-		FormatVersion: "omni-folio-backup.v5", SchemaVersion: "omni-folio.sqlite.v8", CreatedAt: "2026-01-02T00:02:00Z", SourceLedgerRevision: "rev_0000000001",
+		FormatVersion: "omni-folio-backup.v5", SchemaVersion: schema, CreatedAt: "2026-01-02T00:02:00Z", SourceLedgerRevision: revision(sourceRevision),
 		OrderStateSHA256: orders.SHA256, OrderCount: orders.Orders, OrderEventCount: orders.Events,
 		ExecutionAuthoritySHA256: orders.ExecutionAuthoritySHA256, ExecutionAuthorityEventCount: orders.ExecutionAuthorityEvents,
 		RiskReservationSHA256: orders.RiskReservationSHA256, RiskReservationCount: orders.RiskReservations,
@@ -283,8 +323,21 @@ func legacyV8Backup(t *testing.T) (*sql.DB, string, string, string) {
 		},
 	}
 	manifestPath := backup + ".manifest.json"
-	writeJSONFile(t, manifestPath, manifest)
-	return db, backup, golden, manifestPath
+	raw, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacy map[string]any
+	if err := json.Unmarshal(raw, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	delete(legacy, "fx_observation_state_sha256")
+	delete(legacy, "fx_observation_count")
+	receipt := legacy["verification_receipt"].(map[string]any)
+	delete(receipt, "fx_observation_check")
+	delete(receipt, "candidate_fx_observation_state_sha256")
+	writeJSONFile(t, manifestPath, legacy)
+	return manifestPath
 }
 
 func fxCSV(rows ...string) string {

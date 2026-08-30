@@ -19,7 +19,7 @@ Scope: Go core internal-only synthetic Kiwoom `LIMIT`/`KRW`/`KRX` order state. N
 - [x] **K2A5 schema and restart:** migration v1→v4 preserves v1 data, readiness requires the exact contiguous migration history, and order/authority tables are insert-only.
   - CHECK: `cd services/core && go test -run '^TestK2AOrderTablesAreInsertOnly$|^TestSchemaMigratesV1ToV4AndReadinessRequiresV4$|^TestHealthAndReadinessAreSeparate$' -count=1 ./...`
   - EVIDENCE: PASS.
-- [x] **K2A6 order-aware backup:** originally passed as backup v2; current backup v5 retains source/candidate order digests/counts, row hash/metadata/full replay and schema protections while adding broker-state and K2C authority/reservation recovery evidence.
+- [x] **K2A6 order-aware backup:** originally passed as backup v2; current backup v6 retains source/candidate order digests/counts, row hash/metadata/full replay and schema protections while adding broker-state, K2C authority/reservation and FX-observation recovery evidence.
   - CHECK: `cd services/core && go test -run '^TestK2ABackup|^TestK2ARestore' -count=1 ./...`
   - EVIDENCE: PASS. Earlier backup formats are not eligible for automatic v5 activation.
 
