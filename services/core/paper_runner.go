@@ -135,6 +135,101 @@ func paperOrderIntent(accountRef string, signal PaperSignal, quantity, limitPric
 	}
 }
 
+func capitalizedPaperOrderIntent(signal PaperSignalEvent, side, quantity string) OrderIntent {
+	return OrderIntent{
+		ClientOrderID: "paper_" + signal.SignalID, Provider: "kiwoom", Mode: "paper", AccountRef: signal.AccountRef,
+		Symbol: signal.Symbol, Exchange: "KRX", Side: side, OrderType: "PAPER_MARKET", Quantity: quantity,
+		Currency: "KRW", StrategyResultSHA256: signal.StrategyResultSHA256,
+		StrategySelectionEventID: signal.StrategySelectionEventID, SignalSchemaVersion: signal.SchemaVersion,
+		SignalID: signal.SignalID, SignalDataSHA256: signal.DataSHA256, SignalDataAsOf: signal.DataAsOf,
+		SignalGeneratedAt: signal.GeneratedAt, SignalExpiresAt: signal.ExpiresAt, SignalTargetQuantity: signal.TargetQuantity,
+		PaperAccountingSessionID: signal.PaperAccountingSessionID, PaperAccountingPolicyVersion: paperAccountingPolicyVersion,
+		PaperSignalEventID: signal.EventID, ExecutionPolicySHA256: signal.ExecutionPolicySHA256,
+	}
+}
+
+func (s *Service) admitPaperSignal(ctx context.Context, accountRef string, signal PaperSignal, fencingToken int64) (*PaperSignalEvent, *OrderState, error) {
+	if s == nil || s.db == nil || s.now == nil || !orderAlias(accountRef, "account") || fencingToken <= 0 {
+		return nil, nil, errors.New("paper signal admission is not configured")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer tx.Rollback()
+	event, err := s.recordPaperSignalEventTx(ctx, tx, accountRef, signal)
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, err := s.requireCurrentSyntheticExecutionLease(ctx, tx, accountRef, fencingToken, s.now().UTC()); err != nil {
+		return nil, nil, err
+	}
+	orderID, exists, err := paperOrderBySignalFrom(ctx, tx, accountRef, signal.SignalID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if exists {
+		intent, err := loadOrderIntentFrom(ctx, tx, orderID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if _, boundSignal, err := validateCapitalizedPaperOrderBindings(ctx, tx, intent); err != nil || boundSignal.EventID != event.EventID {
+			return nil, nil, errors.New("paper signal conflicts with its recorded order")
+		}
+		state, err := loadOrderStateFrom(ctx, tx, orderID)
+		if err != nil {
+			return nil, nil, err
+		}
+		return event, state, nil
+	}
+	target, ok := new(big.Int).SetString(event.TargetQuantity, 10)
+	if !ok || target.Sign() < 0 {
+		return nil, nil, errors.New("paper target quantity is invalid")
+	}
+	projection, err := replayPaperProjectionFrom(ctx, tx, accountRef, event.Symbol)
+	if err != nil {
+		return nil, nil, err
+	}
+	if projection.active {
+		if projection.quantity.Cmp(target) == 0 {
+			if err := tx.Commit(); err != nil {
+				return nil, nil, err
+			}
+			return event, nil, nil
+		}
+		return nil, nil, errors.New("active paper order target cannot be replaced")
+	}
+	delta := new(big.Int).Sub(target, projection.quantity)
+	if delta.Sign() == 0 {
+		if err := tx.Commit(); err != nil {
+			return nil, nil, err
+		}
+		return event, nil, nil
+	}
+	side := "BUY"
+	quantity := new(big.Int).Set(delta)
+	if delta.Sign() < 0 {
+		side = "SELL"
+		quantity.Neg(quantity)
+		if quantity.Cmp(projection.quantity) > 0 {
+			return nil, nil, errors.New("paper SELL exceeds filled holdings")
+		}
+	}
+	intent := capitalizedPaperOrderIntent(*event, side, quantity.String())
+	state, err := s.recordOrderIntentTx(ctx, tx, intent)
+	if err != nil {
+		return nil, nil, err
+	}
+	state, _, err = s.authorizePaperDispatchOnceTx(ctx, tx, state.OrderID, fencingToken)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, nil, err
+	}
+	return event, state, nil
+}
+
 func (s *Service) recordPaperTarget(ctx context.Context, accountRef string, signal PaperSignal, limitPrice string, target *big.Int, generatedAt, expiresAt, now time.Time, fencingToken int64) (*OrderState, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -207,53 +302,77 @@ func paperOrderBySignalFrom(ctx context.Context, q orderQuerier, accountRef, sig
 }
 
 func paperProjectedQuantityFrom(ctx context.Context, q orderQuerier, accountRef, symbol string) (*big.Int, error) {
-	rows, err := q.QueryContext(ctx, `SELECT order_id FROM order_idempotency WHERE mode='paper' AND account_ref=? ORDER BY rowid`, accountRef)
+	projection, err := replayPaperProjectionFrom(ctx, q, accountRef, symbol)
 	if err != nil {
 		return nil, err
+	}
+	return projection.quantity, nil
+}
+
+type paperProjection struct {
+	quantity *big.Int
+	active   bool
+}
+
+func replayPaperProjectionFrom(ctx context.Context, q orderQuerier, accountRef, symbol string) (paperProjection, error) {
+	rows, err := q.QueryContext(ctx, `SELECT order_id FROM order_idempotency WHERE mode='paper' AND account_ref=? ORDER BY rowid`, accountRef)
+	if err != nil {
+		return paperProjection{}, err
 	}
 	var orderIDs []string
 	for rows.Next() {
 		var orderID string
 		if err := rows.Scan(&orderID); err != nil {
 			rows.Close()
-			return nil, err
+			return paperProjection{}, err
 		}
 		orderIDs = append(orderIDs, orderID)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		return nil, err
+		return paperProjection{}, err
 	}
 	if err := rows.Close(); err != nil {
-		return nil, err
+		return paperProjection{}, err
 	}
 	projected := new(big.Int)
+	activeCount := 0
 	for _, orderID := range orderIDs {
 		intent, err := loadOrderIntentFrom(ctx, q, orderID)
 		if err != nil {
-			return nil, err
+			return paperProjection{}, err
+		}
+		if intent.SignalSchemaVersion != capitalizedPaperSignalSchema {
+			return paperProjection{}, errors.New("paper projection contains an uncapitalized legacy order")
 		}
 		if intent.Symbol != symbol {
 			continue
 		}
-		if intent.Side != "BUY" {
-			return nil, errors.New("paper projected position contains a non-BUY order")
-		}
 		state, err := loadOrderStateFrom(ctx, q, orderID)
 		if err != nil {
-			return nil, err
+			return paperProjection{}, err
 		}
-		quantity := state.FilledQuantity
-		if state.Status == "RECORDED" || state.Status == "READY" || reservationIsActive(state) {
-			quantity = state.Quantity
+		total, totalOK := new(big.Int).SetString(state.Quantity, 10)
+		filled, filledOK := new(big.Int).SetString(state.FilledQuantity, 10)
+		if !totalOK || !filledOK || filled.Sign() < 0 || filled.Cmp(total) > 0 {
+			return paperProjection{}, errors.New("paper projected quantity is invalid")
 		}
-		value, ok := new(big.Int).SetString(quantity, 10)
-		if !ok {
-			return nil, errors.New("paper projected quantity is invalid")
+		sign := int64(1)
+		if intent.Side == "SELL" {
+			sign = -1
 		}
-		projected.Add(projected, value)
+		projected.Add(projected, new(big.Int).Mul(filled, big.NewInt(sign)))
+		active := state.Status == "RECORDED" || state.Status == "READY" || reservationIsActive(state)
+		if active {
+			activeCount++
+			remaining := new(big.Int).Sub(total, filled)
+			projected.Add(projected, remaining.Mul(remaining, big.NewInt(sign)))
+		}
 	}
-	return projected, nil
+	if activeCount > 1 || projected.Sign() < 0 {
+		return paperProjection{}, errors.New("paper projection violates the one-active-order or long-only boundary")
+	}
+	return paperProjection{quantity: projected, active: activeCount == 1}, nil
 }
 
 func paperProviderAlias(kind string, parts ...string) string {

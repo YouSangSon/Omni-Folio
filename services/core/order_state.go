@@ -21,26 +21,30 @@ var (
 )
 
 type OrderIntent struct {
-	ClientOrderID            string `json:"client_order_id"`
-	Provider                 string `json:"provider"`
-	Mode                     string `json:"mode"`
-	AccountRef               string `json:"account_ref"`
-	Symbol                   string `json:"symbol"`
-	Exchange                 string `json:"exchange"`
-	Side                     string `json:"side"`
-	OrderType                string `json:"order_type"`
-	Quantity                 string `json:"quantity"`
-	LimitPrice               string `json:"limit_price"`
-	Currency                 string `json:"currency"`
-	StrategyResultSHA256     string `json:"strategy_result_sha256,omitempty"`
-	StrategySelectionEventID string `json:"strategy_selection_event_id,omitempty"`
-	SignalSchemaVersion      string `json:"signal_schema_version,omitempty"`
-	SignalID                 string `json:"signal_id,omitempty"`
-	SignalDataSHA256         string `json:"signal_data_sha256,omitempty"`
-	SignalDataAsOf           string `json:"signal_data_as_of,omitempty"`
-	SignalGeneratedAt        string `json:"signal_generated_at,omitempty"`
-	SignalExpiresAt          string `json:"signal_expires_at,omitempty"`
-	SignalTargetQuantity     string `json:"signal_target_quantity,omitempty"`
+	ClientOrderID                string `json:"client_order_id"`
+	Provider                     string `json:"provider"`
+	Mode                         string `json:"mode"`
+	AccountRef                   string `json:"account_ref"`
+	Symbol                       string `json:"symbol"`
+	Exchange                     string `json:"exchange"`
+	Side                         string `json:"side"`
+	OrderType                    string `json:"order_type"`
+	Quantity                     string `json:"quantity"`
+	LimitPrice                   string `json:"limit_price"`
+	Currency                     string `json:"currency"`
+	StrategyResultSHA256         string `json:"strategy_result_sha256,omitempty"`
+	StrategySelectionEventID     string `json:"strategy_selection_event_id,omitempty"`
+	SignalSchemaVersion          string `json:"signal_schema_version,omitempty"`
+	SignalID                     string `json:"signal_id,omitempty"`
+	SignalDataSHA256             string `json:"signal_data_sha256,omitempty"`
+	SignalDataAsOf               string `json:"signal_data_as_of,omitempty"`
+	SignalGeneratedAt            string `json:"signal_generated_at,omitempty"`
+	SignalExpiresAt              string `json:"signal_expires_at,omitempty"`
+	SignalTargetQuantity         string `json:"signal_target_quantity,omitempty"`
+	PaperAccountingSessionID     string `json:"paper_accounting_session_id,omitempty"`
+	PaperAccountingPolicyVersion string `json:"paper_accounting_policy_version,omitempty"`
+	PaperSignalEventID           string `json:"paper_signal_event_id,omitempty"`
+	ExecutionPolicySHA256        string `json:"execution_policy_sha256,omitempty"`
 }
 
 type OrderEvent struct {
@@ -54,6 +58,7 @@ type OrderEvent struct {
 	Price                string `json:"price,omitempty"`
 	OccurredAt           string `json:"occurred_at,omitempty"`
 	RiskReservationID    string `json:"risk_reservation_id,omitempty"`
+	PaperAuthorizationID string `json:"paper_authorization_id,omitempty"`
 	RiskPolicyVersion    string `json:"risk_policy_version,omitempty"`
 	FencingToken         int64  `json:"fencing_token,omitempty"`
 }
@@ -131,8 +136,23 @@ func proveOrderRecovery(ctx context.Context, q orderQuerier) (orderRecoveryProof
 		return orderRecoveryProof{}, err
 	}
 
-	eventRows, err := q.QueryContext(ctx, `SELECT sequence,event_id,event_sha256,order_id,event_type,source,provider_order_ref,provider_execution_ref,event_json,recorded_at
-		,authority_reservation_id FROM order_events ORDER BY sequence`)
+	var hasPaperAuthorizationColumn int
+	if err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('order_events') WHERE name='paper_authorization_id'`).Scan(&hasPaperAuthorizationColumn); err != nil {
+		return orderRecoveryProof{}, err
+	}
+	var includePaperAuthorizationProof int
+	if hasPaperAuthorizationColumn != 0 {
+		if err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM order_events WHERE paper_authorization_id IS NOT NULL`).Scan(&includePaperAuthorizationProof); err != nil {
+			return orderRecoveryProof{}, err
+		}
+	}
+	eventQuery := `SELECT sequence,event_id,event_sha256,order_id,event_type,source,provider_order_ref,provider_execution_ref,event_json,recorded_at,
+		authority_reservation_id FROM order_events ORDER BY sequence`
+	if hasPaperAuthorizationColumn != 0 {
+		eventQuery = `SELECT sequence,event_id,event_sha256,order_id,event_type,source,provider_order_ref,provider_execution_ref,event_json,recorded_at,
+			authority_reservation_id,paper_authorization_id FROM order_events ORDER BY sequence`
+	}
+	eventRows, err := q.QueryContext(ctx, eventQuery)
 	if err != nil {
 		return orderRecoveryProof{}, err
 	}
@@ -140,8 +160,12 @@ func proveOrderRecovery(ctx context.Context, q orderQuerier) (orderRecoveryProof
 	for eventRows.Next() {
 		var sequence int64
 		var eventID, eventSHA, orderID, eventType, source, eventJSON, recordedAt string
-		var providerOrderRef, providerExecutionRef, authorityReservationID sql.NullString
-		if err := eventRows.Scan(&sequence, &eventID, &eventSHA, &orderID, &eventType, &source, &providerOrderRef, &providerExecutionRef, &eventJSON, &recordedAt, &authorityReservationID); err != nil {
+		var providerOrderRef, providerExecutionRef, authorityReservationID, paperAuthorizationID sql.NullString
+		values := []any{&sequence, &eventID, &eventSHA, &orderID, &eventType, &source, &providerOrderRef, &providerExecutionRef, &eventJSON, &recordedAt, &authorityReservationID}
+		if hasPaperAuthorizationColumn != 0 {
+			values = append(values, &paperAuthorizationID)
+		}
+		if err := eventRows.Scan(values...); err != nil {
 			eventRows.Close()
 			return orderRecoveryProof{}, err
 		}
@@ -164,12 +188,17 @@ func proveOrderRecovery(ctx context.Context, q orderQuerier) (orderRecoveryProof
 		}
 		if string(canonical) != eventJSON || actualSHA != eventSHA || event.EventID != eventID || event.OrderID != orderID ||
 			event.Type != eventType || event.Source != source || !nullableMatches(providerOrderRef, event.ProviderOrderRef) ||
-			!nullableMatches(providerExecutionRef, event.ProviderExecutionRef) || !nullableMatches(authorityReservationID, event.RiskReservationID) {
+			!nullableMatches(providerExecutionRef, event.ProviderExecutionRef) || !nullableMatches(authorityReservationID, event.RiskReservationID) ||
+			!nullableMatches(paperAuthorizationID, event.PaperAuthorizationID) {
 			eventRows.Close()
 			return orderRecoveryProof{}, fmt.Errorf("order event %q metadata or hash mismatch", eventID)
 		}
-		if err := encoder.Encode([]any{"order_events", sequence, eventID, eventSHA, orderID, eventType, source,
-			providerOrderRef, providerExecutionRef, eventJSON, recordedAt, authorityReservationID}); err != nil {
+		proofRow := []any{"order_events", sequence, eventID, eventSHA, orderID, eventType, source,
+			providerOrderRef, providerExecutionRef, eventJSON, recordedAt, authorityReservationID}
+		if includePaperAuthorizationProof != 0 {
+			proofRow = append(proofRow, paperAuthorizationID)
+		}
+		if err := encoder.Encode(proofRow); err != nil {
 			eventRows.Close()
 			return orderRecoveryProof{}, err
 		}
@@ -242,16 +271,13 @@ func (s *Service) recordOrderIntentTx(ctx context.Context, tx *sql.Tx, intent Or
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
-	if intent.Mode == "paper" && intent.SignalSchemaVersion != paperSignalSchema {
-		return nil, errors.New("new paper orders require the target-based signal schema")
-	}
-	if intent.Mode == "paper" {
-		var capitalizedSignals int
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM paper_signal_events WHERE account_ref=?`, intent.AccountRef).Scan(&capitalizedSignals); err != nil {
+	if intent.Mode == "paper" && intent.SignalSchemaVersion != capitalizedPaperSignalSchema {
+		var schemaVersion int
+		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&schemaVersion); err != nil {
 			return nil, err
 		}
-		if capitalizedSignals != 0 {
-			return nil, errors.New("legacy paper order cannot follow a v3 signal")
+		if schemaVersion >= 17 {
+			return nil, errors.New("new paper orders require the target-based signal schema")
 		}
 	}
 	if err := validateStrategyOrderSelection(ctx, tx, intent); err != nil {
@@ -357,8 +383,7 @@ func appendOrderEventTx(ctx context.Context, tx *sql.Tx, event OrderEvent, recor
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO order_events(event_id,event_sha256,order_id,event_type,source,provider_order_ref,provider_execution_ref,event_json,recorded_at,authority_reservation_id) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-		event.EventID, eventSHA, event.OrderID, event.Type, event.Source, nullable(event.ProviderOrderRef), nullable(event.ProviderExecutionRef), string(eventJSON), recordedAt, nullable(event.RiskReservationID)); err != nil {
+	if err := insertOrderEventRow(ctx, tx, event, eventSHA, string(eventJSON), recordedAt); err != nil {
 		return nil, err
 	}
 	return next, nil
@@ -541,8 +566,8 @@ func validateOrderIntent(intent OrderIntent) error {
 		return errors.New("client_order_id is invalid")
 	}
 	if intent.Provider != "kiwoom" || (intent.Mode != "synthetic" && intent.Mode != "paper") || intent.Exchange != "KRX" ||
-		(intent.Side != "BUY" && intent.Side != "SELL") || intent.OrderType != "LIMIT" || intent.Currency != "KRW" {
-		return errors.New("order intent is outside the synthetic/paper Kiwoom LIMIT/KRW/KRX boundary")
+		(intent.Side != "BUY" && intent.Side != "SELL") || intent.Currency != "KRW" {
+		return errors.New("order intent is outside the synthetic/paper Kiwoom/KRW/KRX boundary")
 	}
 	if !orderAlias(intent.AccountRef, "account") {
 		return errors.New("account_ref must be an opaque Kiwoom account alias")
@@ -553,12 +578,19 @@ func validateOrderIntent(intent OrderIntent) error {
 	if !validOrderInteger(intent.Quantity) {
 		return errors.New("quantity must be a positive canonical integer")
 	}
-	if len(intent.LimitPrice) == 0 || len(intent.LimitPrice) > 64 {
-		return errors.New("limit_price is invalid")
-	}
-	price, err := parseDecimal(intent.LimitPrice)
-	if err != nil || price.Sign() <= 0 {
-		return errors.New("limit_price must be a positive canonical decimal")
+	capitalized := intent.Mode == "paper" && intent.SignalSchemaVersion == capitalizedPaperSignalSchema
+	if capitalized {
+		if intent.OrderType != "PAPER_MARKET" || intent.LimitPrice != "" {
+			return errors.New("capitalized paper order must be PAPER_MARKET without a limit price")
+		}
+	} else {
+		if intent.OrderType != "LIMIT" || len(intent.LimitPrice) == 0 || len(intent.LimitPrice) > 64 {
+			return errors.New("limit_price is invalid")
+		}
+		price, err := parseDecimal(intent.LimitPrice)
+		if err != nil || price.Sign() <= 0 {
+			return errors.New("limit_price must be a positive canonical decimal")
+		}
 	}
 	strategyBound := intent.StrategyResultSHA256 != "" || intent.StrategySelectionEventID != ""
 	if strategyBound && (!strategySHA256Pattern.MatchString(intent.StrategyResultSHA256) || !safeOrderID(intent.StrategySelectionEventID)) {
@@ -580,11 +612,27 @@ func validateOrderIntent(intent OrderIntent) error {
 			quantity, _ := parseDecimal(intent.Quantity)
 			targetSignal = target.Cmp(quantity) >= 0
 		}
-		if !strategyBound || (!legacySignal && !targetSignal) || !safeOrderID(intent.SignalID) ||
+		capitalizedSignal := intent.SignalSchemaVersion == capitalizedPaperSignalSchema && validPaperTargetQuantity(intent.SignalTargetQuantity)
+		if capitalizedSignal {
+			dataAsOf, dataOK = parsePaperTime(intent.SignalDataAsOf)
+			generatedAt, generatedOK = parsePaperTime(intent.SignalGeneratedAt)
+			expiresAt, expiresOK = parsePaperTime(intent.SignalExpiresAt)
+		}
+		if !strategyBound || (!legacySignal && !targetSignal && !capitalizedSignal) || !safeOrderID(intent.SignalID) ||
 			!strategySHA256Pattern.MatchString(intent.SignalDataSHA256) || !dataOK || !generatedOK || !expiresOK ||
 			dataAsOf.After(generatedAt) || !generatedAt.Before(expiresAt) {
 			return errors.New("strategy signal binding is invalid")
 		}
+	}
+	paperBound := intent.PaperAccountingSessionID != "" || intent.PaperAccountingPolicyVersion != "" ||
+		intent.PaperSignalEventID != "" || intent.ExecutionPolicySHA256 != ""
+	if capitalized {
+		if !safeOrderID(intent.PaperAccountingSessionID) || intent.PaperAccountingPolicyVersion != paperAccountingPolicyVersion ||
+			!safeOrderID(intent.PaperSignalEventID) || !strategySHA256Pattern.MatchString(intent.ExecutionPolicySHA256) {
+			return errors.New("capitalized paper order accounting binding is invalid")
+		}
+	} else if paperBound {
+		return errors.New("paper accounting binding is invalid for a legacy or synthetic order")
 	}
 	return nil
 }
@@ -604,9 +652,11 @@ func validateOrderEvent(event OrderEvent) error {
 	if !allowed[event.Type] {
 		return fmt.Errorf("unsupported order event %q", event.Type)
 	}
-	authorityMetadata := event.RiskReservationID != "" || event.RiskPolicyVersion != "" || event.FencingToken != 0
+	authorityMetadata := event.RiskReservationID != "" || event.PaperAuthorizationID != "" || event.RiskPolicyVersion != "" || event.FencingToken != 0
 	if event.Type == "RISK_APPROVED" || event.Type == "SUBMIT_DISPATCHED" {
-		if authorityMetadata && (!safeOrderID(event.RiskReservationID) || event.RiskPolicyVersion != syntheticRiskPolicyVersion || event.FencingToken <= 0 || event.Source != "synthetic") {
+		synthetic := safeOrderID(event.RiskReservationID) && event.PaperAuthorizationID == "" && event.RiskPolicyVersion == syntheticRiskPolicyVersion
+		paper := event.RiskReservationID == "" && safeOrderID(event.PaperAuthorizationID) && event.RiskPolicyVersion == paperAccountingPolicyVersion
+		if authorityMetadata && ((!synthetic && !paper) || event.FencingToken <= 0 || event.Source != "synthetic") {
 			return errors.New("authorized order event metadata is invalid")
 		}
 	} else if authorityMetadata {
@@ -723,7 +773,23 @@ func insertOrderEvent(ctx context.Context, tx *sql.Tx, event OrderEvent, recorde
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO order_events(event_id,event_sha256,order_id,event_type,source,provider_order_ref,provider_execution_ref,event_json,recorded_at,authority_reservation_id) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-		event.EventID, eventSHA, event.OrderID, event.Type, event.Source, nil, nil, string(eventJSON), recordedAt, nullable(event.RiskReservationID))
+	return insertOrderEventRow(ctx, tx, event, eventSHA, string(eventJSON), recordedAt)
+}
+
+func insertOrderEventRow(ctx context.Context, tx *sql.Tx, event OrderEvent, eventSHA, eventJSON, recordedAt string) error {
+	var hasPaperAuthorizationColumn int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('order_events') WHERE name='paper_authorization_id'`).Scan(&hasPaperAuthorizationColumn); err != nil {
+		return err
+	}
+	if hasPaperAuthorizationColumn == 0 {
+		if event.PaperAuthorizationID != "" {
+			return errors.New("paper authorization storage is unavailable")
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO order_events(event_id,event_sha256,order_id,event_type,source,provider_order_ref,provider_execution_ref,event_json,recorded_at,authority_reservation_id) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+			event.EventID, eventSHA, event.OrderID, event.Type, event.Source, nullable(event.ProviderOrderRef), nullable(event.ProviderExecutionRef), eventJSON, recordedAt, nullable(event.RiskReservationID))
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO order_events(event_id,event_sha256,order_id,event_type,source,provider_order_ref,provider_execution_ref,event_json,recorded_at,authority_reservation_id,paper_authorization_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		event.EventID, eventSHA, event.OrderID, event.Type, event.Source, nullable(event.ProviderOrderRef), nullable(event.ProviderExecutionRef), eventJSON, recordedAt, nullable(event.RiskReservationID), nullable(event.PaperAuthorizationID))
 	return err
 }

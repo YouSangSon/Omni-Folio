@@ -164,7 +164,7 @@ func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
 	}
 	properties := schema["properties"].(map[string]any)
 	if properties["format_version"].(map[string]any)["const"] != "omni-folio-backup.v11" ||
-		properties["schema_version"].(map[string]any)["const"] != "omni-folio.sqlite.v16" {
+		properties["schema_version"].(map[string]any)["const"] != "omni-folio.sqlite.v17" {
 		t.Fatal("backup contract version drifted from the runtime")
 	}
 
@@ -183,20 +183,21 @@ func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
 		!reflect.DeepEqual(jsonKeySet(golden), jsonStringSet(schema["required"])) {
 		t.Fatal("backup manifest schema, runtime fields, and golden fixture disagree")
 	}
-	const emptyV16PaperAccountingSHA = "398165a1a599c6dcf427af9ce226c849efaa8f162a50a8c311d7379417380563"
+	const emptyV17PaperAccountingSHA = "35b3fd7f1273cf0a42f510f6a7536925488e0f195d26a006c74b520128482080"
 	svc, _ := testService(t, nil, nil)
 	emptyProof, err := provePaperAccountingRecovery(context.Background(), svc.db)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if emptyProof.SHA256 != emptyV16PaperAccountingSHA ||
-		golden["paper_accounting_state_sha256"] != emptyV16PaperAccountingSHA {
-		t.Fatalf("golden manifest does not encode the empty v16 paper accounting proof: runtime=%s golden=%v", emptyProof.SHA256, golden["paper_accounting_state_sha256"])
+	if emptyProof.SHA256 != emptyV17PaperAccountingSHA ||
+		golden["paper_accounting_state_sha256"] != emptyV17PaperAccountingSHA {
+		t.Fatalf("golden manifest does not encode the empty v17 paper accounting proof: runtime=%s golden=%v", emptyProof.SHA256, golden["paper_accounting_state_sha256"])
 	}
-	for _, field := range []string{"paper_execution_authorization_count", "paper_capitalized_fill_count"} {
-		if properties[field].(map[string]any)["const"] != float64(0) {
-			t.Fatalf("schema v16 field %s is not reserved at exactly zero", field)
-		}
+	if properties["paper_execution_authorization_count"].(map[string]any)["minimum"] != float64(0) {
+		t.Fatal("schema v17 authorization count is not non-negative")
+	}
+	if properties["paper_capitalized_fill_count"].(map[string]any)["const"] != float64(0) {
+		t.Fatal("schema v17 capitalized fill count is not reserved at exactly zero")
 	}
 
 	receiptSchema := schema["$defs"].(map[string]any)["verification_receipt"].(map[string]any)
@@ -213,7 +214,7 @@ func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
 		!reflect.DeepEqual(jsonKeySet(goldenReceipt), jsonStringSet(receiptSchema["required"])) {
 		t.Fatal("verification receipt schema, runtime fields, and golden fixture disagree")
 	}
-	if goldenReceipt["candidate_paper_accounting_state_sha256"] != emptyV16PaperAccountingSHA {
+	if goldenReceipt["candidate_paper_accounting_state_sha256"] != emptyV17PaperAccountingSHA {
 		t.Fatal("golden receipt candidate does not encode the empty v16 paper accounting proof")
 	}
 
@@ -628,7 +629,7 @@ func TestHealthAndReadinessAreSeparate(t *testing.T) {
 	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(1, ?)`, "2026-01-10T15:00:00Z"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(17, ?)`, "2026-01-10T15:01:00Z"); err != nil {
+	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(18, ?)`, "2026-01-10T15:01:00Z"); err != nil {
 		t.Fatal(err)
 	}
 	if w := request("/readyz"); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), `"code":"not_ready"`) {

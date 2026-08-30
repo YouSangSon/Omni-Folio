@@ -25,7 +25,7 @@ func TestK2ABackupProvesOrderRecoveryState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v11" || manifest.SchemaVersion != "omni-folio.sqlite.v16" {
+	if manifest.FormatVersion != "omni-folio-backup.v11" || manifest.SchemaVersion != "omni-folio.sqlite.v17" {
 		t.Fatalf("backup did not declare the order-aware schema: %+v", manifest)
 	}
 	if manifest.OrderStateSHA256 == "" || manifest.OrderCount != 1 || manifest.OrderEventCount != 3 ||
@@ -244,7 +244,7 @@ func TestG38C1PaperAccountingBackupProofAndV9OwnedCopyMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v11" || manifest.SchemaVersion != "omni-folio.sqlite.v16" ||
+	if manifest.FormatVersion != "omni-folio-backup.v11" || manifest.SchemaVersion != "omni-folio.sqlite.v17" ||
 		manifest.PaperAccountingSessionCount != 1 || manifest.PaperAccountingStateSHA256 == "" ||
 		manifest.VerificationReceipt.CandidatePaperAccountingStateSHA256 != manifest.PaperAccountingStateSHA256 {
 		t.Fatalf("backup omitted paper accounting proof: %+v", manifest)
@@ -272,7 +272,11 @@ func TestG38C1PaperAccountingBackupProofAndV9OwnedCopyMigration(t *testing.T) {
 	legacySvc, _ := testService(t, nil, nil)
 	legacyEvidence, legacySelection := selectedPaperStrategy(t, legacySvc)
 	legacySignal := paperEvaluationSignal(legacyEvidence.ResultSHA256, legacySelection.CurrentEventID, "paper-accounting-v9-order")
+	downgradePaperAuthorizationForTest(t, legacySvc.db)
 	if _, err := legacySvc.recordOrderIntent(ctx, paperOrderIntent(k2aAccountRef, legacySignal, "1", "1000")); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(legacySvc.db); err != nil {
 		t.Fatal(err)
 	}
 	legacyOrderProof, err := proveOrderRecovery(ctx, legacySvc.db)
@@ -362,7 +366,7 @@ func TestG38C2PaperMarketBackupV11AndV10OwnedCopyMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v11" || manifest.SchemaVersion != "omni-folio.sqlite.v16" ||
+	if manifest.FormatVersion != "omni-folio-backup.v11" || manifest.SchemaVersion != "omni-folio.sqlite.v17" ||
 		manifest.PaperAccountingSessionCount != 1 || manifest.PaperMarketBarObservationCount != 1 || manifest.PaperSignalEventCount != 1 ||
 		manifest.PaperExecutionAuthorizationCount != 0 || manifest.PaperCapitalizedFillCount != 0 ||
 		manifest.PaperAccountingStateSHA256 == "" || manifest.VerificationReceipt.CandidatePaperAccountingStateSHA256 != manifest.PaperAccountingStateSHA256 {
@@ -390,7 +394,11 @@ func TestG38C2PaperMarketBackupV11AndV10OwnedCopyMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	legacySignal := paperEvaluationSignal(legacyEvidence.ResultSHA256, legacySelection.CurrentEventID, "g38c2-v10-legacy-order")
+	downgradePaperAuthorizationForTest(t, legacySvc.db)
 	insertG38C2LegacyPaperOrder(t, legacySvc, legacySignal)
+	if err := migrate(legacySvc.db); err != nil {
+		t.Fatal(err)
+	}
 	legacyOrderProof, err := proveOrderRecovery(ctx, legacySvc.db)
 	if err != nil {
 		t.Fatal(err)
@@ -462,6 +470,7 @@ func TestG38C2PaperMarketBackupV11AndV10OwnedCopyMigration(t *testing.T) {
 
 func downgradePaperMarketSignalsForTest(t testing.TB, db *sql.DB) {
 	t.Helper()
+	downgradePaperAuthorizationForTest(t, db)
 	if _, err := db.Exec(`DROP TRIGGER order_idempotency_legacy_paper_signal_guard;
 		DROP TRIGGER paper_signal_events_no_update;
 		DROP TRIGGER paper_signal_events_no_delete;

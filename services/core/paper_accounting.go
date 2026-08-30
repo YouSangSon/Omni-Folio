@@ -28,8 +28,8 @@ type PaperAccountingSession struct {
 }
 
 type paperAccountingRecoveryProof struct {
-	SHA256                        string
-	Sessions, MarketBars, Signals int
+	SHA256                                                          string
+	Sessions, MarketBars, Signals, Authorizations, CapitalizedFills int
 }
 
 func (s *Service) openPaperAccountingSession(ctx context.Context, accountRef, resultSHA256, selectionEventID string) (*PaperAccountingSession, error) {
@@ -188,6 +188,7 @@ func provePaperAccountingRecoveryVersion(ctx context.Context, q orderQuerier, in
 		}
 	}
 	market := paperMarketRecoveryProof{}
+	authorizations, capitalizedFills := 0, 0
 	if includeMarket {
 		market, err = replayPaperMarketRecovery(ctx, q)
 		if err != nil {
@@ -196,9 +197,24 @@ func provePaperAccountingRecoveryVersion(ctx context.Context, q orderQuerier, in
 		if err := encoder.Encode([]any{"paper_market_recovery", market.SHA256, market.Bars, market.Signals}); err != nil {
 			return paperAccountingRecoveryProof{}, err
 		}
+		authorizationSHA, count, err := provePaperExecutionAuthorizationRecovery(ctx, q)
+		if err != nil {
+			return paperAccountingRecoveryProof{}, fmt.Errorf("paper authorization recovery: %w", err)
+		}
+		authorizations = count
+		if err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM order_events events
+			JOIN order_idempotency orders ON orders.order_id=events.order_id
+			WHERE events.event_type='FILL_RECORDED' AND orders.mode='paper'
+			AND json_extract(orders.intent_json, '$.signal_schema_version')='paper-signal.v3'`).Scan(&capitalizedFills); err != nil {
+			return paperAccountingRecoveryProof{}, err
+		}
+		if err := encoder.Encode([]any{"paper_execution_authorizations", authorizationSHA, authorizations, "paper_capitalized_fills", capitalizedFills}); err != nil {
+			return paperAccountingRecoveryProof{}, err
+		}
 	}
 	return paperAccountingRecoveryProof{
 		SHA256: hex.EncodeToString(hash.Sum(nil)), Sessions: len(stored), MarketBars: market.Bars, Signals: market.Signals,
+		Authorizations: authorizations, CapitalizedFills: capitalizedFills,
 	}, nil
 }
 

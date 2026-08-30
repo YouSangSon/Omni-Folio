@@ -195,7 +195,11 @@ func TestG38C1PaperAccountingSessionFailsClosed(t *testing.T) {
 		ctx := context.Background()
 		evidence, selected := selectedPaperStrategy(t, svc)
 		signal := paperEvaluationSignal(evidence.ResultSHA256, selected.CurrentEventID, "paper-accounting-prior-order")
+		downgradePaperAuthorizationForTest(t, svc.db)
 		if _, err := svc.recordOrderIntent(ctx, paperOrderIntent(k2aAccountRef, signal, "1", "1000")); err != nil {
+			t.Fatal(err)
+		}
+		if err := migrate(svc.db); err != nil {
 			t.Fatal(err)
 		}
 		before := paperAccountingSideEffects(t, svc)
@@ -241,7 +245,11 @@ func TestG38C1PaperAccountingSessionDirectWriterAndReplayGuards(t *testing.T) {
 		ctx := context.Background()
 		evidence, selected := selectedPaperStrategy(t, svc)
 		signal := paperEvaluationSignal(evidence.ResultSHA256, selected.CurrentEventID, "paper-accounting-direct-prior")
+		downgradePaperAuthorizationForTest(t, svc.db)
 		if _, err := svc.recordOrderIntent(ctx, paperOrderIntent(k2aAccountRef, signal, "1", "1000")); err != nil {
+			t.Fatal(err)
+		}
+		if err := migrate(svc.db); err != nil {
 			t.Fatal(err)
 		}
 		if err := insertPaperAccountingSessionDirect(svc, directPaperAccountingSession(t, svc, k2aAccountRef, evidence.ResultSHA256, selected.CurrentEventID)); err == nil {

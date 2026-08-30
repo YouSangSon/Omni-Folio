@@ -173,6 +173,84 @@ func rebuildPaperAccountingWithoutAccountUnique(t testing.TB, db *sql.DB) {
 	}
 }
 
+func TestG38C2RestoreRejectsPaperAuthorizationSchemaOrProtectionDrift(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, *sql.DB)
+	}{
+		{"authorization table drift", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`ALTER TABLE paper_execution_authorizations ADD COLUMN untrusted TEXT`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"missing authorization identity uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_execution_authorizations", []string{"authorization_id"})
+		}},
+		{"missing authorization order uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_execution_authorizations", []string{"order_id"})
+		}},
+		{"missing authorization risk uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_execution_authorizations", []string{"risk_event_id"})
+		}},
+		{"missing authorization dispatch uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_execution_authorizations", []string{"dispatch_event_id"})
+		}},
+		{"missing authorization order foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_execution_authorizations", "order_id TEXT NOT NULL UNIQUE REFERENCES order_idempotency(order_id)", "order_id TEXT NOT NULL UNIQUE")
+		}},
+		{"missing authorization session foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_execution_authorizations", "paper_accounting_session_id TEXT NOT NULL REFERENCES paper_accounting_sessions(session_id)", "paper_accounting_session_id TEXT NOT NULL")
+		}},
+		{"missing authorization authority foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_execution_authorizations", "authority_event_id TEXT NOT NULL REFERENCES execution_authority_events(event_id)", "authority_event_id TEXT NOT NULL")
+		}},
+		{"missing event authorization foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "order_events", "paper_authorization_id TEXT REFERENCES paper_execution_authorizations(authorization_id)", "paper_authorization_id TEXT")
+		}},
+	}
+	for _, trigger := range []string{
+		"paper_execution_authorizations_state_guard",
+		"order_idempotency_legacy_paper_signal_guard",
+		"order_idempotency_capitalized_paper_guard",
+		"order_events_risk_reservation_guard",
+		"order_events_dispatch_reservation_guard",
+		"order_events_non_authority_reservation_guard",
+		"paper_execution_authorizations_no_update",
+		"paper_execution_authorizations_no_delete",
+	} {
+		trigger := trigger
+		tests = append(tests, struct {
+			name   string
+			mutate func(*testing.T, *sql.DB)
+		}{"missing " + trigger, func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER ` + trigger); err != nil {
+				t.Fatal(err)
+			}
+		}})
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			svc, _ := testService(t, nil, nil)
+			golden := writeCurrentSnapshot(t, svc.db)
+			candidatePath := filepath.Join(t.TempDir(), "paper-authorization-schema.db")
+			if _, err := createBackup(svc.db, candidatePath, golden, candidatePath+".manifest.json", svc.now, svc.id); err != nil {
+				t.Fatal(err)
+			}
+			candidate, err := openExistingDB(candidatePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(t, candidate)
+			if err := candidate.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := verifyRestore(candidatePath, golden); err == nil {
+				t.Fatal("restore accepted paper authorization schema drift")
+			}
+		})
+	}
+}
+
 func TestG38C2RestoreRejectsPaperMarketSchemaOrProtectionDrift(t *testing.T) {
 	tests := []struct {
 		name   string

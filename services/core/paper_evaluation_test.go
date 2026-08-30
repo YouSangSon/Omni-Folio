@@ -9,15 +9,13 @@ import (
 	"time"
 )
 
-func TestG38PaperEvaluationDerivesInsufficientPassAndDegraded(t *testing.T) {
+func TestG38PaperEvaluationDerivesInsufficientForLocallyAcknowledgedPaperOrder(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("insufficient then pass", func(t *testing.T) {
-		svc, _ := testService(t, nil, nil)
-		svc.now = func() time.Time { return mustTime("2026-01-10T15:00:00Z") }
-		evidence, selected := selectedPaperStrategy(t, svc)
+	t.Run("empty then active", func(t *testing.T) {
+		svc, signal, _ := g38c2PaperSignalFixture(t, true)
 
-		insufficient, err := svc.evaluatePaperOperations(ctx, k2aAccountRef, evidence.ResultSHA256, selected.CurrentEventID)
+		insufficient, err := svc.evaluatePaperOperations(ctx, k2aAccountRef, signal.StrategyResultSHA256, signal.StrategySelectionEventID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -27,52 +25,30 @@ func TestG38PaperEvaluationDerivesInsufficientPassAndDegraded(t *testing.T) {
 			t.Fatalf("unexpected empty evaluation: %+v", insufficient)
 		}
 
+		signal.SignalID = "paper-evaluation-open"
+		signal.TargetQuantity = "1"
 		lease := mustK2CLease(t, svc, k2aAccountRef)
-		signal := paperEvaluationSignal(evidence.ResultSHA256, selected.CurrentEventID, "paper-evaluation-filled")
-		state, err := svc.runPaperSignal(ctx, k2aAccountRef, signal, PaperMarketObservation{
-			Source: "local_fixture", Symbol: signal.Symbol, ObservedAt: "2026-01-10T14:59:59Z",
-			AskPrice: "1000", AvailableQuantity: "1",
-		}, lease.FencingToken)
-		if err != nil || state.Status != "FILLED" {
-			t.Fatalf("paper fill state=%+v err=%v", state, err)
+		_, state, err := svc.admitPaperSignal(ctx, k2aAccountRef, signal, lease.FencingToken)
+		if err != nil || state == nil || state.Status != "OPEN" {
+			t.Fatalf("paper authorization state=%+v err=%v", state, err)
 		}
 
-		passed, err := svc.evaluatePaperOperations(ctx, k2aAccountRef, evidence.ResultSHA256, selected.CurrentEventID)
+		active, err := svc.evaluatePaperOperations(ctx, k2aAccountRef, signal.StrategyResultSHA256, signal.StrategySelectionEventID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if passed.Decision != "PASS" || passed.ReasonCode != "operationally_complete" ||
-			passed.OrderCount != 1 || passed.TerminalOrderCount != 1 ||
-			passed.ActiveOrderCount != 0 || passed.PendingActionCount != 0 ||
-			passed.ExpectedPreviousEvaluationID != insufficient.EvaluationID || passed.PaperOrderStateSHA256 == "" {
-			t.Fatalf("unexpected passing evaluation: %+v", passed)
+		if active.Decision != "INSUFFICIENT" || active.ReasonCode != "no_terminal_sample" ||
+			active.OrderCount != 1 || active.TerminalOrderCount != 0 ||
+			active.ActiveOrderCount != 1 || active.PendingActionCount != 0 ||
+			active.ExpectedPreviousEvaluationID != insufficient.EvaluationID || active.PaperOrderStateSHA256 == "" {
+			t.Fatalf("unexpected active evaluation: %+v", active)
 		}
 	})
 
-	t.Run("unresolved action degrades", func(t *testing.T) {
-		svc, _ := testService(t, nil, nil)
-		svc.now = func() time.Time { return mustTime("2026-01-10T15:00:00Z") }
-		evidence, selected := selectedPaperStrategy(t, svc)
-		lease := mustK2CLease(t, svc, k2aAccountRef)
-		signal := paperEvaluationSignal(evidence.ResultSHA256, selected.CurrentEventID, "paper-evaluation-unknown")
-		intent := paperOrderIntent(k2aAccountRef, signal, "1", "1000")
-		state, err := svc.recordOrderIntent(ctx, intent)
-		if err != nil {
-			t.Fatal(err)
-		}
-		state, err = svc.authorizeSyntheticDispatch(ctx, state.OrderID, lease.FencingToken)
-		if err != nil || state.Status != "SUBMIT_UNKNOWN" || state.PendingAction != "SUBMIT" {
-			t.Fatalf("unknown submit state=%+v err=%v", state, err)
-		}
-
-		degraded, err := svc.evaluatePaperOperations(ctx, k2aAccountRef, evidence.ResultSHA256, selected.CurrentEventID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if degraded.Decision != "DEGRADED" || degraded.ReasonCode != "unresolved_action" ||
-			degraded.OrderCount != 1 || degraded.TerminalOrderCount != 0 ||
-			degraded.ActiveOrderCount != 0 || degraded.PendingActionCount != 1 {
-			t.Fatalf("unexpected degraded evaluation: %+v", degraded)
+	t.Run("unresolved policy remains degraded", func(t *testing.T) {
+		decision, reason := paperOperationalDecision(paperOperationalSnapshot{Orders: 1, Pending: 1})
+		if decision != "DEGRADED" || reason != "unresolved_action" {
+			t.Fatalf("unexpected unresolved decision=%s reason=%s", decision, reason)
 		}
 	})
 }
@@ -138,22 +114,16 @@ func TestG38PaperEvaluationIsIdempotentAndSelectionBound(t *testing.T) {
 }
 
 func TestG38PaperEvaluationDoesNotMutateStrategyOrExecutionAuthority(t *testing.T) {
-	svc, _ := testService(t, nil, nil)
-	svc.now = func() time.Time { return mustTime("2026-01-10T15:00:00Z") }
+	svc, signal, _ := g38c2PaperSignalFixture(t, true)
 	ctx := context.Background()
-	evidence, selected := selectedPaperStrategy(t, svc)
 	lease := mustK2CLease(t, svc, k2aAccountRef)
-	signal := paperEvaluationSignal(evidence.ResultSHA256, selected.CurrentEventID, "paper-evaluation-no-mutation")
-	state, err := svc.recordOrderIntent(ctx, paperOrderIntent(k2aAccountRef, signal, "1", "1000"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.authorizeSyntheticDispatch(ctx, state.OrderID, lease.FencingToken); err != nil {
+	signal.SignalID, signal.TargetQuantity = "paper-evaluation-no-mutation", "1"
+	if _, _, err := svc.admitPaperSignal(ctx, k2aAccountRef, signal, lease.FencingToken); err != nil {
 		t.Fatal(err)
 	}
 
-	evaluation, err := svc.evaluatePaperOperations(ctx, k2aAccountRef, evidence.ResultSHA256, selected.CurrentEventID)
-	if err != nil || evaluation.Decision != "DEGRADED" {
+	evaluation, err := svc.evaluatePaperOperations(ctx, k2aAccountRef, signal.StrategyResultSHA256, signal.StrategySelectionEventID)
+	if err != nil || evaluation.Decision != "INSUFFICIENT" || evaluation.ActiveOrderCount != 1 {
 		t.Fatalf("evaluation=%+v err=%v", evaluation, err)
 	}
 	authority, err := loadExecutionAuthoritySnapshot(ctx, svc.db, k2aAccountRef)
@@ -161,7 +131,7 @@ func TestG38PaperEvaluationDoesNotMutateStrategyOrExecutionAuthority(t *testing.
 		t.Fatalf("evaluation changed authority: %+v err=%v", authority, err)
 	}
 	registry, err := replayStrategyRegistry(ctx, svc.db)
-	if err != nil || registry.CurrentEventID != selected.CurrentEventID || registry.SelectedResultSHA256 != evidence.ResultSHA256 || registry.Events != 1 {
+	if err != nil || registry.CurrentEventID != signal.StrategySelectionEventID || registry.SelectedResultSHA256 != signal.StrategyResultSHA256 || registry.Events != 1 {
 		t.Fatalf("evaluation changed strategy selection: %+v err=%v", registry, err)
 	}
 }
@@ -220,24 +190,19 @@ func insertPaperEvaluationDirect(svc *Service, event PaperEvaluationEvent) error
 }
 
 func TestG38PaperEvaluationFailsClosedOnOrderCorruption(t *testing.T) {
-	svc, _ := testService(t, nil, nil)
-	svc.now = func() time.Time { return mustTime("2026-01-10T15:00:00Z") }
-	evidence, selected := selectedPaperStrategy(t, svc)
+	svc, signal, _ := g38c2PaperSignalFixture(t, true)
 	lease := mustK2CLease(t, svc, k2aAccountRef)
-	signal := paperEvaluationSignal(evidence.ResultSHA256, selected.CurrentEventID, "paper-evaluation-corrupt-order")
-	if _, err := svc.runPaperSignal(context.Background(), k2aAccountRef, signal, PaperMarketObservation{
-		Source: "local_fixture", Symbol: signal.Symbol, ObservedAt: "2026-01-10T14:59:59Z",
-		AskPrice: "1000", AvailableQuantity: "1",
-	}, lease.FencingToken); err != nil {
+	signal.SignalID, signal.TargetQuantity = "paper-evaluation-corrupt-order", "1"
+	if _, _, err := svc.admitPaperSignal(context.Background(), k2aAccountRef, signal, lease.FencingToken); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.db.Exec(`DROP TRIGGER order_events_no_update`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.db.Exec(`UPDATE order_events SET event_sha256=? WHERE event_type='FILL_RECORDED'`, strings.Repeat("0", 64)); err != nil {
+	if _, err := svc.db.Exec(`UPDATE order_events SET event_sha256=? WHERE event_type='SUBMIT_ACKNOWLEDGED'`, strings.Repeat("0", 64)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.evaluatePaperOperations(context.Background(), k2aAccountRef, evidence.ResultSHA256, selected.CurrentEventID); err == nil {
+	if _, err := svc.evaluatePaperOperations(context.Background(), k2aAccountRef, signal.StrategyResultSHA256, signal.StrategySelectionEventID); err == nil {
 		t.Fatal("paper evaluation accepted a corrupt order log")
 	}
 }
@@ -255,7 +220,7 @@ func TestG38PaperEvaluationBackupAndLegacySchema13Migration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v11" || manifest.SchemaVersion != "omni-folio.sqlite.v16" ||
+	if manifest.FormatVersion != "omni-folio-backup.v11" || manifest.SchemaVersion != "omni-folio.sqlite.v17" ||
 		manifest.PaperEvaluationEventCount != 1 || manifest.StrategyRegistrySHA256 == "" {
 		t.Fatalf("backup omitted paper evaluation proof: %+v", manifest)
 	}

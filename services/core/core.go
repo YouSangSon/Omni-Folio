@@ -32,12 +32,12 @@ import (
 const (
 	maxBodyBytes                      = 1 << 20
 	maxImportRows                     = 10_000
-	latestSchema                      = 16
+	latestSchema                      = 17
 	zeroTime                          = "1970-01-01T00:00:00Z"
 	csvSchema                         = "omni-folio.csv.v1"
 	mappingSchema                     = "canonical-transaction.v4"
 	backupFormat                      = "omni-folio-backup.v11"
-	backupSchema                      = "omni-folio.sqlite.v16"
+	backupSchema                      = "omni-folio.sqlite.v17"
 	legacyPaperFillBackupFormat       = "omni-folio-backup.v10"
 	legacyPaperFillBackupSchema       = "omni-folio.sqlite.v15"
 	legacyPaperAccountingBackupFormat = "omni-folio-backup.v9"
@@ -316,7 +316,7 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("unsupported schema version %d", current)
 		}
 	}
-	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql", "013_instrument_listing_events.sql", "014_paper_evaluation_events.sql", "015_paper_accounting_sessions.sql", "016_paper_market_signals.sql"}
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql", "013_instrument_listing_events.sql", "014_paper_evaluation_events.sql", "015_paper_accounting_sessions.sql", "016_paper_market_signals.sql", "017_paper_execution_authorizations.sql"}
 	for version := current + 1; version <= latestSchema; version++ {
 		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
 		if err != nil {
@@ -1462,8 +1462,9 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 		PaperEvaluationEventCount:  sourceStrategy.Evaluations,
 		PaperAccountingStateSHA256: sourcePaperAccounting.SHA256, PaperAccountingSessionCount: sourcePaperAccounting.Sessions,
 		PaperMarketBarObservationCount: sourcePaperAccounting.MarketBars, PaperSignalEventCount: sourcePaperAccounting.Signals,
-		PaperExecutionAuthorizationCount: 0, PaperCapitalizedFillCount: 0,
-		FXObservationStateSHA256: sourceFX.SHA256, FXObservationCount: sourceFX.Observations,
+		PaperExecutionAuthorizationCount: sourcePaperAccounting.Authorizations,
+		PaperCapitalizedFillCount:        sourcePaperAccounting.CapitalizedFills,
+		FXObservationStateSHA256:         sourceFX.SHA256, FXObservationCount: sourceFX.Observations,
 		SecurityPriceObservationStateSHA256: sourceSecurityPrices.SHA256, SecurityPriceObservationCount: sourceSecurityPrices.Observations,
 		InstrumentListingStateSHA256: sourceInstrumentListings.SHA256, InstrumentListingEventCount: sourceInstrumentListings.Events,
 		ActiveInstrumentListingCount: sourceInstrumentListings.Active,
@@ -1651,7 +1652,7 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	if err := requireSchema(db); err != nil {
 		return fmt.Errorf("restore schema: %w", err)
 	}
-	for _, table := range []string{"events", "order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "paper_evaluation_events", "paper_accounting_sessions", "paper_market_bar_observations", "paper_signal_events", "fx_observations", "security_price_observations"} {
+	for _, table := range []string{"events", "order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "paper_execution_authorizations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "paper_evaluation_events", "paper_accounting_sessions", "paper_market_bar_observations", "paper_signal_events", "fx_observations", "security_price_observations"} {
 		var strict int
 		if err := db.QueryRow(`SELECT strict FROM pragma_table_list WHERE schema='main' AND type='table' AND name=?`, table).Scan(&strict); err != nil {
 			return fmt.Errorf("restore order table %s: %w", table, err)
@@ -1692,6 +1693,10 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		{"risk_reservations", []string{"order_id"}, "u"},
 		{"risk_reservations", []string{"risk_event_id"}, "u"},
 		{"risk_reservations", []string{"dispatch_event_id"}, "u"},
+		{"paper_execution_authorizations", []string{"authorization_id"}, "u"},
+		{"paper_execution_authorizations", []string{"order_id"}, "u"},
+		{"paper_execution_authorizations", []string{"risk_event_id"}, "u"},
+		{"paper_execution_authorizations", []string{"dispatch_event_id"}, "u"},
 		{"broker_snapshots", []string{"snapshot_id"}, "u"},
 		{"broker_snapshots", []string{"provider", "environment", "exchange", "account_ref", "fetched_at"}, "u"},
 		{"broker_snapshot_reconciliations", []string{"reconciliation_id"}, "u"},
@@ -1897,7 +1902,6 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	}
 	expectedBarTable := strings.TrimSuffix(strings.TrimSpace(paperMarketSQL[barTableStart:barTriggerStart]), ";")
 	expectedSignalTable := strings.TrimSuffix(strings.TrimSpace(paperMarketSQL[signalTableStart:signalTriggerStart]), ";")
-	expectedLegacyOrderGuard := strings.TrimSuffix(strings.TrimSpace(paperMarketSQL[legacyOrderGuardStart:signalStateTriggerStart]), ";")
 	expectedPaperSignalStateTrigger := strings.TrimSuffix(strings.TrimSpace(paperMarketSQL[signalStateTriggerStart:]), ";")
 	for table, expected := range map[string]string{
 		"paper_market_bar_observations": expectedBarTable,
@@ -1911,6 +1915,42 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 			return fmt.Errorf("restore %s lacks the required table definition", table)
 		}
 	}
+	paperAuthorizationMigration, err := migrationFiles.ReadFile("migrations/017_paper_execution_authorizations.sql")
+	if err != nil {
+		return fmt.Errorf("restore paper authorization definition source: %w", err)
+	}
+	paperAuthorizationSQL := string(paperAuthorizationMigration)
+	authorizationTableStart := strings.Index(paperAuthorizationSQL, "CREATE TABLE paper_execution_authorizations")
+	authorizationIndexStart := strings.Index(paperAuthorizationSQL, "CREATE INDEX paper_execution_authorizations_account_idx")
+	legacyAuthorizationGuardStart := strings.Index(paperAuthorizationSQL, "CREATE TRIGGER order_idempotency_legacy_paper_signal_guard")
+	capitalizedOrderGuardStart := strings.Index(paperAuthorizationSQL, "CREATE TRIGGER order_idempotency_capitalized_paper_guard")
+	dropRiskGuardStart := strings.Index(paperAuthorizationSQL, "DROP TRIGGER order_events_risk_reservation_guard")
+	riskGuardStart := strings.LastIndex(paperAuthorizationSQL, "CREATE TRIGGER order_events_risk_reservation_guard")
+	dispatchGuardStart := strings.LastIndex(paperAuthorizationSQL, "CREATE TRIGGER order_events_dispatch_reservation_guard")
+	nonAuthorityGuardStart := strings.LastIndex(paperAuthorizationSQL, "CREATE TRIGGER order_events_non_authority_reservation_guard")
+	authorizationStateGuardStart := strings.Index(paperAuthorizationSQL, "CREATE TRIGGER paper_execution_authorizations_state_guard")
+	if authorizationTableStart < 0 || authorizationIndexStart <= authorizationTableStart || authorizationStateGuardStart < 0 ||
+		legacyAuthorizationGuardStart < 0 || capitalizedOrderGuardStart <= legacyAuthorizationGuardStart || dropRiskGuardStart <= capitalizedOrderGuardStart ||
+		riskGuardStart <= dropRiskGuardStart || dispatchGuardStart <= riskGuardStart || nonAuthorityGuardStart <= dispatchGuardStart {
+		return errors.New("restore paper authorization definition source is invalid")
+	}
+	expectedAuthorizationTable := strings.TrimSuffix(strings.TrimSpace(paperAuthorizationSQL[authorizationTableStart:authorizationIndexStart]), ";")
+	var authorizationTableDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='paper_execution_authorizations'`).Scan(&authorizationTableDefinition); err != nil {
+		return fmt.Errorf("restore paper authorization definition: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(authorizationTableDefinition), " ")) != strings.ToLower(strings.Join(strings.Fields(expectedAuthorizationTable), " ")) {
+		return errors.New("restore paper execution authorizations lack the required table definition")
+	}
+	extractAuthorizationTrigger := func(start, end int) string {
+		return strings.ToLower(strings.Join(strings.Fields(strings.TrimSuffix(strings.TrimSpace(paperAuthorizationSQL[start:end]), ";")), " "))
+	}
+	expectedAuthorizationStateGuard := extractAuthorizationTrigger(authorizationStateGuardStart, strings.Index(paperAuthorizationSQL[authorizationStateGuardStart:], "\n\nDROP TRIGGER")+authorizationStateGuardStart)
+	expectedLegacyAuthorizationGuard := extractAuthorizationTrigger(legacyAuthorizationGuardStart, capitalizedOrderGuardStart)
+	expectedCapitalizedOrderGuard := extractAuthorizationTrigger(capitalizedOrderGuardStart, dropRiskGuardStart)
+	expectedRiskGuard := extractAuthorizationTrigger(riskGuardStart, dispatchGuardStart)
+	expectedDispatchGuard := extractAuthorizationTrigger(dispatchGuardStart, nonAuthorityGuardStart)
+	expectedNonAuthorityGuard := strings.ToLower(strings.Join(strings.Fields(strings.TrimSuffix(strings.TrimSpace(paperAuthorizationSQL[nonAuthorityGuardStart:]), ";")), " "))
 	strategySelectionStateTriggerStart := strings.Index(paperEvaluationSQL, "CREATE TRIGGER strategy_selection_events_state_guard")
 	strategySelectionStateTriggerEnd := strings.Index(paperEvaluationSQL, "CREATE INDEX paper_evaluation_events_current_idx")
 	if strategySelectionStateTriggerStart < 0 || strategySelectionStateTriggerEnd <= strategySelectionStateTriggerStart {
@@ -1918,7 +1958,7 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	}
 	expectedStrategySelectionStateTrigger := strings.ToLower(strings.Join(strings.Fields(strings.TrimSuffix(
 		strings.TrimSpace(paperEvaluationSQL[strategySelectionStateTriggerStart:strategySelectionStateTriggerEnd]), ";")), " "))
-	for _, table := range []string{"events", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "paper_evaluation_events", "paper_accounting_sessions", "paper_market_bar_observations", "paper_signal_events", "fx_observations", "security_price_observations", "instrument_listing_events"} {
+	for _, table := range []string{"events", "order_events", "execution_authority_events", "risk_reservations", "paper_execution_authorizations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "paper_evaluation_events", "paper_accounting_sessions", "paper_market_bar_observations", "paper_signal_events", "fx_observations", "security_price_observations", "instrument_listing_events"} {
 		var sequenceType string
 		var sequencePK, primaryKeyColumns, primaryKeyIndexes int
 		if err := db.QueryRow(`SELECT type, pk FROM pragma_table_info(?) WHERE name='sequence'`, table).Scan(&sequenceType, &sequencePK); err != nil {
@@ -1935,10 +1975,10 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		}
 	}
 	var foreignKeys, matchingForeignKeys int
-	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(("table"='order_idempotency' AND "from"='order_id' AND "to"='order_id') OR ("table"='risk_reservations' AND "from"='authority_reservation_id' AND "to"='reservation_id')), 0) FROM pragma_foreign_key_list(?)`, "order_events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(("table"='order_idempotency' AND "from"='order_id' AND "to"='order_id') OR ("table"='risk_reservations' AND "from"='authority_reservation_id' AND "to"='reservation_id') OR ("table"='paper_execution_authorizations' AND "from"='paper_authorization_id' AND "to"='authorization_id')), 0) FROM pragma_foreign_key_list(?)`, "order_events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
 		return fmt.Errorf("restore order foreign key: %w", err)
 	}
-	if foreignKeys != 2 || matchingForeignKeys != 2 {
+	if foreignKeys != 3 || matchingForeignKeys != 3 {
 		return errors.New("restore order events lack required order or authority foreign keys")
 	}
 	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(("table"='order_idempotency' AND "from"='order_id' AND "to"='order_id') OR ("table"='execution_authority_events' AND "from"='authority_event_id' AND "to"='event_id')), 0) FROM pragma_foreign_key_list(?)`, "risk_reservations").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
@@ -1946,6 +1986,16 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	}
 	if foreignKeys != 2 || matchingForeignKeys != 2 {
 		return errors.New("restore risk reservations lack required order or authority foreign keys")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(
+		("table"='order_idempotency' AND "from"='order_id' AND "to"='order_id') OR
+		("table"='paper_accounting_sessions' AND "from"='paper_accounting_session_id' AND "to"='session_id') OR
+		("table"='execution_authority_events' AND "from"='authority_event_id' AND "to"='event_id')), 0)
+		FROM pragma_foreign_key_list(?)`, "paper_execution_authorizations").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore paper authorization foreign keys: %w", err)
+	}
+	if foreignKeys != 3 || matchingForeignKeys != 3 {
+		return errors.New("restore paper authorizations lack required order, session, or authority foreign keys")
 	}
 	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM("table"='broker_snapshots' AND "from"='snapshot_id' AND "to"='snapshot_id'), 0) FROM pragma_foreign_key_list(?)`, "broker_snapshot_reconciliations").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
 		return fmt.Errorf("restore broker reconciliation foreign key: %w", err)
@@ -2015,6 +2065,8 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		"execution_authority_events_no_delete":      {"execution_authority_events", "delete"},
 		"risk_reservations_no_update":               {"risk_reservations", "update"},
 		"risk_reservations_no_delete":               {"risk_reservations", "delete"},
+		"paper_execution_authorizations_no_update":  {"paper_execution_authorizations", "update"},
+		"paper_execution_authorizations_no_delete":  {"paper_execution_authorizations", "delete"},
 		"broker_snapshots_no_update":                {"broker_snapshots", "update"},
 		"broker_snapshots_no_delete":                {"broker_snapshots", "delete"},
 		"broker_snapshot_reconciliations_no_update": {"broker_snapshot_reconciliations", "update"},
@@ -2071,12 +2123,14 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		table string
 		sql   string
 	}{
-		"order_events_risk_reservation_guard":          {"order_events", "create trigger order_events_risk_reservation_guard before insert on order_events when new.event_type = 'risk_approved' begin select case when new.authority_reservation_id is null or not exists ( select 1 from risk_reservations where reservation_id = new.authority_reservation_id and order_id = new.order_id and risk_event_id = new.event_id and reservation_id = json_extract(new.event_json, '$.risk_reservation_id') and policy_version = json_extract(new.event_json, '$.risk_policy_version') and fencing_token = json_extract(new.event_json, '$.fencing_token') ) then raise(abort, 'risk approval requires an authority reservation') end; end"},
-		"order_events_dispatch_reservation_guard":      {"order_events", "create trigger order_events_dispatch_reservation_guard before insert on order_events when new.event_type = 'submit_dispatched' begin select case when new.authority_reservation_id is null or not exists ( select 1 from risk_reservations where reservation_id = new.authority_reservation_id and order_id = new.order_id and dispatch_event_id = new.event_id and reservation_id = json_extract(new.event_json, '$.risk_reservation_id') and policy_version = json_extract(new.event_json, '$.risk_policy_version') and fencing_token = json_extract(new.event_json, '$.fencing_token') ) then raise(abort, 'submit dispatch requires an authority reservation') end; end"},
-		"order_events_non_authority_reservation_guard": {"order_events", "create trigger order_events_non_authority_reservation_guard before insert on order_events when new.event_type not in ('risk_approved', 'submit_dispatched') and new.authority_reservation_id is not null begin select raise(abort, 'authority reservation is invalid for this event'); end"},
+		"order_events_risk_reservation_guard":          {"order_events", expectedRiskGuard},
+		"order_events_dispatch_reservation_guard":      {"order_events", expectedDispatchGuard},
+		"order_events_non_authority_reservation_guard": {"order_events", expectedNonAuthorityGuard},
 		"strategy_selection_events_state_guard":        {"strategy_selection_events", expectedStrategySelectionStateTrigger},
 		"paper_accounting_sessions_state_guard":        {"paper_accounting_sessions", strings.ToLower(strings.Join(strings.Fields(expectedPaperAccountingStateTrigger), " "))},
-		"order_idempotency_legacy_paper_signal_guard":  {"order_idempotency", strings.ToLower(strings.Join(strings.Fields(expectedLegacyOrderGuard), " "))},
+		"order_idempotency_legacy_paper_signal_guard":  {"order_idempotency", expectedLegacyAuthorizationGuard},
+		"order_idempotency_capitalized_paper_guard":    {"order_idempotency", expectedCapitalizedOrderGuard},
+		"paper_execution_authorizations_state_guard":   {"paper_execution_authorizations", expectedAuthorizationStateGuard},
 		"paper_signal_events_state_guard":              {"paper_signal_events", strings.ToLower(strings.Join(strings.Fields(expectedPaperSignalStateTrigger), " "))},
 		"events_cash_void_guard":                       {"events", "create trigger events_cash_void_guard before insert on events when new.type = 'cash_void' begin select case when not exists ( select 1 from events target where target.account_id = new.account_id and target.source_event_id = new.corrects_source_event_id and target.type in ('deposit', 'withdrawal', 'dividend', 'fee', 'tax') and target.currency = new.currency and target.occurred_at <= new.occurred_at and new.amount = case when target.amount glob '-*' then substr(target.amount, 2) else '-' || target.amount end ) then raise(abort, 'cash void must exactly reverse an eligible event') end; end"},
 	}
@@ -2377,14 +2431,17 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 			manifest.PaperAccountingSessionCount != paperAccounting.Sessions ||
 			manifest.PaperMarketBarObservationCount != paperAccounting.MarketBars ||
 			manifest.PaperSignalEventCount != paperAccounting.Signals ||
-			manifest.PaperExecutionAuthorizationCount != 0 || manifest.PaperCapitalizedFillCount != 0 {
+			manifest.PaperExecutionAuthorizationCount != paperAccounting.Authorizations ||
+			manifest.PaperCapitalizedFillCount != paperAccounting.CapitalizedFills {
 			return errors.New("backup paper accounting recovery proof mismatch")
 		}
 	} else if legacyV10Manifest {
-		if manifest.PaperAccountingSessionCount != paperAccounting.Sessions || paperAccounting.MarketBars != 0 || paperAccounting.Signals != 0 {
+		if manifest.PaperAccountingSessionCount != paperAccounting.Sessions || paperAccounting.MarketBars != 0 || paperAccounting.Signals != 0 ||
+			paperAccounting.Authorizations != 0 || paperAccounting.CapitalizedFills != 0 {
 			return errors.New("v10 backup paper accounting migration proof mismatch")
 		}
-	} else if paperAccounting.Sessions != 0 || paperAccounting.MarketBars != 0 || paperAccounting.Signals != 0 {
+	} else if paperAccounting.Sessions != 0 || paperAccounting.MarketBars != 0 || paperAccounting.Signals != 0 ||
+		paperAccounting.Authorizations != 0 || paperAccounting.CapitalizedFills != 0 {
 		return errors.New("legacy backup unexpectedly contains paper accounting sessions")
 	}
 	fx, err := verifyFXObservationRestoreProof(verificationPath)
