@@ -1,6 +1,6 @@
 {
   "format_version": "omni-folio-backup.v7",
-  "schema_version": "omni-folio.sqlite.v11",
+  "schema_version": "omni-folio.sqlite.v12",
   "created_at": "2026-01-10T15:02:00Z",
   "source_ledger_revision": "rev_0000000003",
   "order_state_sha256": "34b0bc819983f2fa08ee5e702db8aa5194bd2b2915dc389801b55cac79ed10a8",

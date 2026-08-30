@@ -296,7 +296,7 @@ func TestG4HBackupRestoresBrokerSnapshotProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v7" || manifest.SchemaVersion != "omni-folio.sqlite.v11" ||
+	if manifest.FormatVersion != "omni-folio-backup.v7" || manifest.SchemaVersion != "omni-folio.sqlite.v12" ||
 		manifest.BrokerSnapshotCount != 1 || manifest.BrokerReconciliationCount != 1 || manifest.BrokerStateSHA256 == "" ||
 		manifest.VerificationReceipt.BrokerStateCheck != "ok" ||
 		manifest.VerificationReceipt.CandidateBrokerStateSHA256 != manifest.BrokerStateSHA256 {

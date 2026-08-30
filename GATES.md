@@ -61,6 +61,8 @@ G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4P first-run empty-snapshot import recovery
 ├─ G4Q Kiwoom credential-free latest-trade normalization
 ├─ G4R Kiwoom credential-free 0B realtime-price frame contract
+├─ G4S Kiwoom credential-free durable latest-trade observation
+├─ G4T Kiwoom credential-free one-shot latest-trade capture
 ├─ K2B Kiwoom mock-order broker transport and lookup recovery
 └─ then Toss Securities read-only as the second adapter
    |

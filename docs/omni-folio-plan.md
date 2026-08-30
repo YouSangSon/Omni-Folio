@@ -1169,3 +1169,21 @@ G4R fixes the smallest consumer-safe part of official realtime `0B` before selec
 - The official sample lists FID `9081` as exchange classification but does not pin values. The DTO therefore omits exchange instead of claiming KRX from a bare item.
 
 No WebSocket dependency, connection, LOGIN/PING, reconnect/resubscribe/backpressure, credential, durable identity, persistence, scheduler, route or Flutter consumer was added. RED/GREEN commits are `2e80583`/`35116ea`; review boundary regression/fix commits are `dac201e`/`4da510f`. Evidence is in [`../gates/g4r-kiwoom-realtime-price.md`](../gates/g4r-kiwoom-realtime-price.md).
+
+## 2026-08-30 G4S continuation: durable Kiwoom latest-trade observation
+
+G4S stores the existing credential-free `KiwoomLatestTrade` DTO in the append-only security-price series without treating Kiwoom's second-level tick time as a unique trade-tape event ID. The durable source is `kiwoom_mock` or `kiwoom_production`; the source observation ID is a SHA-256 observation slot over `ka10079`, source, internal instrument ID, `XKRX`, six-digit KRX symbol, `KRW`, `price_adjustment=unspecified` and provider observed second.
+
+The first valid row fixes the slot price and first fetched time. Re-fetching the same slot with the same price is an idempotent no-op even when `fetched_at` changes; a different price in the same provider second fails closed. Direct internal writes also reject tampered IDs and non-KRX/KRW Kiwoom identities, so a caller cannot smuggle AAPL/XNAS/USD under the Kiwoom namespace.
+
+Schema v12 rebuilds only `security_price_observations` to admit the two Kiwoom source namespaces and preserve strict insert-only storage, source identity uniqueness, slot uniqueness, canonical row hash and latest index. Backup format stays v7 but declares schema v12. A v7/schema-v11 backup remains accepted only after its original DB hash is checked, copied to an owned temporary candidate, migrated to v12 and verified without mutating the source artifact.
+
+Still open: credentialed observation of official timezone/freshness/duplicate behavior, server-trusted cutoff, source priority and calendar policy. Existing holding valuation and public portfolio snapshot still read only `local_fixture`; no route, Flutter UI, scheduler, realtime ingestion, order decision or live authority was added. Evidence is in [`../gates/g4s-kiwoom-durable-price-observation.md`](../gates/g4s-kiwoom-durable-price-observation.md).
+
+## 2026-08-30 G4T continuation: one-shot Kiwoom latest-trade capture
+
+G4T closes only the missing internal seam between G4Q normalization and G4S persistence. One service method validates the concrete client and six-digit KRX symbol before network access, derives `instrument_<lowercase symbol>` with the same helper as ledger import, calls the existing `LatestTrade` read once, then delegates the returned DTO to the existing append-only writer. Direct Kiwoom writes reject any alternate instrument ID, preventing the prior `instrument_005930` versus `krx_005930` split.
+
+The capture layer adds no retry. An identical later fetch returns the first durable observation; provider failure or a same-provider-second different-price conflict returns no observation and leaves the complete price series and recovery proof unchanged. Existing read transport behavior, environment-to-source mapping, schema v12, backup v7 and the `local_fixture`-only valuation boundary are reused without modification.
+
+No durable listing registry, runtime caller, scheduler, worker, route, OpenAPI/Flutter surface, credential, external request, freshness/source-priority/calendar policy, strategy input, order authority or live-money path was added. Symbol changes, multi-venue listings and identifier corrections remain explicit prerequisites for a future owner-declared registry. Evidence is in [`../gates/g4t-kiwoom-one-shot-price-capture.md`](../gates/g4t-kiwoom-one-shot-price-capture.md).

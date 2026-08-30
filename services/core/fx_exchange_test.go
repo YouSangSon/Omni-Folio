@@ -61,7 +61,7 @@ func TestFXExchangePreviewApplyReplayAndBackupRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v7" || manifest.SchemaVersion != "omni-folio.sqlite.v11" {
+	if manifest.FormatVersion != "omni-folio-backup.v7" || manifest.SchemaVersion != "omni-folio.sqlite.v12" {
 		t.Fatalf("FX backup versions drifted: %+v", manifest)
 	}
 	if err := verifyManifest(backup, golden, manifestPath); err != nil {
@@ -167,7 +167,7 @@ func TestVerifyManifestMigratesV8BackupCopy(t *testing.T) {
 func TestVerifyManifestMigratesV9BackupCopy(t *testing.T) {
 	svc, _ := testService(t, nil, nil)
 	golden := writeCurrentSnapshot(t, svc.db)
-	if _, err := svc.db.Exec(`DROP TRIGGER security_price_observations_no_update; DROP TRIGGER security_price_observations_no_delete; DROP TABLE security_price_observations; DELETE FROM schema_migrations WHERE version=11; DROP TRIGGER fx_observations_no_update; DROP TRIGGER fx_observations_no_delete; DROP TABLE fx_observations; DELETE FROM schema_migrations WHERE version=10`); err != nil {
+	if _, err := svc.db.Exec(`DROP TRIGGER security_price_observations_no_update; DROP TRIGGER security_price_observations_no_delete; DROP TABLE security_price_observations; DELETE FROM schema_migrations WHERE version IN (11,12); DROP TRIGGER fx_observations_no_update; DROP TRIGGER fx_observations_no_delete; DROP TABLE fx_observations; DELETE FROM schema_migrations WHERE version=10`); err != nil {
 		t.Fatal(err)
 	}
 	backup := filepath.Join(t.TempDir(), "legacy-v9.db")

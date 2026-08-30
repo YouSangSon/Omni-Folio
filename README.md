@@ -10,10 +10,10 @@
 | Gate | 상태 | 증거 |
 |---|---|---|
 | G0 아키텍처·계약 | 통과 | versioned OpenAPI/JSON Schema, runtime ADR, root commands |
-| G1 로컬 원장 | 통과 | CSV preview → atomic apply → exact cash/trade/dividend/tax/split/FX replay → versioned FIFO residual allocation → append-only cash void → direct FX observation → cash-only direct-FX valuation → durable security price observation → snapshot/receipt → schema v11/backup v7와 legacy v8/v9/v10 owned-copy migration restore proof |
+| G1 로컬 원장 | 통과 | CSV preview → atomic apply → exact cash/trade/dividend/tax/split/FX replay → versioned FIFO residual allocation → append-only cash void → direct FX observation → cash-only direct-FX valuation → durable security price observation → snapshot/receipt → schema v12/backup v7와 legacy v8/v9/v10/v11 owned-copy migration restore proof |
 | G2 Flutter client | 부분 통과 | iOS·Android·web release build와 자동 parser/widget 테스트 통과; chart 포함 Android emulator build/raster p95 2회 통과, physical-device·수동 screen-reader 및 test-instrumentation 격리 증거 남음 |
 | G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, append-only candidate registry, exact selection-bound order authority, credential-free paper execution, atomic halt/rollback safety |
-| G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot, G4I/K2C 내부 합성 authority, G4J/K2B2 credential-free mock 지정가 submit, G4K 저장된 보유수량 대조 read view, G4L 검증된 로컬 주문 lifecycle read view, G4M 홈 저장 대조 신뢰 요약, G4N pending-action 안전 경고, G4O local daily chart 표시 범위, G4P 첫 실행 import 복구 경로, G4Q credential-free 최신 1틱 체결, G4R credential-free 0B 실시간 가격 frame 정규화 통과. 실제 키움 credentialed 시세·모의주문 관찰, freshness/scheduling, unknown-submit 조회 복구, 주문 mutation UI, production risk와 모든 live gate는 남는다. |
+| G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot, G4I/K2C 내부 합성 authority, G4J/K2B2 credential-free mock 지정가 submit, G4K 저장된 보유수량 대조 read view, G4L 검증된 로컬 주문 lifecycle read view, G4M 홈 저장 대조 신뢰 요약, G4N pending-action 안전 경고, G4O local daily chart 표시 범위, G4P 첫 실행 import 복구 경로, G4Q credential-free 최신 1틱 체결, G4R credential-free 0B 실시간 가격 frame, G4S credential-free durable 최신 체결 관측 통과. 실제 키움 credentialed 시세·모의주문 관찰, freshness/scheduling, valuation 승격, unknown-submit 조회 복구, 주문 mutation UI, production risk와 모든 live gate는 남는다. |
 
 세부 상태와 완료 조건은 [`PLAN.md`](PLAN.md)와 [`GATES.md`](GATES.md)에서 관리합니다.
 
@@ -145,9 +145,9 @@ curl -fsS 'http://127.0.0.1:8080/v1/portfolio/cash-valuation?base_currency=KRW&a
 
 ### Durable security price observation foundation
 
-G1.12는 보유자산 평가에 앞서 local fixture 종목 가격을 schema v11 `STRICT`/insert-only series에 보존합니다. source identity, instrument ID, symbol, venue, currency, positive canonical price, `price_adjustment=unspecified`, observed/fetched/recorded UTC 시각과 canonical row hash를 검증합니다. 내부 exact-as-of 조회는 모든 identity 차원을 고정하고 세 시각이 cutoff 이하인 관측만 선택합니다.
+G1.12는 보유자산 평가에 앞서 local fixture 종목 가격을 schema v12 `STRICT`/insert-only series에 보존합니다. source identity, instrument ID, symbol, venue, currency, positive canonical price, `price_adjustment=unspecified`, observed/fetched/recorded UTC 시각과 canonical row hash를 검증합니다. 내부 exact-as-of 조회는 모든 identity 차원을 고정하고 세 시각이 cutoff 이하인 관측만 선택합니다.
 
-Backup v7은 가격 series digest/count를 검증하며 v6/schema-v10 artifact는 원본을 바꾸지 않는 owned copy에서 v11로 migration합니다. 빈 restore 후보도 embedded migration과 동일한 table DDL·latest index·insert-only trigger를 요구합니다. public API, Flutter 화면, provider 요청, scheduler, 보유·손익·성과 평가는 추가하지 않았고 `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다.
+Backup v7은 가격 series digest/count를 검증하며 v6/schema-v10과 v7/schema-v11 artifact는 원본을 바꾸지 않는 owned copy에서 v12로 migration합니다. 빈 restore 후보도 embedded migration과 동일한 table DDL·latest index·insert-only trigger를 요구합니다. public API, Flutter 화면, provider 요청, scheduler, 보유·손익·성과 평가는 추가하지 않았고 `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다.
 
 ### Internal native-currency holding valuation
 
@@ -159,7 +159,13 @@ G1.13의 `native_holding_valuation_v1`은 같은 read-only transaction에서 현
 
 G4Q는 공식 `ka10079` 1틱 응답을 기존 Kiwoom OAuth/read transport의 합성 in-memory 응답으로 검증합니다. KRX 6자리 symbol, exact 가격 magnitude, provider `cntr_tm`과 별도 fetch 시각만 canonical 내부 DTO로 반환하며 잘못된 row, 시간 역행, 같은 초의 서로 다른 가격과 로컬 수신 시각보다 미래인 체결은 전체 거절합니다.
 
-이 계약은 실제 credential·외부 요청·public API·DB writer를 추가하지 않습니다. 공식 응답에 durable event ID와 명시적 timezone/price-adjustment 근거가 없으므로 G1.12 가격 series나 G1.13 평가에 아직 연결하지 않습니다.
+G4Q 자체는 실제 credential·외부 요청·public API·DB writer를 추가하지 않습니다. 공식 응답에 durable event ID와 명시적 timezone/price-adjustment 근거가 없으므로 G4S는 다음 단계에서 trade ID가 아니라 보수적인 관측 슬롯으로만 저장합니다.
+
+### Credential-free Kiwoom durable latest-trade observation
+
+G4S는 G4Q의 `KiwoomLatestTrade` DTO를 Go 내부 writer로만 schema v12 가격 series에 저장합니다. source는 `kiwoom_mock` 또는 `kiwoom_production`으로 분리하고, identity는 provider trade ID가 아니라 `ka10079`·환경·내부 instrument ID·`XKRX`·6자리 symbol·`KRW`·`unspecified`·provider observed second를 묶은 관측 슬롯입니다. 같은 슬롯의 같은 가격은 반복 fetch여도 no-op이고, 같은 초의 다른 가격·tampered ID·비 KRX/KRW identity는 거절합니다.
+
+이 저장값은 아직 valuation authority가 아닙니다. 기존 holding valuation과 public snapshot은 계속 `local_fixture`만 읽고, scheduler·route·Flutter 화면·실제 credential·주문 판단은 추가하지 않았습니다.
 
 ### Credential-free Kiwoom realtime price
 
@@ -187,7 +193,7 @@ cd services/core
 go test -run '^TestG4H' -count=1 ./...
 ```
 
-현재 schema v11/backup v7은 ledger event, cash-void/FX guard, direct FX observation, security price observation, raw broker snapshot, revisioned broker reconciliation, execution-authority event, risk reservation, strategy registry와 synthetic/paper 주문을 insert-only로 보호하고 각각의 digest/count와 replay 가능한 canonical record를 restore 후보에서 검증합니다. legacy v5/schema-v8·v9 및 v6/schema-v10 backup은 원본을 수정하지 않는 owned copy를 v11로 migration해 같은 restore proof를 적용합니다. G4H 자체는 credential, broker request, scheduling, 공식 freshness/timezone, 현금·평가금액 reconciliation, public API/UI 또는 live readiness를 증명하지 않습니다.
+현재 schema v12/backup v7은 ledger event, cash-void/FX guard, direct FX observation, security price observation, raw broker snapshot, revisioned broker reconciliation, execution-authority event, risk reservation, strategy registry와 synthetic/paper 주문을 insert-only로 보호하고 각각의 digest/count와 replay 가능한 canonical record를 restore 후보에서 검증합니다. legacy v5/schema-v8·v9, v6/schema-v10 및 v7/schema-v11 backup은 원본을 수정하지 않는 owned copy를 v12로 migration해 같은 restore proof를 적용합니다. G4H 자체는 credential, broker request, scheduling, 공식 freshness/timezone, 현금·평가금액 reconciliation, public API/UI 또는 live readiness를 증명하지 않습니다.
 
 ### Stored broker reconciliation read view
 
@@ -218,7 +224,7 @@ make run-improvement
 
 전략 개선 runner는 유한한 long-only SMA 후보를 expanding walk-forward로 평가하고 final holdout을 한 번만 엽니다. 결과는 `paper_candidate` 또는 `no_promotion`만 만들 수 있으며 credential·주문·live 승격 권한을 얻지 못합니다.
 
-Go core는 이 로컬 결과를 현재 schema v11 SQLite의 insert-only registry에 등록합니다. `no_promotion`도 거절 evidence로 보존되지만 선택할 수 없습니다. `paper_candidate` 선택은 현재 champion과 직접 비교하는 로직이 아직 없으므로 명시적 CLI와 optimistic concurrency를 요구하며, rollback은 직전 선택이나 `no_strategy`로만 새 이벤트를 append합니다.
+Go core는 이 로컬 결과를 현재 schema v12 SQLite의 insert-only registry에 등록합니다. `no_promotion`도 거절 evidence로 보존되지만 선택할 수 없습니다. `paper_candidate` 선택은 현재 champion과 직접 비교하는 로직이 아직 없으므로 명시적 CLI와 optimistic concurrency를 요구하며, rollback은 직전 선택이나 `no_strategy`로만 새 이벤트를 append합니다.
 
 ```sh
 candidate_file="$(mktemp)"

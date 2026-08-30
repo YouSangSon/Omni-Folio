@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -14,6 +16,180 @@ func securityPriceInput() SecurityPriceObservationInput {
 		Source: "local_fixture", SourceObservationID: "aapl_close_20260110", InstrumentID: "US0378331005",
 		Symbol: "AAPL", Venue: "XNAS", Currency: "USD", Price: "250.25",
 		PriceAdjustment: marketDataAdjustmentUnspecified, ObservedAt: "2026-01-10T15:00:00Z", FetchedAt: "2026-01-10T15:00:01Z",
+	}
+}
+
+func TestKiwoomLatestTradeCapturePersistsOnceAndPreservesKnownGood(t *testing.T) {
+	svc, _ := testService(t, []time.Time{mustTime("2026-08-24T01:30:02Z")}, nil)
+	row := `{"cur_prc":"1250","trde_qty":"5","cntr_tm":"20260824103000","open_pric":"1200","high_pric":"1300","low_pric":"1150"}`
+	client := onePageLatestTradeClient(t, tradeBody("005930", row))
+	client.now = func() time.Time { return mustTime("2026-08-24T01:30:01Z") }
+
+	stored, err := svc.captureKiwoomLatestTradeObservation(context.Background(), client, "005930")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, proof, err := replaySecurityPriceObservations(context.Background(), svc.db)
+	if err != nil || len(before) != 1 || before[0].Source != "kiwoom_production" || before[0].InstrumentID != "instrument_005930" {
+		t.Fatalf("captured observation=%+v proof=%+v err=%v", before, proof, err)
+	}
+
+	replayClient := onePageLatestTradeClient(t, tradeBody("005930", row))
+	replayClient.now = func() time.Time { return mustTime("2026-08-24T01:30:03Z") }
+	replayed, err := svc.captureKiwoomLatestTradeObservation(context.Background(), replayClient, "005930")
+	if err != nil || !reflect.DeepEqual(stored, replayed) {
+		t.Fatalf("same-slot capture drifted: stored=%+v replayed=%+v err=%v", stored, replayed, err)
+	}
+
+	failedScript := &kiwoomScript{t: t, steps: []func(*http.Request) *http.Response{
+		func(*http.Request) *http.Response {
+			return kiwoomResponse(http.StatusOK, nil, syntheticTokenJSON("token"))
+		},
+		func(*http.Request) *http.Response { return kiwoomResponse(http.StatusInternalServerError, nil, `{}`) },
+	}}
+	failedClient := newSyntheticKiwoomClient(t, KiwoomProduction, failedScript)
+	if observation, err := svc.captureKiwoomLatestTradeObservation(context.Background(), failedClient, "005930"); err == nil || observation != nil || failedScript.calls != 2 {
+		t.Fatalf("provider failure was retried or stored: observation=%+v calls=%d err=%v", observation, failedScript.calls, err)
+	}
+	conflictClient := onePageLatestTradeClient(t, tradeBody("005930", strings.Replace(row, `"1250"`, `"1251"`, 1)))
+	conflictClient.now = func() time.Time { return mustTime("2026-08-24T01:30:04Z") }
+	if observation, err := svc.captureKiwoomLatestTradeObservation(context.Background(), conflictClient, "005930"); err == nil || observation != nil {
+		t.Fatalf("same-slot price conflict was stored: observation=%+v err=%v", observation, err)
+	}
+	after, afterProof, err := replaySecurityPriceObservations(context.Background(), svc.db)
+	if err != nil || !reflect.DeepEqual(before, after) || proof != afterProof {
+		t.Fatalf("failed capture changed known-good evidence: before=%+v after=%+v proof=%+v after_proof=%+v err=%v", before, after, proof, afterProof, err)
+	}
+
+	networkCalls := 0
+	guardedClient := newSyntheticKiwoomClient(t, KiwoomMock, kiwoomRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		networkCalls++
+		return nil, errors.New("unexpected network call")
+	}))
+	for _, input := range []struct {
+		client *KiwoomClient
+		symbol string
+	}{
+		{nil, "005930"},
+		{guardedClient, "A005930"},
+	} {
+		if observation, err := svc.captureKiwoomLatestTradeObservation(context.Background(), input.client, input.symbol); err == nil || observation != nil {
+			t.Fatalf("invalid capture identity was accepted: input=%+v observation=%+v err=%v", input, observation, err)
+		}
+	}
+	if networkCalls != 0 {
+		t.Fatalf("invalid capture identity reached network %d times", networkCalls)
+	}
+}
+
+func TestKiwoomLatestTradeRecordsDurablePriceObservation(t *testing.T) {
+	svc, _ := testService(t, []time.Time{
+		mustTime("2026-08-24T01:30:02Z"),
+		mustTime("2026-08-24T01:30:03Z"),
+	}, nil)
+	trade := KiwoomLatestTrade{
+		Source: "kiwoom", Environment: KiwoomProduction, Exchange: KiwoomKRX,
+		Symbol: "005930", Currency: "KRW", Price: "1250",
+		ObservedAt: "2026-08-24T01:30:00Z", FetchedAt: "2026-08-24T01:30:01Z",
+	}
+
+	stored, err := svc.recordKiwoomLatestTradeObservation(context.Background(), trade)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.InstrumentID != "instrument_005930" {
+		t.Fatalf("Kiwoom observation did not use the ledger instrument identity: %+v", stored)
+	}
+	replayed, err := svc.recordKiwoomLatestTradeObservation(context.Background(), trade)
+	if err != nil || !reflect.DeepEqual(stored, replayed) {
+		t.Fatalf("exact Kiwoom observation replay drifted: stored=%+v replayed=%+v err=%v", stored, replayed, err)
+	}
+	nextFetch := trade
+	nextFetch.FetchedAt = "2026-08-24T01:30:02Z"
+	replayed, err = svc.recordKiwoomLatestTradeObservation(context.Background(), nextFetch)
+	if err != nil || !reflect.DeepEqual(stored, replayed) {
+		t.Fatalf("same-slot Kiwoom observation replay drifted: stored=%+v replayed=%+v err=%v", stored, replayed, err)
+	}
+	changedPrice := nextFetch
+	changedPrice.Price = "1251"
+	if _, err := svc.recordKiwoomLatestTradeObservation(context.Background(), changedPrice); err == nil {
+		t.Fatal("same-second Kiwoom price ambiguity was stored")
+	}
+	directReplay := SecurityPriceObservationInput{
+		Source: stored.Source, SourceObservationID: stored.SourceObservationID, InstrumentID: stored.InstrumentID,
+		Symbol: stored.Symbol, Venue: stored.Venue, Currency: stored.Currency, Price: stored.Price,
+		PriceAdjustment: stored.PriceAdjustment, ObservedAt: stored.ObservedAt, FetchedAt: nextFetch.FetchedAt,
+	}
+	if replayed, err = svc.recordSecurityPriceObservation(context.Background(), directReplay); err != nil || !reflect.DeepEqual(stored, replayed) {
+		t.Fatalf("atomic same-slot replay drifted: stored=%+v replayed=%+v err=%v", stored, replayed, err)
+	}
+	tamperedID := directReplay
+	tamperedID.SourceObservationID = strings.Repeat("0", 64)
+	if _, err := svc.recordSecurityPriceObservation(context.Background(), tamperedID); err == nil {
+		t.Fatal("Kiwoom observation accepted an identity not derived from its slot")
+	}
+	tamperedInstrument := directReplay
+	tamperedInstrument.InstrumentID = "krx_005930"
+	tamperedInstrument.SourceObservationID, _ = kiwoomLatestTradeObservationID(
+		tamperedInstrument.Source, tamperedInstrument.InstrumentID, tamperedInstrument.Symbol,
+		tamperedInstrument.Venue, tamperedInstrument.Currency, tamperedInstrument.PriceAdjustment,
+		tamperedInstrument.ObservedAt,
+	)
+	if _, err := svc.recordSecurityPriceObservation(context.Background(), tamperedInstrument); err == nil {
+		t.Fatal("Kiwoom observation accepted an instrument identity outside the ledger rule")
+	}
+	for name, mutate := range map[string]func(*SecurityPriceObservationInput){
+		"symbol":   func(v *SecurityPriceObservationInput) { v.Symbol = "AAPL" },
+		"venue":    func(v *SecurityPriceObservationInput) { v.Venue = "XNAS" },
+		"currency": func(v *SecurityPriceObservationInput) { v.Currency = "USD" },
+	} {
+		t.Run("direct_"+name, func(t *testing.T) {
+			badMarket := directReplay
+			mutate(&badMarket)
+			badMarket.SourceObservationID, _ = kiwoomLatestTradeObservationID(
+				badMarket.Source, badMarket.InstrumentID, badMarket.Symbol, badMarket.Venue,
+				badMarket.Currency, badMarket.PriceAdjustment, badMarket.ObservedAt,
+			)
+			if _, err := svc.recordSecurityPriceObservation(context.Background(), badMarket); err == nil {
+				t.Fatalf("direct Kiwoom observation accepted an invalid market identity: %+v", badMarket)
+			}
+		})
+	}
+	mockTrade := trade
+	mockTrade.Environment = KiwoomMock
+	if _, err := svc.recordKiwoomLatestTradeObservation(context.Background(), mockTrade); err != nil {
+		t.Fatal(err)
+	}
+	invalidTrades := map[string]func(*KiwoomLatestTrade){
+		"source":      func(v *KiwoomLatestTrade) { v.Source = "other" },
+		"environment": func(v *KiwoomLatestTrade) { v.Environment = "other" },
+		"exchange":    func(v *KiwoomLatestTrade) { v.Exchange = KiwoomNXT },
+		"symbol":      func(v *KiwoomLatestTrade) { v.Symbol = "AAPL" },
+		"currency":    func(v *KiwoomLatestTrade) { v.Currency = "USD" },
+		"price":       func(v *KiwoomLatestTrade) { v.Price = "0" },
+		"observed_at": func(v *KiwoomLatestTrade) { v.ObservedAt = "not-a-time" },
+	}
+	for name, mutate := range invalidTrades {
+		t.Run(name, func(t *testing.T) {
+			invalid := trade
+			mutate(&invalid)
+			if _, err := svc.recordKiwoomLatestTradeObservation(context.Background(), invalid); err == nil {
+				t.Fatalf("invalid Kiwoom trade was recorded: %+v", invalid)
+			}
+		})
+	}
+	observations, proof, err := replaySecurityPriceObservations(context.Background(), svc.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(observations) != 2 || proof.Observations != 2 || observations[0].Source != "kiwoom_production" ||
+		observations[1].Source != "kiwoom_mock" || observations[0].SourceObservationID == observations[1].SourceObservationID ||
+		!strategySHA256Pattern.MatchString(observations[0].SourceObservationID) || observations[0].Venue != "XKRX" ||
+		observations[0].PriceAdjustment != marketDataAdjustmentUnspecified {
+		t.Fatalf("Kiwoom durable observation contract drifted: observations=%+v proof=%+v", observations, proof)
+	}
+	if latest, err := latestSecurityPriceObservation(context.Background(), svc.db, "kiwoom_production", "instrument_005930", "005930", "XKRX", "KRW", marketDataAdjustmentUnspecified, "2026-08-24T01:30:03Z"); err == nil || latest != nil {
+		t.Fatalf("Kiwoom observation became a public/local-fixture valuation source: latest=%+v err=%v", latest, err)
 	}
 }
 
@@ -235,7 +411,7 @@ func TestSecurityPriceObservationRestoreRejectsWeakAdjustmentConstraint(t *testi
 	}
 }
 
-func TestSecurityPriceObservationBackupProofAndLegacyV10CopyMigration(t *testing.T) {
+func TestSecurityPriceObservationBackupProofAndLegacyCopyMigrations(t *testing.T) {
 	svc, _ := testService(t, nil, nil)
 	if _, err := svc.recordSecurityPriceObservation(context.Background(), securityPriceInput()); err != nil {
 		t.Fatal(err)
@@ -247,7 +423,7 @@ func TestSecurityPriceObservationBackupProofAndLegacyV10CopyMigration(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v7" || manifest.SchemaVersion != "omni-folio.sqlite.v11" ||
+	if manifest.FormatVersion != "omni-folio-backup.v7" || manifest.SchemaVersion != "omni-folio.sqlite.v12" ||
 		manifest.SecurityPriceObservationCount != 1 || len(manifest.SecurityPriceObservationStateSHA256) != 64 ||
 		manifest.VerificationReceipt.SecurityPriceObservationCheck != "ok" ||
 		manifest.VerificationReceipt.CandidateSecurityPriceObservationStateSHA256 != manifest.SecurityPriceObservationStateSHA256 {
@@ -292,7 +468,47 @@ func TestSecurityPriceObservationBackupProofAndLegacyV10CopyMigration(t *testing
 		t.Fatal("restore accepted security prices without the exact latest index")
 	}
 
-	if _, err := svc.db.Exec(`DROP TRIGGER security_price_observations_no_update; DROP TRIGGER security_price_observations_no_delete; DROP TABLE security_price_observations; DELETE FROM schema_migrations WHERE version=11`); err != nil {
+	if _, err := svc.db.Exec(`DROP TRIGGER security_price_observations_no_update; DROP TRIGGER security_price_observations_no_delete; DROP INDEX security_price_observations_latest_idx; ALTER TABLE security_price_observations RENAME TO security_price_observations_v12`); err != nil {
+		t.Fatal(err)
+	}
+	v11Migration, err := migrationFiles.ReadFile("migrations/011_security_price_observations.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.db.Exec(string(v11Migration)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.db.Exec(`INSERT INTO security_price_observations SELECT * FROM security_price_observations_v12; DROP TABLE security_price_observations_v12; DELETE FROM schema_migrations WHERE version=12`); err != nil {
+		t.Fatal(err)
+	}
+	legacyV11Backup := filepath.Join(t.TempDir(), "legacy-v11.db")
+	if _, err := svc.db.Exec(`VACUUM INTO '` + strings.ReplaceAll(legacyV11Backup, "'", "''") + `'`); err != nil {
+		t.Fatal(err)
+	}
+	legacyV11Manifest := readJSONMap(t, manifestPath)
+	legacyV11Manifest["schema_version"] = "omni-folio.sqlite.v11"
+	v11SHA, v11Size, err := hashFile(legacyV11Backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyV11Manifest["db_sha256"] = v11SHA
+	legacyV11Manifest["size_bytes"] = v11Size
+	legacyV11Manifest["verification_receipt"].(map[string]any)["candidate_db_sha256"] = v11SHA
+	legacyV11ManifestPath := filepath.Join(t.TempDir(), "legacy-v11.manifest.json")
+	writeJSONFile(t, legacyV11ManifestPath, legacyV11Manifest)
+	beforeV11SHA, beforeV11Size, err := hashFile(legacyV11Backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyManifest(legacyV11Backup, golden, legacyV11ManifestPath); err != nil {
+		t.Fatal(err)
+	}
+	afterV11SHA, afterV11Size, err := hashFile(legacyV11Backup)
+	if err != nil || beforeV11SHA != afterV11SHA || beforeV11Size != afterV11Size {
+		t.Fatalf("legacy v11 source was changed during copy migration: before=(%s,%d) after=(%s,%d) err=%v", beforeV11SHA, beforeV11Size, afterV11SHA, afterV11Size, err)
+	}
+
+	if _, err := svc.db.Exec(`DROP TRIGGER security_price_observations_no_update; DROP TRIGGER security_price_observations_no_delete; DROP TABLE security_price_observations; DELETE FROM schema_migrations WHERE version IN (11,12)`); err != nil {
 		t.Fatal(err)
 	}
 	legacyBackup := filepath.Join(t.TempDir(), "legacy-v10.db")

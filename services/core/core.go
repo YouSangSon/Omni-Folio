@@ -32,12 +32,12 @@ import (
 const (
 	maxBodyBytes         = 1 << 20
 	maxImportRows        = 10_000
-	latestSchema         = 11
+	latestSchema         = 12
 	zeroTime             = "1970-01-01T00:00:00Z"
 	csvSchema            = "omni-folio.csv.v1"
 	mappingSchema        = "canonical-transaction.v4"
 	backupFormat         = "omni-folio-backup.v7"
-	backupSchema         = "omni-folio.sqlite.v11"
+	backupSchema         = "omni-folio.sqlite.v12"
 	legacyBackupFormat   = "omni-folio-backup.v5"
 	legacyFXBackupFormat = "omni-folio-backup.v6"
 )
@@ -297,7 +297,7 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("unsupported schema version %d", current)
 		}
 	}
-	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql"}
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql"}
 	for version := current + 1; version <= latestSchema; version++ {
 		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
 		if err != nil {
@@ -802,7 +802,7 @@ func (s *Service) normalize(record []string, value func([]string, string) string
 		if tx.Symbol == "" {
 			errs = append(errs, APIError{"required", "symbol is required for DIVIDEND", "symbol"})
 		} else {
-			tx.InstrumentID = "instrument_" + strings.ToLower(tx.Symbol)
+			tx.InstrumentID = instrumentIDForSymbol(tx.Symbol)
 		}
 		if tx.Quantity != "" || tx.Price != "" || tx.Fee != "" {
 			errs = append(errs, APIError{"invalid_fields", "DIVIDEND quantity, price, and fee must be empty", "quantity"})
@@ -815,7 +815,7 @@ func (s *Service) normalize(record []string, value func([]string, string) string
 		if tx.Symbol == "" {
 			errs = append(errs, APIError{"required", "symbol is required for SPLIT", "symbol"})
 		} else {
-			tx.InstrumentID = "instrument_" + strings.ToLower(tx.Symbol)
+			tx.InstrumentID = instrumentIDForSymbol(tx.Symbol)
 		}
 		positiveDecimal(tx.Quantity, "quantity", &errs)
 		if tx.Price != "" || tx.Fee != "" {
@@ -862,7 +862,7 @@ func (s *Service) normalize(record []string, value func([]string, string) string
 		if tx.Symbol == "" {
 			errs = append(errs, APIError{"required", "symbol is required for trades", "symbol"})
 		} else {
-			tx.InstrumentID = "instrument_" + strings.ToLower(tx.Symbol)
+			tx.InstrumentID = instrumentIDForSymbol(tx.Symbol)
 		}
 		quantity, quantityErr := positiveDecimal(tx.Quantity, "quantity", &errs)
 		price, priceErr := positiveDecimal(tx.Price, "price", &errs)
@@ -883,6 +883,10 @@ func (s *Service) normalize(record []string, value func([]string, string) string
 		errs = append(errs, APIError{"invalid_type", "unsupported transaction type", "type"})
 	}
 	return tx, errs
+}
+
+func instrumentIDForSymbol(symbol string) string {
+	return "instrument_" + strings.ToLower(symbol)
 }
 
 func positiveDecimal(raw, field string, errs *[]APIError) (*big.Rat, error) {
@@ -1647,11 +1651,16 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='security_price_observations'`).Scan(&securityPriceTableDefinition); err != nil {
 		return fmt.Errorf("restore security price observation definition: %w", err)
 	}
-	securityPriceMigration, err := migrationFiles.ReadFile("migrations/011_security_price_observations.sql")
+	securityPriceMigration, err := migrationFiles.ReadFile("migrations/012_kiwoom_security_price_observations.sql")
 	if err != nil {
 		return fmt.Errorf("restore security price observation definition source: %w", err)
 	}
-	expectedSecurityPriceTable := strings.SplitN(string(securityPriceMigration), "\n\nCREATE INDEX", 2)[0]
+	const securityPriceTablePrefix = "CREATE TABLE security_price_observations"
+	tableStart := strings.Index(string(securityPriceMigration), securityPriceTablePrefix)
+	if tableStart < 0 {
+		return errors.New("restore security price observation definition source is invalid")
+	}
+	expectedSecurityPriceTable := strings.SplitN(string(securityPriceMigration)[tableStart:], "\n\nINSERT INTO", 2)[0]
 	expectedSecurityPriceTable = strings.TrimSuffix(strings.TrimSpace(expectedSecurityPriceTable), ";")
 	if strings.ToLower(strings.Join(strings.Fields(securityPriceTableDefinition), " ")) !=
 		strings.ToLower(strings.Join(strings.Fields(expectedSecurityPriceTable), " ")) {
@@ -1868,11 +1877,12 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	legacyV5Manifest := manifest.FormatVersion == legacyBackupFormat &&
 		(manifest.SchemaVersion == "omni-folio.sqlite.v8" || manifest.SchemaVersion == "omni-folio.sqlite.v9")
 	legacyV6Manifest := manifest.FormatVersion == legacyFXBackupFormat && manifest.SchemaVersion == "omni-folio.sqlite.v10"
-	legacyManifest := legacyV5Manifest || legacyV6Manifest
+	legacyV7Manifest := manifest.FormatVersion == backupFormat && manifest.SchemaVersion == "omni-folio.sqlite.v11"
+	legacyManifest := legacyV5Manifest || legacyV6Manifest || legacyV7Manifest
 	if (!currentManifest && !legacyManifest) || manifest.Encryption.Encrypted || manifest.Encryption.Algorithm != "none" {
 		return errors.New("unsupported backup manifest version or encryption")
 	}
-	if legacyManifest {
+	if legacyV5Manifest || legacyV6Manifest {
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(manifestBytes, &fields); err != nil {
 			return fmt.Errorf("backup manifest fields: %w", err)
@@ -1898,8 +1908,8 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	}
 	receipt := manifest.VerificationReceipt
 	if receipt.Status != "verified" || receipt.IntegrityCheck != "ok" || receipt.GoldenSnapshotCheck != "ok" || receipt.OrderStateCheck != "ok" || receipt.BrokerStateCheck != "ok" || receipt.StrategyRegistryCheck != "ok" ||
-		((currentManifest || legacyV6Manifest) && receipt.FXObservationCheck != "ok") ||
-		(currentManifest && receipt.SecurityPriceObservationCheck != "ok") || !receipt.EligibleForActivation || len(receipt.Errors) != 0 {
+		((currentManifest || legacyV6Manifest || legacyV7Manifest) && receipt.FXObservationCheck != "ok") ||
+		((currentManifest || legacyV7Manifest) && receipt.SecurityPriceObservationCheck != "ok") || !receipt.EligibleForActivation || len(receipt.Errors) != 0 {
 		return errors.New("backup manifest is not eligible for activation")
 	}
 	dbSHA, size, err := hashFile(path)
@@ -1996,7 +2006,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err != nil {
 		return err
 	}
-	if currentManifest || legacyV6Manifest {
+	if currentManifest || legacyV6Manifest || legacyV7Manifest {
 		if manifest.FXObservationStateSHA256 != fx.SHA256 || receipt.CandidateFXObservationStateSHA256 != fx.SHA256 ||
 			manifest.FXObservationCount != fx.Observations {
 			return errors.New("backup FX observation recovery proof mismatch")
@@ -2008,7 +2018,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err != nil {
 		return err
 	}
-	if currentManifest {
+	if currentManifest || legacyV7Manifest {
 		if manifest.SecurityPriceObservationStateSHA256 != securityPrices.SHA256 ||
 			receipt.CandidateSecurityPriceObservationStateSHA256 != securityPrices.SHA256 ||
 			manifest.SecurityPriceObservationCount != securityPrices.Observations {
