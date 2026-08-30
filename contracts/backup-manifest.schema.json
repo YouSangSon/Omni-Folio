@@ -1,17 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://omni-folio.local/contracts/backup-manifest.v6.schema.json",
-  "title": "Omni-Folio Backup Manifest v6",
-  "description": "CLI contract for a separately restored schema-v10 backup candidate. Legacy v5/schema-v8 or schema-v9 artifacts are accepted by the CLI only through an owned migrated copy. Schema validity never authorizes replacing the active DB: database, ledger snapshot, replayable order state, execution authority, risk reservations, known-good broker snapshots, strategy-registry, and direct FX-observation proofs must match and verification_receipt must be verified and eligible_for_activation before replacement.",
+  "$id": "https://omni-folio.local/contracts/backup-manifest.v7.schema.json",
+  "title": "Omni-Folio Backup Manifest v7",
+  "description": "CLI contract for a separately restored schema-v11 backup candidate. Legacy v5/schema-v8 or schema-v9 and v6/schema-v10 artifacts are accepted only through an owned migrated copy. Schema validity never authorizes replacing the active DB: database, ledger snapshot, replayable order state, execution authority, risk reservations, known-good broker snapshots, strategy-registry, direct FX-observation, and security-price-observation proofs must match and verification_receipt must be verified and eligible_for_activation before replacement.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["format_version", "schema_version", "created_at", "source_ledger_revision", "order_state_sha256", "order_count", "order_event_count", "execution_authority_sha256", "execution_authority_event_count", "risk_reservation_sha256", "risk_reservation_count", "broker_state_sha256", "broker_snapshot_count", "broker_reconciliation_count", "strategy_registry_sha256", "strategy_evidence_count", "strategy_selection_event_count", "selected_strategy_result_sha256", "fx_observation_state_sha256", "fx_observation_count", "db_sha256", "size_bytes", "expected_snapshot_sha256", "encryption", "verification_receipt"],
+  "required": ["format_version", "schema_version", "created_at", "source_ledger_revision", "order_state_sha256", "order_count", "order_event_count", "execution_authority_sha256", "execution_authority_event_count", "risk_reservation_sha256", "risk_reservation_count", "broker_state_sha256", "broker_snapshot_count", "broker_reconciliation_count", "strategy_registry_sha256", "strategy_evidence_count", "strategy_selection_event_count", "selected_strategy_result_sha256", "fx_observation_state_sha256", "fx_observation_count", "security_price_observation_state_sha256", "security_price_observation_count", "db_sha256", "size_bytes", "expected_snapshot_sha256", "encryption", "verification_receipt"],
   "properties": {
     "format_version": {
-      "const": "omni-folio-backup.v6"
+      "const": "omni-folio-backup.v7"
     },
     "schema_version": {
-      "const": "omni-folio.sqlite.v10"
+      "const": "omni-folio.sqlite.v11"
     },
     "created_at": {
       "$ref": "#/$defs/timestamp"
@@ -88,6 +88,14 @@
       "minimum": 0,
       "maximum": 9007199254740991
     },
+    "security_price_observation_state_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "security_price_observation_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
     "db_sha256": {
       "$ref": "#/$defs/sha256"
     },
@@ -158,10 +166,10 @@
       ]
     },
     "verification_receipt": {
-      "description": "Verification is performed against a separately restored candidate. Candidate database, ledger snapshot, order-state, known-good broker-state, strategy-registry, and direct FX-observation proofs must equal the manifest before active DB replacement.",
+      "description": "Verification is performed against a separately restored candidate. Candidate database, ledger snapshot, order-state, known-good broker-state, strategy-registry, direct FX-observation, and security-price-observation proofs must equal the manifest before active DB replacement.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["receipt_id", "candidate_id", "verified_at", "status", "integrity_check", "golden_snapshot_check", "order_state_check", "broker_state_check", "strategy_registry_check", "fx_observation_check", "candidate_db_sha256", "candidate_snapshot_sha256", "candidate_order_state_sha256", "candidate_broker_state_sha256", "candidate_strategy_registry_sha256", "candidate_fx_observation_state_sha256", "eligible_for_activation", "errors"],
+      "required": ["receipt_id", "candidate_id", "verified_at", "status", "integrity_check", "golden_snapshot_check", "order_state_check", "broker_state_check", "strategy_registry_check", "fx_observation_check", "security_price_observation_check", "candidate_db_sha256", "candidate_snapshot_sha256", "candidate_order_state_sha256", "candidate_broker_state_sha256", "candidate_strategy_registry_sha256", "candidate_fx_observation_state_sha256", "candidate_security_price_observation_state_sha256", "eligible_for_activation", "errors"],
       "properties": {
         "receipt_id": {
           "$ref": "#/$defs/opaque_id"
@@ -200,6 +208,10 @@
           "type": "string",
           "enum": ["ok", "failed"]
         },
+        "security_price_observation_check": {
+          "type": "string",
+          "enum": ["ok", "failed"]
+        },
         "candidate_db_sha256": {
           "$ref": "#/$defs/sha256"
         },
@@ -216,6 +228,9 @@
           "$ref": "#/$defs/sha256"
         },
         "candidate_fx_observation_state_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "candidate_security_price_observation_state_sha256": {
           "$ref": "#/$defs/sha256"
         },
         "eligible_for_activation": {

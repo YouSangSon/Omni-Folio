@@ -312,7 +312,7 @@ func TestK2AOrderTablesAreInsertOnly(t *testing.T) {
 	}
 }
 
-func TestSchemaMigratesV1ToV10AndReadinessRequiresV10(t *testing.T) {
+func TestSchemaMigratesV1ToV11AndReadinessRequiresV11(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v1.db")
 	db, err := openDB(path)
 	if err != nil {
@@ -340,8 +340,8 @@ func TestSchemaMigratesV1ToV10AndReadinessRequiresV10(t *testing.T) {
 	if err := db.QueryRow(`SELECT MAX(version), COUNT(*) FROM schema_migrations`).Scan(&version, &migrations); err != nil {
 		t.Fatal(err)
 	}
-	if version != 10 || migrations != 10 {
-		t.Fatalf("schema version=(%d,%d), want latest=10 with ten migrations", version, migrations)
+	if version != 11 || migrations != 11 {
+		t.Fatalf("schema version=(%d,%d), want latest=11 with eleven migrations", version, migrations)
 	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM events WHERE event_id='preserved'`).Scan(&preserved); err != nil || preserved != 1 {
 		t.Fatalf("v1 data was not preserved: count=%d err=%v", preserved, err)
@@ -367,6 +367,10 @@ func TestSchemaMigratesV1ToV10AndReadinessRequiresV10(t *testing.T) {
 	if err := db.QueryRow(`SELECT strict FROM pragma_table_list WHERE schema='main' AND type='table' AND name='fx_observations'`).Scan(&fxStrict); err != nil || fxStrict != 1 {
 		t.Fatalf("v10 FX observation table is not strict: strict=%d err=%v", fxStrict, err)
 	}
+	var securityPriceStrict int
+	if err := db.QueryRow(`SELECT strict FROM pragma_table_list WHERE schema='main' AND type='table' AND name='security_price_observations'`).Scan(&securityPriceStrict); err != nil || securityPriceStrict != 1 {
+		t.Fatalf("v11 security price observation table is not strict: strict=%d err=%v", securityPriceStrict, err)
+	}
 	if err := migrate(db); err != nil {
 		t.Fatal("repeated migration was not idempotent:", err)
 	}
@@ -375,7 +379,7 @@ func TestSchemaMigratesV1ToV10AndReadinessRequiresV10(t *testing.T) {
 	w := httptest.NewRecorder()
 	svc.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if w.Code != http.StatusOK {
-		t.Fatalf("v10 schema was not ready: status=%d body=%s", w.Code, w.Body.String())
+		t.Fatalf("v11 schema was not ready: status=%d body=%s", w.Code, w.Body.String())
 	}
 }
 

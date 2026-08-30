@@ -30,15 +30,16 @@ import (
 )
 
 const (
-	maxBodyBytes       = 1 << 20
-	maxImportRows      = 10_000
-	latestSchema       = 10
-	zeroTime           = "1970-01-01T00:00:00Z"
-	csvSchema          = "omni-folio.csv.v1"
-	mappingSchema      = "canonical-transaction.v4"
-	backupFormat       = "omni-folio-backup.v6"
-	backupSchema       = "omni-folio.sqlite.v10"
-	legacyBackupFormat = "omni-folio-backup.v5"
+	maxBodyBytes         = 1 << 20
+	maxImportRows        = 10_000
+	latestSchema         = 11
+	zeroTime             = "1970-01-01T00:00:00Z"
+	csvSchema            = "omni-folio.csv.v1"
+	mappingSchema        = "canonical-transaction.v4"
+	backupFormat         = "omni-folio-backup.v7"
+	backupSchema         = "omni-folio.sqlite.v11"
+	legacyBackupFormat   = "omni-folio-backup.v5"
+	legacyFXBackupFormat = "omni-folio-backup.v6"
 )
 
 //go:embed migrations/*.sql
@@ -175,31 +176,33 @@ type PortfolioSnapshot struct {
 }
 
 type BackupManifest struct {
-	FormatVersion                string              `json:"format_version"`
-	SchemaVersion                string              `json:"schema_version"`
-	CreatedAt                    string              `json:"created_at"`
-	SourceLedgerRevision         string              `json:"source_ledger_revision"`
-	OrderStateSHA256             string              `json:"order_state_sha256"`
-	OrderCount                   int                 `json:"order_count"`
-	OrderEventCount              int                 `json:"order_event_count"`
-	ExecutionAuthoritySHA256     string              `json:"execution_authority_sha256"`
-	ExecutionAuthorityEventCount int                 `json:"execution_authority_event_count"`
-	RiskReservationSHA256        string              `json:"risk_reservation_sha256"`
-	RiskReservationCount         int                 `json:"risk_reservation_count"`
-	BrokerStateSHA256            string              `json:"broker_state_sha256"`
-	BrokerSnapshotCount          int                 `json:"broker_snapshot_count"`
-	BrokerReconciliationCount    int                 `json:"broker_reconciliation_count"`
-	StrategyRegistrySHA256       string              `json:"strategy_registry_sha256"`
-	StrategyEvidenceCount        int                 `json:"strategy_evidence_count"`
-	StrategySelectionEventCount  int                 `json:"strategy_selection_event_count"`
-	SelectedStrategyResultSHA256 string              `json:"selected_strategy_result_sha256"`
-	FXObservationStateSHA256     string              `json:"fx_observation_state_sha256"`
-	FXObservationCount           int                 `json:"fx_observation_count"`
-	DBSHA256                     string              `json:"db_sha256"`
-	SizeBytes                    int64               `json:"size_bytes"`
-	ExpectedSnapshotSHA256       string              `json:"expected_snapshot_sha256"`
-	Encryption                   BackupEncryption    `json:"encryption"`
-	VerificationReceipt          VerificationReceipt `json:"verification_receipt"`
+	FormatVersion                       string              `json:"format_version"`
+	SchemaVersion                       string              `json:"schema_version"`
+	CreatedAt                           string              `json:"created_at"`
+	SourceLedgerRevision                string              `json:"source_ledger_revision"`
+	OrderStateSHA256                    string              `json:"order_state_sha256"`
+	OrderCount                          int                 `json:"order_count"`
+	OrderEventCount                     int                 `json:"order_event_count"`
+	ExecutionAuthoritySHA256            string              `json:"execution_authority_sha256"`
+	ExecutionAuthorityEventCount        int                 `json:"execution_authority_event_count"`
+	RiskReservationSHA256               string              `json:"risk_reservation_sha256"`
+	RiskReservationCount                int                 `json:"risk_reservation_count"`
+	BrokerStateSHA256                   string              `json:"broker_state_sha256"`
+	BrokerSnapshotCount                 int                 `json:"broker_snapshot_count"`
+	BrokerReconciliationCount           int                 `json:"broker_reconciliation_count"`
+	StrategyRegistrySHA256              string              `json:"strategy_registry_sha256"`
+	StrategyEvidenceCount               int                 `json:"strategy_evidence_count"`
+	StrategySelectionEventCount         int                 `json:"strategy_selection_event_count"`
+	SelectedStrategyResultSHA256        string              `json:"selected_strategy_result_sha256"`
+	FXObservationStateSHA256            string              `json:"fx_observation_state_sha256"`
+	FXObservationCount                  int                 `json:"fx_observation_count"`
+	SecurityPriceObservationStateSHA256 string              `json:"security_price_observation_state_sha256"`
+	SecurityPriceObservationCount       int                 `json:"security_price_observation_count"`
+	DBSHA256                            string              `json:"db_sha256"`
+	SizeBytes                           int64               `json:"size_bytes"`
+	ExpectedSnapshotSHA256              string              `json:"expected_snapshot_sha256"`
+	Encryption                          BackupEncryption    `json:"encryption"`
+	VerificationReceipt                 VerificationReceipt `json:"verification_receipt"`
 }
 
 type BackupEncryption struct {
@@ -208,24 +211,26 @@ type BackupEncryption struct {
 }
 
 type VerificationReceipt struct {
-	ReceiptID                         string   `json:"receipt_id"`
-	CandidateID                       string   `json:"candidate_id"`
-	VerifiedAt                        string   `json:"verified_at"`
-	Status                            string   `json:"status"`
-	IntegrityCheck                    string   `json:"integrity_check"`
-	GoldenSnapshotCheck               string   `json:"golden_snapshot_check"`
-	OrderStateCheck                   string   `json:"order_state_check"`
-	BrokerStateCheck                  string   `json:"broker_state_check"`
-	StrategyRegistryCheck             string   `json:"strategy_registry_check"`
-	FXObservationCheck                string   `json:"fx_observation_check"`
-	CandidateDBSHA256                 string   `json:"candidate_db_sha256"`
-	CandidateSnapshotSHA256           string   `json:"candidate_snapshot_sha256"`
-	CandidateOrderStateSHA256         string   `json:"candidate_order_state_sha256"`
-	CandidateBrokerStateSHA256        string   `json:"candidate_broker_state_sha256"`
-	CandidateStrategyRegistrySHA256   string   `json:"candidate_strategy_registry_sha256"`
-	CandidateFXObservationStateSHA256 string   `json:"candidate_fx_observation_state_sha256"`
-	EligibleForActivation             bool     `json:"eligible_for_activation"`
-	Errors                            []string `json:"errors"`
+	ReceiptID                                    string   `json:"receipt_id"`
+	CandidateID                                  string   `json:"candidate_id"`
+	VerifiedAt                                   string   `json:"verified_at"`
+	Status                                       string   `json:"status"`
+	IntegrityCheck                               string   `json:"integrity_check"`
+	GoldenSnapshotCheck                          string   `json:"golden_snapshot_check"`
+	OrderStateCheck                              string   `json:"order_state_check"`
+	BrokerStateCheck                             string   `json:"broker_state_check"`
+	StrategyRegistryCheck                        string   `json:"strategy_registry_check"`
+	FXObservationCheck                           string   `json:"fx_observation_check"`
+	SecurityPriceObservationCheck                string   `json:"security_price_observation_check"`
+	CandidateDBSHA256                            string   `json:"candidate_db_sha256"`
+	CandidateSnapshotSHA256                      string   `json:"candidate_snapshot_sha256"`
+	CandidateOrderStateSHA256                    string   `json:"candidate_order_state_sha256"`
+	CandidateBrokerStateSHA256                   string   `json:"candidate_broker_state_sha256"`
+	CandidateStrategyRegistrySHA256              string   `json:"candidate_strategy_registry_sha256"`
+	CandidateFXObservationStateSHA256            string   `json:"candidate_fx_observation_state_sha256"`
+	CandidateSecurityPriceObservationStateSHA256 string   `json:"candidate_security_price_observation_state_sha256"`
+	EligibleForActivation                        bool     `json:"eligible_for_activation"`
+	Errors                                       []string `json:"errors"`
 }
 
 type appError struct {
@@ -289,7 +294,7 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("unsupported schema version %d", current)
 		}
 	}
-	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql"}
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql"}
 	for version := current + 1; version <= latestSchema; version++ {
 		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
 		if err != nil {
@@ -1306,6 +1311,10 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err != nil {
 		return nil, fmt.Errorf("source FX observation recovery proof: %w", err)
 	}
+	sourceSecurityPrices, err := proveSecurityPriceObservationRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source security price observation recovery proof: %w", err)
+	}
 	createdAt := now().UTC()
 	quoted := strings.ReplaceAll(out, "'", "''")
 	if _, err := db.Exec(`VACUUM INTO '` + quoted + `'`); err != nil {
@@ -1328,6 +1337,10 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err != nil {
 		return nil, err
 	}
+	candidateSecurityPrices, err := verifySecurityPriceObservationRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
 	if sourceOrders != candidateOrders {
 		return nil, errors.New("backup order recovery proof does not match source")
 	}
@@ -1339,6 +1352,9 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	}
 	if sourceFX != candidateFX {
 		return nil, errors.New("backup FX observation recovery proof does not match source")
+	}
+	if sourceSecurityPrices != candidateSecurityPrices {
+		return nil, errors.New("backup security price observation recovery proof does not match source")
 	}
 	dbSHA, size, err := hashFile(out)
 	if err != nil {
@@ -1359,14 +1375,15 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 		StrategyRegistrySHA256:    sourceStrategy.SHA256, StrategyEvidenceCount: sourceStrategy.Evidence,
 		StrategySelectionEventCount: sourceStrategy.Events, SelectedStrategyResultSHA256: sourceStrategy.SelectedResultSHA256,
 		FXObservationStateSHA256: sourceFX.SHA256, FXObservationCount: sourceFX.Observations,
+		SecurityPriceObservationStateSHA256: sourceSecurityPrices.SHA256, SecurityPriceObservationCount: sourceSecurityPrices.Observations,
 		DBSHA256: dbSHA, SizeBytes: size, ExpectedSnapshotSHA256: snapshotSHA,
 		Encryption: BackupEncryption{Encrypted: false, Algorithm: "none"},
 		VerificationReceipt: VerificationReceipt{
 			ReceiptID: id("backup_verification"), CandidateID: id("restore_candidate"), VerifiedAt: verifiedAt.Format(time.RFC3339Nano),
-			Status: "verified", IntegrityCheck: "ok", GoldenSnapshotCheck: "ok", OrderStateCheck: "ok", BrokerStateCheck: "ok", StrategyRegistryCheck: "ok", FXObservationCheck: "ok", CandidateDBSHA256: dbSHA,
+			Status: "verified", IntegrityCheck: "ok", GoldenSnapshotCheck: "ok", OrderStateCheck: "ok", BrokerStateCheck: "ok", StrategyRegistryCheck: "ok", FXObservationCheck: "ok", SecurityPriceObservationCheck: "ok", CandidateDBSHA256: dbSHA,
 			CandidateSnapshotSHA256: snapshotSHA, CandidateOrderStateSHA256: candidateOrders.SHA256,
 			CandidateBrokerStateSHA256: candidateBroker.SHA256, CandidateStrategyRegistrySHA256: candidateStrategy.SHA256,
-			CandidateFXObservationStateSHA256: candidateFX.SHA256, EligibleForActivation: true, Errors: []string{},
+			CandidateFXObservationStateSHA256: candidateFX.SHA256, CandidateSecurityPriceObservationStateSHA256: candidateSecurityPrices.SHA256, EligibleForActivation: true, Errors: []string{},
 		},
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
@@ -1400,6 +1417,10 @@ func verifyRestore(path, goldenPath string) error {
 		return err
 	}
 	_, err := verifyFXObservationRestoreProof(path)
+	if err != nil {
+		return err
+	}
+	_, err = verifySecurityPriceObservationRestoreProof(path)
 	return err
 }
 
@@ -1412,6 +1433,19 @@ func verifyFXObservationRestoreProof(path string) (fxObservationRecoveryProof, e
 	proof, err := proveFXObservationRecovery(context.Background(), db)
 	if err != nil {
 		return fxObservationRecoveryProof{}, fmt.Errorf("candidate FX observation recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func verifySecurityPriceObservationRestoreProof(path string) (securityPriceObservationRecoveryProof, error) {
+	db, err := openExistingDB(path)
+	if err != nil {
+		return securityPriceObservationRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := proveSecurityPriceObservationRecovery(context.Background(), db)
+	if err != nil {
+		return securityPriceObservationRecoveryProof{}, fmt.Errorf("candidate security price observation recovery proof: %w", err)
 	}
 	return proof, nil
 }
@@ -1488,7 +1522,7 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	if err := requireSchema(db); err != nil {
 		return fmt.Errorf("restore schema: %w", err)
 	}
-	for _, table := range []string{"events", "order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "fx_observations"} {
+	for _, table := range []string{"events", "order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "fx_observations", "security_price_observations"} {
 		var strict int
 		if err := db.QueryRow(`SELECT strict FROM pragma_table_list WHERE schema='main' AND type='table' AND name=?`, table).Scan(&strict); err != nil {
 			return fmt.Errorf("restore order table %s: %w", table, err)
@@ -1538,6 +1572,9 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		{"fx_observations", []string{"observation_id"}, "u"},
 		{"fx_observations", []string{"source", "source_observation_id"}, "u"},
 		{"fx_observations", []string{"source", "base_currency", "quote_currency", "observed_at"}, "u"},
+		{"security_price_observations", []string{"observation_id"}, "u"},
+		{"security_price_observations", []string{"source", "source_observation_id"}, "u"},
+		{"security_price_observations", []string{"source", "instrument_id", "symbol", "venue", "currency", "observed_at", "price_adjustment"}, "u"},
 	} {
 		ok, err := hasUniqueIndex(db, unique.table, unique.columns, unique.origin)
 		if err != nil {
@@ -1555,7 +1592,29 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		"create index fx_observations_latest_idx on fx_observations(source, base_currency, quote_currency, observed_at desc, sequence desc)" {
 		return errors.New("restore FX observations lack the required latest index")
 	}
-	for _, table := range []string{"events", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "fx_observations"} {
+	var securityPriceIndexDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='index' AND name='security_price_observations_latest_idx' AND tbl_name='security_price_observations'`).Scan(&securityPriceIndexDefinition); err != nil {
+		return fmt.Errorf("restore security price observation latest index: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(securityPriceIndexDefinition), " ")) !=
+		"create index security_price_observations_latest_idx on security_price_observations(source, instrument_id, symbol, venue, currency, price_adjustment, observed_at desc, sequence desc)" {
+		return errors.New("restore security price observations lack the required latest index")
+	}
+	var securityPriceTableDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='security_price_observations'`).Scan(&securityPriceTableDefinition); err != nil {
+		return fmt.Errorf("restore security price observation definition: %w", err)
+	}
+	securityPriceMigration, err := migrationFiles.ReadFile("migrations/011_security_price_observations.sql")
+	if err != nil {
+		return fmt.Errorf("restore security price observation definition source: %w", err)
+	}
+	expectedSecurityPriceTable := strings.SplitN(string(securityPriceMigration), "\n\nCREATE INDEX", 2)[0]
+	expectedSecurityPriceTable = strings.TrimSuffix(strings.TrimSpace(expectedSecurityPriceTable), ";")
+	if strings.ToLower(strings.Join(strings.Fields(securityPriceTableDefinition), " ")) !=
+		strings.ToLower(strings.Join(strings.Fields(expectedSecurityPriceTable), " ")) {
+		return errors.New("restore security price observations lack the required table definition")
+	}
+	for _, table := range []string{"events", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "fx_observations", "security_price_observations"} {
 		var sequenceType string
 		var sequencePK, primaryKeyColumns, primaryKeyIndexes int
 		if err := db.QueryRow(`SELECT type, pk FROM pragma_table_info(?) WHERE name='sequence'`, table).Scan(&sequenceType, &sequencePK); err != nil {
@@ -1641,6 +1700,8 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		"strategy_selection_events_no_delete":       {"strategy_selection_events", "delete"},
 		"fx_observations_no_update":                 {"fx_observations", "update"},
 		"fx_observations_no_delete":                 {"fx_observations", "delete"},
+		"security_price_observations_no_update":     {"security_price_observations", "update"},
+		"security_price_observations_no_delete":     {"security_price_observations", "delete"},
 	}
 	rows, err := db.Query(`SELECT name, tbl_name, sql FROM sqlite_master WHERE type='trigger'`)
 	if err != nil {
@@ -1761,8 +1822,10 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 		return fmt.Errorf("backup manifest: %w", err)
 	}
 	currentManifest := manifest.FormatVersion == backupFormat && manifest.SchemaVersion == backupSchema
-	legacyManifest := manifest.FormatVersion == legacyBackupFormat &&
+	legacyV5Manifest := manifest.FormatVersion == legacyBackupFormat &&
 		(manifest.SchemaVersion == "omni-folio.sqlite.v8" || manifest.SchemaVersion == "omni-folio.sqlite.v9")
+	legacyV6Manifest := manifest.FormatVersion == legacyFXBackupFormat && manifest.SchemaVersion == "omni-folio.sqlite.v10"
+	legacyManifest := legacyV5Manifest || legacyV6Manifest
 	if (!currentManifest && !legacyManifest) || manifest.Encryption.Encrypted || manifest.Encryption.Algorithm != "none" {
 		return errors.New("unsupported backup manifest version or encryption")
 	}
@@ -1771,20 +1834,29 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 		if err := json.Unmarshal(manifestBytes, &fields); err != nil {
 			return fmt.Errorf("backup manifest fields: %w", err)
 		}
-		if fields["fx_observation_state_sha256"] != nil || fields["fx_observation_count"] != nil {
-			return errors.New("legacy backup manifest contains current FX observation fields")
+		if fields["security_price_observation_state_sha256"] != nil || fields["security_price_observation_count"] != nil {
+			return errors.New("legacy backup manifest contains current security price observation fields")
 		}
 		var receiptFields map[string]json.RawMessage
 		if err := json.Unmarshal(fields["verification_receipt"], &receiptFields); err != nil {
 			return fmt.Errorf("backup verification receipt fields: %w", err)
 		}
-		if receiptFields["fx_observation_check"] != nil || receiptFields["candidate_fx_observation_state_sha256"] != nil {
-			return errors.New("legacy backup receipt contains current FX observation fields")
+		if receiptFields["security_price_observation_check"] != nil || receiptFields["candidate_security_price_observation_state_sha256"] != nil {
+			return errors.New("legacy backup receipt contains current security price observation fields")
+		}
+		if legacyV5Manifest && (fields["fx_observation_state_sha256"] != nil || fields["fx_observation_count"] != nil ||
+			receiptFields["fx_observation_check"] != nil || receiptFields["candidate_fx_observation_state_sha256"] != nil) {
+			return errors.New("v5 backup manifest contains v6 FX observation fields")
+		}
+		if legacyV6Manifest && (fields["fx_observation_state_sha256"] == nil || fields["fx_observation_count"] == nil ||
+			receiptFields["fx_observation_check"] == nil || receiptFields["candidate_fx_observation_state_sha256"] == nil) {
+			return errors.New("v6 backup manifest omits required FX observation fields")
 		}
 	}
 	receipt := manifest.VerificationReceipt
 	if receipt.Status != "verified" || receipt.IntegrityCheck != "ok" || receipt.GoldenSnapshotCheck != "ok" || receipt.OrderStateCheck != "ok" || receipt.BrokerStateCheck != "ok" || receipt.StrategyRegistryCheck != "ok" ||
-		(currentManifest && receipt.FXObservationCheck != "ok") || !receipt.EligibleForActivation || len(receipt.Errors) != 0 {
+		((currentManifest || legacyV6Manifest) && receipt.FXObservationCheck != "ok") ||
+		(currentManifest && receipt.SecurityPriceObservationCheck != "ok") || !receipt.EligibleForActivation || len(receipt.Errors) != 0 {
 		return errors.New("backup manifest is not eligible for activation")
 	}
 	dbSHA, size, err := hashFile(path)
@@ -1881,13 +1953,26 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err != nil {
 		return err
 	}
-	if currentManifest {
+	if currentManifest || legacyV6Manifest {
 		if manifest.FXObservationStateSHA256 != fx.SHA256 || receipt.CandidateFXObservationStateSHA256 != fx.SHA256 ||
 			manifest.FXObservationCount != fx.Observations {
 			return errors.New("backup FX observation recovery proof mismatch")
 		}
 	} else if fx.Observations != 0 || fx.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
 		return errors.New("legacy backup unexpectedly contains FX observations")
+	}
+	securityPrices, err := verifySecurityPriceObservationRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if currentManifest {
+		if manifest.SecurityPriceObservationStateSHA256 != securityPrices.SHA256 ||
+			receipt.CandidateSecurityPriceObservationStateSHA256 != securityPrices.SHA256 ||
+			manifest.SecurityPriceObservationCount != securityPrices.Observations {
+			return errors.New("backup security price observation recovery proof mismatch")
+		}
+	} else if securityPrices.Observations != 0 || securityPrices.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
+		return errors.New("legacy backup unexpectedly contains security price observations")
 	}
 	db, err := openExistingDB(verificationPath)
 	if err != nil {

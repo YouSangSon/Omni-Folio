@@ -1112,3 +1112,13 @@ Eligibility is explicit and no-lookahead: `observed_at <= fetched_at <= recorded
 Independent review found that the first GREEN implementation replayed cash but did not call the full ledger metadata/canonical-event proof. A regression test demonstrated that `ledger_meta.revision=99` with one event was incorrectly certified. The final implementation reuses `proveLedgerEvents` in the same transaction and checks its revision/recorded timestamp against the snapshot, so that corruption now returns a generic 500.
 
 Still open: provider FX ingestion/source priority/market-calendar policy, security prices, holding and base-currency PnL/performance valuation, historical ledger valuation, display rounding, Flutter UI, broker cash reconciliation and every live-money path.
+
+## 2026-08-28 G1.12 continuation: durable security price observations
+
+G1.12 closes the next durable prerequisite for holding valuation without changing portfolio math or adding another public surface. A local-fixture observation binds source identity, instrument ID, symbol, venue, currency, positive canonical price, explicit `unspecified` adjustment and canonical UTC observed/fetched/recorded times. Exact replay is idempotent; conflicting identity or instrument/time slot fails closed.
+
+The internal as-of helper filters on exact identity and requires all three timestamps at or before the cutoff, using parsed time comparison rather than lexical timestamp ordering. Schema v11 adds a `STRICT`, insert-only series and canonical row hash. Backup v7 proves digest/count; v6/schema-v10 artifacts are hash-checked, copied, migrated and verified without modifying their source. Restore also pins the full table DDL, latest index and triggers, including for an empty series.
+
+Independent review initially found that an empty candidate could weaken a CHECK constraint and still pass. The final TDD regression weakens `price_adjustment`, proves rejection and received GO on re-review.
+
+Still open: holding/cost/PnL/performance valuation, provider price/FX ingestion, source priority and market-calendar freshness, public API/UI, correction and broker reconciliation. `PortfolioSnapshot.valuation_status` remains `unavailable`.
