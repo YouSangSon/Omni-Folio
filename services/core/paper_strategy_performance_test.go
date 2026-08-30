@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -152,17 +153,135 @@ func TestG38DStale(t *testing.T) {
 }
 
 func TestG38DRecovery(t *testing.T) {
+	t.Run("replays exact evidence and rejects mutation", func(t *testing.T) {
+		svc, asOf := g38c3CashPerformanceFixture(t)
+		point, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.evaluatePaperStrategyPerformance(context.Background(), k2aAccountRef, point.StrategySelectionEventID, point.PerformanceID); err != nil {
+			t.Fatal(err)
+		}
+		proof, err := provePaperStrategyPerformanceRecovery(context.Background(), svc.db)
+		if err != nil || proof.Events != 1 || proof.Samples != 1 || proof.SHA256 == "" {
+			t.Fatalf("proof=%+v err=%v", proof, err)
+		}
+		for _, statement := range []string{
+			`UPDATE paper_strategy_performance_events SET sample_count=2`,
+			`DELETE FROM paper_strategy_performance_events`,
+		} {
+			if _, err := svc.db.Exec(statement); err == nil {
+				t.Fatalf("append-only mutation was accepted: %s", statement)
+			}
+		}
+		if _, err := svc.db.Exec(`DROP TRIGGER paper_strategy_performance_events_no_update`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.db.Exec(`UPDATE paper_strategy_performance_events SET sample_count=2`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := provePaperStrategyPerformanceRecovery(context.Background(), svc.db); err == nil {
+			t.Fatal("recovery accepted mutated strategy performance evidence")
+		}
+	})
+
+	t.Run("old retry cannot hide later prerequisite corruption", func(t *testing.T) {
+		svc, asOfs := g38c3HeldPerformanceFixture(t)
+		first, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOfs[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.evaluatePaperStrategyPerformance(context.Background(), k2aAccountRef, first.StrategySelectionEventID, first.PerformanceID); err != nil {
+			t.Fatal(err)
+		}
+		second, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOfs[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.db.Exec(`DROP TRIGGER paper_performance_events_no_update`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.db.Exec(`UPDATE paper_performance_events SET record_sha256=? WHERE performance_id=?`, strings.Repeat("0", 64), second.PerformanceID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.evaluatePaperStrategyPerformance(context.Background(), k2aAccountRef, first.StrategySelectionEventID, first.PerformanceID); err == nil {
+			t.Fatal("old retry hid later corrupt C3 evidence")
+		}
+	})
+}
+
+func TestG38DIdempotency(t *testing.T) {
 	svc, asOf := g38c3CashPerformanceFixture(t)
 	point, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.evaluatePaperStrategyPerformance(context.Background(), k2aAccountRef, point.StrategySelectionEventID, point.PerformanceID); err != nil {
+	first, err := svc.evaluatePaperStrategyPerformance(context.Background(), k2aAccountRef, point.StrategySelectionEventID, point.PerformanceID)
+	if err != nil {
 		t.Fatal(err)
 	}
-	proof, err := provePaperStrategyPerformanceRecovery(context.Background(), svc.db)
-	if err != nil || proof.Events != 1 || proof.Samples != 1 || proof.SHA256 == "" {
-		t.Fatalf("proof=%+v err=%v", proof, err)
+	second, err := svc.evaluatePaperStrategyPerformance(context.Background(), k2aAccountRef, point.StrategySelectionEventID, point.PerformanceID)
+	if err != nil || second.StrategyPerformanceID != first.StrategyPerformanceID || strategyPerformanceCount(t, svc) != 1 {
+		t.Fatalf("first=%+v second=%+v rows=%d err=%v", first, second, strategyPerformanceCount(t, svc), err)
+	}
+}
+
+func TestG38DAtomicity(t *testing.T) {
+	svc, asOf := g38c3CashPerformanceFixture(t)
+	point, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.db.Exec(`CREATE TRIGGER g38d_forced_failure BEFORE INSERT ON paper_strategy_performance_events
+		BEGIN SELECT RAISE(ABORT, 'forced G3.8D failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.evaluatePaperStrategyPerformance(context.Background(), k2aAccountRef, point.StrategySelectionEventID, point.PerformanceID); err == nil ||
+		strategyPerformanceCount(t, svc) != 0 {
+		t.Fatalf("forced failure err=%v rows=%d", err, strategyPerformanceCount(t, svc))
+	}
+}
+
+func TestG38DConcurrent(t *testing.T) {
+	primary, asOf := g38c3CashPerformanceFixture(t)
+	point, err := primary.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondary := secondG38C2Service(t, primary, mustTime("2026-01-11T07:00:00Z"))
+	start := make(chan struct{})
+	results := make(chan *PaperStrategyPerformanceEvent, 2)
+	errors := make(chan error, 2)
+	var wg sync.WaitGroup
+	for _, svc := range []*Service{primary, secondary} {
+		wg.Add(1)
+		go func(current *Service) {
+			defer wg.Done()
+			<-start
+			event, err := current.evaluatePaperStrategyPerformance(context.Background(), k2aAccountRef,
+				point.StrategySelectionEventID, point.PerformanceID)
+			results <- event
+			errors <- err
+		}(svc)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errors)
+	for err := range errors {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	var id string
+	for event := range results {
+		if event == nil || (id != "" && id != event.StrategyPerformanceID) {
+			t.Fatalf("concurrent results diverged: prior=%s event=%+v", id, event)
+		}
+		id = event.StrategyPerformanceID
+	}
+	if strategyPerformanceCount(t, primary) != 1 {
+		t.Fatalf("concurrent rows=%d", strategyPerformanceCount(t, primary))
 	}
 }
 
