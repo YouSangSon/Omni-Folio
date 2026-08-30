@@ -13,6 +13,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"omni-folio/services/core/internal/orderdomain"
 )
 
 var (
@@ -47,42 +49,9 @@ type OrderIntent struct {
 	ExecutionPolicySHA256        string `json:"execution_policy_sha256,omitempty"`
 }
 
-type OrderEvent struct {
-	EventID                   string `json:"event_id"`
-	OrderID                   string `json:"order_id"`
-	Type                      string `json:"type"`
-	Source                    string `json:"source"`
-	ProviderOrderRef          string `json:"provider_order_ref,omitempty"`
-	ProviderExecutionRef      string `json:"provider_execution_ref,omitempty"`
-	Quantity                  string `json:"quantity,omitempty"`
-	Price                     string `json:"price,omitempty"`
-	OccurredAt                string `json:"occurred_at,omitempty"`
-	RiskReservationID         string `json:"risk_reservation_id,omitempty"`
-	PaperAuthorizationID      string `json:"paper_authorization_id,omitempty"`
-	RiskPolicyVersion         string `json:"risk_policy_version,omitempty"`
-	FencingToken              int64  `json:"fencing_token,omitempty"`
-	PaperAccountingSessionID  string `json:"paper_accounting_session_id,omitempty"`
-	PaperSignalEventID        string `json:"paper_signal_event_id,omitempty"`
-	PaperBarObservationID     string `json:"paper_bar_observation_id,omitempty"`
-	PaperFillPolicyVersion    string `json:"paper_fill_policy_version,omitempty"`
-	ExecutionAuthorityEventID string `json:"execution_authority_event_id,omitempty"`
-	ReferencePrice            string `json:"reference_price,omitempty"`
-	Fee                       string `json:"fee,omitempty"`
-	Tax                       string `json:"tax,omitempty"`
-	Slippage                  string `json:"slippage,omitempty"`
-}
+type OrderEvent = orderdomain.Event
 
-type OrderState struct {
-	OrderID           string   `json:"order_id"`
-	ClientOrderID     string   `json:"client_order_id"`
-	AccountRef        string   `json:"account_ref"`
-	Status            string   `json:"status"`
-	Quantity          string   `json:"quantity"`
-	LimitPrice        string   `json:"limit_price"`
-	FilledQuantity    string   `json:"filled_quantity"`
-	ProviderOrderRefs []string `json:"provider_order_refs"`
-	PendingAction     string   `json:"pending_action,omitempty"`
-}
+type OrderState orderdomain.State
 
 type orderQuerier interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
@@ -477,114 +446,12 @@ func loadOrderIntentFrom(ctx context.Context, q orderQuerier, orderID string) (O
 }
 
 func newOrderState(orderID string, intent OrderIntent) *OrderState {
-	return &OrderState{
-		OrderID: orderID, ClientOrderID: intent.ClientOrderID, AccountRef: intent.AccountRef,
-		Quantity: intent.Quantity, LimitPrice: intent.LimitPrice, FilledQuantity: "0", ProviderOrderRefs: []string{},
-	}
+	return (*OrderState)(orderdomain.NewState(orderID, intent.ClientOrderID, intent.AccountRef, intent.Quantity, intent.LimitPrice))
 }
 
 func applyOrderEvent(current *OrderState, event OrderEvent) (*OrderState, error) {
-	next := *current
-	next.ProviderOrderRefs = append([]string(nil), current.ProviderOrderRefs...)
-	switch event.Type {
-	case "INTENT_RECORDED":
-		if next.Status != "" {
-			return nil, errors.New("intent was already recorded")
-		}
-		next.Status = "RECORDED"
-	case "RISK_APPROVED":
-		if next.Status != "RECORDED" {
-			return nil, errors.New("risk approval requires a recorded order")
-		}
-		next.Status = "READY"
-	case "RISK_REJECTED":
-		if next.Status != "RECORDED" {
-			return nil, errors.New("risk rejection requires a recorded order")
-		}
-		next.Status = "RISK_REJECTED"
-	case "SUBMIT_DISPATCHED":
-		if next.Status != "READY" || next.PendingAction != "" {
-			return nil, errors.New("submit dispatch requires a ready order")
-		}
-		next.Status, next.PendingAction = "SUBMIT_UNKNOWN", "SUBMIT"
-	case "SUBMIT_ACKNOWLEDGED":
-		if next.Status != "SUBMIT_UNKNOWN" || next.PendingAction != "SUBMIT" {
-			return nil, errors.New("submit acknowledgement requires an unknown submit")
-		}
-		if err := bindProviderOrderRef(&next, event.ProviderOrderRef); err != nil {
-			return nil, err
-		}
-		next.Status, next.PendingAction = "OPEN", ""
-	case "SUBMIT_REJECTED":
-		if next.Status != "SUBMIT_UNKNOWN" || next.PendingAction != "SUBMIT" {
-			return nil, errors.New("submit rejection requires an unknown submit")
-		}
-		next.Status, next.PendingAction = "REJECTED", ""
-	case "FILL_RECORDED":
-		if next.Status != "SUBMIT_UNKNOWN" && next.Status != "OPEN" && next.Status != "PARTIALLY_FILLED" &&
-			next.Status != "CANCEL_UNKNOWN" && next.Status != "CANCELED" {
-			return nil, errors.New("fill is not valid for the current order state")
-		}
-		if err := bindProviderOrderRef(&next, event.ProviderOrderRef); err != nil {
-			return nil, err
-		}
-		filled, _ := parseDecimal(next.FilledQuantity)
-		quantity, _ := parseDecimal(event.Quantity)
-		total, _ := parseDecimal(next.Quantity)
-		filled.Add(filled, quantity)
-		if filled.Cmp(total) > 0 {
-			return nil, errors.New("fill exceeds order quantity")
-		}
-		formatted, err := formatDecimal(filled)
-		if err != nil {
-			return nil, err
-		}
-		next.FilledQuantity = formatted
-		priorStatus := next.Status
-		if next.PendingAction == "SUBMIT" {
-			next.PendingAction = ""
-		}
-		switch {
-		case filled.Cmp(total) == 0:
-			next.Status = "FILLED"
-		case priorStatus == "CANCEL_UNKNOWN":
-			next.Status = "CANCEL_UNKNOWN"
-		case priorStatus == "CANCELED":
-			next.Status = "CANCELED"
-		default:
-			next.Status = "PARTIALLY_FILLED"
-		}
-	case "CANCEL_DISPATCHED":
-		if (next.Status != "OPEN" && next.Status != "PARTIALLY_FILLED") || next.PendingAction != "" {
-			return nil, errors.New("cancel dispatch requires an open order")
-		}
-		next.Status, next.PendingAction = "CANCEL_UNKNOWN", "CANCEL"
-	case "CANCEL_ACKNOWLEDGED":
-		if next.PendingAction != "CANCEL" || (next.Status != "CANCEL_UNKNOWN" && next.Status != "FILLED") {
-			return nil, errors.New("cancel acknowledgement requires an unknown cancel")
-		}
-		next.PendingAction = ""
-		if next.FilledQuantity == next.Quantity {
-			next.Status = "FILLED"
-		} else {
-			next.Status = "CANCELED"
-		}
-	case "CANCEL_REJECTED":
-		if next.PendingAction != "CANCEL" || (next.Status != "CANCEL_UNKNOWN" && next.Status != "FILLED") {
-			return nil, errors.New("cancel rejection requires an unknown cancel")
-		}
-		next.PendingAction = ""
-		if next.FilledQuantity == next.Quantity {
-			next.Status = "FILLED"
-		} else if next.FilledQuantity == "0" {
-			next.Status = "OPEN"
-		} else {
-			next.Status = "PARTIALLY_FILLED"
-		}
-	default:
-		return nil, fmt.Errorf("unsupported order event %q", event.Type)
-	}
-	return &next, nil
+	next, err := orderdomain.Transition((*orderdomain.State)(current), event)
+	return (*OrderState)(next), err
 }
 
 func validateOrderIntent(intent OrderIntent) error {
@@ -758,17 +625,6 @@ func safeOrderID(raw string) bool {
 	return true
 }
 
-func bindProviderOrderRef(state *OrderState, ref string) error {
-	if len(state.ProviderOrderRefs) == 0 {
-		state.ProviderOrderRefs = append(state.ProviderOrderRefs, ref)
-		return nil
-	}
-	if state.ProviderOrderRefs[0] != ref {
-		return errors.New("provider order reference changed")
-	}
-	return nil
-}
-
 // ponytail: scan and replay one local account; add a validated projection only when measured order volume makes this hot.
 func accountHasUnresolvedOrder(ctx context.Context, q orderQuerier, accountRef string) (bool, error) {
 	rows, err := q.QueryContext(ctx, `SELECT order_id FROM order_idempotency WHERE account_ref=? ORDER BY order_id`, accountRef)
@@ -803,10 +659,7 @@ func accountHasUnresolvedOrder(ctx context.Context, q orderQuerier, accountRef s
 }
 
 func sameProviderExecution(left, right OrderEvent) bool {
-	left.EventID, right.EventID = "", ""
-	leftJSON, _, leftErr := orderJSONHash(left)
-	rightJSON, _, rightErr := orderJSONHash(right)
-	return leftErr == nil && rightErr == nil && string(leftJSON) == string(rightJSON)
+	return orderdomain.SameProviderExecution(left, right)
 }
 
 func orderJSONHash(value any) ([]byte, string, error) {
