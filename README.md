@@ -145,6 +145,12 @@ G1.12는 보유자산 평가에 앞서 local fixture 종목 가격을 schema v11
 
 Backup v7은 가격 series digest/count를 검증하며 v6/schema-v10 artifact는 원본을 바꾸지 않는 owned copy에서 v11로 migration합니다. 빈 restore 후보도 embedded migration과 동일한 table DDL·latest index·insert-only trigger를 요구합니다. public API, Flutter 화면, provider 요청, scheduler, 보유·손익·성과 평가는 추가하지 않았고 `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다.
 
+### Internal native-currency holding valuation
+
+G1.13의 `native_holding_valuation_v1`은 같은 read-only transaction에서 현재 ledger snapshot과 append-only event proof, 전체 security-price series를 다시 검증합니다. 보유자산의 internal instrument ID·symbol·currency에 연결되는 as-of venue가 정확히 하나일 때만 24시간 이내 local fixture 가격으로 원통화 시장가와 미실현손익을 계산합니다. 여러 venue, 누락, stale 또는 미래 observed/fetched/recorded 값은 해당 line에 sanitized issue를 남기고 모든 통화별 aggregate를 숨깁니다.
+
+이 모델은 Go package 내부 검증 경계입니다. 현재환율로 역사적 원가를 환산하지 않고 public route, OpenAPI, Flutter 평가 화면, provider ingestion, whole-portfolio total 또는 live/current authority를 만들지 않습니다. `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다. FIFO 일부 매도가 유한 decimal로 표현할 수 없는 원가를 만들면 versioned quantization 정책을 정하기 전까지 apply 전체가 원자적으로 실패합니다.
+
 ### Internal synthetic order recovery, execution authority, reconciliation, and mock submit
 
 K2A/K2B0는 Go 내부에서 Kiwoom `LIMIT`/`KRW`/`KRX` intent와 append-only lifecycle, `SUBMIT_UNKNOWN` 중복 방지, cancel/fill replay와 이미 알려진 주문번호의 원자적 체결 조정을 검증합니다. K2B1은 명시 날짜의 synthetic `kt00009` 체결 row를 non-joinable scan으로 보존합니다. K2C는 기본 차단 kill switch, 프로세스별 lease/fencing, `005930`·`000660` BUY의 10주·주문 100만 원·계좌 활성 예약 100만 원 한도를 검증합니다. K2B2는 합성 credential과 in-memory transport로 공식 `kt10000` mock 지정가 요청을 재현하며 token preflight, durable dispatch-before-write, write 무재시도, opaque ACK와 unknown/reject 분기를 검증합니다. 외부 broker 호출, public 주문 API/UI와 live 권한은 없습니다.

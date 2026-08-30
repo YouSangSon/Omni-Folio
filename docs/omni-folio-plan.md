@@ -1122,3 +1122,17 @@ The internal as-of helper filters on exact identity and requires all three times
 Independent review initially found that an empty candidate could weaken a CHECK constraint and still pass. The final TDD regression weakens `price_adjustment`, proves rejection and received GO on re-review.
 
 Still open: holding/cost/PnL/performance valuation, provider price/FX ingestion, source priority and market-calendar freshness, public API/UI, correction and broker reconciliation. `PortfolioSnapshot.valuation_status` remains `unavailable`.
+
+## 2026-08-28 G1.13 continuation: internal native-currency holding valuation
+
+G1.13 adds `native_holding_valuation_v1` as a package-internal read model instead of changing the public portfolio snapshot. One SQLite read-only transaction replays the current FIFO holdings, proves the append-only ledger revision and recorded time, and validates the complete security-price series before calculating anything.
+
+Price identity stays conservative because holdings do not yet carry a venue. An observation must match the internal instrument ID, symbol, currency and `unspecified` adjustment, and every as-of observation for that identity must resolve to exactly one venue. Eligibility requires `observed_at <= fetched_at <= recorded_at <= valuation_as_of`; the 24-hour age boundary is inclusive. Missing, ambiguous, stale or future knowledge preserves the native holding line but suppresses every aggregate total.
+
+Complete results expose exact native-currency cost basis, market value, unrealized PnL and deterministic per-currency totals with local-fixture sample/stale provenance. The model does not translate historical cost with a current FX rate, infer a venue by symbol, use OHLCV close or broker evaluation amount, add a public route/OpenAPI/Flutter UI, or change `PortfolioSnapshot.valuation_status` from `unavailable`. Schema v11 and backup v7 already preserve all required inputs, so no migration or backup bump was added.
+
+The ledger still rejects a partial FIFO allocation whose exact rational cost has no finite decimal representation and rolls the whole apply back. This is now an explicit regression boundary; a versioned quantization and residual-conservation policy is required before accepting such transactions or promoting holding valuation publicly. The full read model now locks same-venue newest-price selection and separately excludes future observed, fetched and recorded timestamps.
+
+Public promotion audit found a narrow explicit-as-of GET contract feasible, but Flutter cannot safely manufacture that cutoff from a mobile device clock and no runtime path currently records prices outside tests. Decision: do not add a dead API/UI surface yet. Build the Kiwoom-first credential-free quote-to-durable-price contract, then promote the endpoint with a server-trusted cutoff and retained sample/stale UI state.
+
+Still open: public/base-currency whole-portfolio and performance valuation, historical FX cost semantics, versioned rounding/quantization, durable instrument/listing ownership, provider ingestion/source priority/calendar freshness, Flutter UI, broker reconciliation and every live-money path.

@@ -14,6 +14,7 @@
 - direct FX observation은 명시 방향·source identity·observed/fetched/recorded 시각·canonical hash를 insert-only로 보존하고 local fixture 조회를 sample/stale로만 노출한다.
 - cash-only 기준통화 평가는 같은 read transaction에서 전체 원장·FX proof를 재실행하고 exact direct pair와 24시간 observation-age 정책만 사용한다. 누락·정체 pair가 하나라도 있으면 aggregate를 숨기며 whole-portfolio 평가 상태는 unavailable로 유지한다.
 - security price observation은 local fixture source identity와 instrument/symbol/venue/currency/adjustment를 묶고 positive canonical price, observed/fetched/recorded 시각과 row hash를 insert-only로 보존한다. 내부 as-of 조회 외 public route나 평가 authority를 만들지 않는다.
+- native holding valuation은 replay-verified 원장과 전체 가격 series를 한 read transaction에서 검증하고, unique as-of venue의 24시간 이내 local fixture 가격만 사용해 원통화 시장가·미실현손익·통화별 합계를 계산한다. 누락·모호·stale이면 subtotal 없이 aggregate를 숨긴다.
 - backup candidate를 별도 DB에 복원해 integrity와 golden snapshot을 검증하기 전 active DB를 바꾸지 않는다. 현재 schema v11/backup v7은 cash-void와 FX guard, direct FX 및 security price observation digest/count, 주문 schema/hash/replay, known-good broker snapshot, execution-authority와 risk-reservation digest/count도 함께 검증한다. legacy v5/schema-v8·v9 및 v6/schema-v10 candidate는 원본을 수정하지 않는 owned copy를 v11로 migration한 뒤 검증한다.
 
 ## Evidence
@@ -29,4 +30,4 @@
 
 ## Still open
 
-- Provider FX/price ingestion, source priority/market-calendar policy, holding/PnL/performance valuation, FX/trade/split/corporate-action correction, dividend reinvestment, jurisdiction-specific tax classification, and credentialed broker execution/cash reconciliation.
+- Provider FX/price ingestion, source priority/market-calendar policy, public/base-currency whole-portfolio and performance valuation, historical-FX cost policy, FIFO quantization, FX/trade/split/corporate-action correction, dividend reinvestment, jurisdiction-specific tax classification, and credentialed broker execution/cash reconciliation.

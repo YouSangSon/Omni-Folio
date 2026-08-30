@@ -37,6 +37,7 @@
 - 현재 direct FX observation leaf: [`../gates/g1f-fx-observation-storage.md`](../gates/g1f-fx-observation-storage.md)
 - 현재 direct-FX cash valuation leaf: [`../gates/g1g-direct-fx-cash-valuation.md`](../gates/g1g-direct-fx-cash-valuation.md)
 - 현재 durable security price observation leaf: [`../gates/g1h-security-price-observation.md`](../gates/g1h-security-price-observation.md)
+- 현재 native-currency holding valuation leaf: [`../gates/g1i-native-holding-valuation.md`](../gates/g1i-native-holding-valuation.md)
 - Root 검증 명령: `make check && make smoke`
 
 문서가 코드·계약과 충돌하면 실제 동작을 조용히 문서에 맞추지 않습니다. 먼저 충돌을 기록하고 owner 계약과 executable test를 함께 갱신합니다. 브로커 limit·인증·endpoint는 바뀔 수 있으므로 adapter 구현 시 공식 문서와 실제 응답을 다시 확인합니다.

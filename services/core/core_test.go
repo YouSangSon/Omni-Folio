@@ -323,6 +323,30 @@ func TestFIFOAllocatesBuyAndSellFeesExactly(t *testing.T) {
 	}
 }
 
+func TestRecurringFIFOAllocationFailsClosedAtomically(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	preview, appErr := svc.preview(context.Background(), []byte(testCSV(
+		"b1,account-main,BUY,2026-01-02T00:00:00Z,AAPL,3,0.3,0.1,USD,-1",
+		"s1,account-main,SELL,2026-01-03T00:00:00Z,AAPL,1,1,0,USD,1",
+	)))
+	if appErr != nil || !preview.CanApply {
+		t.Fatalf("finite input preview was unexpectedly rejected: preview=%+v err=%v", preview, appErr)
+	}
+	if _, appErr := svc.apply(context.Background(), ApplyRequest{preview.PreviewID, "recurring-fifo"}); appErr == nil || appErr.body.Code != "invalid_ledger" {
+		t.Fatalf("recurring FIFO allocation did not fail closed: %#v", appErr)
+	}
+	var events, revision int
+	if err := svc.db.QueryRow(`SELECT count(*) FROM events`).Scan(&events); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.db.QueryRow(`SELECT revision FROM ledger_meta`).Scan(&revision); err != nil {
+		t.Fatal(err)
+	}
+	if events != 0 || revision != 0 {
+		t.Fatalf("recurring FIFO allocation partially mutated the ledger: events=%d revision=%d", events, revision)
+	}
+}
+
 func TestCashFlowsAndSplitReplayExactly(t *testing.T) {
 	svc, _ := testService(t, nil, nil)
 	preview, appErr := svc.preview(context.Background(), []byte(testCSV(
