@@ -127,7 +127,7 @@ func TestG38C3CompleteMarks(t *testing.T) {
 		{"missing", func(t *testing.T, svc *Service, asOf string) {}, "2026-01-15T07:00:00.000000000Z"},
 		{"ambiguous", func(t *testing.T, svc *Service, asOf string) {
 			recordG38C3MarkBar(t, svc, "005930", "g38c3-ambiguous-a", asOf, "120")
-			recordG38C3MarkBar(t, svc, "005930", "g38c3-ambiguous-b", asOf, "121")
+			recordG38C3MarkBarAt(t, svc, "005930", "g38c3-ambiguous-b", "2026-01-11T00:00:01Z", asOf, "121")
 		}, "2026-01-15T07:00:00.000000000Z"},
 		{"wrong symbol series", func(t *testing.T, svc *Service, asOf string) {
 			recordG38C3MarkBar(t, svc, "000660", "g38c3-wrong-series", asOf, "120")
@@ -273,7 +273,13 @@ func g38c3TwoSymbolState(t *testing.T) (*Service, paperAccountState, *PaperAccou
 func recordG38C3MarkBar(t *testing.T, svc *Service, symbol, sourceID, closeAt, close string) *PaperMarketBarObservation {
 	t.Helper()
 	day := closeAt[:10]
-	bar := g38c2PaperMarketBar(sourceID, day+"T00:00:00Z", closeAt)
+	return recordG38C3MarkBarAt(t, svc, symbol, sourceID, day+"T00:00:00Z", closeAt, close)
+}
+
+func recordG38C3MarkBarAt(t *testing.T, svc *Service, symbol, sourceID, openAt, closeAt, close string) *PaperMarketBarObservation {
+	t.Helper()
+	day := closeAt[:10]
+	bar := g38c2PaperMarketBar(sourceID, openAt, closeAt)
 	bar.Symbol, bar.Open, bar.High, bar.Low, bar.Close, bar.Volume = symbol, close, close, close, close, "100"
 	bar.SourceAvailableAt, bar.FetchedAt = day+"T06:31:00Z", day+"T06:32:00Z"
 	return recordPaperMarketBarForG38C3(t, svc, bar)

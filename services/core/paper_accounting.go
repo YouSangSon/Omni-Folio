@@ -38,6 +38,11 @@ type paperAccountingRecoveryProof struct {
 type paperLotState = paperdomain.Lot
 type paperAccountState = paperdomain.AccountState
 
+type paperAccountingCutoff struct {
+	OrderSequence int64
+	AsOf          string
+}
+
 func (s *Service) openPaperAccountingSession(ctx context.Context, accountRef, resultSHA256, selectionEventID string) (*PaperAccountingSession, error) {
 	if s == nil || s.db == nil || !orderAlias(accountRef, "account") ||
 		!strategySHA256Pattern.MatchString(resultSHA256) || !safeOrderID(selectionEventID) {
@@ -239,6 +244,17 @@ func provePaperAccountingRecoveryVersion(ctx context.Context, q orderQuerier, in
 }
 
 func replayPaperAccounting(ctx context.Context, q orderQuerier) (map[string]paperAccountState, error) {
+	return replayPaperAccountingWithCutoff(ctx, q, nil)
+}
+
+func replayPaperAccountingAt(ctx context.Context, q orderQuerier, cutoff paperAccountingCutoff) (map[string]paperAccountState, error) {
+	if cutoff.OrderSequence < 0 || !canonicalPaperTimes(cutoff.AsOf) {
+		return nil, errors.New("paper accounting cutoff is invalid")
+	}
+	return replayPaperAccountingWithCutoff(ctx, q, &cutoff)
+}
+
+func replayPaperAccountingWithCutoff(ctx context.Context, q orderQuerier, cutoff *paperAccountingCutoff) (map[string]paperAccountState, error) {
 	if _, err := proveOrderRecovery(ctx, q); err != nil {
 		return nil, fmt.Errorf("paper accounting order recovery: %w", err)
 	}
@@ -251,11 +267,30 @@ func replayPaperAccounting(ctx context.Context, q orderQuerier) (map[string]pape
 	if _, _, err := provePaperExecutionAuthorizationRecovery(ctx, q); err != nil {
 		return nil, fmt.Errorf("paper accounting authorization recovery: %w", err)
 	}
-	return replayPaperAccountingState(ctx, q)
+	if cutoff != nil {
+		var legacyOrders int
+		if err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM order_idempotency WHERE mode='paper'
+			AND json_extract(intent_json, '$.signal_schema_version') IN ('paper-signal.v1','paper-signal.v2')`).Scan(&legacyOrders); err != nil {
+			return nil, err
+		}
+		if legacyOrders != 0 {
+			return nil, errors.New("bounded paper accounting cannot include a legacy paper account")
+		}
+	}
+	return replayPaperAccountingStateWithCutoff(ctx, q, cutoff)
 }
 
 func replayPaperAccountingState(ctx context.Context, q orderQuerier) (map[string]paperAccountState, error) {
+	return replayPaperAccountingStateWithCutoff(ctx, q, nil)
+}
+
+func replayPaperAccountingStateWithCutoff(ctx context.Context, q orderQuerier, cutoff *paperAccountingCutoff) (map[string]paperAccountState, error) {
 	accounts := map[string]*paperdomain.Account{}
+	boundedAccounts := map[string]*paperdomain.Account{}
+	var cutoffAsOf time.Time
+	if cutoff != nil {
+		cutoffAsOf, _ = parsePaperTime(cutoff.AsOf)
+	}
 	rows, err := q.QueryContext(ctx, `SELECT account_ref FROM paper_accounting_sessions ORDER BY sequence`)
 	if err != nil {
 		return nil, err
@@ -280,6 +315,12 @@ func replayPaperAccountingState(ctx context.Context, q orderQuerier) (map[string
 		accounts[accountRef], err = paperdomain.NewAccount(accountRef, session.SessionID, session.StartingCash)
 		if err != nil {
 			return nil, err
+		}
+		if cutoff != nil {
+			boundedAccounts[accountRef], err = paperdomain.NewAccount(accountRef, session.SessionID, session.StartingCash)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	if err := validatePaperIntentDeltas(ctx, q); err != nil {
@@ -414,6 +455,18 @@ func replayPaperAccountingState(ctx context.Context, q orderQuerier) (map[string
 		if err := account.ApplyFill(intent.Symbol, intent.Side, calculated); err != nil {
 			return nil, err
 		}
+		if cutoff != nil && stored.sequence <= cutoff.OrderSequence {
+			barClose, _ := parsePaperTime(bar.CloseAt)
+			if !barClose.After(cutoffAsOf) {
+				bounded := boundedAccounts[intent.AccountRef]
+				if bounded == nil || bounded.SessionID() != session.SessionID {
+					return nil, errors.New("bounded paper fill account session is missing")
+				}
+				if err := bounded.ApplyFill(intent.Symbol, intent.Side, calculated); err != nil {
+					return nil, err
+				}
+			}
+		}
 		quantity, _ := new(big.Int).SetString(calculated.Quantity, 10)
 		orderFilled[stored.orderID].Add(orderFilled[stored.orderID], quantity)
 		consumedByBar[barKey].Add(consumedByBar[barKey], quantity)
@@ -421,6 +474,9 @@ func replayPaperAccountingState(ctx context.Context, q orderQuerier) (map[string
 	}
 	result := make(map[string]paperAccountState, len(accounts))
 	for accountRef, account := range accounts {
+		if cutoff != nil {
+			account = boundedAccounts[accountRef]
+		}
 		state, err := account.State()
 		if err != nil {
 			return nil, err
