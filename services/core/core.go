@@ -30,18 +30,20 @@ import (
 )
 
 const (
-	maxBodyBytes              = 1 << 20
-	maxImportRows             = 10_000
-	latestSchema              = 14
-	zeroTime                  = "1970-01-01T00:00:00Z"
-	csvSchema                 = "omni-folio.csv.v1"
-	mappingSchema             = "canonical-transaction.v4"
-	backupFormat              = "omni-folio-backup.v9"
-	backupSchema              = "omni-folio.sqlite.v14"
-	legacyBackupFormat        = "omni-folio-backup.v5"
-	legacyFXBackupFormat      = "omni-folio-backup.v6"
-	legacyPriceBackupFormat   = "omni-folio-backup.v7"
-	legacyListingBackupFormat = "omni-folio-backup.v8"
+	maxBodyBytes                      = 1 << 20
+	maxImportRows                     = 10_000
+	latestSchema                      = 15
+	zeroTime                          = "1970-01-01T00:00:00Z"
+	csvSchema                         = "omni-folio.csv.v1"
+	mappingSchema                     = "canonical-transaction.v4"
+	backupFormat                      = "omni-folio-backup.v10"
+	backupSchema                      = "omni-folio.sqlite.v15"
+	legacyPaperAccountingBackupFormat = "omni-folio-backup.v9"
+	legacyPaperAccountingBackupSchema = "omni-folio.sqlite.v14"
+	legacyBackupFormat                = "omni-folio-backup.v5"
+	legacyFXBackupFormat              = "omni-folio-backup.v6"
+	legacyPriceBackupFormat           = "omni-folio-backup.v7"
+	legacyListingBackupFormat         = "omni-folio-backup.v8"
 )
 
 //go:embed migrations/*.sql
@@ -199,6 +201,8 @@ type BackupManifest struct {
 	StrategyEvidenceCount               int                 `json:"strategy_evidence_count"`
 	StrategySelectionEventCount         int                 `json:"strategy_selection_event_count"`
 	PaperEvaluationEventCount           int                 `json:"paper_evaluation_event_count"`
+	PaperAccountingStateSHA256          string              `json:"paper_accounting_state_sha256"`
+	PaperAccountingSessionCount         int                 `json:"paper_accounting_session_count"`
 	SelectedStrategyResultSHA256        string              `json:"selected_strategy_result_sha256"`
 	FXObservationStateSHA256            string              `json:"fx_observation_state_sha256"`
 	FXObservationCount                  int                 `json:"fx_observation_count"`
@@ -237,6 +241,7 @@ type VerificationReceipt struct {
 	CandidateOrderStateSHA256                    string   `json:"candidate_order_state_sha256"`
 	CandidateBrokerStateSHA256                   string   `json:"candidate_broker_state_sha256"`
 	CandidateStrategyRegistrySHA256              string   `json:"candidate_strategy_registry_sha256"`
+	CandidatePaperAccountingStateSHA256          string   `json:"candidate_paper_accounting_state_sha256"`
 	CandidateFXObservationStateSHA256            string   `json:"candidate_fx_observation_state_sha256"`
 	CandidateSecurityPriceObservationStateSHA256 string   `json:"candidate_security_price_observation_state_sha256"`
 	CandidateInstrumentListingStateSHA256        string   `json:"candidate_instrument_listing_state_sha256"`
@@ -305,7 +310,7 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("unsupported schema version %d", current)
 		}
 	}
-	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql", "013_instrument_listing_events.sql", "014_paper_evaluation_events.sql"}
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql", "013_instrument_listing_events.sql", "014_paper_evaluation_events.sql", "015_paper_accounting_sessions.sql"}
 	for version := current + 1; version <= latestSchema; version++ {
 		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
 		if err != nil {
@@ -1359,6 +1364,10 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err != nil {
 		return nil, fmt.Errorf("source strategy registry recovery proof: %w", err)
 	}
+	sourcePaperAccounting, err := provePaperAccountingRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source paper accounting recovery proof: %w", err)
+	}
 	sourceFX, err := proveFXObservationRecovery(context.Background(), db)
 	if err != nil {
 		return nil, fmt.Errorf("source FX observation recovery proof: %w", err)
@@ -1389,6 +1398,10 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err != nil {
 		return nil, err
 	}
+	candidatePaperAccounting, err := verifyPaperAccountingRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
 	candidateFX, err := verifyFXObservationRestoreProof(out)
 	if err != nil {
 		return nil, err
@@ -1409,6 +1422,9 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	}
 	if !sameStrategyRegistryProof(sourceStrategy, candidateStrategy) {
 		return nil, errors.New("backup strategy registry recovery proof does not match source")
+	}
+	if sourcePaperAccounting != candidatePaperAccounting {
+		return nil, errors.New("backup paper accounting recovery proof does not match source")
 	}
 	if sourceFX != candidateFX {
 		return nil, errors.New("backup FX observation recovery proof does not match source")
@@ -1437,8 +1453,9 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 		BrokerReconciliationCount: sourceBroker.Reconciliations,
 		StrategyRegistrySHA256:    sourceStrategy.SHA256, StrategyEvidenceCount: sourceStrategy.Evidence,
 		StrategySelectionEventCount: sourceStrategy.Events, SelectedStrategyResultSHA256: sourceStrategy.SelectedResultSHA256,
-		PaperEvaluationEventCount: sourceStrategy.Evaluations,
-		FXObservationStateSHA256:  sourceFX.SHA256, FXObservationCount: sourceFX.Observations,
+		PaperEvaluationEventCount:  sourceStrategy.Evaluations,
+		PaperAccountingStateSHA256: sourcePaperAccounting.SHA256, PaperAccountingSessionCount: sourcePaperAccounting.Sessions,
+		FXObservationStateSHA256: sourceFX.SHA256, FXObservationCount: sourceFX.Observations,
 		SecurityPriceObservationStateSHA256: sourceSecurityPrices.SHA256, SecurityPriceObservationCount: sourceSecurityPrices.Observations,
 		InstrumentListingStateSHA256: sourceInstrumentListings.SHA256, InstrumentListingEventCount: sourceInstrumentListings.Events,
 		ActiveInstrumentListingCount: sourceInstrumentListings.Active,
@@ -1449,7 +1466,8 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 			Status: "verified", IntegrityCheck: "ok", GoldenSnapshotCheck: "ok", OrderStateCheck: "ok", BrokerStateCheck: "ok", StrategyRegistryCheck: "ok", FXObservationCheck: "ok", SecurityPriceObservationCheck: "ok", InstrumentListingCheck: "ok", CandidateDBSHA256: dbSHA,
 			CandidateSnapshotSHA256: snapshotSHA, CandidateOrderStateSHA256: candidateOrders.SHA256,
 			CandidateBrokerStateSHA256: candidateBroker.SHA256, CandidateStrategyRegistrySHA256: candidateStrategy.SHA256,
-			CandidateFXObservationStateSHA256: candidateFX.SHA256, CandidateSecurityPriceObservationStateSHA256: candidateSecurityPrices.SHA256,
+			CandidatePaperAccountingStateSHA256: candidatePaperAccounting.SHA256,
+			CandidateFXObservationStateSHA256:   candidateFX.SHA256, CandidateSecurityPriceObservationStateSHA256: candidateSecurityPrices.SHA256,
 			CandidateInstrumentListingStateSHA256: candidateInstrumentListings.SHA256, EligibleForActivation: true, Errors: []string{},
 		},
 	}
@@ -1481,6 +1499,9 @@ func verifyRestore(path, goldenPath string) error {
 		return err
 	}
 	if _, err := verifyStrategyRestoreProof(path); err != nil {
+		return err
+	}
+	if _, err := verifyPaperAccountingRestoreProof(path); err != nil {
 		return err
 	}
 	_, err := verifyFXObservationRestoreProof(path)
@@ -1547,6 +1568,19 @@ func verifyStrategyRestoreProof(path string) (strategyRegistryRecoveryProof, err
 	return proof, nil
 }
 
+func verifyPaperAccountingRestoreProof(path string) (paperAccountingRecoveryProof, error) {
+	db, err := openExistingDB(path)
+	if err != nil {
+		return paperAccountingRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := provePaperAccountingRecovery(context.Background(), db)
+	if err != nil {
+		return paperAccountingRecoveryProof{}, fmt.Errorf("candidate paper accounting recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
 func verifyBrokerRestoreProof(path string) (brokerRecoveryProof, error) {
 	db, err := openExistingDB(path)
 	if err != nil {
@@ -1609,7 +1643,7 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	if err := requireSchema(db); err != nil {
 		return fmt.Errorf("restore schema: %w", err)
 	}
-	for _, table := range []string{"events", "order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "paper_evaluation_events", "fx_observations", "security_price_observations"} {
+	for _, table := range []string{"events", "order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "paper_evaluation_events", "paper_accounting_sessions", "fx_observations", "security_price_observations"} {
 		var strict int
 		if err := db.QueryRow(`SELECT strict FROM pragma_table_list WHERE schema='main' AND type='table' AND name=?`, table).Scan(&strict); err != nil {
 			return fmt.Errorf("restore order table %s: %w", table, err)
@@ -1657,6 +1691,8 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		{"strategy_research_evidence", []string{"result_sha256"}, "u"},
 		{"strategy_selection_events", []string{"event_id"}, "u"},
 		{"paper_evaluation_events", []string{"evaluation_id"}, "u"},
+		{"paper_accounting_sessions", []string{"session_id"}, "u"},
+		{"paper_accounting_sessions", []string{"account_ref"}, "u"},
 		{"fx_observations", []string{"observation_id"}, "u"},
 		{"fx_observations", []string{"source", "source_observation_id"}, "u"},
 		{"fx_observations", []string{"source", "base_currency", "quote_currency", "observed_at"}, "u"},
@@ -1801,6 +1837,36 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	if strings.ToLower(strings.Join(strings.Fields(paperStateTriggerDefinition), " ")) != strings.ToLower(strings.Join(strings.Fields(expectedPaperStateTrigger), " ")) {
 		return errors.New("restore paper evaluations lack the required state guard")
 	}
+	paperAccountingMigration, err := migrationFiles.ReadFile("migrations/015_paper_accounting_sessions.sql")
+	if err != nil {
+		return fmt.Errorf("restore paper accounting definition source: %w", err)
+	}
+	paperAccountingSQL := string(paperAccountingMigration)
+	const paperAccountingTablePrefix = "CREATE TABLE paper_accounting_sessions"
+	paperAccountingTableStart := strings.Index(paperAccountingSQL, paperAccountingTablePrefix)
+	if paperAccountingTableStart < 0 {
+		return errors.New("restore paper accounting definition source is invalid")
+	}
+	expectedPaperAccountingTable := strings.TrimSuffix(strings.TrimSpace(strings.SplitN(paperAccountingSQL[paperAccountingTableStart:], "\n\nCREATE TRIGGER", 2)[0]), ";")
+	var paperAccountingTableDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='paper_accounting_sessions'`).Scan(&paperAccountingTableDefinition); err != nil {
+		return fmt.Errorf("restore paper accounting definition: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(paperAccountingTableDefinition), " ")) != strings.ToLower(strings.Join(strings.Fields(expectedPaperAccountingTable), " ")) {
+		return errors.New("restore paper accounting sessions lack the required table definition")
+	}
+	paperAccountingStateTriggerStart := strings.Index(paperAccountingSQL, "CREATE TRIGGER paper_accounting_sessions_state_guard")
+	if paperAccountingStateTriggerStart < 0 {
+		return errors.New("restore paper accounting state guard source is invalid")
+	}
+	expectedPaperAccountingStateTrigger := strings.TrimSuffix(strings.TrimSpace(paperAccountingSQL[paperAccountingStateTriggerStart:]), ";")
+	var paperAccountingStateTriggerDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='trigger' AND name='paper_accounting_sessions_state_guard' AND tbl_name='paper_accounting_sessions'`).Scan(&paperAccountingStateTriggerDefinition); err != nil {
+		return fmt.Errorf("restore paper accounting state guard: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(paperAccountingStateTriggerDefinition), " ")) != strings.ToLower(strings.Join(strings.Fields(expectedPaperAccountingStateTrigger), " ")) {
+		return errors.New("restore paper accounting sessions lack the required state guard")
+	}
 	strategySelectionStateTriggerStart := strings.Index(paperEvaluationSQL, "CREATE TRIGGER strategy_selection_events_state_guard")
 	strategySelectionStateTriggerEnd := strings.Index(paperEvaluationSQL, "CREATE INDEX paper_evaluation_events_current_idx")
 	if strategySelectionStateTriggerStart < 0 || strategySelectionStateTriggerEnd <= strategySelectionStateTriggerStart {
@@ -1808,7 +1874,7 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	}
 	expectedStrategySelectionStateTrigger := strings.ToLower(strings.Join(strings.Fields(strings.TrimSuffix(
 		strings.TrimSpace(paperEvaluationSQL[strategySelectionStateTriggerStart:strategySelectionStateTriggerEnd]), ";")), " "))
-	for _, table := range []string{"events", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "paper_evaluation_events", "fx_observations", "security_price_observations", "instrument_listing_events"} {
+	for _, table := range []string{"events", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "paper_evaluation_events", "paper_accounting_sessions", "fx_observations", "security_price_observations", "instrument_listing_events"} {
 		var sequenceType string
 		var sequencePK, primaryKeyColumns, primaryKeyIndexes int
 		if err := db.QueryRow(`SELECT type, pk FROM pragma_table_info(?) WHERE name='sequence'`, table).Scan(&sequenceType, &sequencePK); err != nil {
@@ -1855,6 +1921,12 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	if foreignKeys != 2 || matchingForeignKeys != 2 {
 		return errors.New("restore paper evaluations lack required strategy foreign keys")
 	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(("table"='strategy_research_evidence' AND "from"='strategy_result_sha256' AND "to"='result_sha256') OR ("table"='strategy_selection_events' AND "from"='strategy_selection_event_id' AND "to"='event_id')), 0) FROM pragma_foreign_key_list(?)`, "paper_accounting_sessions").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore paper accounting foreign keys: %w", err)
+	}
+	if foreignKeys != 2 || matchingForeignKeys != 2 {
+		return errors.New("restore paper accounting sessions lack required strategy foreign keys")
+	}
 	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(("table"='events' AND "from"='account_id' AND "to"='account_id') OR ("table"='events' AND "from"='corrects_source_event_id' AND "to"='source_event_id')), 0) FROM pragma_foreign_key_list(?)`, "events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
 		return fmt.Errorf("restore cash void foreign key: %w", err)
 	}
@@ -1900,6 +1972,8 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		"strategy_selection_events_no_delete":       {"strategy_selection_events", "delete"},
 		"paper_evaluation_events_no_update":         {"paper_evaluation_events", "update"},
 		"paper_evaluation_events_no_delete":         {"paper_evaluation_events", "delete"},
+		"paper_accounting_sessions_no_update":       {"paper_accounting_sessions", "update"},
+		"paper_accounting_sessions_no_delete":       {"paper_accounting_sessions", "delete"},
 		"fx_observations_no_update":                 {"fx_observations", "update"},
 		"fx_observations_no_delete":                 {"fx_observations", "delete"},
 		"security_price_observations_no_update":     {"security_price_observations", "update"},
@@ -1942,6 +2016,7 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		"order_events_dispatch_reservation_guard":      {"order_events", "create trigger order_events_dispatch_reservation_guard before insert on order_events when new.event_type = 'submit_dispatched' begin select case when new.authority_reservation_id is null or not exists ( select 1 from risk_reservations where reservation_id = new.authority_reservation_id and order_id = new.order_id and dispatch_event_id = new.event_id and reservation_id = json_extract(new.event_json, '$.risk_reservation_id') and policy_version = json_extract(new.event_json, '$.risk_policy_version') and fencing_token = json_extract(new.event_json, '$.fencing_token') ) then raise(abort, 'submit dispatch requires an authority reservation') end; end"},
 		"order_events_non_authority_reservation_guard": {"order_events", "create trigger order_events_non_authority_reservation_guard before insert on order_events when new.event_type not in ('risk_approved', 'submit_dispatched') and new.authority_reservation_id is not null begin select raise(abort, 'authority reservation is invalid for this event'); end"},
 		"strategy_selection_events_state_guard":        {"strategy_selection_events", expectedStrategySelectionStateTrigger},
+		"paper_accounting_sessions_state_guard":        {"paper_accounting_sessions", strings.ToLower(strings.Join(strings.Fields(expectedPaperAccountingStateTrigger), " "))},
 		"events_cash_void_guard":                       {"events", "create trigger events_cash_void_guard before insert on events when new.type = 'cash_void' begin select case when not exists ( select 1 from events target where target.account_id = new.account_id and target.source_event_id = new.corrects_source_event_id and target.type in ('deposit', 'withdrawal', 'dividend', 'fee', 'tax') and target.currency = new.currency and target.occurred_at <= new.occurred_at and new.amount = case when target.amount glob '-*' then substr(target.amount, 2) else '-' || target.amount end ) then raise(abort, 'cash void must exactly reverse an eligible event') end; end"},
 	}
 	for name, expected := range guardSQL {
@@ -2032,7 +2107,8 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	legacyV7Manifest := manifest.FormatVersion == legacyPriceBackupFormat &&
 		(manifest.SchemaVersion == "omni-folio.sqlite.v11" || manifest.SchemaVersion == "omni-folio.sqlite.v12")
 	legacyV8Manifest := manifest.FormatVersion == legacyListingBackupFormat && manifest.SchemaVersion == "omni-folio.sqlite.v13"
-	legacyManifest := legacyV5Manifest || legacyV6Manifest || legacyV7Manifest || legacyV8Manifest
+	legacyV9Manifest := manifest.FormatVersion == legacyPaperAccountingBackupFormat && manifest.SchemaVersion == legacyPaperAccountingBackupSchema
+	legacyManifest := legacyV5Manifest || legacyV6Manifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest
 	if (!currentManifest && !legacyManifest) || manifest.Encryption.Encrypted || manifest.Encryption.Algorithm != "none" {
 		return errors.New("unsupported backup manifest version or encryption")
 	}
@@ -2040,26 +2116,36 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err := json.Unmarshal(manifestBytes, &fields); err != nil {
 		return fmt.Errorf("backup manifest fields: %w", err)
 	}
-	if currentManifest && fields["paper_evaluation_event_count"] == nil {
-		return errors.New("current backup manifest omits paper evaluation count")
+	var receiptFields map[string]json.RawMessage
+	if err := json.Unmarshal(fields["verification_receipt"], &receiptFields); err != nil {
+		return fmt.Errorf("backup verification receipt fields: %w", err)
+	}
+	if currentManifest {
+		if fields["paper_evaluation_event_count"] == nil || fields["paper_accounting_state_sha256"] == nil ||
+			fields["paper_accounting_session_count"] == nil || receiptFields["candidate_paper_accounting_state_sha256"] == nil {
+			return errors.New("current backup manifest omits paper accounting proof")
+		}
 	}
 	if legacyManifest {
-		var receiptFields map[string]json.RawMessage
-		if err := json.Unmarshal(fields["verification_receipt"], &receiptFields); err != nil {
-			return fmt.Errorf("backup verification receipt fields: %w", err)
+		if fields["paper_accounting_state_sha256"] != nil || fields["paper_accounting_session_count"] != nil ||
+			receiptFields["candidate_paper_accounting_state_sha256"] != nil {
+			return errors.New("legacy backup manifest contains paper accounting fields")
 		}
-		if fields["paper_evaluation_event_count"] != nil {
+		if !legacyV9Manifest && fields["paper_evaluation_event_count"] != nil {
 			return errors.New("legacy backup manifest contains current paper evaluation fields")
 		}
-		if !legacyV8Manifest && (fields["instrument_listing_state_sha256"] != nil || fields["instrument_listing_event_count"] != nil ||
+		if legacyV9Manifest && fields["paper_evaluation_event_count"] == nil {
+			return errors.New("v9 backup manifest omits required paper evaluation fields")
+		}
+		if !(legacyV8Manifest || legacyV9Manifest) && (fields["instrument_listing_state_sha256"] != nil || fields["instrument_listing_event_count"] != nil ||
 			fields["active_instrument_listing_count"] != nil || receiptFields["instrument_listing_check"] != nil ||
 			receiptFields["candidate_instrument_listing_state_sha256"] != nil) {
 			return errors.New("legacy backup manifest contains current instrument listing fields")
 		}
-		if legacyV8Manifest && (fields["instrument_listing_state_sha256"] == nil || fields["instrument_listing_event_count"] == nil ||
+		if (legacyV8Manifest || legacyV9Manifest) && (fields["instrument_listing_state_sha256"] == nil || fields["instrument_listing_event_count"] == nil ||
 			fields["active_instrument_listing_count"] == nil || receiptFields["instrument_listing_check"] == nil ||
 			receiptFields["candidate_instrument_listing_state_sha256"] == nil) {
-			return errors.New("v8 backup manifest omits required instrument listing fields")
+			return errors.New("legacy backup manifest omits required instrument listing fields")
 		}
 		if (legacyV5Manifest || legacyV6Manifest) && (fields["security_price_observation_state_sha256"] != nil || fields["security_price_observation_count"] != nil) {
 			return errors.New("legacy backup manifest contains current security price observation fields")
@@ -2078,9 +2164,9 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	}
 	receipt := manifest.VerificationReceipt
 	if receipt.Status != "verified" || receipt.IntegrityCheck != "ok" || receipt.GoldenSnapshotCheck != "ok" || receipt.OrderStateCheck != "ok" || receipt.BrokerStateCheck != "ok" || receipt.StrategyRegistryCheck != "ok" ||
-		((currentManifest || legacyV6Manifest || legacyV7Manifest || legacyV8Manifest) && receipt.FXObservationCheck != "ok") ||
-		((currentManifest || legacyV7Manifest || legacyV8Manifest) && receipt.SecurityPriceObservationCheck != "ok") ||
-		((currentManifest || legacyV8Manifest) && receipt.InstrumentListingCheck != "ok") || !receipt.EligibleForActivation || len(receipt.Errors) != 0 {
+		((currentManifest || legacyV6Manifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest) && receipt.FXObservationCheck != "ok") ||
+		((currentManifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest) && receipt.SecurityPriceObservationCheck != "ok") ||
+		((currentManifest || legacyV8Manifest || legacyV9Manifest) && receipt.InstrumentListingCheck != "ok") || !receipt.EligibleForActivation || len(receipt.Errors) != 0 {
 		return errors.New("backup manifest is not eligible for activation")
 	}
 	dbSHA, size, err := hashFile(path)
@@ -2173,18 +2259,31 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 		manifest.SelectedStrategyResultSHA256 != strategy.SelectedResultSHA256 {
 		return errors.New("backup strategy registry recovery proof mismatch")
 	}
-	if currentManifest {
+	if currentManifest || legacyV9Manifest {
 		if manifest.PaperEvaluationEventCount != strategy.Evaluations {
 			return errors.New("backup paper evaluation recovery proof mismatch")
 		}
 	} else if strategy.Evaluations != 0 {
 		return errors.New("legacy backup unexpectedly contains paper evaluations")
 	}
+	paperAccounting, err := verifyPaperAccountingRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if currentManifest {
+		if manifest.PaperAccountingStateSHA256 != paperAccounting.SHA256 ||
+			receipt.CandidatePaperAccountingStateSHA256 != paperAccounting.SHA256 ||
+			manifest.PaperAccountingSessionCount != paperAccounting.Sessions {
+			return errors.New("backup paper accounting recovery proof mismatch")
+		}
+	} else if paperAccounting.Sessions != 0 || paperAccounting.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
+		return errors.New("legacy backup unexpectedly contains paper accounting sessions")
+	}
 	fx, err := verifyFXObservationRestoreProof(verificationPath)
 	if err != nil {
 		return err
 	}
-	if currentManifest || legacyV6Manifest || legacyV7Manifest || legacyV8Manifest {
+	if currentManifest || legacyV6Manifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest {
 		if manifest.FXObservationStateSHA256 != fx.SHA256 || receipt.CandidateFXObservationStateSHA256 != fx.SHA256 ||
 			manifest.FXObservationCount != fx.Observations {
 			return errors.New("backup FX observation recovery proof mismatch")
@@ -2196,7 +2295,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err != nil {
 		return err
 	}
-	if currentManifest || legacyV7Manifest || legacyV8Manifest {
+	if currentManifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest {
 		if manifest.SecurityPriceObservationStateSHA256 != securityPrices.SHA256 ||
 			receipt.CandidateSecurityPriceObservationStateSHA256 != securityPrices.SHA256 ||
 			manifest.SecurityPriceObservationCount != securityPrices.Observations {
@@ -2209,7 +2308,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err != nil {
 		return err
 	}
-	if currentManifest || legacyV8Manifest {
+	if currentManifest || legacyV8Manifest || legacyV9Manifest {
 		if manifest.InstrumentListingStateSHA256 != instrumentListings.SHA256 ||
 			receipt.CandidateInstrumentListingStateSHA256 != instrumentListings.SHA256 ||
 			manifest.InstrumentListingEventCount != instrumentListings.Events ||

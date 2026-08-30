@@ -234,7 +234,7 @@ func TestK2CBackupRestoresAuthorityAndStartsWithNoOwnedLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v9" || manifest.SchemaVersion != "omni-folio.sqlite.v14" ||
+	if manifest.FormatVersion != "omni-folio-backup.v10" || manifest.SchemaVersion != "omni-folio.sqlite.v15" ||
 		manifest.ExecutionAuthorityEventCount != 2 || manifest.RiskReservationCount != 1 {
 		t.Fatalf("backup omitted execution authority proof: %+v", manifest)
 	}

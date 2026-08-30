@@ -34,6 +34,13 @@ type StrategyEvidence struct {
 	Target          string `json:"target"`
 	RecordedAt      string `json:"recorded_at"`
 	artifactJSON    string
+	executionPolicy strategyExecutionPolicy
+}
+
+type strategyExecutionPolicy struct {
+	StartingCash, Fee, Tax, SlippageBPS, MaxParticipation string
+	DelayBars                                             int64
+	SignalPrice, FillPrice, SHA256, canonicalJSON         string
 }
 
 type StrategySelectionEvent struct {
@@ -473,6 +480,28 @@ func replayStrategyRegistry(ctx context.Context, q orderQuerier) (strategyRegist
 	}, nil
 }
 
+func loadCurrentStrategyExecutionPolicy(ctx context.Context, q orderQuerier, resultSHA256, eventID string) (strategyExecutionPolicy, error) {
+	state, err := replayStrategyRegistry(ctx, q)
+	if err != nil {
+		return strategyExecutionPolicy{}, err
+	}
+	if state.SelectedResultSHA256 != resultSHA256 || state.CurrentEventID != eventID {
+		return strategyExecutionPolicy{}, errors.New("strategy execution policy is not current")
+	}
+	var artifactJSON string
+	if err := q.QueryRowContext(ctx, `SELECT artifact_json FROM strategy_research_evidence WHERE result_sha256=?`, resultSHA256).Scan(&artifactJSON); err != nil {
+		return strategyExecutionPolicy{}, err
+	}
+	evidence, err := decodeStrategyArtifact([]byte(artifactJSON))
+	if err != nil {
+		return strategyExecutionPolicy{}, err
+	}
+	if evidence.ResultSHA256 != resultSHA256 {
+		return strategyExecutionPolicy{}, errors.New("strategy execution policy result mismatch")
+	}
+	return evidence.executionPolicy, nil
+}
+
 func decodeStrategyArtifact(artifact []byte) (*StrategyEvidence, error) {
 	if len(artifact) == 0 || len(artifact) > maxBodyBytes {
 		return nil, errors.New("strategy evidence size is invalid")
@@ -492,7 +521,8 @@ func decodeStrategyArtifact(artifact []byte) (*StrategyEvidence, error) {
 		stringField(result, "disclaimer") != "Research-only experiment; not investment advice or a production trading authorization." {
 		return nil, errors.New("strategy evidence top-level contract is invalid")
 	}
-	if err := validateStrategyExecutionContract(result["execution"]); err != nil {
+	executionPolicy, err := decodeStrategyExecutionContract(result["execution"])
+	if err != nil {
 		return nil, err
 	}
 	claimedResultSHA := stringField(result, "result_sha256")
@@ -579,35 +609,45 @@ func decodeStrategyArtifact(artifact []byte) (*StrategyEvidence, error) {
 	return &StrategyEvidence{
 		ResultSHA256: claimedResultSHA, ArtifactSHA256: hex.EncodeToString(artifactHash[:]),
 		StrategyName: stringField(strategy, "name"), StrategyVersion: stringField(strategy, "version"),
-		ParameterSHA256: parameterSHA, Target: target, artifactJSON: string(canonicalArtifact),
+		ParameterSHA256: parameterSHA, Target: target, artifactJSON: string(canonicalArtifact), executionPolicy: executionPolicy,
 	}, nil
 }
 
-func validateStrategyExecutionContract(value any) error {
+func decodeStrategyExecutionContract(value any) (strategyExecutionPolicy, error) {
 	execution, ok := value.(map[string]any)
 	if !ok || !exactKeys(execution, "starting_cash", "fee", "tax", "slippage_bps", "delay_bars", "max_participation", "signal_price", "fill_price") ||
 		stringField(execution, "signal_price") != "bar_close" || stringField(execution, "fill_price") != "next_eligible_bar_open" {
-		return errors.New("strategy execution contract is invalid")
+		return strategyExecutionPolicy{}, errors.New("strategy execution contract is invalid")
 	}
 	startingCash, err := parseDecimal(stringField(execution, "starting_cash"))
 	if err != nil || startingCash.Sign() <= 0 {
-		return errors.New("strategy execution contract is invalid")
+		return strategyExecutionPolicy{}, errors.New("strategy execution contract is invalid")
 	}
 	for _, field := range []string{"fee", "tax", "slippage_bps"} {
 		value, err := parseDecimal(stringField(execution, field))
 		if err != nil || value.Sign() < 0 {
-			return errors.New("strategy execution contract is invalid")
+			return strategyExecutionPolicy{}, errors.New("strategy execution contract is invalid")
 		}
 	}
 	delay, err := parseDecimal(stringField(execution, "delay_bars"))
-	if err != nil || delay.Sign() <= 0 || !delay.IsInt() {
-		return errors.New("strategy execution contract is invalid")
+	if err != nil || delay.Sign() <= 0 || !delay.IsInt() || !delay.Num().IsInt64() {
+		return strategyExecutionPolicy{}, errors.New("strategy execution contract is invalid")
 	}
 	participation, err := parseDecimal(stringField(execution, "max_participation"))
 	if err != nil || participation.Sign() <= 0 || participation.Cmp(big.NewRat(1, 1)) > 0 {
-		return errors.New("strategy execution contract is invalid")
+		return strategyExecutionPolicy{}, errors.New("strategy execution contract is invalid")
 	}
-	return nil
+	canonicalJSON, err := strategyCanonicalJSON(execution)
+	if err != nil {
+		return strategyExecutionPolicy{}, err
+	}
+	hash := sha256.Sum256(canonicalJSON)
+	return strategyExecutionPolicy{
+		StartingCash: stringField(execution, "starting_cash"), Fee: stringField(execution, "fee"), Tax: stringField(execution, "tax"),
+		SlippageBPS: stringField(execution, "slippage_bps"), DelayBars: delay.Num().Int64(),
+		MaxParticipation: stringField(execution, "max_participation"), SignalPrice: stringField(execution, "signal_price"),
+		FillPrice: stringField(execution, "fill_price"), SHA256: hex.EncodeToString(hash[:]), canonicalJSON: string(canonicalJSON),
+	}, nil
 }
 
 func strategyCanonicalJSON(value any) ([]byte, error) {

@@ -42,7 +42,10 @@ G3 research vertical slice
 ├─ G3.6 credential-free target-netted paper fill, replay and restore proof
 ├─ G3.7 atomic execution halt and strategy rollback proof
 ├─ G3.8A append-only paper operational evaluation evidence
-└─ G3.8B Go-trusted strategy execution-policy contract
+├─ G3.8B Go-trusted strategy execution-policy contract
+├─ G3.8C1 immutable account-global paper accounting session
+├─ G3.8C2 SELL and capital-safe paper accounting
+└─ G3.8C3 immutable marks and performance evidence
    |
 G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4A Kiwoom K0 read contract
@@ -80,6 +83,7 @@ G6 PostgreSQL and Kubernetes promotion
 - 검증 명령은 성공·실패·중단 뒤 자신이 만든 프로세스, 임시 파일, Podman/Kind/Testcontainers 리소스를 소유 label·세션·명시적 ID 기준으로 회수하며 전역 prune을 사용하지 않는다.
 - 동일 fixture의 decimal·ID·timestamp가 Flutter, Go, Python contract test에서 일치한다.
 - 2026-08-30 `make check`와 `make smoke`는 실제 preview/apply API를 쓰는 demo seed의 적용·완전 중복 no-op·충돌 fail-closed와 65개 Flutter parser/widget 검증을 통과했다. G2의 physical-device profile과 수동 screen-reader 증거는 여전히 열려 있다.
+- G3.8C1은 계좌 전역 최초 선택 artifact의 불변 starting-capital authority만 증명한다. schema v15/backup v10의 독립 session digest/count, exact restore objects, v9/schema-v14 owned-copy empty-session proof와 strategy/order corruption fail-closed가 필요하며, runner·성과·profit·production readiness를 뜻하지 않는다. 세부 근거는 [`gates/g3j-paper-accounting-session.md`](gates/g3j-paper-accounting-session.md)에 둔다.
 - local 검증, broker sandbox, live readiness, 실제 운영 증거를 따로 보고한다.
 - external deploy, credential, live 주문, push는 명시 승인 없이는 실행하지 않는다.
 

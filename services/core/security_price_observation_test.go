@@ -596,7 +596,7 @@ func TestSecurityPriceObservationBackupProofAndLegacyCopyMigrations(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v9" || manifest.SchemaVersion != "omni-folio.sqlite.v14" ||
+	if manifest.FormatVersion != "omni-folio-backup.v10" || manifest.SchemaVersion != "omni-folio.sqlite.v15" ||
 		manifest.SecurityPriceObservationCount != 1 || len(manifest.SecurityPriceObservationStateSHA256) != 64 ||
 		manifest.VerificationReceipt.SecurityPriceObservationCheck != "ok" ||
 		manifest.VerificationReceipt.CandidateSecurityPriceObservationStateSHA256 != manifest.SecurityPriceObservationStateSHA256 {
@@ -663,10 +663,13 @@ func TestSecurityPriceObservationBackupProofAndLegacyCopyMigrations(t *testing.T
 	legacyV11Manifest["format_version"] = "omni-folio-backup.v7"
 	legacyV11Manifest["schema_version"] = "omni-folio.sqlite.v11"
 	delete(legacyV11Manifest, "paper_evaluation_event_count")
+	delete(legacyV11Manifest, "paper_accounting_state_sha256")
+	delete(legacyV11Manifest, "paper_accounting_session_count")
 	delete(legacyV11Manifest, "instrument_listing_state_sha256")
 	delete(legacyV11Manifest, "instrument_listing_event_count")
 	delete(legacyV11Manifest, "active_instrument_listing_count")
 	legacyV11Receipt := legacyV11Manifest["verification_receipt"].(map[string]any)
+	delete(legacyV11Receipt, "candidate_paper_accounting_state_sha256")
 	delete(legacyV11Receipt, "instrument_listing_check")
 	delete(legacyV11Receipt, "candidate_instrument_listing_state_sha256")
 	v11SHA, v11Size, err := hashFile(legacyV11Backup)
@@ -701,12 +704,15 @@ func TestSecurityPriceObservationBackupProofAndLegacyCopyMigrations(t *testing.T
 	legacyManifest["format_version"] = "omni-folio-backup.v6"
 	legacyManifest["schema_version"] = "omni-folio.sqlite.v10"
 	delete(legacyManifest, "paper_evaluation_event_count")
+	delete(legacyManifest, "paper_accounting_state_sha256")
+	delete(legacyManifest, "paper_accounting_session_count")
 	delete(legacyManifest, "security_price_observation_state_sha256")
 	delete(legacyManifest, "security_price_observation_count")
 	delete(legacyManifest, "instrument_listing_state_sha256")
 	delete(legacyManifest, "instrument_listing_event_count")
 	delete(legacyManifest, "active_instrument_listing_count")
 	receipt := legacyManifest["verification_receipt"].(map[string]any)
+	delete(receipt, "candidate_paper_accounting_state_sha256")
 	delete(receipt, "security_price_observation_check")
 	delete(receipt, "candidate_security_price_observation_state_sha256")
 	delete(receipt, "instrument_listing_check")

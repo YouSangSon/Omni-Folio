@@ -52,6 +52,34 @@ func TestG38BRegistryRejectsUnsafeExecutionContract(t *testing.T) {
 	}
 }
 
+func TestG38C1LoadsOnlyCurrentSelectedExecutionPolicy(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	ctx := context.Background()
+	evidence, err := svc.registerStrategyEvidence(ctx, strategyArtifact(t, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, err := svc.selectPaperCandidate(ctx, evidence.ResultSHA256, noStrategySelectionEvent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, err := loadCurrentStrategyExecutionPolicy(ctx, svc.db, evidence.ResultSHA256, selected.CurrentEventID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if policy.StartingCash != "10000" || policy.Fee != "1" || policy.Tax != "0.001" || policy.SlippageBPS != "10" ||
+		policy.DelayBars != 1 || policy.MaxParticipation != "0.5" || policy.SignalPrice != "bar_close" ||
+		policy.FillPrice != "next_eligible_bar_open" || !strategySHA256Pattern.MatchString(policy.SHA256) {
+		t.Fatalf("execution policy=%+v", policy)
+	}
+	if _, err := svc.rollbackPaperCandidate(ctx, selected.CurrentEventID, selected.CurrentEventID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadCurrentStrategyExecutionPolicy(ctx, svc.db, evidence.ResultSHA256, selected.CurrentEventID); err == nil {
+		t.Fatal("superseded selection loaded an execution policy")
+	}
+}
+
 func rehashedStrategyArtifact(t testing.TB, artifact []byte, mutate func(map[string]any)) []byte {
 	t.Helper()
 	var result map[string]any
@@ -249,7 +277,7 @@ func TestG3RegistryBackupRestoresSelectionProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v9" || manifest.SchemaVersion != "omni-folio.sqlite.v14" ||
+	if manifest.FormatVersion != "omni-folio-backup.v10" || manifest.SchemaVersion != "omni-folio.sqlite.v15" ||
 		manifest.StrategyRegistrySHA256 == "" || manifest.StrategyEvidenceCount != 1 || manifest.StrategySelectionEventCount != 1 ||
 		manifest.SelectedStrategyResultSHA256 != evidence.ResultSHA256 {
 		t.Fatalf("backup omitted strategy registry proof: %+v", manifest)

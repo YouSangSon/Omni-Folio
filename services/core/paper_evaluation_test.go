@@ -255,7 +255,7 @@ func TestG38PaperEvaluationBackupAndLegacySchema13Migration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v9" || manifest.SchemaVersion != "omni-folio.sqlite.v14" ||
+	if manifest.FormatVersion != "omni-folio-backup.v10" || manifest.SchemaVersion != "omni-folio.sqlite.v15" ||
 		manifest.PaperEvaluationEventCount != 1 || manifest.StrategyRegistrySHA256 == "" {
 		t.Fatalf("backup omitted paper evaluation proof: %+v", manifest)
 	}
@@ -305,6 +305,9 @@ func TestG38PaperEvaluationBackupAndLegacySchema13Migration(t *testing.T) {
 	legacyManifest["format_version"] = "omni-folio-backup.v8"
 	legacyManifest["schema_version"] = "omni-folio.sqlite.v13"
 	delete(legacyManifest, "paper_evaluation_event_count")
+	delete(legacyManifest, "paper_accounting_state_sha256")
+	delete(legacyManifest, "paper_accounting_session_count")
+	delete(legacyManifest["verification_receipt"].(map[string]any), "candidate_paper_accounting_state_sha256")
 	legacySHA, legacySize, err := hashFile(legacyBackup)
 	if err != nil {
 		t.Fatal(err)
@@ -329,6 +332,7 @@ func TestG38PaperEvaluationBackupAndLegacySchema13Migration(t *testing.T) {
 
 func downgradePaperEvaluationForTest(t testing.TB, db *sql.DB) {
 	t.Helper()
+	downgradePaperAccountingForTest(t, db)
 	legacyMigration, err := migrationFiles.ReadFile("migrations/006_strategy_registry.sql")
 	if err != nil {
 		t.Fatal(err)

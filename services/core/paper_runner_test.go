@@ -69,7 +69,7 @@ func TestG3PaperRunnerUsesSelectedStrategyRiskOrderReplayAndBackup(t *testing.T)
 	golden := writeCurrentSnapshot(t, svc.db)
 	backup := filepath.Join(t.TempDir(), "paper-backup.db")
 	manifest, err := createBackup(svc.db, backup, golden, backup+".manifest.json", svc.now, svc.id)
-	if err != nil || manifest.SchemaVersion != "omni-folio.sqlite.v14" {
+	if err != nil || manifest.SchemaVersion != "omni-folio.sqlite.v15" {
 		t.Fatalf("paper-aware backup manifest=%+v err=%v", manifest, err)
 	}
 	restoredDB, err := openExistingDB(backup)

@@ -61,7 +61,7 @@ func TestFXExchangePreviewApplyReplayAndBackupRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v9" || manifest.SchemaVersion != "omni-folio.sqlite.v14" {
+	if manifest.FormatVersion != "omni-folio-backup.v10" || manifest.SchemaVersion != "omni-folio.sqlite.v15" {
 		t.Fatalf("FX backup versions drifted: %+v", manifest)
 	}
 	if err := verifyManifest(backup, golden, manifestPath); err != nil {
@@ -338,9 +338,12 @@ func writeLegacyV5Manifest(t *testing.T, db *sql.DB, backup, golden, schema stri
 	delete(legacy, "security_price_observation_count")
 	delete(legacy, "instrument_listing_state_sha256")
 	delete(legacy, "paper_evaluation_event_count")
+	delete(legacy, "paper_accounting_state_sha256")
+	delete(legacy, "paper_accounting_session_count")
 	delete(legacy, "instrument_listing_event_count")
 	delete(legacy, "active_instrument_listing_count")
 	receipt := legacy["verification_receipt"].(map[string]any)
+	delete(receipt, "candidate_paper_accounting_state_sha256")
 	delete(receipt, "fx_observation_check")
 	delete(receipt, "candidate_fx_observation_state_sha256")
 	delete(receipt, "security_price_observation_check")

@@ -43,6 +43,7 @@
 - **Promotion evidence**: paper, shadow, canary, limited-live 단계의 검증 결과와 승인 기록.
 - **Research evidence**: Python이 만든 immutable `strategy-improvement-result.v1`. 재현 가능한 평가 산출물이지 실행 권한이 아니다.
 - **Strategy execution policy**: 연구 산출물의 시작 현금, 수수료, 세금, slippage, bar 지연, 최대 참여율과 close-signal/next-open-fill 의미를 묶은 계약. Python 생성 성공이나 result hash만으로 신뢰하지 않고 Go registry·복구 경계가 독립 검증한다.
+- **Paper accounting session**: G3.8C1의 계좌 전역 불변 starting-capital authority. 최초 현재 선택의 immutable research artifact에서 starting cash와 complete execution-policy JSON/hash를 파생하며 이후 전략 변경으로 reset하지 않는다. legacy paper order는 replay-only·uncapitalized이고, 이 session은 현금·체결·lot·성과 계산 또는 runner 권한이 아니다.
 - **Selected paper candidate**: Go registry replay가 가리키는 최신 `paper_candidate`; paper에서 실행 중인 champion이나 주문 승인과 동일하지 않다.
 - **Strategy order binding**: 전략이 만든 주문 intent에 선택 result SHA와 exact selection event ID를 함께 보존하는 G3.5 fencing 계약. 신규 intent 기록과 durable dispatch 시점 모두 현재 registry replay와 일치해야 한다.
 - **Paper signal**: 선택된 전략 result·exact selection event, 입력 data hash, 생성·만료 시각, 종목과 목표 수량을 묶은 `paper-signal.v2` 내부 명령. 계좌·방향·주문 수량·가격이나 broker 주문 권한을 갖지 않는다.
@@ -58,6 +59,7 @@
 - Flutter는 upstream exception·provider raw message·account reference를 화면이나 semantics에 직접 표시하지 않고, 화면 맥락별 고정된 복구 안내만 노출한다.
 - strategy registry는 evidence와 선택 이력만 소유한다. 선택 상태만으로 paper/live runner 또는 주문 dispatch를 허용하지 않으며, 전략 주문은 exact current selection에 묶인 경우에만 기록·durable dispatch할 수 있다.
 - strategy registry와 복구는 execution policy의 exact keys, canonical decimal string, 양수 시작 현금, 비음수 비용, 1 이상 정수 지연, `(0,1]` 참여율, 고정 signal/fill 의미를 모두 검증하고 불일치하면 evidence를 저장하거나 선택 상태를 복원하지 않는다.
+- paper accounting session은 account 당 하나이며 strategy 변경으로 초기 capital authority를 교체하지 않는다. selected-policy loader와 session recovery는 독립적으로 strategy와 order replay를 먼저 증명하고, schema v15/backup v10은 session digest/count와 exact insert-only restore objects를 요구한다. v9/schema-v14는 owned copy에서 empty session만 증명하며 legacy paper order를 backfill하지 않는다.
 - 새 paper 주문은 현재 selection, 유효한 signal, K2C lease/fencing과 risk reservation을 모두 요구한다. 이미 durable dispatch된 paper 주문은 selection rollback이나 signal 만료 뒤에도 같은 관찰의 idempotent replay와 잔여 체결 복구를 계속한다.
 - 신규 paper intent 기록은 현재 process가 소유한 만료 전 lease와 exact fencing token을 검증하고 K2C 승인·durable dispatch까지 같은 transaction에 append한다. 수동 strategy rollback은 모든 활성 execution authority를 fencing halt하고 rollback event를 같은 transaction에 append하며, 어느 한 기록이라도 실패하면 둘 다 남기지 않는다.
 - Go는 같은 paper 계좌·종목의 체결 수량과 미완결 BUY 전체 수량을 목표에서 원자적으로 차감해 양수 delta만 `OrderIntent`로 만든다. 동시·반복 신호는 같은 목표를 중복 주문하지 않으며 `paper-signal.v1`은 복구만 허용한다.

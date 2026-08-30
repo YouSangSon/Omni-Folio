@@ -1,7 +1,9 @@
 package main
 
 import (
+	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -44,6 +46,130 @@ CREATE TABLE order_events (
 ) STRICT;`)
 	if err := verifyRestore(path, golden); err == nil {
 		t.Fatal("restore accepted an event sequence primary key that is not a rowid alias")
+	}
+}
+
+func TestG38C1RestoreRejectsPaperAccountingSchemaOrProtectionDrift(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, *sql.DB)
+	}{
+		{
+			name: "missing table",
+			mutate: func(t *testing.T, db *sql.DB) {
+				t.Helper()
+				if _, err := db.Exec(`DROP TRIGGER paper_accounting_sessions_no_update;
+					DROP TRIGGER paper_accounting_sessions_no_delete;
+					DROP TRIGGER paper_accounting_sessions_state_guard;
+					DROP TABLE paper_accounting_sessions`); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "altered table",
+			mutate: func(t *testing.T, db *sql.DB) {
+				t.Helper()
+				if _, err := db.Exec(`ALTER TABLE paper_accounting_sessions ADD COLUMN untrusted TEXT`); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "missing account uniqueness",
+			mutate: func(t *testing.T, db *sql.DB) {
+				t.Helper()
+				rebuildPaperAccountingWithoutAccountUnique(t, db)
+			},
+		},
+		{
+			name: "missing state guard",
+			mutate: func(t *testing.T, db *sql.DB) {
+				t.Helper()
+				if _, err := db.Exec(`DROP TRIGGER paper_accounting_sessions_state_guard`); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "altered state guard",
+			mutate: func(t *testing.T, db *sql.DB) {
+				t.Helper()
+				if _, err := db.Exec(`DROP TRIGGER paper_accounting_sessions_state_guard;
+					CREATE TRIGGER paper_accounting_sessions_state_guard
+					BEFORE INSERT ON paper_accounting_sessions
+					BEGIN
+						SELECT 1;
+					END`); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "missing update guard",
+			mutate: func(t *testing.T, db *sql.DB) {
+				t.Helper()
+				if _, err := db.Exec(`DROP TRIGGER paper_accounting_sessions_no_update`); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "missing delete guard",
+			mutate: func(t *testing.T, db *sql.DB) {
+				t.Helper()
+				if _, err := db.Exec(`DROP TRIGGER paper_accounting_sessions_no_delete`); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			svc, _ := testService(t, nil, nil)
+			golden := writeCurrentSnapshot(t, svc.db)
+			candidatePath := filepath.Join(t.TempDir(), "paper-accounting-schema.db")
+			if _, err := createBackup(svc.db, candidatePath, golden, candidatePath+".manifest.json", svc.now, svc.id); err != nil {
+				t.Fatal(err)
+			}
+			candidate, err := openExistingDB(candidatePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(t, candidate)
+			if err := candidate.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := verifyRestore(candidatePath, golden); err == nil {
+				t.Fatal("restore accepted paper accounting schema drift")
+			}
+		})
+	}
+}
+
+func rebuildPaperAccountingWithoutAccountUnique(t testing.TB, db *sql.DB) {
+	t.Helper()
+	migration, err := migrationFiles.ReadFile("migrations/015_paper_accounting_sessions.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(migration)
+	const tablePrefix = "CREATE TABLE paper_accounting_sessions"
+	tableStart := strings.Index(source, tablePrefix)
+	triggerStart := strings.Index(source, "CREATE TRIGGER paper_accounting_sessions_no_update")
+	if tableStart < 0 || triggerStart <= tableStart {
+		t.Fatal("paper accounting migration does not contain the expected table and triggers")
+	}
+	weakTable := strings.TrimSuffix(strings.TrimSpace(source[tableStart:triggerStart]), ";")
+	weakTable = strings.Replace(weakTable, "account_ref TEXT NOT NULL UNIQUE", "account_ref TEXT NOT NULL", 1)
+	if _, err := db.Exec(`DROP TRIGGER paper_accounting_sessions_no_update;
+		DROP TRIGGER paper_accounting_sessions_no_delete;
+		DROP TRIGGER paper_accounting_sessions_state_guard;
+		DROP TABLE paper_accounting_sessions`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(weakTable + ";\n" + source[triggerStart:]); err != nil {
+		t.Fatal(err)
 	}
 }
 
