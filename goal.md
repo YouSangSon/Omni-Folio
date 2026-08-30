@@ -38,7 +38,7 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 - 배포 가능한 Go 모듈러 모놀리스와 SQLite single-writer local로 시작한다. 로컬과 단일 노드 클라우드는 같은 OCI image를 사용하고 설정·secret·영속 저장소만 실행 프로필으로 바꾼다. 측정된 필요가 생기기 전에는 microservice, Redis, message broker, 동적 plugin SDK를 추가하지 않는다.
 - 신뢰할 수 있는 프레임워크·라이브러리는 회피하지 않는다. 직접 구현보다 정확성·성능·유지보수성이 나을 때 채택하되 공식 저장소의 활성도, license, 보안 이력, release 고정·lockfile, 공급망 검사와 Omni Folio 골든 fixture 교차검증을 통과해야 한다.
 - 새 의존성은 기능별로 하나의 주 구현만 선택한다. 백테스트·차트·Decimal처럼 핵심 결과를 만드는 라이브러리는 입력 snapshot과 버전을 manifest에 남기고 reference fixture와 결과가 어긋나면 승격을 차단한다.
-- 테스트가 만든 프로세스, 임시 DB, 컨테이너, Pod, volume, network와 생성물은 성공·실패·중단 경로 모두에서 소유 범위 안에서 회수한다. Podman/Kind/Testcontainers는 프로젝트·세션 label 또는 명시적 ID로만 정리하고 전역 prune으로 다른 작업의 리소스를 삭제하지 않는다.
+- 테스트가 만든 프로세스, listener, 임시 DB·디렉터리, bytecode/coverage/build 산출물, 컨테이너, Pod, volume, network와 Kind cluster는 성공·실패·SIGINT/SIGTERM 중단 경로 모두에서 소유 범위 안에서 회수한다. 각 test/check/smoke 실행은 고유 session ID·명시적 temp root·PID 또는 프로젝트/session label을 가지고 `t.Cleanup`·`defer`·shell `trap`으로 종료하며, 다음 실행은 죽은 owner가 남긴 명시적 Omni-Folio 자원만 선제 회수한다. 종료 후 pre/post inventory에서 owned 잔여물이 하나라도 있으면 테스트를 실패로 처리한다. Podman/Kind/Testcontainers는 프로젝트·세션 label 또는 명시적 ID로만 정리하고 전역 prune이나 넓은 경로 삭제로 다른 작업의 자원을 건드리지 않는다. SIGKILL·host crash처럼 trap이 실행될 수 없는 경우에도 다음 실행의 stale-owner 회수가 동일한 소유권 증거로 복구해야 한다.
 - 실전 주문은 절대 자동 활성화하지 않는다. 모의투자 검증, 체결-원장 reconciliation, 실패 복구, 사용자 명시 승인 전에는 비활성 상태로 유지한다.
 - 자동매매는 `Universe → Signal/Alpha → PortfolioTarget → RiskAdjustedTarget → OrderIntent → Execution` 단계로 분리한다. 전략은 브로커 주문을 직접 만들거나 전송하지 않는다.
 - 백테스트 결과를 실전 기대수익으로 표시하지 않는다. 슬리피지, 수수료, 세금, 체결 지연, 데이터 지연, survivorship/lookahead bias를 검증 항목으로 둔다.
@@ -250,6 +250,7 @@ Market data adapters
 - 두 번째 브로커는 새 adapter와 공통 contract test 추가만으로 연결할 수 있고 원장·성과·차트·주문 코어의 공급자별 분기가 늘어나지 않는다.
 - 지원 화면 크기와 키보드·접근성 검증이 통과한다.
 - 동일 image의 local/cloud smoke test, health/readiness, migration, 암호화 backup/restore, 주문 차단형 rollback rehearsal이 통과한다.
+- `make test`, `make check`, `make smoke`를 성공·의도적 실패·SIGINT/SIGTERM으로 각각 종료한 뒤 owned 프로세스/listener/temp/coverage/build/Podman/Kind 자원이 남지 않으며, 강제 종료로 남긴 stale-owner fixture는 다음 실행의 scoped preflight가 회수하고 unrelated 자원은 보존한다.
 - README에 로컬 실행, 단일 노드 cloud 배포, 데이터 백업/복원, API 연결, 모의주문 사용법, 실전 주문 활성화 위험과 절차가 기록된다.
 
 각 단계에서 먼저 현재 코드를 조사하고 가장 작은 수직 슬라이스를 구현한 뒤 테스트로 증명하라. 부분 구현을 전체 완료로 보고하지 말고, 로컬 검증·모의투자 검증·실전 주문 준비·실제 운영 증거를 구분해서 보고하라.

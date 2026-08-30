@@ -18,7 +18,7 @@ RESEARCH_PYTHONPATH ?= $(ROOT)/services/research
 MARKET_FIXTURE ?= $(ROOT)/contracts/fixtures/market-bars.csv
 SEED_DEMO_CSV ?= $(ROOT)/contracts/fixtures/golden-import.csv
 
-.PHONY: bootstrap format format-check lint test contract-check check clean clean-test-resources run-core run-client seed-demo run-research run-improvement smoke
+.PHONY: bootstrap format format-check lint test test-body contract-check check clean clean-test-resources run-core run-client seed-demo run-research run-improvement smoke
 
 bootstrap:
 	mkdir -p "$(ROOT)/data"
@@ -40,6 +40,21 @@ lint:
 	"$(PYTHON)" -m compileall -q services/research
 
 test:
+	+@test_root="$$(mktemp -d "$${TMPDIR:-/tmp}/omni-folio-test.XXXXXX")"; \
+	printf '%s\n' "$$$$" >"$$test_root/.owner-pid"; \
+	cleanup() { \
+		cleanup_status=0; \
+		trap - EXIT INT TERM; \
+		$(MAKE) --no-print-directory clean-test-resources TEST_SESSION_ROOT="$$test_root" || cleanup_status=$$?; \
+		if test "$$status" -ne 0; then exit "$$status"; fi; \
+		exit "$$cleanup_status"; \
+	}; \
+	trap 'status=130; cleanup' INT; \
+	trap 'status=143; cleanup' TERM; \
+	trap 'status=$$?; cleanup' EXIT; \
+	TMPDIR="$$test_root" $(MAKE) --no-print-directory test-body
+
+test-body:
 	cd services/core && "$(GO)" test ./...
 	cd apps/client && "$(FLUTTER)" test
 	cd services/research && "$(PYTHON)" -m unittest discover -s tests -v
@@ -62,6 +77,18 @@ check:
 
 clean-test-resources:
 	@set -eu; \
+	if test -n "$${TEST_SESSION_ROOT:-}"; then \
+		case "$$TEST_SESSION_ROOT" in "$${TMPDIR:-/tmp}"/omni-folio-test.*) ;; *) echo "refusing unsafe test session root: $$TEST_SESSION_ROOT" >&2; exit 1;; esac; \
+		if test -d "$$TEST_SESSION_ROOT"; then find "$$TEST_SESSION_ROOT" -depth -delete; fi; \
+	fi; \
+	for session_path in "$${TMPDIR:-/tmp}"/omni-folio-test.*; do \
+		test -d "$$session_path" || continue; \
+		owner_file="$$session_path/.owner-pid"; \
+		test -f "$$owner_file" || continue; \
+		owner_pid="$$(sed -n '1p' "$$owner_file")"; \
+		case "$$owner_pid" in ''|*[!0-9]*) continue;; esac; \
+		if ! kill -0 "$$owner_pid" 2>/dev/null; then find "$$session_path" -depth -delete; fi; \
+	done; \
 	for artifact_path in \
 		"$(ROOT)/apps/client/build" \
 		"$(ROOT)/apps/client/coverage" \
@@ -69,7 +96,10 @@ clean-test-resources:
 		if test -e "$$artifact_path"; then find "$$artifact_path" -depth -delete; fi; \
 	done; \
 	find "$(ROOT)/services/research" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete; \
-	find "$(ROOT)/services/research" -depth -type d -name __pycache__ -empty -delete
+	find "$(ROOT)/services/research" -depth -type d -name __pycache__ -empty -delete; \
+	for artifact_path in "$(ROOT)/apps/client/build" "$(ROOT)/apps/client/coverage" "$(ROOT)/services/core/core"; do \
+		test ! -e "$$artifact_path" || { echo "owned test artifact remains: $$artifact_path" >&2; exit 1; }; \
+	done
 
 clean: clean-test-resources
 	@set -eu; \
