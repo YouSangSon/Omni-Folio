@@ -55,6 +55,13 @@ func calculatePaperFill(policy strategyExecutionPolicy, input paperFillInput) (p
 	if err != nil {
 		return paperCalculatedFill{}, false, err
 	}
+	var available *big.Int
+	if input.Side == "SELL" {
+		available, err = paperFillInteger(input.PositionQuantity, "position quantity")
+		if err != nil {
+			return paperCalculatedFill{}, false, err
+		}
+	}
 
 	capacity := floorPositiveRat(new(big.Rat).Mul(volume, participation))
 	if consumed.Cmp(capacity) > 0 {
@@ -95,10 +102,6 @@ func calculatePaperFill(policy strategyExecutionPolicy, input paperFillInput) (p
 			quantity.Set(affordable)
 		}
 	} else {
-		available, err := paperFillInteger(input.PositionQuantity, "position quantity")
-		if err != nil {
-			return paperCalculatedFill{}, false, err
-		}
 		if quantity.Cmp(available) > 0 {
 			quantity.Set(available)
 		}

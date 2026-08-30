@@ -75,6 +75,7 @@ func TestG38C2PaperFillPolicyRejectsInvalidInputs(t *testing.T) {
 		{"fractional remaining", policy, paperFillInput{Side: "BUY", Open: "100", Volume: "5", RemainingQuantity: "1.5", Cash: "10000", ConsumedCapacity: "0"}},
 		{"fractional consumed capacity", policy, paperFillInput{Side: "BUY", Open: "100", Volume: "5", RemainingQuantity: "10", Cash: "10000", ConsumedCapacity: "0.5"}},
 		{"fractional position", policy, paperFillInput{Side: "SELL", Open: "100", Volume: "5", RemainingQuantity: "10", PositionQuantity: "1.5", ConsumedCapacity: "0"}},
+		{"zero-capacity fractional position", policy, paperFillInput{Side: "SELL", Open: "100", Volume: "0", RemainingQuantity: "10", PositionQuantity: "1.5", ConsumedCapacity: "0"}},
 		{"consumed capacity above capacity", policy, paperFillInput{Side: "BUY", Open: "100", Volume: "5", RemainingQuantity: "10", Cash: "10000", ConsumedCapacity: "3"}},
 		{"slippage policy upper bound", strategyExecutionPolicy{Fee: "1", Tax: "0.001", SlippageBPS: "10000", MaxParticipation: "0.5"}, paperFillInput{Side: "SELL", Open: "100", Volume: "5", RemainingQuantity: "10", PositionQuantity: "10", ConsumedCapacity: "0"}},
 		{"non-positive open", policy, paperFillInput{Side: "SELL", Open: "0", Volume: "5", RemainingQuantity: "10", PositionQuantity: "10", ConsumedCapacity: "0"}},
