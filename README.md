@@ -10,7 +10,7 @@
 | Gate | 상태 | 증거 |
 |---|---|---|
 | G0 아키텍처·계약 | 통과 | versioned OpenAPI/JSON Schema, runtime ADR, root commands |
-| G1 로컬 원장 | 통과 | CSV preview → atomic apply → exact cash/trade/dividend/tax/split/FX replay → append-only cash void → direct FX observation → snapshot/receipt → schema v10/backup v6와 legacy v8/v9 migration restore proof |
+| G1 로컬 원장 | 통과 | CSV preview → atomic apply → exact cash/trade/dividend/tax/split/FX replay → append-only cash void → direct FX observation → cash-only direct-FX valuation → snapshot/receipt → schema v10/backup v6와 legacy v8/v9 migration restore proof |
 | G2 Flutter client | 부분 통과 | iOS·Android·web release build와 자동 parser/widget 테스트 통과; chart 포함 Android emulator build/raster p95 2회 통과, physical-device·수동 screen-reader 및 test-instrumentation 격리 증거 남음 |
 | G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, append-only candidate registry, exact selection-bound order authority, credential-free paper execution, atomic halt/rollback safety |
 | G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot, G4I/K2C 내부 합성 authority, G4J/K2B2 credential-free mock 지정가 submit, G4K 저장된 보유수량 대조 read view, G4L 검증된 로컬 주문 lifecycle read view, G4M 홈 저장 대조 신뢰 요약, G4N pending-action 안전 경고, G4O local daily chart 표시 범위, G4P 첫 실행 import 복구 경로 통과. 실제 키움 credentialed 시세·모의주문 관찰, freshness/scheduling, unknown-submit 조회 복구, 주문 mutation UI, production risk와 모든 live gate는 남는다. |
@@ -128,6 +128,16 @@ curl -fsS 'http://127.0.0.1:8080/v1/market-data/candles?symbol=AAPL&interval=1d'
 G1.10은 `1 base_currency = rate quote_currency` 방향의 환율 관측값을 schema v10 `STRICT`/insert-only series에 보존합니다. source observation identity, exact decimal rate, observed/fetched/recorded UTC 시각과 canonical row hash를 검증하며 같은 source·pair·observed-at 충돌을 거절합니다. `GET /v1/market-data/fx/latest`는 explicit `as_of` 이전에 관측되고 수신된 exact 방향만 반환하고 `sample=true`, `state=stale`를 유지합니다. 반대 방향을 자동 역산하거나 `FX_EXCHANGE` cash leg를 환율로 사용하지 않습니다.
 
 현재 writer는 Go 내부 테스트 경계뿐이며 provider ingestion·public mutation·scheduler·Flutter 평가 화면은 없습니다. 따라서 이 route는 저장 계약을 검증하는 기반이지 사용 가능한 현재 환율 feed가 아닙니다. `PortfolioSnapshot.valuation_status`도 계속 `unavailable`입니다.
+
+### Direct-FX cash valuation
+
+G1.11의 `GET /v1/portfolio/cash-valuation`은 replay-verified 현재 원장 cash를 요청한 기준통화로만 평가합니다. canonical UTC `as_of`와 `base_currency`를 필수로 받고, 같은 읽기 transaction에서 원장 event와 FX series 전체를 검증합니다. 동일 통화와 0 잔액 외에는 `cash currency -> base currency` 방향의 직접 관측만 사용하며, 관측 시각부터 24시간 경계를 포함합니다. inverse·cross·interpolation·`FX_EXCHANGE` 추론과 표시용 반올림은 사용하지 않습니다.
+
+누락되거나 24시간보다 오래된 pair가 하나라도 있으면 native cash line과 문제만 반환하고 aggregate total은 숨깁니다. local fixture를 사용한 완전한 결과도 `sample=true`, `status=stale_sample`입니다. 이 API는 현금 전용이며 보유자산·손익·성과·현재 시세를 평가하지 않고 Flutter 화면에도 연결하지 않았습니다. `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다.
+
+```sh
+curl -fsS 'http://127.0.0.1:8080/v1/portfolio/cash-valuation?base_currency=KRW&as_of=2026-01-11T14:00:00Z'
+```
 
 ### Internal synthetic order recovery, execution authority, reconciliation, and mock submit
 

@@ -12,6 +12,7 @@
 - `FX_EXCHANGE`는 매도 통화의 음수 cash leg와 다른 매수 통화의 양수 cash leg를 하나의 event로 원자 적용한다. 두 금액에서 환율이나 현재 시세를 주장하지 않는다.
 - ledger activity read는 전체 원장을 fail-closed 재검증한 뒤 revision-bound keyset cursor와 1..100 page limit으로 최신순 조회하며 account/event/source/instrument/receipt/correction-target/sequence ID를 제거한다.
 - direct FX observation은 명시 방향·source identity·observed/fetched/recorded 시각·canonical hash를 insert-only로 보존하고 local fixture 조회를 sample/stale로만 노출한다.
+- cash-only 기준통화 평가는 같은 read transaction에서 전체 원장·FX proof를 재실행하고 exact direct pair와 24시간 observation-age 정책만 사용한다. 누락·정체 pair가 하나라도 있으면 aggregate를 숨기며 whole-portfolio 평가 상태는 unavailable로 유지한다.
 - backup candidate를 별도 DB에 복원해 integrity와 golden snapshot을 검증하기 전 active DB를 바꾸지 않는다. 현재 schema v10/backup v6는 cash-void와 FX guard, direct FX observation digest/count, 주문 schema/hash/replay, known-good broker snapshot, execution-authority와 risk-reservation digest/count도 함께 검증한다. legacy v5/schema-v8·v9 candidate는 원본을 수정하지 않는 임시 copy를 v10으로 migration한 뒤 검증한다.
 
 ## Evidence
@@ -26,4 +27,4 @@
 
 ## Still open
 
-- FX as-of/freshness selection, base-currency cash/holding valuation, FX/trade/split/corporate-action correction, dividend reinvestment, jurisdiction-specific tax classification, and credentialed broker execution/cash reconciliation.
+- Provider FX ingestion/source priority/market-calendar policy, security prices and holding/PnL/performance valuation, FX/trade/split/corporate-action correction, dividend reinvestment, jurisdiction-specific tax classification, and credentialed broker execution/cash reconciliation.

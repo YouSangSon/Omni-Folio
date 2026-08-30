@@ -22,7 +22,8 @@ G1 ledger vertical slice
 ├─ G1.7 restore mismatch error redaction
 ├─ G1.8 exact two-leg FX exchange + schema v9/v8 restore proof
 ├─ G1.9 replay-verified sanitized ledger activity read
-└─ G1.10 append-only direct FX observation + schema v10/backup v6 proof
+├─ G1.10 append-only direct FX observation + schema v10/backup v6 proof
+└─ G1.11 replay-verified direct-FX cash-only valuation
    |
 G2 client vertical slice
 ├─ G2.1 Flutter iOS/Android/web build

@@ -1,13 +1,13 @@
 # Omni Folio Execution Plan
 
-상태: G0·G1·G3 로컬 통과(G1.6 append-only cash-flow void, G1.7 restore mismatch error redaction, G1.8 exact FX exchange, G1.9 sanitized ledger activity, G1.10 direct FX observation storage와 G3.7 atomic paper halt/rollback safety 포함), G2 자동 접근성·reduced-motion 통과 및 native profile·screen-reader 증거 보강 중, G4A 키움 K0 합성 계약 통과, G4B local sample OHLCV 수직 슬라이스 통과, G4C K1 credential-free candle 합성 계약 통과, G4D price-adjustment consumer contract 통과, G4E/K2A 내부 합성 주문 상태 로그 통과, G4F/K2B0 알려진 주문 체결 조정 계약 통과, G4G/K2B1 날짜 지정 체결 스캔 통과, G4H credential-free known-good broker snapshot 영속화·원장 수량 diff 통과, G4I/K2C credential-free execution authority 통과, G4J/K2B2 credential-free 키움 mock 지정가 submit transport 계약 통과, G4K 저장된 증권사-원장 보유수량 대조 read model·Flutter 연결 화면 통과, G4L 무결성 검증된 로컬 주문 lifecycle read API·Flutter 연결 화면 통과, G4M 저장 대조 홈 신뢰 요약·연결 상세 이동 통과, G4N 로컬 주문 pending action DTO·홈 안전 경고·연결 상세 이동 통과, G4O local daily chart 표시 범위 선택 통과, G4P 첫 실행 empty snapshot의 거래 내역 가져오기 복구 경로 통과
+상태: G0·G1·G3 로컬 통과(G1.6 append-only cash-flow void, G1.7 restore mismatch error redaction, G1.8 exact FX exchange, G1.9 sanitized ledger activity, G1.10 direct FX observation storage, G1.11 direct-FX cash valuation과 G3.7 atomic paper halt/rollback safety 포함), G2 자동 접근성·reduced-motion 통과 및 native profile·screen-reader 증거 보강 중, G4A 키움 K0 합성 계약 통과, G4B local sample OHLCV 수직 슬라이스 통과, G4C K1 credential-free candle 합성 계약 통과, G4D price-adjustment consumer contract 통과, G4E/K2A 내부 합성 주문 상태 로그 통과, G4F/K2B0 알려진 주문 체결 조정 계약 통과, G4G/K2B1 날짜 지정 체결 스캔 통과, G4H credential-free known-good broker snapshot 영속화·원장 수량 diff 통과, G4I/K2C credential-free execution authority 통과, G4J/K2B2 credential-free 키움 mock 지정가 submit transport 계약 통과, G4K 저장된 증권사-원장 보유수량 대조 read model·Flutter 연결 화면 통과, G4L 무결성 검증된 로컬 주문 lifecycle read API·Flutter 연결 화면 통과, G4M 저장 대조 홈 신뢰 요약·연결 상세 이동 통과, G4N 로컬 주문 pending action DTO·홈 안전 경고·연결 상세 이동 통과, G4O local daily chart 표시 범위 선택 통과, G4P 첫 실행 empty snapshot의 거래 내역 가져오기 복구 경로 통과
 
 ## Now
 
 - [x] 제품·안전 목표와 조사 기준선
 - [x] Flutter/Go/Python 및 state-authority ADR
 - [x] G0 contracts와 monorepo 실행 명령
-- [x] G1 CSV preview → atomic apply → ledger snapshot/receipt, exact cash-flow·split·두 통화 환전 replay, append-only `CASH_VOID`, direct FX observation, schema v10와 legacy v8/v9→v10 보존 migration/restore proof
+- [x] G1 CSV preview → atomic apply → ledger snapshot/receipt, exact cash-flow·split·두 통화 환전 replay, append-only `CASH_VOID`, direct FX observation와 cash-only direct-FX valuation, schema v10와 legacy v8/v9→v10 보존 migration/restore proof
 - [ ] G2 동일 fixture를 표시하는 Flutter client와 iOS·Android·web build 완료; semantics·touch target·light/dark contrast·reduced-motion·upstream error 상세 비노출 자동 검증과 chart 포함 Android emulator profile 2회 통과, 수동 screen-reader·physical-device profile 증거 남음
 - [x] G3 동일 market fixture를 읽는 deterministic Python backtest와 walk-forward 개선 runner
 - [x] local OCI/Compose 정의와 root check/smoke
@@ -35,7 +35,8 @@
 - [x] G1.8 exact FX exchange: 하나의 `FX_EXCHANGE`에 매도 통화·음수 금액과 다른 매수 통화·양수 금액을 보존, schema v9/backup v5와 v8 임시-copy migration restore 검증, Flutter 양쪽 leg disclosure
 - [x] G1.9 sanitized ledger activity: 전체 원장 replay/canonical 검증 뒤 revision-bound keyset cursor로 최신 local event를 익명화해 조회하고 Flutter 내역 탭에서 현재 증권사 상태가 아님을 명시해 표시
 - [x] G1.10 direct FX observation storage: 방향·source·observed/fetched/recorded 시각·canonical row hash를 가진 local fixture 관측값을 schema v10 insert-only series로 저장하고 exact-pair/as-of GET, backup v6 digest/count, legacy v8/v9 copy migration을 검증
-- [ ] 원장 후속: direct observation as-of/freshness 정책과 기준통화 cash valuation, 가격 시계열·holding valuation, FX/거래·분할·기업행사 정정, 배당 재투자·국가별 세금 분류와 credentialed broker 체결/현금 reconciliation
+- [x] G1.11 direct-FX cash valuation: replay-verified 현재 원장 cash를 explicit as-of·24시간 정책으로 exact direct pair에만 평가하고 missing/stale pair의 aggregate를 숨기며 sample/stale provenance와 기존 whole-portfolio unavailable 경계를 유지
+- [ ] 원장 후속: security price series·holding/PnL/performance valuation, provider FX ingestion·source priority·calendar 정책, FX/거래·분할·기업행사 정정, 배당 재투자·국가별 세금 분류와 credentialed broker 체결/현금 reconciliation
 - [ ] 키움 live/mock credential 검증, official timezone/freshness 관찰, credentialed scheduled known-good refresh, credentialed ledger reconciliation
 - [ ] 실제 키움 OHLCV를 local chart contract에 연결, 평균단가의 통화·반올림 계약과 실제 체결 timestamp read model을 먼저 정의한 뒤 marker를 추가하고 physical accessibility/performance budget을 증명
 - [ ] K2B 후속: credentialed mock 관찰, submit 조회·안전한 unknown-submit correlation, SELL 정책, public 주문 mutation/확인 UI, production risk·broker-coupled runner fencing, 시장가·정정, 체결-원장 reconciliation

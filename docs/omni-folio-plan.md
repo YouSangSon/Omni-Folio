@@ -1102,3 +1102,13 @@ G1.10 closes the first durable prerequisite for valuation without changing portf
 - `PortfolioSnapshot.valuation_status` stays `unavailable`; Flutter, broker/provider ingestion, scheduler, price observations, valuation, PnL and performance are unchanged.
 
 Still open: a versioned as-of/freshness policy, cash-only base-currency valuation, security-price observations and holding valuation, base-currency cost/PnL, TWR/XIRR, provider ingestion, correction, broker cash reconciliation, UI and every live-money path.
+
+## 2026-08-28 G1.11 continuation: replay-verified direct-FX cash valuation
+
+G1.11 adds a separate read-only `GET /v1/portfolio/cash-valuation` instead of changing the authoritative portfolio snapshot. `direct_fx_cash_v1` proves the current ledger and the complete FX series in one read transaction, then values only cash. Identity and zero balances need no rate; every other currency requires the exact stored `cash currency -> requested base currency` direction.
+
+Eligibility is explicit and no-lookahead: `observed_at <= fetched_at <= recorded_at <= valuation_as_of`, with a 24-hour observation-age boundary inclusive. The calculation uses exact rational multiplication/addition and canonical decimal output. It does not inverse, cross, interpolate, infer from `FX_EXCHANGE`, or round for display. A missing or over-age pair suppresses the whole aggregate total while preserving native cash lines and sanitized issues. Local fixture results remain machine-labelled `sample/stale`.
+
+Independent review found that the first GREEN implementation replayed cash but did not call the full ledger metadata/canonical-event proof. A regression test demonstrated that `ledger_meta.revision=99` with one event was incorrectly certified. The final implementation reuses `proveLedgerEvents` in the same transaction and checks its revision/recorded timestamp against the snapshot, so that corruption now returns a generic 500.
+
+Still open: provider FX ingestion/source priority/market-calendar policy, security prices, holding and base-currency PnL/performance valuation, historical ledger valuation, display rounding, Flutter UI, broker cash reconciliation and every live-money path.

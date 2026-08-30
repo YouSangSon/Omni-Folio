@@ -10,6 +10,7 @@
 - **Price adjustment**: OHLCV 가격의 조정 기준. `unspecified`는 조정 여부를 확인하지 못했다는 뜻이고, `provider_adjusted`는 공급자에게 조정 가격을 요청했다는 뜻일 뿐 기업행사 반영 정확성을 증명하지 않는다.
 - **Sample market data**: 계약과 UI를 검증하기 위한 로컬 fixture. API의 machine-readable provenance와 화면의 명시적 문구로 실시간·투자 판단용 데이터가 아님을 항상 표시한다.
 - **Direct FX observation**: `1 base_currency = rate quote_currency` 방향을 source가 직접 관측한 append-only 기록. source ID, observed/fetched/recorded 시각과 canonical row hash를 보존하며 `FX_EXCHANGE` cash leg, 역산, 교차환율, 평가값 또는 현재 시세를 뜻하지 않는다. G1.10 local fixture 조회는 항상 `sample=true`, `state=stale`다.
+- **Direct-FX cash valuation**: G1.11의 read-only `direct_fx_cash_v1` 결과. 같은 read transaction에서 원장 event와 FX series 전체를 검증하고 현재 ledger revision의 cash만 요청 기준통화로 평가한다. 동일 통화와 0 잔액 외에는 `cash currency -> base currency` exact 방향의 24시간 이내 직접 관측만 사용하며 하나라도 없거나 오래되면 aggregate total을 반환하지 않는다. local fixture 결과는 `sample/stale`이고 whole-portfolio valuation을 뜻하지 않는다.
 - **Chart display range**: 이미 받은 daily bar 중 마지막 수신 봉을 기준으로 `30/90/365일` 또는 전체를 Flutter에서 고르는 G4O 표시 상태. 새 조회 범위·interval·broker freshness를 만들지 않으며 차트와 정확한 OHLCV 표가 같은 부분집합을 사용한다.
 - **First-run empty snapshot**: core가 `trust_state=never_verified`와 빈 cash/holdings/realized PnL snapshot을 함께 정상 반환하는 초기 상태. 조회 실패가 아니며 홈은 첫 거래 내역 가져오기 행동을 제공한다.
 - **Synthetic Kiwoom candle contract**: credential·broker 요청 없이 `POST /api/dostk/chart`의 `ka10080`/`ka10081` 경계를 재현하는 K1 adapter 계약. KRX 여섯 자리 symbol, `1d` 및 `1/3/5/10/15/30/45/60m`, canonical OHLCV만 노출하며 public route가 아니다.
@@ -57,6 +58,7 @@
 - 삭제나 덮어쓰기 대신 correction/event append를 기본으로 한다.
 - G1.6 cash-flow correction은 같은 계좌·통화의 이미 적용된 `DEPOSIT`, `WITHDRAWAL`, `DIVIDEND`, `FEE`, `TAX`만 `CASH_VOID`로 exact 반전한다. 원본과 두 receipt의 provenance를 유지하고 동일 target 중복, chain, trade/split target, 미래 target, 다른 금액·통화를 preview와 schema v8에서 모두 거절한다. replacement 값은 별도 정상 event로 같은 atomic apply에 넣는다.
 - G1.8 `FX_EXCHANGE`는 한 계좌에서 매도한 통화의 음수 cash leg와 서로 다른 매수 통화의 양수 cash leg를 하나의 append-only event로 원자 보존한다. 두 exact 금액은 환율·현재 시세·기준통화 평가값을 뜻하지 않으며 수수료는 별도 `FEE` event다. schema v9는 두 leg의 완전성·부호·서로 다른 통화를 직접 강제하고, v8 backup은 원본을 바꾸지 않는 임시 copy를 v9로 migration한 뒤 검증한다.
+- G1.11 cash valuation은 explicit canonical UTC `as_of`가 현재 ledger `as_of`와 `recorded_at` 이후일 때만 수행한다. eligible FX는 `observed_at <= fetched_at <= recorded_at <= as_of`이고 observation age 24시간 경계를 포함한다. inverse/cross/interpolation, `FX_EXCHANGE` inference, subtotal, 표시용 반올림은 사용하지 않으며 durable corruption은 일반화된 500으로 fail-closed한다.
 - 현금 event의 부호와 분할의 0 cash impact를 신뢰하지 않고 import 경계와 SQLite CHECK에서 검증한다. 분할은 실현손익을 만들거나 기존 FIFO 총원가를 바꾸지 않는다.
 - sample market data는 live/current 상태로 승격하거나 실제 market source와 조용히 혼합하지 않는다.
 - G4O 범위 선택은 기기 현재 시각이 아니라 마지막 수신 봉을 기준으로 cutoff를 계산하고 경계 timestamp를 포함한다. 선택은 client display state일 뿐 broker 기간 조회, candle completeness, 실시간성 또는 새 provenance가 아니다.
