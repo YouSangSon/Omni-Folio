@@ -32,9 +32,14 @@
 - Produces:
 
 ```go
+type PositionValuation struct {
+    Quantity, OpenCost, MarketValue, UnrealizedPnL string
+}
+
 type Valuation struct {
     Cash, OpenCost, MarketValue, RealizedPnL string
     UnrealizedPnL, TotalPnL, Equity           string
+    Positions                                 map[string]PositionValuation
 }
 
 type PerformancePoint struct {
@@ -82,7 +87,7 @@ Expected: compile-time RED because `Valuation`, `PerformancePoint`, `ValueAccoun
 
 - [ ] **Step 3: Implement the minimum pure functions**
 
-`ValueAccount` parses every input before returning output, requires the close-key set to equal exactly the positive-lot symbol set, sums lot quantity/cost and `quantity*close`, and checks both PnL equalities before formatting. `CalculatePerformance` parses the complete series, keeps raw `big.Rat` previous/peak/max values, and formats ratios through:
+`ValueAccount` parses every input before returning output, requires the close-key set to equal exactly the positive-lot symbol set, derives each `PositionValuation`, sums those values, and checks both PnL equalities before formatting. `CalculatePerformance` parses the complete series, keeps raw `big.Rat` previous/peak/max values, and formats ratios through:
 
 ```go
 func performanceRatio(value *big.Rat) (string, error) {
@@ -122,7 +127,7 @@ type paperPerformanceMark struct {
     Symbol, Quantity, ObservationID, Close, OpenCost, MarketValue, UnrealizedPnL string
     ObservationSequence int64
 }
-func derivePaperPerformanceMarks(ctx context.Context, q orderQuerier, state paperAccountState, asOf, recordedAt string, marketCutoff int64) ([]paperPerformanceMark, error)
+func derivePaperPerformanceMarks(ctx context.Context, q orderQuerier, state paperAccountState, startingCash, asOf, recordedAt string, marketCutoff int64) ([]paperPerformanceMark, paperdomain.Valuation, error)
 ```
 
 - [ ] **Step 1: Write failing bounded-replay and mark tests**
@@ -152,7 +157,7 @@ Expected: compile-time RED for missing cutoff/mark functions. Commit tests as `t
 
 Keep `replayPaperAccounting(ctx,q)` behavior unchanged by making it call one internal replay implementation with no cutoff. The shared loop maintains the existing full validation account for every fill and an optional bounded account that receives the already-validated/calculated fill only when both cutoffs admit it. This preserves validation of later rows without calculating fills from truncated state. Do not add a second SQL/replay path.
 
-`derivePaperPerformanceMarks` queries only observations `sequence<=marketCutoff`, validates each stored row with `loadPaperMarketBarByID`, requires complete exact keys, calls `paperdomain.ValueAccount` once, and builds canonical sorted marks. The cash-only path executes an `EXISTS` query for an eligible close-time anchor.
+`derivePaperPerformanceMarks` queries only observations `sequence<=marketCutoff`, validates each stored row with `loadPaperMarketBarByID`, requires complete exact keys, calls `paperdomain.ValueAccount` once, and combines its per-symbol values with the selected observation IDs to build canonical sorted marks. It returns both marks and that valuation so Task 3 never recomputes financial arithmetic. The cash-only path executes an `EXISTS` query for an eligible close-time anchor.
 
 - [ ] **Step 4: Run GREEN and regressions**
 
