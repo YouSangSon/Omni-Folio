@@ -53,7 +53,7 @@ def decimal_input(value: Any, field: str) -> Decimal:
         result = Decimal(value)
     except InvalidOperation as error:
         raise ValueError(f"{field} must be a decimal string") from error
-    if not result.is_finite() or decimal_string(result) != value:
+    if not result.is_finite() or (result.is_zero() and result.is_signed()) or decimal_string(result) != value:
         raise ValueError(f"{field} must be a canonical decimal string")
     return result
 

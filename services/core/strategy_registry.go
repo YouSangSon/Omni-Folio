@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"os"
 	"regexp"
 	"time"
@@ -491,6 +492,9 @@ func decodeStrategyArtifact(artifact []byte) (*StrategyEvidence, error) {
 		stringField(result, "disclaimer") != "Research-only experiment; not investment advice or a production trading authorization." {
 		return nil, errors.New("strategy evidence top-level contract is invalid")
 	}
+	if err := validateStrategyExecutionContract(result["execution"]); err != nil {
+		return nil, err
+	}
 	claimedResultSHA := stringField(result, "result_sha256")
 	if !strategySHA256Pattern.MatchString(claimedResultSHA) {
 		return nil, errors.New("strategy result hash is invalid")
@@ -577,6 +581,33 @@ func decodeStrategyArtifact(artifact []byte) (*StrategyEvidence, error) {
 		StrategyName: stringField(strategy, "name"), StrategyVersion: stringField(strategy, "version"),
 		ParameterSHA256: parameterSHA, Target: target, artifactJSON: string(canonicalArtifact),
 	}, nil
+}
+
+func validateStrategyExecutionContract(value any) error {
+	execution, ok := value.(map[string]any)
+	if !ok || !exactKeys(execution, "starting_cash", "fee", "tax", "slippage_bps", "delay_bars", "max_participation", "signal_price", "fill_price") ||
+		stringField(execution, "signal_price") != "bar_close" || stringField(execution, "fill_price") != "next_eligible_bar_open" {
+		return errors.New("strategy execution contract is invalid")
+	}
+	startingCash, err := parseDecimal(stringField(execution, "starting_cash"))
+	if err != nil || startingCash.Sign() <= 0 {
+		return errors.New("strategy execution contract is invalid")
+	}
+	for _, field := range []string{"fee", "tax", "slippage_bps"} {
+		value, err := parseDecimal(stringField(execution, field))
+		if err != nil || value.Sign() < 0 {
+			return errors.New("strategy execution contract is invalid")
+		}
+	}
+	delay, err := parseDecimal(stringField(execution, "delay_bars"))
+	if err != nil || delay.Sign() <= 0 || !delay.IsInt() {
+		return errors.New("strategy execution contract is invalid")
+	}
+	participation, err := parseDecimal(stringField(execution, "max_participation"))
+	if err != nil || participation.Sign() <= 0 || participation.Cmp(big.NewRat(1, 1)) > 0 {
+		return errors.New("strategy execution contract is invalid")
+	}
+	return nil
 }
 
 func strategyCanonicalJSON(value any) ([]byte, error) {

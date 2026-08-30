@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -10,6 +12,68 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestG38BRegistryRejectsUnsafeExecutionContract(t *testing.T) {
+	valid := strategyArtifact(t, nil)
+	tests := []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{"missing field", func(v map[string]any) { delete(v, "fee") }},
+		{"extra field", func(v map[string]any) { v["commission_currency"] = "KRW" }},
+		{"zero starting cash", func(v map[string]any) { v["starting_cash"] = "0" }},
+		{"negative fee", func(v map[string]any) { v["fee"] = "-1" }},
+		{"negative tax", func(v map[string]any) { v["tax"] = "-0.001" }},
+		{"negative slippage", func(v map[string]any) { v["slippage_bps"] = "-1" }},
+		{"zero delay", func(v map[string]any) { v["delay_bars"] = "0" }},
+		{"fractional delay", func(v map[string]any) { v["delay_bars"] = "1.5" }},
+		{"zero participation", func(v map[string]any) { v["max_participation"] = "0" }},
+		{"excess participation", func(v map[string]any) { v["max_participation"] = "1.1" }},
+		{"noncanonical money", func(v map[string]any) { v["starting_cash"] = "01" }},
+		{"negative zero fee", func(v map[string]any) { v["fee"] = "-0" }},
+		{"numeric money", func(v map[string]any) { v["starting_cash"] = json.Number("10000") }},
+		{"wrong signal price", func(v map[string]any) { v["signal_price"] = "same_bar_close" }},
+		{"wrong fill price", func(v map[string]any) { v["fill_price"] = "same_bar_close" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			svc, _ := testService(t, nil, nil)
+			artifact := rehashedStrategyArtifact(t, valid, func(result map[string]any) {
+				test.mutate(result["execution"].(map[string]any))
+			})
+			if _, err := svc.registerStrategyEvidence(context.Background(), artifact); err == nil {
+				t.Fatal("unsafe execution contract was admitted")
+			}
+			var count int
+			if err := svc.db.QueryRow(`SELECT COUNT(*) FROM strategy_research_evidence`).Scan(&count); err != nil || count != 0 {
+				t.Fatalf("rejected execution contract left evidence: count=%d err=%v", count, err)
+			}
+		})
+	}
+}
+
+func rehashedStrategyArtifact(t testing.TB, artifact []byte, mutate func(map[string]any)) []byte {
+	t.Helper()
+	var result map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(artifact))
+	decoder.UseNumber()
+	if err := decoder.Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	mutate(result)
+	delete(result, "result_sha256")
+	body, err := strategyCanonicalJSON(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256(body)
+	result["result_sha256"] = hex.EncodeToString(hash[:])
+	canonical, err := strategyCanonicalJSON(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return canonical
+}
 
 func TestG3RegistryRegistersPythonEvidenceAndSelectsFailClosed(t *testing.T) {
 	svc, _ := testService(t, nil, nil)
