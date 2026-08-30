@@ -28,8 +28,8 @@ type PaperAccountingSession struct {
 }
 
 type paperAccountingRecoveryProof struct {
-	SHA256   string
-	Sessions int
+	SHA256                        string
+	Sessions, MarketBars, Signals int
 }
 
 func (s *Service) openPaperAccountingSession(ctx context.Context, accountRef, resultSHA256, selectionEventID string) (*PaperAccountingSession, error) {
@@ -129,6 +129,14 @@ func loadPaperAccountingSession(ctx context.Context, q orderQuerier, accountRef 
 }
 
 func provePaperAccountingRecovery(ctx context.Context, q orderQuerier) (paperAccountingRecoveryProof, error) {
+	return provePaperAccountingRecoveryVersion(ctx, q, true)
+}
+
+func proveLegacyPaperAccountingRecovery(ctx context.Context, q orderQuerier) (paperAccountingRecoveryProof, error) {
+	return provePaperAccountingRecoveryVersion(ctx, q, false)
+}
+
+func provePaperAccountingRecoveryVersion(ctx context.Context, q orderQuerier, includeMarket bool) (paperAccountingRecoveryProof, error) {
 	if _, err := proveOrderRecovery(ctx, q); err != nil {
 		return paperAccountingRecoveryProof{}, fmt.Errorf("paper accounting order recovery: %w", err)
 	}
@@ -179,7 +187,19 @@ func provePaperAccountingRecovery(ctx context.Context, q orderQuerier) (paperAcc
 			return paperAccountingRecoveryProof{}, err
 		}
 	}
-	return paperAccountingRecoveryProof{SHA256: hex.EncodeToString(hash.Sum(nil)), Sessions: len(stored)}, nil
+	market := paperMarketRecoveryProof{}
+	if includeMarket {
+		market, err = replayPaperMarketRecovery(ctx, q)
+		if err != nil {
+			return paperAccountingRecoveryProof{}, fmt.Errorf("paper market recovery: %w", err)
+		}
+		if err := encoder.Encode([]any{"paper_market_recovery", market.SHA256, market.Bars, market.Signals}); err != nil {
+			return paperAccountingRecoveryProof{}, err
+		}
+	}
+	return paperAccountingRecoveryProof{
+		SHA256: hex.EncodeToString(hash.Sum(nil)), Sessions: len(stored), MarketBars: market.Bars, Signals: market.Signals,
+	}, nil
 }
 
 func validateStoredPaperAccountingSession(ctx context.Context, q orderQuerier, session PaperAccountingSession, recordSHA, recordJSON string) error {

@@ -255,7 +255,7 @@ func TestG38PaperEvaluationBackupAndLegacySchema13Migration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v10" || manifest.SchemaVersion != "omni-folio.sqlite.v15" ||
+	if manifest.FormatVersion != "omni-folio-backup.v11" || manifest.SchemaVersion != "omni-folio.sqlite.v16" ||
 		manifest.PaperEvaluationEventCount != 1 || manifest.StrategyRegistrySHA256 == "" {
 		t.Fatalf("backup omitted paper evaluation proof: %+v", manifest)
 	}
@@ -292,6 +292,7 @@ func TestG38PaperEvaluationBackupAndLegacySchema13Migration(t *testing.T) {
 	if _, err := createBackup(legacySvc.db, currentBackup, legacyGolden, currentManifestPath, legacySvc.now, legacySvc.id); err != nil {
 		t.Fatal(err)
 	}
+	downgradePaperMarketSignalsForTest(t, legacySvc.db)
 	downgradePaperEvaluationForTest(t, legacySvc.db)
 	var legacySelectionCount int
 	if err := legacySvc.db.QueryRow(`SELECT COUNT(*) FROM strategy_selection_events`).Scan(&legacySelectionCount); err != nil || legacySelectionCount != 1 {
@@ -307,6 +308,10 @@ func TestG38PaperEvaluationBackupAndLegacySchema13Migration(t *testing.T) {
 	delete(legacyManifest, "paper_evaluation_event_count")
 	delete(legacyManifest, "paper_accounting_state_sha256")
 	delete(legacyManifest, "paper_accounting_session_count")
+	delete(legacyManifest, "paper_market_bar_observation_count")
+	delete(legacyManifest, "paper_signal_event_count")
+	delete(legacyManifest, "paper_execution_authorization_count")
+	delete(legacyManifest, "paper_capitalized_fill_count")
 	delete(legacyManifest["verification_receipt"].(map[string]any), "candidate_paper_accounting_state_sha256")
 	legacySHA, legacySize, err := hashFile(legacyBackup)
 	if err != nil {

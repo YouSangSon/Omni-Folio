@@ -20,6 +20,7 @@ const (
 type PaperSignal struct {
 	SchemaVersion            string `json:"schema_version"`
 	SignalID                 string `json:"signal_id"`
+	SignalBarObservationID   string `json:"signal_bar_observation_id,omitempty"`
 	StrategyResultSHA256     string `json:"strategy_result_sha256"`
 	StrategySelectionEventID string `json:"strategy_selection_event_id"`
 	DataSHA256               string `json:"data_sha256"`

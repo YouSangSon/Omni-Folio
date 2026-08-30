@@ -173,6 +173,185 @@ func rebuildPaperAccountingWithoutAccountUnique(t testing.TB, db *sql.DB) {
 	}
 }
 
+func TestG38C2RestoreRejectsPaperMarketSchemaOrProtectionDrift(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, *sql.DB)
+	}{
+		{"missing bar table", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER paper_signal_events_no_update; DROP TRIGGER paper_signal_events_no_delete;
+				DROP TRIGGER paper_signal_events_state_guard; DROP TABLE paper_signal_events;
+				DROP TRIGGER paper_market_bar_observations_no_update; DROP TRIGGER paper_market_bar_observations_no_delete;
+				DROP TABLE paper_market_bar_observations`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"missing signal table", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER paper_signal_events_no_update; DROP TRIGGER paper_signal_events_no_delete;
+				DROP TRIGGER paper_signal_events_state_guard; DROP TABLE paper_signal_events`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"bar table drift", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`ALTER TABLE paper_market_bar_observations ADD COLUMN untrusted TEXT`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"signal table drift", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`ALTER TABLE paper_signal_events ADD COLUMN untrusted TEXT`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"missing bar identity uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_market_bar_observations", []string{"observation_id"})
+		}},
+		{"missing bar source uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_market_bar_observations", []string{"source", "source_observation_id"})
+		}},
+		{"missing bar series uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_market_bar_observations", []string{"source", "symbol", "venue", "interval", "timezone", "price_adjustment", "open_at"})
+		}},
+		{"missing signal account uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_signal_events", []string{"account_ref", "signal_id"})
+		}},
+		{"missing signal identity uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_signal_events", []string{"event_id"})
+		}},
+		{"missing signal session foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_signal_events", "paper_accounting_session_id TEXT NOT NULL REFERENCES paper_accounting_sessions(session_id)", "paper_accounting_session_id TEXT NOT NULL")
+		}},
+		{"missing signal result foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_signal_events", "strategy_result_sha256 TEXT NOT NULL REFERENCES strategy_research_evidence(result_sha256)", "strategy_result_sha256 TEXT NOT NULL")
+		}},
+		{"missing signal selection foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_signal_events", "strategy_selection_event_id TEXT NOT NULL REFERENCES strategy_selection_events(event_id)", "strategy_selection_event_id TEXT NOT NULL")
+		}},
+		{"missing signal bar foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_signal_events", "signal_bar_observation_id TEXT NOT NULL REFERENCES paper_market_bar_observations(observation_id)", "signal_bar_observation_id TEXT NOT NULL")
+		}},
+		{"missing signal state guard", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER paper_signal_events_state_guard`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"altered signal state guard", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER paper_signal_events_state_guard;
+				CREATE TRIGGER paper_signal_events_state_guard BEFORE INSERT ON paper_signal_events BEGIN SELECT 1; END`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, triggerName := range []string{
+		"paper_market_bar_observations_no_update", "paper_market_bar_observations_no_delete",
+		"paper_signal_events_no_update", "paper_signal_events_no_delete",
+	} {
+		triggerName := triggerName
+		tests = append(tests, struct {
+			name   string
+			mutate func(*testing.T, *sql.DB)
+		}{"missing " + triggerName, func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER ` + triggerName); err != nil {
+				t.Fatal(err)
+			}
+		}})
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			svc, _ := testService(t, nil, nil)
+			golden := writeCurrentSnapshot(t, svc.db)
+			path := filepath.Join(t.TempDir(), "paper-market-schema.db")
+			if _, err := createBackup(svc.db, path, golden, path+".manifest.json", svc.now, svc.id); err != nil {
+				t.Fatal(err)
+			}
+			candidate, err := openExistingDB(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(t, candidate)
+			if err := candidate.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := verifyRestore(path, golden); err == nil {
+				t.Fatal("restore accepted paper market schema drift")
+			}
+		})
+	}
+}
+
+func removeSQLiteIndexForTest(t testing.TB, db *sql.DB, table string, columns []string) {
+	t.Helper()
+	rows, err := db.Query(`SELECT name FROM pragma_index_list(?) WHERE "unique"=1`, table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var indexes []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		indexes = append(indexes, name)
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var target string
+	for _, name := range indexes {
+		columnRows, err := db.Query(`SELECT name FROM pragma_index_info(?) ORDER BY seqno`, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var actual []string
+		for columnRows.Next() {
+			var column string
+			if err := columnRows.Scan(&column); err != nil {
+				columnRows.Close()
+				t.Fatal(err)
+			}
+			actual = append(actual, column)
+		}
+		if err := columnRows.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Join(actual, "\x00") == strings.Join(columns, "\x00") {
+			target = name
+		}
+	}
+	if target == "" {
+		t.Fatalf("unique index not found for %s(%s)", table, strings.Join(columns, ","))
+	}
+	if _, err := db.Exec(`PRAGMA writable_schema=ON`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`DELETE FROM sqlite_master WHERE type='index' AND name=?`, target); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`PRAGMA writable_schema=OFF`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func driftSQLiteTableSQLForTest(t testing.TB, db *sql.DB, table, old, replacement string) {
+	t.Helper()
+	var definition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&definition); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(definition, old) {
+		t.Fatalf("%s definition lacks drift target", table)
+	}
+	if _, err := db.Exec(`PRAGMA writable_schema=ON`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE sqlite_master SET sql=? WHERE type='table' AND name=?`, strings.Replace(definition, old, replacement, 1), table); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`PRAGMA writable_schema=OFF`); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func weakOrderRestoreCandidate(t *testing.T, orderEventsDDL string) (string, string) {
 	t.Helper()
 	svc, _ := testService(t, nil, nil)

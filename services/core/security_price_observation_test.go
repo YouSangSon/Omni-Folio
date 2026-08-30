@@ -310,6 +310,7 @@ func TestKiwoomListingControlsInstrumentAndWriteRace(t *testing.T) {
 
 func TestLegacyV12KiwoomPriceRemainsReplayableButUnowned(t *testing.T) {
 	svc, _ := testService(t, []time.Time{mustTime("2026-08-24T01:30:04Z")}, nil)
+	downgradePaperMarketSignalsForTest(t, svc.db)
 	downgradePaperEvaluationForTest(t, svc.db)
 	if _, err := svc.db.Exec(`DROP TRIGGER instrument_listing_events_no_update;
 		DROP TRIGGER instrument_listing_events_no_delete;
@@ -596,7 +597,7 @@ func TestSecurityPriceObservationBackupProofAndLegacyCopyMigrations(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v10" || manifest.SchemaVersion != "omni-folio.sqlite.v15" ||
+	if manifest.FormatVersion != "omni-folio-backup.v11" || manifest.SchemaVersion != "omni-folio.sqlite.v16" ||
 		manifest.SecurityPriceObservationCount != 1 || len(manifest.SecurityPriceObservationStateSHA256) != 64 ||
 		manifest.VerificationReceipt.SecurityPriceObservationCheck != "ok" ||
 		manifest.VerificationReceipt.CandidateSecurityPriceObservationStateSHA256 != manifest.SecurityPriceObservationStateSHA256 {
@@ -641,6 +642,7 @@ func TestSecurityPriceObservationBackupProofAndLegacyCopyMigrations(t *testing.T
 		t.Fatal("restore accepted security prices without the exact latest index")
 	}
 
+	downgradePaperMarketSignalsForTest(t, svc.db)
 	downgradePaperEvaluationForTest(t, svc.db)
 	if _, err := svc.db.Exec(`DROP TRIGGER instrument_listing_events_no_update; DROP TRIGGER instrument_listing_events_no_delete; DROP TRIGGER instrument_listing_events_state_guard; DROP TABLE instrument_listing_events; DELETE FROM schema_migrations WHERE version=13; DROP TRIGGER security_price_observations_no_update; DROP TRIGGER security_price_observations_no_delete; DROP INDEX security_price_observations_latest_idx; ALTER TABLE security_price_observations RENAME TO security_price_observations_v12`); err != nil {
 		t.Fatal(err)
@@ -665,6 +667,10 @@ func TestSecurityPriceObservationBackupProofAndLegacyCopyMigrations(t *testing.T
 	delete(legacyV11Manifest, "paper_evaluation_event_count")
 	delete(legacyV11Manifest, "paper_accounting_state_sha256")
 	delete(legacyV11Manifest, "paper_accounting_session_count")
+	delete(legacyV11Manifest, "paper_market_bar_observation_count")
+	delete(legacyV11Manifest, "paper_signal_event_count")
+	delete(legacyV11Manifest, "paper_execution_authorization_count")
+	delete(legacyV11Manifest, "paper_capitalized_fill_count")
 	delete(legacyV11Manifest, "instrument_listing_state_sha256")
 	delete(legacyV11Manifest, "instrument_listing_event_count")
 	delete(legacyV11Manifest, "active_instrument_listing_count")
@@ -706,6 +712,10 @@ func TestSecurityPriceObservationBackupProofAndLegacyCopyMigrations(t *testing.T
 	delete(legacyManifest, "paper_evaluation_event_count")
 	delete(legacyManifest, "paper_accounting_state_sha256")
 	delete(legacyManifest, "paper_accounting_session_count")
+	delete(legacyManifest, "paper_market_bar_observation_count")
+	delete(legacyManifest, "paper_signal_event_count")
+	delete(legacyManifest, "paper_execution_authorization_count")
+	delete(legacyManifest, "paper_capitalized_fill_count")
 	delete(legacyManifest, "security_price_observation_state_sha256")
 	delete(legacyManifest, "security_price_observation_count")
 	delete(legacyManifest, "instrument_listing_state_sha256")
