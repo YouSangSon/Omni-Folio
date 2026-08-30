@@ -20,13 +20,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	_ "github.com/mattn/go-sqlite3"
+	"omni-folio/services/core/internal/exact"
 )
 
 const (
@@ -50,8 +50,6 @@ const (
 
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
-
-var decimalPattern = regexp.MustCompile(`^(?:0|-?(?:[1-9][0-9]*(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9]))$`)
 
 type Service struct {
 	db                *sql.DB
@@ -931,14 +929,7 @@ func nonNegativeDecimal(raw, field string, errs *[]APIError) (*big.Rat, error) {
 }
 
 func parseDecimal(raw string) (*big.Rat, error) {
-	if !decimalPattern.MatchString(raw) {
-		return nil, errors.New("non-canonical decimal")
-	}
-	v, ok := new(big.Rat).SetString(raw)
-	if !ok {
-		return nil, errors.New("invalid decimal")
-	}
-	return v, nil
+	return exact.ParseDecimal(raw)
 }
 
 func unresolved(tx *Transaction) *Resolution {
@@ -1227,37 +1218,11 @@ func snapshotFrom(ctx context.Context, q queryer) (*PortfolioSnapshot, error) {
 }
 
 func fifoCostAllocation(cost, take, quantity *big.Rat) (*big.Rat, error) {
-	if take.Cmp(quantity) == 0 {
-		return new(big.Rat).Set(cost), nil
-	}
-	allocation := new(big.Rat).Mul(cost, new(big.Rat).Quo(take, quantity))
-	if _, exact := allocation.FloatPrec(); exact {
-		return allocation, nil
-	}
-	costScale, exact := cost.FloatPrec()
-	if !exact {
-		return nil, errors.New("lot cost is not a finite decimal")
-	}
-	allocation = quantizeHalfEven(allocation, max(8, costScale))
-	if allocation.Sign() < 0 || allocation.Cmp(cost) > 0 {
-		return nil, errors.New("rounded allocation exceeds lot cost")
-	}
-	return allocation, nil
+	return exact.FIFOAllocation(cost, take, quantity)
 }
 
 func quantizeHalfEven(value *big.Rat, scale int) *big.Rat {
-	factor := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(scale)), nil)
-	scaled := new(big.Int).Mul(new(big.Int).Abs(value.Num()), factor)
-	quotient, remainder := new(big.Int), new(big.Int)
-	quotient.QuoRem(scaled, value.Denom(), remainder)
-	comparison := new(big.Int).Lsh(new(big.Int).Set(remainder), 1).Cmp(value.Denom())
-	if comparison > 0 || comparison == 0 && quotient.Bit(0) == 1 {
-		quotient.Add(quotient, big.NewInt(1))
-	}
-	if value.Sign() < 0 {
-		quotient.Neg(quotient)
-	}
-	return new(big.Rat).SetFrac(quotient, factor)
+	return exact.QuantizeHalfEven(value, scale)
 }
 
 func addRat(values map[string]*big.Rat, key string, value *big.Rat) {
@@ -1268,30 +1233,7 @@ func addRat(values map[string]*big.Rat, key string, value *big.Rat) {
 }
 
 func formatDecimal(value *big.Rat) (string, error) {
-	if value.Sign() == 0 {
-		return "0", nil
-	}
-	den := new(big.Int).Set(value.Denom())
-	two, five := big.NewInt(2), big.NewInt(5)
-	twos, fives := 0, 0
-	zero := new(big.Int)
-	for new(big.Int).Mod(den, two).Cmp(zero) == 0 {
-		den.Div(den, two)
-		twos++
-	}
-	for new(big.Int).Mod(den, five).Cmp(zero) == 0 {
-		den.Div(den, five)
-		fives++
-	}
-	if den.Cmp(big.NewInt(1)) != 0 {
-		return "", fmt.Errorf("exact value %s has no finite decimal representation", value.RatString())
-	}
-	scale := max(twos, fives)
-	formatted := value.FloatString(scale)
-	if strings.Contains(formatted, ".") {
-		formatted = strings.TrimRight(strings.TrimRight(formatted, "0"), ".")
-	}
-	return formatted, nil
+	return exact.FormatDecimal(value)
 }
 
 func sortedKeys(values map[string]*big.Rat) []string {
