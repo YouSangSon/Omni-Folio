@@ -41,19 +41,41 @@ CREATE TABLE paper_market_bar_observations (
         AND (volume = '0' OR (instr(volume, '.') = 0 AND substr(volume, 1, 1) GLOB '[1-9]')
           OR (instr(volume, '.') > 1 AND (substr(volume, 1, instr(volume, '.') - 1) = '0' OR substr(volume, 1, 1) GLOB '[1-9]') AND substr(volume, -1) GLOB '[1-9]'))
     ),
-    open_at TEXT NOT NULL CHECK (open_at GLOB '????-??-??T??:??:??Z' OR open_at GLOB '????-??-??T??:??:??.*Z'),
-    close_at TEXT NOT NULL CHECK (close_at GLOB '????-??-??T??:??:??Z' OR close_at GLOB '????-??-??T??:??:??.*Z'),
-    source_available_at TEXT NOT NULL CHECK (source_available_at GLOB '????-??-??T??:??:??Z' OR source_available_at GLOB '????-??-??T??:??:??.*Z'),
-    fetched_at TEXT NOT NULL CHECK (fetched_at GLOB '????-??-??T??:??:??Z' OR fetched_at GLOB '????-??-??T??:??:??.*Z'),
+    open_at TEXT NOT NULL CHECK (length(open_at) = 30 AND open_at GLOB '????-??-??T??:??:??.?????????Z' AND open_at NOT GLOB '*[^0-9TZ:.-]*'),
+    close_at TEXT NOT NULL CHECK (length(close_at) = 30 AND close_at GLOB '????-??-??T??:??:??.?????????Z' AND close_at NOT GLOB '*[^0-9TZ:.-]*'),
+    source_available_at TEXT NOT NULL CHECK (length(source_available_at) = 30 AND source_available_at GLOB '????-??-??T??:??:??.?????????Z' AND source_available_at NOT GLOB '*[^0-9TZ:.-]*'),
+    fetched_at TEXT NOT NULL CHECK (length(fetched_at) = 30 AND fetched_at GLOB '????-??-??T??:??:??.?????????Z' AND fetched_at NOT GLOB '*[^0-9TZ:.-]*'),
     record_sha256 TEXT NOT NULL CHECK (length(record_sha256) = 64 AND record_sha256 NOT GLOB '*[^0-9a-f]*'),
     record_json TEXT NOT NULL CHECK (length(record_json) BETWEEN 1 AND 1048576),
-    recorded_at TEXT NOT NULL CHECK (
-        recorded_at GLOB '????-??-??T??:??:??Z' OR recorded_at GLOB '????-??-??T??:??:??.*Z'
-    ),
+    recorded_at TEXT NOT NULL CHECK (length(recorded_at) = 30 AND recorded_at GLOB '????-??-??T??:??:??.?????????Z' AND recorded_at NOT GLOB '*[^0-9TZ:.-]*'),
     UNIQUE (source, source_observation_id),
     UNIQUE (source, symbol, venue, interval, timezone, price_adjustment, open_at),
-    CHECK (CAST(high AS REAL) >= CAST(open AS REAL) AND CAST(high AS REAL) >= CAST(close AS REAL)
-       AND CAST(low AS REAL) <= CAST(open AS REAL) AND CAST(low AS REAL) <= CAST(close AS REAL)),
+    CHECK (
+        (instr(high || '.', '.') - 1 > instr(open || '.', '.') - 1
+          OR (instr(high || '.', '.') - 1 = instr(open || '.', '.') - 1
+            AND (substr(high, 1, instr(high || '.', '.') - 1) > substr(open, 1, instr(open || '.', '.') - 1) COLLATE BINARY
+              OR (substr(high, 1, instr(high || '.', '.') - 1) = substr(open, 1, instr(open || '.', '.') - 1)
+                AND replace(printf('%-64s', CASE WHEN instr(high, '.') = 0 THEN '' ELSE substr(high, instr(high, '.') + 1) END), ' ', '0')
+                  >= replace(printf('%-64s', CASE WHEN instr(open, '.') = 0 THEN '' ELSE substr(open, instr(open, '.') + 1) END), ' ', '0') COLLATE BINARY))))
+      AND (instr(high || '.', '.') - 1 > instr(close || '.', '.') - 1
+          OR (instr(high || '.', '.') - 1 = instr(close || '.', '.') - 1
+            AND (substr(high, 1, instr(high || '.', '.') - 1) > substr(close, 1, instr(close || '.', '.') - 1) COLLATE BINARY
+              OR (substr(high, 1, instr(high || '.', '.') - 1) = substr(close, 1, instr(close || '.', '.') - 1)
+                AND replace(printf('%-64s', CASE WHEN instr(high, '.') = 0 THEN '' ELSE substr(high, instr(high, '.') + 1) END), ' ', '0')
+                  >= replace(printf('%-64s', CASE WHEN instr(close, '.') = 0 THEN '' ELSE substr(close, instr(close, '.') + 1) END), ' ', '0') COLLATE BINARY))))
+      AND (instr(open || '.', '.') - 1 > instr(low || '.', '.') - 1
+          OR (instr(open || '.', '.') - 1 = instr(low || '.', '.') - 1
+            AND (substr(open, 1, instr(open || '.', '.') - 1) > substr(low, 1, instr(low || '.', '.') - 1) COLLATE BINARY
+              OR (substr(open, 1, instr(open || '.', '.') - 1) = substr(low, 1, instr(low || '.', '.') - 1)
+                AND replace(printf('%-64s', CASE WHEN instr(open, '.') = 0 THEN '' ELSE substr(open, instr(open, '.') + 1) END), ' ', '0')
+                  >= replace(printf('%-64s', CASE WHEN instr(low, '.') = 0 THEN '' ELSE substr(low, instr(low, '.') + 1) END), ' ', '0') COLLATE BINARY))))
+      AND (instr(close || '.', '.') - 1 > instr(low || '.', '.') - 1
+          OR (instr(close || '.', '.') - 1 = instr(low || '.', '.') - 1
+            AND (substr(close, 1, instr(close || '.', '.') - 1) > substr(low, 1, instr(low || '.', '.') - 1) COLLATE BINARY
+              OR (substr(close, 1, instr(close || '.', '.') - 1) = substr(low, 1, instr(low || '.', '.') - 1)
+                AND replace(printf('%-64s', CASE WHEN instr(close, '.') = 0 THEN '' ELSE substr(close, instr(close, '.') + 1) END), ' ', '0')
+                  >= replace(printf('%-64s', CASE WHEN instr(low, '.') = 0 THEN '' ELSE substr(low, instr(low, '.') + 1) END), ' ', '0') COLLATE BINARY))))
+    ),
     CHECK (open_at < close_at AND close_at <= source_available_at AND source_available_at <= fetched_at AND fetched_at <= recorded_at)
 ) STRICT;
 
@@ -83,13 +105,13 @@ CREATE TABLE paper_signal_events (
     data_sha256 TEXT NOT NULL CHECK (length(data_sha256) = 64 AND data_sha256 NOT GLOB '*[^0-9a-f]*'),
     symbol TEXT NOT NULL CHECK (length(symbol) = 6 AND symbol NOT GLOB '*[^0-9]*'),
     target_quantity TEXT NOT NULL CHECK (target_quantity = '0' OR (length(target_quantity) BETWEEN 1 AND 32 AND substr(target_quantity, 1, 1) GLOB '[1-9]' AND target_quantity NOT GLOB '*[^0-9]*')),
-    data_as_of TEXT NOT NULL CHECK (data_as_of GLOB '????-??-??T??:??:??Z' OR data_as_of GLOB '????-??-??T??:??:??.*Z'),
-    generated_at TEXT NOT NULL CHECK (generated_at GLOB '????-??-??T??:??:??Z' OR generated_at GLOB '????-??-??T??:??:??.*Z'),
-    expires_at TEXT NOT NULL CHECK (expires_at GLOB '????-??-??T??:??:??Z' OR expires_at GLOB '????-??-??T??:??:??.*Z'),
+    data_as_of TEXT NOT NULL CHECK (length(data_as_of) = 30 AND data_as_of GLOB '????-??-??T??:??:??.?????????Z' AND data_as_of NOT GLOB '*[^0-9TZ:.-]*'),
+    generated_at TEXT NOT NULL CHECK (length(generated_at) = 30 AND generated_at GLOB '????-??-??T??:??:??.?????????Z' AND generated_at NOT GLOB '*[^0-9TZ:.-]*'),
+    expires_at TEXT NOT NULL CHECK (length(expires_at) = 30 AND expires_at GLOB '????-??-??T??:??:??.?????????Z' AND expires_at NOT GLOB '*[^0-9TZ:.-]*'),
     market_observation_sequence_cutoff INTEGER NOT NULL CHECK (market_observation_sequence_cutoff > 0),
     record_sha256 TEXT NOT NULL CHECK (length(record_sha256) = 64 AND record_sha256 NOT GLOB '*[^0-9a-f]*'),
     record_json TEXT NOT NULL CHECK (length(record_json) BETWEEN 1 AND 1048576),
-    recorded_at TEXT NOT NULL CHECK (recorded_at GLOB '????-??-??T??:??:??Z' OR recorded_at GLOB '????-??-??T??:??:??.*Z'),
+    recorded_at TEXT NOT NULL CHECK (length(recorded_at) = 30 AND recorded_at GLOB '????-??-??T??:??:??.?????????Z' AND recorded_at NOT GLOB '*[^0-9TZ:.-]*'),
     UNIQUE (account_ref, signal_id),
     CHECK (data_as_of <= generated_at AND generated_at < expires_at AND generated_at <= recorded_at AND recorded_at < expires_at)
 ) STRICT;
@@ -104,6 +126,15 @@ CREATE TRIGGER paper_signal_events_no_delete
 BEFORE DELETE ON paper_signal_events
 BEGIN
     SELECT RAISE(ABORT, 'paper_signal_events is insert-only');
+END;
+
+CREATE TRIGGER order_idempotency_legacy_paper_signal_guard
+BEFORE INSERT ON order_idempotency
+WHEN NEW.mode = 'paper'
+  AND json_extract(NEW.intent_json, '$.signal_schema_version') IN ('paper-signal.v1', 'paper-signal.v2')
+  AND EXISTS (SELECT 1 FROM paper_signal_events WHERE account_ref = NEW.account_ref)
+BEGIN
+    SELECT RAISE(ABORT, 'legacy paper order cannot follow a v3 signal');
 END;
 
 CREATE TRIGGER paper_signal_events_state_guard

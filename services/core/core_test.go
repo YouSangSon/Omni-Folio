@@ -183,6 +183,21 @@ func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
 		!reflect.DeepEqual(jsonKeySet(golden), jsonStringSet(schema["required"])) {
 		t.Fatal("backup manifest schema, runtime fields, and golden fixture disagree")
 	}
+	const emptyV16PaperAccountingSHA = "398165a1a599c6dcf427af9ce226c849efaa8f162a50a8c311d7379417380563"
+	svc, _ := testService(t, nil, nil)
+	emptyProof, err := provePaperAccountingRecovery(context.Background(), svc.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if emptyProof.SHA256 != emptyV16PaperAccountingSHA ||
+		golden["paper_accounting_state_sha256"] != emptyV16PaperAccountingSHA {
+		t.Fatalf("golden manifest does not encode the empty v16 paper accounting proof: runtime=%s golden=%v", emptyProof.SHA256, golden["paper_accounting_state_sha256"])
+	}
+	for _, field := range []string{"paper_execution_authorization_count", "paper_capitalized_fill_count"} {
+		if properties[field].(map[string]any)["const"] != float64(0) {
+			t.Fatalf("schema v16 field %s is not reserved at exactly zero", field)
+		}
+	}
 
 	receiptSchema := schema["$defs"].(map[string]any)["verification_receipt"].(map[string]any)
 	var runtimeReceipt map[string]any
@@ -197,6 +212,9 @@ func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
 	if !reflect.DeepEqual(jsonKeySet(runtimeReceipt), jsonStringSet(receiptSchema["required"])) ||
 		!reflect.DeepEqual(jsonKeySet(goldenReceipt), jsonStringSet(receiptSchema["required"])) {
 		t.Fatal("verification receipt schema, runtime fields, and golden fixture disagree")
+	}
+	if goldenReceipt["candidate_paper_accounting_state_sha256"] != emptyV16PaperAccountingSHA {
+		t.Fatal("golden receipt candidate does not encode the empty v16 paper accounting proof")
 	}
 
 	var invalid map[string]any

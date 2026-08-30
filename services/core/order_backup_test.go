@@ -462,7 +462,8 @@ func TestG38C2PaperMarketBackupV11AndV10OwnedCopyMigration(t *testing.T) {
 
 func downgradePaperMarketSignalsForTest(t testing.TB, db *sql.DB) {
 	t.Helper()
-	if _, err := db.Exec(`DROP TRIGGER paper_signal_events_no_update;
+	if _, err := db.Exec(`DROP TRIGGER order_idempotency_legacy_paper_signal_guard;
+		DROP TRIGGER paper_signal_events_no_update;
 		DROP TRIGGER paper_signal_events_no_delete;
 		DROP TRIGGER paper_signal_events_state_guard;
 		DROP TABLE paper_signal_events;

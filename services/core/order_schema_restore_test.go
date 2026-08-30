@@ -240,6 +240,17 @@ func TestG38C2RestoreRejectsPaperMarketSchemaOrProtectionDrift(t *testing.T) {
 				t.Fatal(err)
 			}
 		}},
+		{"missing reverse legacy guard", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER order_idempotency_legacy_paper_signal_guard`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"altered reverse legacy guard", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER order_idempotency_legacy_paper_signal_guard;
+				CREATE TRIGGER order_idempotency_legacy_paper_signal_guard BEFORE INSERT ON order_idempotency BEGIN SELECT 1; END`); err != nil {
+				t.Fatal(err)
+			}
+		}},
 	}
 	for _, triggerName := range []string{
 		"paper_market_bar_observations_no_update", "paper_market_bar_observations_no_delete",

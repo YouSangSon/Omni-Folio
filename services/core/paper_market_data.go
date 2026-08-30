@@ -16,6 +16,7 @@ import (
 const (
 	paperMarketBarSchema         = "paper-market-bar.v1"
 	capitalizedPaperSignalSchema = "paper-signal.v3"
+	canonicalPaperTimeLayout     = "2006-01-02T15:04:05.000000000Z"
 )
 
 type PaperMarketBarObservation struct {
@@ -75,11 +76,24 @@ func (s *Service) recordPaperMarketBar(ctx context.Context, input PaperMarketBar
 	bar := input
 	bar.ObservationID = paperMarketBarObservationID(input.Source, input.SourceObservationID)
 	bar.SchemaVersion = paperMarketBarSchema
-	bar.RecordedAt = now.Format(time.RFC3339Nano)
+	bar.RecordedAt = now.Format(canonicalPaperTimeLayout)
+	var ok bool
+	if bar.OpenAt, ok = canonicalPaperTime(bar.OpenAt); !ok {
+		return nil, errors.New("paper market bar open time is invalid")
+	}
+	if bar.CloseAt, ok = canonicalPaperTime(bar.CloseAt); !ok {
+		return nil, errors.New("paper market bar close time is invalid")
+	}
+	if bar.SourceAvailableAt, ok = canonicalPaperTime(bar.SourceAvailableAt); !ok {
+		return nil, errors.New("paper market bar availability time is invalid")
+	}
+	if bar.FetchedAt, ok = canonicalPaperTime(bar.FetchedAt); !ok {
+		return nil, errors.New("paper market bar fetch time is invalid")
+	}
 	if err := validatePaperMarketBar(bar); err != nil {
 		return nil, err
 	}
-	if fetched, _ := canonicalUTCTime(bar.FetchedAt); fetched.After(now) {
+	if fetched, _ := parsePaperTime(bar.FetchedAt); fetched.After(now) {
 		return nil, errors.New("paper market bar was fetched in the future")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -125,6 +139,16 @@ func (s *Service) recordPaperSignalEventTx(ctx context.Context, tx *sql.Tx, acco
 		return nil, errors.New("paper signal recorder is not configured")
 	}
 	now := s.now().UTC()
+	var ok bool
+	if signal.DataAsOf, ok = canonicalPaperTime(signal.DataAsOf); !ok {
+		return nil, errors.New("paper signal data time is invalid")
+	}
+	if signal.GeneratedAt, ok = canonicalPaperTime(signal.GeneratedAt); !ok {
+		return nil, errors.New("paper signal generation time is invalid")
+	}
+	if signal.ExpiresAt, ok = canonicalPaperTime(signal.ExpiresAt); !ok {
+		return nil, errors.New("paper signal expiry time is invalid")
+	}
 	if err := validateCapitalizedPaperSignalShape(signal); err != nil {
 		return nil, err
 	}
@@ -164,8 +188,8 @@ func (s *Service) recordPaperSignalEventTx(ctx context.Context, tx *sql.Tx, acco
 		bar.Timezone != "Asia/Seoul" || bar.PriceAdjustment != "unspecified" {
 		return nil, errors.New("paper signal bar metadata is invalid")
 	}
-	availableAt, _ := canonicalUTCTime(bar.SourceAvailableAt)
-	generatedAt, _ := canonicalUTCTime(signal.GeneratedAt)
+	availableAt, _ := parsePaperTime(bar.SourceAvailableAt)
+	generatedAt, _ := parsePaperTime(signal.GeneratedAt)
 	if generatedAt.Before(availableAt) {
 		return nil, errors.New("paper signal predates source availability")
 	}
@@ -195,7 +219,7 @@ func (s *Service) recordPaperSignalEventTx(ctx context.Context, tx *sql.Tx, acco
 		ExecutionPolicySHA256: policy.SHA256, SignalID: signal.SignalID, SignalBarObservationID: signal.SignalBarObservationID,
 		DataSHA256: signal.DataSHA256, Symbol: signal.Symbol, TargetQuantity: signal.TargetQuantity,
 		DataAsOf: signal.DataAsOf, GeneratedAt: signal.GeneratedAt, ExpiresAt: signal.ExpiresAt,
-		MarketObservationSequenceCutoff: cutoff, RecordedAt: now.Format(time.RFC3339Nano),
+		MarketObservationSequenceCutoff: cutoff, RecordedAt: now.Format(canonicalPaperTimeLayout),
 	}
 	if err := validatePaperSignalEvent(event); err != nil {
 		return nil, err
@@ -314,17 +338,18 @@ func replayPaperMarketRecovery(ctx context.Context, q orderQuerier) (paperMarket
 }
 
 func validatePaperMarketBar(bar PaperMarketBarObservation) error {
-	openAt, openOK := canonicalUTCTime(bar.OpenAt)
-	closeAt, closeOK := canonicalUTCTime(bar.CloseAt)
-	availableAt, availableOK := canonicalUTCTime(bar.SourceAvailableAt)
-	fetchedAt, fetchedOK := canonicalUTCTime(bar.FetchedAt)
-	recordedAt, recordedOK := canonicalUTCTime(bar.RecordedAt)
+	openAt, openOK := parsePaperTime(bar.OpenAt)
+	closeAt, closeOK := parsePaperTime(bar.CloseAt)
+	availableAt, availableOK := parsePaperTime(bar.SourceAvailableAt)
+	fetchedAt, fetchedOK := parsePaperTime(bar.FetchedAt)
+	recordedAt, recordedOK := parsePaperTime(bar.RecordedAt)
 	if !safeOrderID(bar.ObservationID) || bar.SchemaVersion != paperMarketBarSchema || bar.Source != "paper_fixture" ||
 		!safeOrderID(bar.SourceObservationID) || !strategySHA256Pattern.MatchString(bar.InputDataSHA256) ||
 		!kiwoomStockPattern.MatchString(bar.Symbol) || bar.Venue != "KRX" || bar.Currency != "KRW" || bar.Interval != "1d" ||
 		bar.Timezone != "Asia/Seoul" || bar.PriceAdjustment != "unspecified" || !openOK || !closeOK || !availableOK ||
 		!fetchedOK || !recordedOK || !openAt.Before(closeAt) || closeAt.After(availableAt) || availableAt.After(fetchedAt) ||
-		fetchedAt.After(recordedAt) || paperMarketBarObservationID(bar.Source, bar.SourceObservationID) != bar.ObservationID {
+		fetchedAt.After(recordedAt) || !canonicalPaperTimes(bar.OpenAt, bar.CloseAt, bar.SourceAvailableAt, bar.FetchedAt, bar.RecordedAt) ||
+		paperMarketBarObservationID(bar.Source, bar.SourceObservationID) != bar.ObservationID {
 		return errors.New("paper market bar identity or time contract is invalid")
 	}
 	prices := make([]*big.Rat, 4)
@@ -349,8 +374,8 @@ func validateCapitalizedPaperSignal(signal PaperSignal, now time.Time) error {
 	if err := validateCapitalizedPaperSignalShape(signal); err != nil {
 		return err
 	}
-	generatedAt, _ := canonicalUTCTime(signal.GeneratedAt)
-	expiresAt, _ := canonicalUTCTime(signal.ExpiresAt)
+	generatedAt, _ := parsePaperTime(signal.GeneratedAt)
+	expiresAt, _ := parsePaperTime(signal.ExpiresAt)
 	if generatedAt.After(now) || !now.Before(expiresAt) {
 		return errors.New("capitalized paper signal is not active")
 	}
@@ -358,9 +383,9 @@ func validateCapitalizedPaperSignal(signal PaperSignal, now time.Time) error {
 }
 
 func validateCapitalizedPaperSignalShape(signal PaperSignal) error {
-	dataAsOf, dataOK := canonicalUTCTime(signal.DataAsOf)
-	generatedAt, generatedOK := canonicalUTCTime(signal.GeneratedAt)
-	expiresAt, expiresOK := canonicalUTCTime(signal.ExpiresAt)
+	dataAsOf, dataOK := parsePaperTime(signal.DataAsOf)
+	generatedAt, generatedOK := parsePaperTime(signal.GeneratedAt)
+	expiresAt, expiresOK := parsePaperTime(signal.ExpiresAt)
 	if signal.SchemaVersion != capitalizedPaperSignalSchema || !safeOrderID(signal.SignalID) || !safeOrderID(signal.SignalBarObservationID) ||
 		!strategySHA256Pattern.MatchString(signal.StrategyResultSHA256) || !safeOrderID(signal.StrategySelectionEventID) ||
 		!strategySHA256Pattern.MatchString(signal.DataSHA256) || !kiwoomStockPattern.MatchString(signal.Symbol) ||
@@ -372,16 +397,17 @@ func validateCapitalizedPaperSignalShape(signal PaperSignal) error {
 }
 
 func validatePaperSignalEvent(event PaperSignalEvent) error {
-	dataAsOf, dataOK := canonicalUTCTime(event.DataAsOf)
-	generatedAt, generatedOK := canonicalUTCTime(event.GeneratedAt)
-	expiresAt, expiresOK := canonicalUTCTime(event.ExpiresAt)
-	recordedAt, recordedOK := canonicalUTCTime(event.RecordedAt)
+	dataAsOf, dataOK := parsePaperTime(event.DataAsOf)
+	generatedAt, generatedOK := parsePaperTime(event.GeneratedAt)
+	expiresAt, expiresOK := parsePaperTime(event.ExpiresAt)
+	recordedAt, recordedOK := parsePaperTime(event.RecordedAt)
 	if !safeOrderID(event.EventID) || event.SchemaVersion != capitalizedPaperSignalSchema || !orderAlias(event.AccountRef, "account") ||
 		!safeOrderID(event.PaperAccountingSessionID) || !strategySHA256Pattern.MatchString(event.StrategyResultSHA256) ||
 		!safeOrderID(event.StrategySelectionEventID) || !strategySHA256Pattern.MatchString(event.ExecutionPolicySHA256) ||
 		!safeOrderID(event.SignalID) || !safeOrderID(event.SignalBarObservationID) || !strategySHA256Pattern.MatchString(event.DataSHA256) ||
 		!kiwoomStockPattern.MatchString(event.Symbol) || !validPaperTargetQuantity(event.TargetQuantity) || event.MarketObservationSequenceCutoff <= 0 ||
-		!dataOK || !generatedOK || !expiresOK || !recordedOK || dataAsOf.After(generatedAt) || generatedAt.After(recordedAt) ||
+		!dataOK || !generatedOK || !expiresOK || !recordedOK || !canonicalPaperTimes(event.DataAsOf, event.GeneratedAt, event.ExpiresAt, event.RecordedAt) ||
+		dataAsOf.After(generatedAt) || generatedAt.After(recordedAt) ||
 		!generatedAt.Before(expiresAt) || !recordedAt.Before(expiresAt) || paperSignalEventID(event.AccountRef, event.SignalID) != event.EventID {
 		return errors.New("paper signal event is invalid")
 	}
@@ -422,8 +448,8 @@ func validateStoredPaperSignalEvent(ctx context.Context, q orderQuerier, event P
 	if err != nil {
 		return err
 	}
-	generatedAt, _ := canonicalUTCTime(event.GeneratedAt)
-	availableAt, _ := canonicalUTCTime(bar.SourceAvailableAt)
+	generatedAt, _ := parsePaperTime(event.GeneratedAt)
+	availableAt, _ := parsePaperTime(bar.SourceAvailableAt)
 	if bar.InputDataSHA256 != event.DataSHA256 || bar.Symbol != event.Symbol || bar.CloseAt != event.DataAsOf || generatedAt.Before(availableAt) ||
 		barSequence > event.MarketObservationSequenceCutoff {
 		return errors.New("paper signal bar binding is invalid")
@@ -538,6 +564,32 @@ func samePaperSignalInput(event PaperSignalEvent, signal PaperSignal) bool {
 }
 
 func validPaperTargetQuantity(raw string) bool { return raw == "0" || validOrderInteger(raw) }
+
+func canonicalPaperTime(raw string) (string, bool) {
+	value, ok := parsePaperTime(raw)
+	if !ok {
+		return "", false
+	}
+	return value.Format(canonicalPaperTimeLayout), true
+}
+
+func parsePaperTime(raw string) (time.Time, bool) {
+	value, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil || value.Location() != time.UTC {
+		return time.Time{}, false
+	}
+	return value, value.Format(time.RFC3339Nano) == raw || value.Format(canonicalPaperTimeLayout) == raw
+}
+
+func canonicalPaperTimes(values ...string) bool {
+	for _, raw := range values {
+		canonical, ok := canonicalPaperTime(raw)
+		if !ok || canonical != raw {
+			return false
+		}
+	}
+	return true
+}
 
 func paperMarketBarObservationID(source, sourceID string) string {
 	hash := sha256.Sum256([]byte(strings.Join([]string{source, sourceID}, "\x00")))

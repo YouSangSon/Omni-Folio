@@ -1889,13 +1889,15 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	barTriggerStart := strings.Index(paperMarketSQL, "CREATE TRIGGER paper_market_bar_observations_no_update")
 	signalTableStart := strings.Index(paperMarketSQL, "CREATE TABLE paper_signal_events")
 	signalTriggerStart := strings.Index(paperMarketSQL, "CREATE TRIGGER paper_signal_events_no_update")
+	legacyOrderGuardStart := strings.Index(paperMarketSQL, "CREATE TRIGGER order_idempotency_legacy_paper_signal_guard")
 	signalStateTriggerStart := strings.Index(paperMarketSQL, "CREATE TRIGGER paper_signal_events_state_guard")
 	if barTableStart < 0 || barTriggerStart <= barTableStart || signalTableStart <= barTriggerStart ||
-		signalTriggerStart <= signalTableStart || signalStateTriggerStart <= signalTriggerStart {
+		signalTriggerStart <= signalTableStart || legacyOrderGuardStart <= signalTriggerStart || signalStateTriggerStart <= legacyOrderGuardStart {
 		return errors.New("restore paper market definition source is invalid")
 	}
 	expectedBarTable := strings.TrimSuffix(strings.TrimSpace(paperMarketSQL[barTableStart:barTriggerStart]), ";")
 	expectedSignalTable := strings.TrimSuffix(strings.TrimSpace(paperMarketSQL[signalTableStart:signalTriggerStart]), ";")
+	expectedLegacyOrderGuard := strings.TrimSuffix(strings.TrimSpace(paperMarketSQL[legacyOrderGuardStart:signalStateTriggerStart]), ";")
 	expectedPaperSignalStateTrigger := strings.TrimSuffix(strings.TrimSpace(paperMarketSQL[signalStateTriggerStart:]), ";")
 	for table, expected := range map[string]string{
 		"paper_market_bar_observations": expectedBarTable,
@@ -2074,6 +2076,7 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		"order_events_non_authority_reservation_guard": {"order_events", "create trigger order_events_non_authority_reservation_guard before insert on order_events when new.event_type not in ('risk_approved', 'submit_dispatched') and new.authority_reservation_id is not null begin select raise(abort, 'authority reservation is invalid for this event'); end"},
 		"strategy_selection_events_state_guard":        {"strategy_selection_events", expectedStrategySelectionStateTrigger},
 		"paper_accounting_sessions_state_guard":        {"paper_accounting_sessions", strings.ToLower(strings.Join(strings.Fields(expectedPaperAccountingStateTrigger), " "))},
+		"order_idempotency_legacy_paper_signal_guard":  {"order_idempotency", strings.ToLower(strings.Join(strings.Fields(expectedLegacyOrderGuard), " "))},
 		"paper_signal_events_state_guard":              {"paper_signal_events", strings.ToLower(strings.Join(strings.Fields(expectedPaperSignalStateTrigger), " "))},
 		"events_cash_void_guard":                       {"events", "create trigger events_cash_void_guard before insert on events when new.type = 'cash_void' begin select case when not exists ( select 1 from events target where target.account_id = new.account_id and target.source_event_id = new.corrects_source_event_id and target.type in ('deposit', 'withdrawal', 'dividend', 'fee', 'tax') and target.currency = new.currency and target.occurred_at <= new.occurred_at and new.amount = case when target.amount glob '-*' then substr(target.amount, 2) else '-' || target.amount end ) then raise(abort, 'cash void must exactly reverse an eligible event') end; end"},
 	}

@@ -24,7 +24,8 @@ func TestG38C2PaperMarketBarImmutableClosedObservation(t *testing.T) {
 	if err != nil || *second != *first {
 		t.Fatalf("exact retry first=%+v second=%+v err=%v", first, second, err)
 	}
-	if first.SchemaVersion != "paper-market-bar.v1" || first.ObservationID == input.ObservationID || first.RecordedAt != "2026-01-10T07:00:00Z" {
+	if first.SchemaVersion != "paper-market-bar.v1" || first.ObservationID == input.ObservationID || first.RecordedAt != "2026-01-10T07:00:00.000000000Z" ||
+		first.OpenAt != "2026-01-09T00:00:00.000000000Z" {
 		t.Fatalf("service did not own bar identity/schema/time: %+v", first)
 	}
 	var count int
@@ -95,6 +96,46 @@ func TestG38C2PaperMarketBarRejectsInvalidContract(t *testing.T) {
 			var count int
 			if err := svc.db.QueryRow(`SELECT COUNT(*) FROM paper_market_bar_observations`).Scan(&count); err != nil || count != 0 {
 				t.Fatalf("rejected bar left rows: count=%d err=%v", count, err)
+			}
+		})
+	}
+}
+
+func TestG38C2PaperMarketBarDirectSQLRejectsInexactComparisons(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*PaperMarketBarObservation)
+	}{
+		{
+			name: "OHLC beyond binary64 integer precision",
+			mutate: func(bar *PaperMarketBarObservation) {
+				bar.Open, bar.High, bar.Low, bar.Close = "9007199254740993", "9007199254740992", "1", "2"
+			},
+		},
+		{
+			name: "variable width fractional chronology",
+			mutate: func(bar *PaperMarketBarObservation) {
+				bar.OpenAt = "2026-01-08T00:00:00.1Z"
+				bar.CloseAt = "2026-01-08T00:00:00Z"
+				bar.SourceAvailableAt = "2026-01-08T06:31:00Z"
+				bar.FetchedAt = "2026-01-08T06:32:00Z"
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			svc, _ := testService(t, nil, nil)
+			bar := g38c2PaperMarketBar("fixture-direct-exact-"+strings.ReplaceAll(test.name, " ", "-"), "2026-01-08T00:00:00Z", "2026-01-08T06:30:00Z")
+			bar.ObservationID = paperMarketBarObservationID(bar.Source, bar.SourceObservationID)
+			bar.SchemaVersion = paperMarketBarSchema
+			bar.RecordedAt = "2026-01-10T07:00:00Z"
+			test.mutate(&bar)
+			if err := insertPaperMarketBarDirectForTest(svc, bar); err == nil {
+				t.Fatal("SQLite accepted a bar that exact application validation rejects")
+			}
+			var count int
+			if err := svc.db.QueryRow(`SELECT COUNT(*) FROM paper_market_bar_observations`).Scan(&count); err != nil || count != 0 {
+				t.Fatalf("rejected direct bar left rows: count=%d err=%v", count, err)
 			}
 		})
 	}

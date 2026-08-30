@@ -245,6 +245,15 @@ func (s *Service) recordOrderIntentTx(ctx context.Context, tx *sql.Tx, intent Or
 	if intent.Mode == "paper" && intent.SignalSchemaVersion != paperSignalSchema {
 		return nil, errors.New("new paper orders require the target-based signal schema")
 	}
+	if intent.Mode == "paper" {
+		var capitalizedSignals int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM paper_signal_events WHERE account_ref=?`, intent.AccountRef).Scan(&capitalizedSignals); err != nil {
+			return nil, err
+		}
+		if capitalizedSignals != 0 {
+			return nil, errors.New("legacy paper order cannot follow a v3 signal")
+		}
+	}
 	if err := validateStrategyOrderSelection(ctx, tx, intent); err != nil {
 		return nil, err
 	}

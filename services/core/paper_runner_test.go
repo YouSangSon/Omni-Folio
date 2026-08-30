@@ -17,7 +17,7 @@ func TestG38C2PaperSignalCutoffOwnsLatestClosedBar(t *testing.T) {
 	}
 	if event.SchemaVersion != "paper-signal.v3" || event.AccountRef != k2aAccountRef ||
 		event.SignalBarObservationID != bar.ObservationID || event.DataAsOf != bar.CloseAt || event.DataSHA256 != bar.InputDataSHA256 ||
-		event.TargetQuantity != "0" || event.MarketObservationSequenceCutoff != 1 || event.RecordedAt != "2026-01-10T07:00:00Z" {
+		event.TargetQuantity != "0" || event.MarketObservationSequenceCutoff != 1 || event.RecordedAt != "2026-01-10T07:00:00.000000000Z" {
 		t.Fatalf("signal cutoff event=%+v bar=%+v", event, bar)
 	}
 	replayed, err := recordG38C2PaperSignalForTest(svc, k2aAccountRef, signal)
@@ -29,6 +29,13 @@ func TestG38C2PaperSignalCutoffOwnsLatestClosedBar(t *testing.T) {
 	if err != nil || *replayed != *event {
 		t.Fatalf("expired exact signal retry event=%+v replay=%+v err=%v", event, replayed, err)
 	}
+	changed := signal
+	changed.TargetQuantity = "1"
+	beforeChangedRetry := g38c2PaperSignalSideEffects(t, svc)
+	if _, err := recordG38C2PaperSignalForTest(svc, k2aAccountRef, changed); err == nil {
+		t.Fatal("changed retry reused an existing signal identity")
+	}
+	assertG38C2PaperSignalSideEffects(t, beforeChangedRetry, g38c2PaperSignalSideEffects(t, svc))
 
 	svc2, retroactive, _ := g38c2PaperSignalFixture(t, true)
 	svc2.now = func() time.Time { return mustTime("2026-01-11T07:00:00Z") }
@@ -43,6 +50,79 @@ func TestG38C2PaperSignalCutoffOwnsLatestClosedBar(t *testing.T) {
 		t.Fatal("retroactive signal used a bar that was no longer latest at the transaction cutoff")
 	}
 	assertG38C2PaperSignalSideEffects(t, before, g38c2PaperSignalSideEffects(t, svc2))
+}
+
+func TestG38C2PaperSignalDirectSQLIsImmutableAndExact(t *testing.T) {
+	svc, signal, _ := g38c2PaperSignalFixture(t, true)
+	event, err := recordG38C2PaperSignalForTest(svc, k2aAccountRef, signal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{
+		`UPDATE paper_signal_events SET target_quantity='1'`,
+		`DELETE FROM paper_signal_events`,
+	} {
+		if _, err := svc.db.Exec(statement); err == nil {
+			t.Fatalf("SQLite accepted immutable signal mutation: %s", statement)
+		}
+	}
+
+	malformed := *event
+	malformed.SignalID = "g38c2-signal-direct-malformed"
+	malformed.EventID = paperSignalEventID(malformed.AccountRef, malformed.SignalID)
+	malformed.GeneratedAt = "2026-01-10T07:00:00.1Z"
+	malformed.RecordedAt = "2026-01-10T07:00:00Z"
+	malformed.ExpiresAt = "2026-01-11T00:00:00Z"
+	if err := insertPaperSignalEventDirectForTest(svc, malformed); err == nil {
+		t.Fatal("SQLite accepted variable-width signal chronology that application validation rejects")
+	}
+	var count int
+	if err := svc.db.QueryRow(`SELECT COUNT(*) FROM paper_signal_events`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("malformed direct signal changed rows: count=%d err=%v", count, err)
+	}
+}
+
+func TestG38C2LegacyPaperOrderCannotFollowV3Signal(t *testing.T) {
+	tests := []struct {
+		name   string
+		direct bool
+		schema string
+	}{
+		{name: "application v2", schema: paperSignalSchema},
+		{name: "direct SQL v1", direct: true, schema: legacyPaperSignalSchema},
+		{name: "direct SQL v2", direct: true, schema: paperSignalSchema},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			svc, signal, _ := g38c2PaperSignalFixture(t, true)
+			if _, err := recordG38C2PaperSignalForTest(svc, k2aAccountRef, signal); err != nil {
+				t.Fatal(err)
+			}
+			before := g38c2PaperSignalSideEffects(t, svc)
+			proofBefore, err := provePaperAccountingRecovery(context.Background(), svc.db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			legacy := g38c2LegacyPaperIntent(signal, "g38c2-legacy-after-v3-"+strings.ReplaceAll(test.name, " ", "-"))
+			legacy.SignalSchemaVersion = test.schema
+			if test.schema == legacyPaperSignalSchema {
+				legacy.SignalTargetQuantity = ""
+			}
+			if test.direct {
+				err = insertG38C2LegacyPaperOrderDirect(svc, legacy, "order_g38c2_legacy_after_v3")
+			} else {
+				_, err = svc.recordOrderIntent(context.Background(), legacy)
+			}
+			if err == nil || !strings.Contains(err.Error(), "cannot follow a v3 signal") {
+				t.Fatalf("legacy paper order rejection err=%v", err)
+			}
+			assertG38C2PaperSignalSideEffects(t, before, g38c2PaperSignalSideEffects(t, svc))
+			proofAfter, recoveryErr := provePaperAccountingRecovery(context.Background(), svc.db)
+			if recoveryErr != nil || proofAfter != proofBefore {
+				t.Fatalf("rejected legacy order changed recovery: before=%+v after=%+v err=%v", proofBefore, proofAfter, recoveryErr)
+			}
+		})
+	}
 }
 
 func TestG38C2PaperSignalCutoffFailsClosed(t *testing.T) {
@@ -211,28 +291,63 @@ func assertG38C2PaperSignalSideEffects(t testing.TB, before, after g38c2SignalSi
 
 func insertG38C2LegacyPaperOrder(t testing.TB, svc *Service, signal PaperSignal) {
 	t.Helper()
-	legacy := signal
-	legacy.SchemaVersion, legacy.TargetQuantity, legacy.SignalBarObservationID = legacyPaperSignalSchema, "", ""
-	intent := paperOrderIntent(k2aAccountRef, legacy, "1", "1000")
-	intent.SignalTargetQuantity = ""
-	intentJSON, requestSHA, err := orderJSONHash(intent)
-	if err != nil {
+	intent := g38c2LegacyPaperIntent(signal, "g38c2-legacy-before-v3")
+	if err := insertG38C2LegacyPaperOrderDirect(svc, intent, "order_g38c2_legacy"); err != nil {
 		t.Fatal(err)
 	}
-	orderID := "order_g38c2_legacy"
+}
+
+func g38c2LegacyPaperIntent(signal PaperSignal, clientOrderID string) OrderIntent {
+	legacy := signal
+	legacy.SchemaVersion, legacy.TargetQuantity, legacy.SignalBarObservationID = paperSignalSchema, "1", ""
+	intent := paperOrderIntent(k2aAccountRef, legacy, "1", "1000")
+	intent.ClientOrderID = clientOrderID
+	for destination, raw := range map[*string]string{
+		&intent.SignalDataAsOf: signal.DataAsOf, &intent.SignalGeneratedAt: signal.GeneratedAt, &intent.SignalExpiresAt: signal.ExpiresAt,
+	} {
+		value, ok := parsePaperTime(raw)
+		if ok {
+			*destination = value.Format(time.RFC3339Nano)
+		}
+	}
+	return intent
+}
+
+func insertG38C2LegacyPaperOrderDirect(svc *Service, intent OrderIntent, orderID string) error {
+	intentJSON, requestSHA, err := orderJSONHash(intent)
+	if err != nil {
+		return err
+	}
 	if _, err := svc.db.Exec(`INSERT INTO order_idempotency(provider,mode,account_ref,client_order_id,request_sha256,order_id,intent_json,recorded_at)
 		VALUES(?,?,?,?,?,?,?,?)`, intent.Provider, intent.Mode, intent.AccountRef, intent.ClientOrderID, requestSHA, orderID, string(intentJSON), svc.now().UTC().Format(time.RFC3339Nano)); err != nil {
-		t.Fatal(err)
+		return err
 	}
 	event := OrderEvent{EventID: "event_g38c2_legacy", OrderID: orderID, Type: "INTENT_RECORDED", Source: "synthetic"}
 	eventJSON, eventSHA, err := orderJSONHash(event)
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 	if _, err := svc.db.Exec(`INSERT INTO order_events(event_id,event_sha256,order_id,event_type,source,event_json,recorded_at)
 		VALUES(?,?,?,?,?,?,?)`, event.EventID, eventSHA, event.OrderID, event.Type, event.Source, string(eventJSON), svc.now().UTC().Format(time.RFC3339Nano)); err != nil {
-		t.Fatal(err)
+		return err
 	}
+	return nil
+}
+
+func insertPaperSignalEventDirectForTest(svc *Service, event PaperSignalEvent) error {
+	recordJSON, recordSHA, err := orderJSONHash(event)
+	if err != nil {
+		return err
+	}
+	_, err = svc.db.Exec(`INSERT INTO paper_signal_events(
+		event_id,schema_version,account_ref,paper_accounting_session_id,strategy_result_sha256,strategy_selection_event_id,
+		execution_policy_sha256,signal_id,signal_bar_observation_id,data_sha256,symbol,target_quantity,data_as_of,generated_at,
+		expires_at,market_observation_sequence_cutoff,record_sha256,record_json,recorded_at
+	) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, event.EventID, event.SchemaVersion, event.AccountRef, event.PaperAccountingSessionID,
+		event.StrategyResultSHA256, event.StrategySelectionEventID, event.ExecutionPolicySHA256, event.SignalID, event.SignalBarObservationID,
+		event.DataSHA256, event.Symbol, event.TargetQuantity, event.DataAsOf, event.GeneratedAt, event.ExpiresAt,
+		event.MarketObservationSequenceCutoff, recordSHA, string(recordJSON), event.RecordedAt)
+	return err
 }
 
 func TestG3PaperRunnerUsesSelectedStrategyRiskOrderReplayAndBackup(t *testing.T) {
