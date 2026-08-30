@@ -6,7 +6,9 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
 	"strings"
 	"time"
@@ -228,6 +230,191 @@ func (s *Service) admitPaperSignal(ctx context.Context, accountRef string, signa
 		return nil, nil, err
 	}
 	return event, state, nil
+}
+
+func (s *Service) runPaperOrder(ctx context.Context, orderID string, fencingToken int64) (*OrderState, error) {
+	if s == nil || s.db == nil || s.now == nil || !safeOrderID(orderID) || fencingToken <= 0 {
+		return nil, errors.New("paper fill runner is not configured")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if _, err := provePaperAccountingRecovery(ctx, tx); err != nil {
+		return nil, fmt.Errorf("paper fill accounting recovery: %w", err)
+	}
+	intent, err := loadOrderIntentFrom(ctx, tx, orderID)
+	if err != nil {
+		return nil, err
+	}
+	session, signal, err := validateCapitalizedPaperOrderBindings(ctx, tx, intent)
+	if err != nil {
+		return nil, err
+	}
+	authorization, found, err := loadPaperExecutionAuthorizationByOrder(ctx, tx, orderID)
+	if err != nil || !found {
+		return nil, errors.New("paper fill authorization is missing")
+	}
+	state, err := validatePaperExecutionAuthorization(ctx, tx, authorization)
+	if err != nil {
+		return nil, err
+	}
+	if state.Status != "OPEN" && state.Status != "PARTIALLY_FILLED" {
+		return state, nil
+	}
+	now := s.now().UTC()
+	authority, err := s.requireCurrentSyntheticExecutionLease(ctx, tx, intent.AccountRef, fencingToken, now)
+	if err != nil {
+		return nil, err
+	}
+	states, err := replayPaperAccounting(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	account, ok := states[intent.AccountRef]
+	if !ok || account.PaperAccountingSessionID != session.SessionID {
+		return nil, errors.New("paper fill account state is missing")
+	}
+	policy, err := validatePaperAccountingSession(*session)
+	if err != nil {
+		return nil, err
+	}
+	candidates, err := paperFillBars(ctx, tx, *signal, policy.DelayBars)
+	if err != nil {
+		return nil, err
+	}
+	usedBars, err := paperOrderUsedFillBars(ctx, tx, orderID)
+	if err != nil {
+		return nil, err
+	}
+	total, _ := new(big.Int).SetString(state.Quantity, 10)
+	filled, _ := new(big.Int).SetString(state.FilledQuantity, 10)
+	remaining := new(big.Int).Sub(total, filled)
+	position := new(big.Int)
+	for _, lot := range account.Lots[intent.Symbol] {
+		quantity, ok := new(big.Int).SetString(lot.Quantity, 10)
+		if !ok {
+			return nil, errors.New("paper fill position is invalid")
+		}
+		position.Add(position, quantity)
+	}
+	var bar *PaperMarketBarObservation
+	var calculated paperCalculatedFill
+	for _, candidate := range candidates {
+		if usedBars[candidate.ObservationID] {
+			continue
+		}
+		consumed, err := paperConsumedBarCapacity(ctx, tx, intent.AccountRef, intent.Symbol, candidate.ObservationID)
+		if err != nil {
+			return nil, err
+		}
+		candidateFill, fillOK, err := calculatePaperFill(policy, paperFillInput{
+			Side: intent.Side, Open: candidate.Open, Volume: candidate.Volume, RemainingQuantity: remaining.String(), Cash: account.Cash,
+			PositionQuantity: position.String(), ConsumedCapacity: consumed.String(),
+		})
+		if err != nil {
+			return nil, err
+		}
+		if fillOK {
+			bar, calculated = candidate, candidateFill
+			break
+		}
+	}
+	if bar == nil {
+		return state, nil
+	}
+	event := OrderEvent{
+		EventID: paperEventID("fill", orderID, bar.ObservationID, paperFillPolicyVersion), OrderID: orderID,
+		Type: "FILL_RECORDED", Source: "synthetic", ProviderOrderRef: paperProviderAlias("order", orderID),
+		ProviderExecutionRef: paperProviderAlias("execution", orderID, bar.ObservationID, paperFillPolicyVersion),
+		Quantity:             calculated.Quantity, Price: calculated.Price, OccurredAt: bar.OpenAt,
+		PaperAuthorizationID: authorization.AuthorizationID, FencingToken: fencingToken,
+		PaperAccountingSessionID: session.SessionID, PaperSignalEventID: signal.EventID,
+		PaperBarObservationID: bar.ObservationID, PaperFillPolicyVersion: paperFillPolicyVersion,
+		ExecutionAuthorityEventID: authority.EventID, ReferencePrice: calculated.ReferencePrice,
+		Fee: calculated.Fee, Tax: calculated.Tax, Slippage: calculated.Slippage,
+	}
+	if err := validateOrderEvent(event); err != nil {
+		return nil, err
+	}
+	next, err := appendCapitalizedPaperFillTx(ctx, tx, event, now.Format(time.RFC3339Nano))
+	if err != nil {
+		return nil, err
+	}
+	proposed, err := replayPaperAccounting(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if proposed[intent.AccountRef].CapitalizedFills != account.CapitalizedFills+1 {
+		return nil, errors.New("paper fill accounting did not advance exactly once")
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return next, nil
+}
+
+func appendCapitalizedPaperFillTx(ctx context.Context, tx *sql.Tx, event OrderEvent, recordedAt string) (*OrderState, error) {
+	if err := validateOrderEvent(event); err != nil {
+		return nil, err
+	}
+	return appendOrderEventTxMode(ctx, tx, event, recordedAt, true)
+}
+
+func paperOrderUsedFillBars(ctx context.Context, q orderQuerier, orderID string) (map[string]bool, error) {
+	rows, err := q.QueryContext(ctx, `SELECT json_extract(event_json, '$.paper_bar_observation_id') FROM order_events
+		WHERE order_id=? AND event_type='FILL_RECORDED' AND json_extract(event_json, '$.paper_fill_policy_version')=?`, orderID, paperFillPolicyVersion)
+	if err != nil {
+		return nil, err
+	}
+	used := map[string]bool{}
+	for rows.Next() {
+		var observationID string
+		if err := rows.Scan(&observationID); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		used[observationID] = true
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	return used, rows.Close()
+}
+
+func paperConsumedBarCapacity(ctx context.Context, q orderQuerier, accountRef, symbol, observationID string) (*big.Int, error) {
+	rows, err := q.QueryContext(ctx, `SELECT events.event_json FROM order_events events
+		JOIN order_idempotency orders ON orders.order_id=events.order_id
+		WHERE events.event_type='FILL_RECORDED' AND orders.mode='paper' AND orders.account_ref=?
+		  AND json_extract(orders.intent_json, '$.signal_schema_version')='paper-signal.v3'
+		  AND json_extract(orders.intent_json, '$.symbol')=?
+		  AND json_extract(events.event_json, '$.paper_bar_observation_id')=?`, accountRef, symbol, observationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	consumed := new(big.Int)
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var event OrderEvent
+		if err := json.Unmarshal([]byte(raw), &event); err != nil {
+			return nil, err
+		}
+		quantity, ok := new(big.Int).SetString(event.Quantity, 10)
+		if !ok || quantity.Sign() <= 0 {
+			return nil, errors.New("paper consumed capacity is invalid")
+		}
+		consumed.Add(consumed, quantity)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return consumed, nil
 }
 
 func (s *Service) recordPaperTarget(ctx context.Context, accountRef string, signal PaperSignal, limitPrice string, target *big.Int, generatedAt, expiresAt, now time.Time, fencingToken int64) (*OrderState, error) {

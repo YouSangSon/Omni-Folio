@@ -5,6 +5,24 @@ import (
 	"math/big"
 )
 
+const (
+	paperFillPolicyVersion = "paper_bar_open_v1"
+	// Keeps SQLite's guarded integer addition exact for the KRX whole-share adapter.
+	paperMaxQuantity = "4611686018427387903"
+)
+
+func validCapitalizedPaperQuantity(raw string, allowZero bool) bool {
+	if allowZero && raw == "0" {
+		return true
+	}
+	if !validOrderInteger(raw) {
+		return false
+	}
+	value, ok := new(big.Int).SetString(raw, 10)
+	maximum, _ := new(big.Int).SetString(paperMaxQuantity, 10)
+	return ok && value.Cmp(maximum) <= 0
+}
+
 type paperFillInput struct {
 	Side, Open, Volume, RemainingQuantity    string
 	Cash, PositionQuantity, ConsumedCapacity string

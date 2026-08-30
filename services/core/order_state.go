@@ -48,19 +48,28 @@ type OrderIntent struct {
 }
 
 type OrderEvent struct {
-	EventID              string `json:"event_id"`
-	OrderID              string `json:"order_id"`
-	Type                 string `json:"type"`
-	Source               string `json:"source"`
-	ProviderOrderRef     string `json:"provider_order_ref,omitempty"`
-	ProviderExecutionRef string `json:"provider_execution_ref,omitempty"`
-	Quantity             string `json:"quantity,omitempty"`
-	Price                string `json:"price,omitempty"`
-	OccurredAt           string `json:"occurred_at,omitempty"`
-	RiskReservationID    string `json:"risk_reservation_id,omitempty"`
-	PaperAuthorizationID string `json:"paper_authorization_id,omitempty"`
-	RiskPolicyVersion    string `json:"risk_policy_version,omitempty"`
-	FencingToken         int64  `json:"fencing_token,omitempty"`
+	EventID                   string `json:"event_id"`
+	OrderID                   string `json:"order_id"`
+	Type                      string `json:"type"`
+	Source                    string `json:"source"`
+	ProviderOrderRef          string `json:"provider_order_ref,omitempty"`
+	ProviderExecutionRef      string `json:"provider_execution_ref,omitempty"`
+	Quantity                  string `json:"quantity,omitempty"`
+	Price                     string `json:"price,omitempty"`
+	OccurredAt                string `json:"occurred_at,omitempty"`
+	RiskReservationID         string `json:"risk_reservation_id,omitempty"`
+	PaperAuthorizationID      string `json:"paper_authorization_id,omitempty"`
+	RiskPolicyVersion         string `json:"risk_policy_version,omitempty"`
+	FencingToken              int64  `json:"fencing_token,omitempty"`
+	PaperAccountingSessionID  string `json:"paper_accounting_session_id,omitempty"`
+	PaperSignalEventID        string `json:"paper_signal_event_id,omitempty"`
+	PaperBarObservationID     string `json:"paper_bar_observation_id,omitempty"`
+	PaperFillPolicyVersion    string `json:"paper_fill_policy_version,omitempty"`
+	ExecutionAuthorityEventID string `json:"execution_authority_event_id,omitempty"`
+	ReferencePrice            string `json:"reference_price,omitempty"`
+	Fee                       string `json:"fee,omitempty"`
+	Tax                       string `json:"tax,omitempty"`
+	Slippage                  string `json:"slippage,omitempty"`
 }
 
 type OrderState struct {
@@ -322,6 +331,23 @@ func (s *Service) appendOrderEvent(ctx context.Context, event OrderEvent) (*Orde
 }
 
 func appendOrderEventTx(ctx context.Context, tx *sql.Tx, event OrderEvent, recordedAt string) (*OrderState, error) {
+	return appendOrderEventTxMode(ctx, tx, event, recordedAt, false)
+}
+
+func appendOrderEventTxMode(ctx context.Context, tx *sql.Tx, event OrderEvent, recordedAt string, allowCapitalizedPaperFill bool) (*OrderState, error) {
+	if event.Type == "FILL_RECORDED" {
+		intent, err := loadOrderIntentFrom(ctx, tx, event.OrderID)
+		if err != nil {
+			return nil, err
+		}
+		capitalized := intent.Mode == "paper" && intent.SignalSchemaVersion == capitalizedPaperSignalSchema
+		if capitalized && !allowCapitalizedPaperFill {
+			return nil, errors.New("capitalized paper fills require the dedicated accounting writer")
+		}
+		if allowCapitalizedPaperFill && !capitalized {
+			return nil, errors.New("dedicated paper fill writer requires a capitalized paper order")
+		}
+	}
 	eventJSON, eventSHA, err := orderJSONHash(event)
 	if err != nil {
 		return nil, err
@@ -580,7 +606,7 @@ func validateOrderIntent(intent OrderIntent) error {
 	}
 	capitalized := intent.Mode == "paper" && intent.SignalSchemaVersion == capitalizedPaperSignalSchema
 	if capitalized {
-		if intent.OrderType != "PAPER_MARKET" || intent.LimitPrice != "" {
+		if intent.OrderType != "PAPER_MARKET" || intent.LimitPrice != "" || !validCapitalizedPaperQuantity(intent.Quantity, false) {
 			return errors.New("capitalized paper order must be PAPER_MARKET without a limit price")
 		}
 	} else {
@@ -652,6 +678,9 @@ func validateOrderEvent(event OrderEvent) error {
 	if !allowed[event.Type] {
 		return fmt.Errorf("unsupported order event %q", event.Type)
 	}
+	paperFillMetadata := event.PaperAccountingSessionID != "" || event.PaperSignalEventID != "" || event.PaperBarObservationID != "" ||
+		event.PaperFillPolicyVersion != "" || event.ExecutionAuthorityEventID != "" || event.ReferencePrice != "" ||
+		event.Fee != "" || event.Tax != "" || event.Slippage != ""
 	authorityMetadata := event.RiskReservationID != "" || event.PaperAuthorizationID != "" || event.RiskPolicyVersion != "" || event.FencingToken != 0
 	if event.Type == "RISK_APPROVED" || event.Type == "SUBMIT_DISPATCHED" {
 		synthetic := safeOrderID(event.RiskReservationID) && event.PaperAuthorizationID == "" && event.RiskPolicyVersion == syntheticRiskPolicyVersion
@@ -659,8 +688,11 @@ func validateOrderEvent(event OrderEvent) error {
 		if authorityMetadata && ((!synthetic && !paper) || event.FencingToken <= 0 || event.Source != "synthetic") {
 			return errors.New("authorized order event metadata is invalid")
 		}
-	} else if authorityMetadata {
+	} else if event.Type != "FILL_RECORDED" && authorityMetadata {
 		return errors.New("authority metadata is invalid for this order event")
+	}
+	if event.Type != "FILL_RECORDED" && paperFillMetadata {
+		return errors.New("paper fill metadata is invalid for this order event")
 	}
 	if event.Type == "SUBMIT_ACKNOWLEDGED" {
 		if !orderAlias(event.ProviderOrderRef, "order") || event.ProviderExecutionRef != "" || event.Quantity != "" || event.Price != "" || event.OccurredAt != "" {
@@ -679,6 +711,24 @@ func validateOrderEvent(event OrderEvent) error {
 		}
 		if _, err := time.Parse(time.RFC3339Nano, event.OccurredAt); err != nil {
 			return errors.New("fill occurred_at is invalid")
+		}
+		capitalized := event.PaperAuthorizationID != "" || paperFillMetadata || event.FencingToken != 0
+		if capitalized {
+			if event.Source != "synthetic" || event.RiskReservationID != "" || event.RiskPolicyVersion != "" ||
+				!safeOrderID(event.PaperAuthorizationID) || event.FencingToken <= 0 || !safeOrderID(event.PaperAccountingSessionID) ||
+				!safeOrderID(event.PaperSignalEventID) || !safeOrderID(event.PaperBarObservationID) ||
+				event.PaperFillPolicyVersion != paperFillPolicyVersion || !safeOrderID(event.ExecutionAuthorityEventID) ||
+				!validCapitalizedPaperQuantity(event.Quantity, false) {
+				return errors.New("capitalized paper fill provenance is invalid")
+			}
+			for _, raw := range []string{event.ReferencePrice, event.Fee, event.Tax, event.Slippage} {
+				value, err := parseDecimal(raw)
+				if err != nil || value.Sign() < 0 {
+					return errors.New("capitalized paper fill accounting is invalid")
+				}
+			}
+		} else if authorityMetadata || paperFillMetadata {
+			return errors.New("legacy fill authority metadata is invalid")
 		}
 		return nil
 	}

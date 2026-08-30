@@ -183,7 +183,7 @@ func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
 		!reflect.DeepEqual(jsonKeySet(golden), jsonStringSet(schema["required"])) {
 		t.Fatal("backup manifest schema, runtime fields, and golden fixture disagree")
 	}
-	const emptyV17PaperAccountingSHA = "35b3fd7f1273cf0a42f510f6a7536925488e0f195d26a006c74b520128482080"
+	const emptyV17PaperAccountingSHA = "3f58392aeaba6ee1d2d26e4703bfa83de5334ebededb22cdbb09ab1211f3583d"
 	svc, _ := testService(t, nil, nil)
 	emptyProof, err := provePaperAccountingRecovery(context.Background(), svc.db)
 	if err != nil {
@@ -196,8 +196,8 @@ func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
 	if properties["paper_execution_authorization_count"].(map[string]any)["minimum"] != float64(0) {
 		t.Fatal("schema v17 authorization count is not non-negative")
 	}
-	if properties["paper_capitalized_fill_count"].(map[string]any)["const"] != float64(0) {
-		t.Fatal("schema v17 capitalized fill count is not reserved at exactly zero")
+	if properties["paper_capitalized_fill_count"].(map[string]any)["minimum"] != float64(0) {
+		t.Fatal("schema v17 capitalized fill count is not non-negative")
 	}
 
 	receiptSchema := schema["$defs"].(map[string]any)["verification_receipt"].(map[string]any)

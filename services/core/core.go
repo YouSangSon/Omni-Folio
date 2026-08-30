@@ -1922,16 +1922,20 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	paperAuthorizationSQL := string(paperAuthorizationMigration)
 	authorizationTableStart := strings.Index(paperAuthorizationSQL, "CREATE TABLE paper_execution_authorizations")
 	authorizationIndexStart := strings.Index(paperAuthorizationSQL, "CREATE INDEX paper_execution_authorizations_account_idx")
+	paperSignalQuantityGuardStart := strings.Index(paperAuthorizationSQL, "CREATE TRIGGER paper_signal_events_capitalized_quantity_guard")
 	legacyAuthorizationGuardStart := strings.Index(paperAuthorizationSQL, "CREATE TRIGGER order_idempotency_legacy_paper_signal_guard")
 	capitalizedOrderGuardStart := strings.Index(paperAuthorizationSQL, "CREATE TRIGGER order_idempotency_capitalized_paper_guard")
 	dropRiskGuardStart := strings.Index(paperAuthorizationSQL, "DROP TRIGGER order_events_risk_reservation_guard")
 	riskGuardStart := strings.LastIndex(paperAuthorizationSQL, "CREATE TRIGGER order_events_risk_reservation_guard")
 	dispatchGuardStart := strings.LastIndex(paperAuthorizationSQL, "CREATE TRIGGER order_events_dispatch_reservation_guard")
 	nonAuthorityGuardStart := strings.LastIndex(paperAuthorizationSQL, "CREATE TRIGGER order_events_non_authority_reservation_guard")
+	capitalizedFillGuardStart := strings.LastIndex(paperAuthorizationSQL, "CREATE TRIGGER order_events_capitalized_paper_fill_guard")
 	authorizationStateGuardStart := strings.Index(paperAuthorizationSQL, "CREATE TRIGGER paper_execution_authorizations_state_guard")
 	if authorizationTableStart < 0 || authorizationIndexStart <= authorizationTableStart || authorizationStateGuardStart < 0 ||
-		legacyAuthorizationGuardStart < 0 || capitalizedOrderGuardStart <= legacyAuthorizationGuardStart || dropRiskGuardStart <= capitalizedOrderGuardStart ||
-		riskGuardStart <= dropRiskGuardStart || dispatchGuardStart <= riskGuardStart || nonAuthorityGuardStart <= dispatchGuardStart {
+		paperSignalQuantityGuardStart < 0 || legacyAuthorizationGuardStart <= paperSignalQuantityGuardStart ||
+		capitalizedOrderGuardStart <= legacyAuthorizationGuardStart || dropRiskGuardStart <= capitalizedOrderGuardStart ||
+		riskGuardStart <= dropRiskGuardStart || dispatchGuardStart <= riskGuardStart || nonAuthorityGuardStart <= dispatchGuardStart ||
+		capitalizedFillGuardStart <= nonAuthorityGuardStart {
 		return errors.New("restore paper authorization definition source is invalid")
 	}
 	expectedAuthorizationTable := strings.TrimSuffix(strings.TrimSpace(paperAuthorizationSQL[authorizationTableStart:authorizationIndexStart]), ";")
@@ -1946,11 +1950,13 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		return strings.ToLower(strings.Join(strings.Fields(strings.TrimSuffix(strings.TrimSpace(paperAuthorizationSQL[start:end]), ";")), " "))
 	}
 	expectedAuthorizationStateGuard := extractAuthorizationTrigger(authorizationStateGuardStart, strings.Index(paperAuthorizationSQL[authorizationStateGuardStart:], "\n\nDROP TRIGGER")+authorizationStateGuardStart)
+	expectedPaperSignalQuantityGuard := extractAuthorizationTrigger(paperSignalQuantityGuardStart, legacyAuthorizationGuardStart)
 	expectedLegacyAuthorizationGuard := extractAuthorizationTrigger(legacyAuthorizationGuardStart, capitalizedOrderGuardStart)
 	expectedCapitalizedOrderGuard := extractAuthorizationTrigger(capitalizedOrderGuardStart, dropRiskGuardStart)
 	expectedRiskGuard := extractAuthorizationTrigger(riskGuardStart, dispatchGuardStart)
 	expectedDispatchGuard := extractAuthorizationTrigger(dispatchGuardStart, nonAuthorityGuardStart)
-	expectedNonAuthorityGuard := strings.ToLower(strings.Join(strings.Fields(strings.TrimSuffix(strings.TrimSpace(paperAuthorizationSQL[nonAuthorityGuardStart:]), ";")), " "))
+	expectedNonAuthorityGuard := extractAuthorizationTrigger(nonAuthorityGuardStart, capitalizedFillGuardStart)
+	expectedCapitalizedFillGuard := strings.ToLower(strings.Join(strings.Fields(strings.TrimSuffix(strings.TrimSpace(paperAuthorizationSQL[capitalizedFillGuardStart:]), ";")), " "))
 	strategySelectionStateTriggerStart := strings.Index(paperEvaluationSQL, "CREATE TRIGGER strategy_selection_events_state_guard")
 	strategySelectionStateTriggerEnd := strings.Index(paperEvaluationSQL, "CREATE INDEX paper_evaluation_events_current_idx")
 	if strategySelectionStateTriggerStart < 0 || strategySelectionStateTriggerEnd <= strategySelectionStateTriggerStart {
@@ -2123,16 +2129,18 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		table string
 		sql   string
 	}{
-		"order_events_risk_reservation_guard":          {"order_events", expectedRiskGuard},
-		"order_events_dispatch_reservation_guard":      {"order_events", expectedDispatchGuard},
-		"order_events_non_authority_reservation_guard": {"order_events", expectedNonAuthorityGuard},
-		"strategy_selection_events_state_guard":        {"strategy_selection_events", expectedStrategySelectionStateTrigger},
-		"paper_accounting_sessions_state_guard":        {"paper_accounting_sessions", strings.ToLower(strings.Join(strings.Fields(expectedPaperAccountingStateTrigger), " "))},
-		"order_idempotency_legacy_paper_signal_guard":  {"order_idempotency", expectedLegacyAuthorizationGuard},
-		"order_idempotency_capitalized_paper_guard":    {"order_idempotency", expectedCapitalizedOrderGuard},
-		"paper_execution_authorizations_state_guard":   {"paper_execution_authorizations", expectedAuthorizationStateGuard},
-		"paper_signal_events_state_guard":              {"paper_signal_events", strings.ToLower(strings.Join(strings.Fields(expectedPaperSignalStateTrigger), " "))},
-		"events_cash_void_guard":                       {"events", "create trigger events_cash_void_guard before insert on events when new.type = 'cash_void' begin select case when not exists ( select 1 from events target where target.account_id = new.account_id and target.source_event_id = new.corrects_source_event_id and target.type in ('deposit', 'withdrawal', 'dividend', 'fee', 'tax') and target.currency = new.currency and target.occurred_at <= new.occurred_at and new.amount = case when target.amount glob '-*' then substr(target.amount, 2) else '-' || target.amount end ) then raise(abort, 'cash void must exactly reverse an eligible event') end; end"},
+		"order_events_risk_reservation_guard":            {"order_events", expectedRiskGuard},
+		"order_events_dispatch_reservation_guard":        {"order_events", expectedDispatchGuard},
+		"order_events_non_authority_reservation_guard":   {"order_events", expectedNonAuthorityGuard},
+		"order_events_capitalized_paper_fill_guard":      {"order_events", expectedCapitalizedFillGuard},
+		"strategy_selection_events_state_guard":          {"strategy_selection_events", expectedStrategySelectionStateTrigger},
+		"paper_accounting_sessions_state_guard":          {"paper_accounting_sessions", strings.ToLower(strings.Join(strings.Fields(expectedPaperAccountingStateTrigger), " "))},
+		"order_idempotency_legacy_paper_signal_guard":    {"order_idempotency", expectedLegacyAuthorizationGuard},
+		"order_idempotency_capitalized_paper_guard":      {"order_idempotency", expectedCapitalizedOrderGuard},
+		"paper_execution_authorizations_state_guard":     {"paper_execution_authorizations", expectedAuthorizationStateGuard},
+		"paper_signal_events_capitalized_quantity_guard": {"paper_signal_events", expectedPaperSignalQuantityGuard},
+		"paper_signal_events_state_guard":                {"paper_signal_events", strings.ToLower(strings.Join(strings.Fields(expectedPaperSignalStateTrigger), " "))},
+		"events_cash_void_guard":                         {"events", "create trigger events_cash_void_guard before insert on events when new.type = 'cash_void' begin select case when not exists ( select 1 from events target where target.account_id = new.account_id and target.source_event_id = new.corrects_source_event_id and target.type in ('deposit', 'withdrawal', 'dividend', 'fee', 'tax') and target.currency = new.currency and target.occurred_at <= new.occurred_at and new.amount = case when target.amount glob '-*' then substr(target.amount, 2) else '-' || target.amount end ) then raise(abort, 'cash void must exactly reverse an eligible event') end; end"},
 	}
 	for name, expected := range guardSQL {
 		var definition string

@@ -104,7 +104,7 @@
     },
     "paper_capitalized_fill_count": {
       "type": "integer",
-      "const": 0
+      "minimum": 0
     },
     "selected_strategy_result_sha256": {
       "oneOf": [

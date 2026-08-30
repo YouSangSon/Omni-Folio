@@ -210,11 +210,13 @@ func TestG38C2RestoreRejectsPaperAuthorizationSchemaOrProtectionDrift(t *testing
 	}
 	for _, trigger := range []string{
 		"paper_execution_authorizations_state_guard",
+		"paper_signal_events_capitalized_quantity_guard",
 		"order_idempotency_legacy_paper_signal_guard",
 		"order_idempotency_capitalized_paper_guard",
 		"order_events_risk_reservation_guard",
 		"order_events_dispatch_reservation_guard",
 		"order_events_non_authority_reservation_guard",
+		"order_events_capitalized_paper_fill_guard",
 		"paper_execution_authorizations_no_update",
 		"paper_execution_authorizations_no_delete",
 	} {

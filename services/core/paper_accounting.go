@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 )
@@ -30,6 +31,29 @@ type PaperAccountingSession struct {
 type paperAccountingRecoveryProof struct {
 	SHA256                                                          string
 	Sessions, MarketBars, Signals, Authorizations, CapitalizedFills int
+}
+
+type paperLotState struct {
+	Quantity string
+	Cost     string
+}
+
+type paperAccountState struct {
+	AccountRef, PaperAccountingSessionID, Cash string
+	Lots                                       map[string][]paperLotState
+	Fees, Taxes, Slippage, RealizedPnL         string
+	CapitalizedFills                           int
+}
+
+type paperReplayLot struct {
+	quantity, cost *big.Rat
+}
+
+type paperReplayAccount struct {
+	session                          *PaperAccountingSession
+	cash, fees, taxes, slippage, pnl *big.Rat
+	lots                             map[string][]paperReplayLot
+	capitalizedFills                 int
 }
 
 func (s *Service) openPaperAccountingSession(ctx context.Context, accountRef, resultSHA256, selectionEventID string) (*PaperAccountingSession, error) {
@@ -211,11 +235,456 @@ func provePaperAccountingRecoveryVersion(ctx context.Context, q orderQuerier, in
 		if err := encoder.Encode([]any{"paper_execution_authorizations", authorizationSHA, authorizations, "paper_capitalized_fills", capitalizedFills}); err != nil {
 			return paperAccountingRecoveryProof{}, err
 		}
+		states, err := replayPaperAccountingState(ctx, q)
+		if err != nil {
+			return paperAccountingRecoveryProof{}, fmt.Errorf("paper capitalized accounting recovery: %w", err)
+		}
+		derivedFills := 0
+		for _, state := range states {
+			derivedFills += state.CapitalizedFills
+		}
+		if derivedFills != capitalizedFills {
+			return paperAccountingRecoveryProof{}, errors.New("paper capitalized fill count does not match replay")
+		}
+		if err := encoder.Encode([]any{"paper_account_states", states}); err != nil {
+			return paperAccountingRecoveryProof{}, err
+		}
 	}
 	return paperAccountingRecoveryProof{
 		SHA256: hex.EncodeToString(hash.Sum(nil)), Sessions: len(stored), MarketBars: market.Bars, Signals: market.Signals,
 		Authorizations: authorizations, CapitalizedFills: capitalizedFills,
 	}, nil
+}
+
+func replayPaperAccounting(ctx context.Context, q orderQuerier) (map[string]paperAccountState, error) {
+	if _, err := proveOrderRecovery(ctx, q); err != nil {
+		return nil, fmt.Errorf("paper accounting order recovery: %w", err)
+	}
+	if _, err := replayStrategyRegistry(ctx, q); err != nil {
+		return nil, fmt.Errorf("paper accounting strategy recovery: %w", err)
+	}
+	if _, err := replayPaperMarketRecovery(ctx, q); err != nil {
+		return nil, fmt.Errorf("paper accounting market recovery: %w", err)
+	}
+	if _, _, err := provePaperExecutionAuthorizationRecovery(ctx, q); err != nil {
+		return nil, fmt.Errorf("paper accounting authorization recovery: %w", err)
+	}
+	return replayPaperAccountingState(ctx, q)
+}
+
+func replayPaperAccountingState(ctx context.Context, q orderQuerier) (map[string]paperAccountState, error) {
+	accounts := map[string]*paperReplayAccount{}
+	rows, err := q.QueryContext(ctx, `SELECT account_ref FROM paper_accounting_sessions ORDER BY sequence`)
+	if err != nil {
+		return nil, err
+	}
+	var accountRefs []string
+	for rows.Next() {
+		var accountRef string
+		if err := rows.Scan(&accountRef); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		accountRefs = append(accountRefs, accountRef)
+	}
+	if err := closeRows(rows); err != nil {
+		return nil, err
+	}
+	for _, accountRef := range accountRefs {
+		session, found, err := loadPaperAccountingSession(ctx, q, accountRef)
+		if err != nil || !found {
+			return nil, fmt.Errorf("load paper accounting session %q: %w", accountRef, err)
+		}
+		cash, err := parseDecimal(session.StartingCash)
+		if err != nil || cash.Sign() < 0 {
+			return nil, errors.New("paper accounting starting cash is invalid")
+		}
+		accounts[accountRef] = &paperReplayAccount{
+			session: session, cash: cash, fees: new(big.Rat), taxes: new(big.Rat), slippage: new(big.Rat),
+			pnl: new(big.Rat), lots: map[string][]paperReplayLot{},
+		}
+	}
+	if err := validatePaperIntentDeltas(ctx, q); err != nil {
+		return nil, err
+	}
+
+	rows, err = q.QueryContext(ctx, `SELECT events.sequence,events.event_sha256,events.event_json,events.recorded_at,orders.order_id
+		FROM order_events events JOIN order_idempotency orders ON orders.order_id=events.order_id
+		WHERE events.event_type='FILL_RECORDED' AND orders.mode='paper'
+		  AND json_extract(orders.intent_json, '$.signal_schema_version')='paper-signal.v3'
+		ORDER BY events.sequence`)
+	if err != nil {
+		return nil, err
+	}
+	type storedFill struct {
+		sequence              int64
+		hash, raw, recordedAt string
+		orderID               string
+	}
+	var fills []storedFill
+	for rows.Next() {
+		var fill storedFill
+		if err := rows.Scan(&fill.sequence, &fill.hash, &fill.raw, &fill.recordedAt, &fill.orderID); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		fills = append(fills, fill)
+	}
+	if err := closeRows(rows); err != nil {
+		return nil, err
+	}
+	orderFilled := map[string]*big.Int{}
+	usedByOrder := map[string]map[string]bool{}
+	consumedByBar := map[string]*big.Int{}
+	for _, stored := range fills {
+		var event OrderEvent
+		if err := json.Unmarshal([]byte(stored.raw), &event); err != nil {
+			return nil, err
+		}
+		canonical, hash, err := orderJSONHash(event)
+		if err != nil || string(canonical) != stored.raw || hash != stored.hash || event.OrderID != stored.orderID {
+			return nil, errors.New("capitalized paper fill hash or order binding is invalid")
+		}
+		if err := validateOrderEvent(event); err != nil {
+			return nil, err
+		}
+		intent, err := loadOrderIntentFrom(ctx, q, stored.orderID)
+		if err != nil {
+			return nil, err
+		}
+		session, signal, err := validateCapitalizedPaperOrderBindings(ctx, q, intent)
+		if err != nil {
+			return nil, err
+		}
+		authorization, found, err := loadPaperExecutionAuthorizationByOrder(ctx, q, stored.orderID)
+		if err != nil || !found {
+			return nil, errors.New("capitalized paper fill authorization is missing")
+		}
+		if _, err := validatePaperExecutionAuthorization(ctx, q, authorization); err != nil {
+			return nil, err
+		}
+		policy, err := validatePaperAccountingSession(*session)
+		if err != nil {
+			return nil, err
+		}
+		bar, _, err := loadPaperMarketBarByID(ctx, q, event.PaperBarObservationID)
+		if err != nil {
+			return nil, err
+		}
+		authority, err := validatePaperFillAuthority(ctx, q, intent.AccountRef, event, stored.recordedAt)
+		if err != nil {
+			return nil, err
+		}
+		if event.PaperAuthorizationID != authorization.AuthorizationID || event.PaperAccountingSessionID != session.SessionID ||
+			event.PaperSignalEventID != signal.EventID || event.PaperFillPolicyVersion != paperFillPolicyVersion ||
+			event.ExecutionAuthorityEventID != authority.EventID || event.FencingToken != authority.FencingToken ||
+			event.OccurredAt != bar.OpenAt || event.ProviderOrderRef != paperProviderAlias("order", stored.orderID) ||
+			event.ProviderExecutionRef != paperProviderAlias("execution", stored.orderID, bar.ObservationID, paperFillPolicyVersion) ||
+			event.EventID != paperEventID("fill", stored.orderID, bar.ObservationID, paperFillPolicyVersion) {
+			return nil, errors.New("capitalized paper fill provenance does not match its evidence")
+		}
+		account := accounts[intent.AccountRef]
+		if account == nil || account.session.SessionID != session.SessionID {
+			return nil, errors.New("capitalized paper fill account session is missing")
+		}
+		if orderFilled[stored.orderID] == nil {
+			orderFilled[stored.orderID] = new(big.Int)
+		}
+		total, _ := new(big.Int).SetString(intent.Quantity, 10)
+		remaining := new(big.Int).Sub(total, orderFilled[stored.orderID])
+		position := paperReplayPosition(account, intent.Symbol)
+		candidates, err := paperFillBars(ctx, q, *signal, policy.DelayBars)
+		if err != nil {
+			return nil, err
+		}
+		if usedByOrder[stored.orderID] == nil {
+			usedByOrder[stored.orderID] = map[string]bool{}
+		}
+		var calculated paperCalculatedFill
+		var expectedBar *PaperMarketBarObservation
+		for _, candidate := range candidates {
+			if usedByOrder[stored.orderID][candidate.ObservationID] {
+				continue
+			}
+			candidateKey := strings.Join([]string{intent.AccountRef, intent.Symbol, candidate.ObservationID}, "\x00")
+			if consumedByBar[candidateKey] == nil {
+				consumedByBar[candidateKey] = new(big.Int)
+			}
+			candidateFill, ok, err := calculatePaperFill(policy, paperFillInput{
+				Side: intent.Side, Open: candidate.Open, Volume: candidate.Volume, RemainingQuantity: remaining.String(),
+				Cash: mustFormatPaperRat(account.cash), PositionQuantity: position.String(), ConsumedCapacity: consumedByBar[candidateKey].String(),
+			})
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				calculated, expectedBar = candidateFill, candidate
+				break
+			}
+		}
+		if expectedBar == nil || expectedBar.ObservationID != bar.ObservationID {
+			return nil, errors.New("capitalized paper fill used an ineligible bar")
+		}
+		barKey := strings.Join([]string{intent.AccountRef, intent.Symbol, bar.ObservationID}, "\x00")
+		if event.Quantity != calculated.Quantity || event.ReferencePrice != calculated.ReferencePrice || event.Price != calculated.Price ||
+			event.Fee != calculated.Fee || event.Tax != calculated.Tax || event.Slippage != calculated.Slippage {
+			return nil, errors.New("stored capitalized paper fill calculation mismatch")
+		}
+		if err := applyPaperCalculatedFill(account, intent.Symbol, intent.Side, calculated); err != nil {
+			return nil, err
+		}
+		quantity, _ := new(big.Int).SetString(calculated.Quantity, 10)
+		orderFilled[stored.orderID].Add(orderFilled[stored.orderID], quantity)
+		consumedByBar[barKey].Add(consumedByBar[barKey], quantity)
+		usedByOrder[stored.orderID][bar.ObservationID] = true
+	}
+	result := make(map[string]paperAccountState, len(accounts))
+	for accountRef, account := range accounts {
+		state, err := formatPaperAccountState(accountRef, account)
+		if err != nil {
+			return nil, err
+		}
+		result[accountRef] = state
+	}
+	return result, nil
+}
+
+func validatePaperIntentDeltas(ctx context.Context, q orderQuerier) error {
+	rows, err := q.QueryContext(ctx, `SELECT events.sequence,events.event_type,events.event_json,orders.order_id
+		FROM order_events events JOIN order_idempotency orders ON orders.order_id=events.order_id
+		WHERE orders.mode='paper' AND json_extract(orders.intent_json, '$.signal_schema_version')='paper-signal.v3'
+		ORDER BY events.sequence`)
+	if err != nil {
+		return err
+	}
+	type row struct {
+		sequence                int64
+		eventType, raw, orderID string
+	}
+	var stored []row
+	for rows.Next() {
+		var item row
+		if err := rows.Scan(&item.sequence, &item.eventType, &item.raw, &item.orderID); err != nil {
+			rows.Close()
+			return err
+		}
+		stored = append(stored, item)
+	}
+	if err := closeRows(rows); err != nil {
+		return err
+	}
+	positions, active := map[string]*big.Int{}, map[string]string{}
+	filled := map[string]*big.Int{}
+	intents := map[string]OrderIntent{}
+	for _, item := range stored {
+		intent, ok := intents[item.orderID]
+		if !ok {
+			intent, err = loadOrderIntentFrom(ctx, q, item.orderID)
+			if err != nil {
+				return err
+			}
+			intents[item.orderID] = intent
+		}
+		key := intent.AccountRef + "\x00" + intent.Symbol
+		if positions[key] == nil {
+			positions[key] = new(big.Int)
+		}
+		if item.eventType == "INTENT_RECORDED" {
+			if active[key] != "" {
+				return errors.New("capitalized paper intents cross an active order")
+			}
+			target, _ := new(big.Int).SetString(intent.SignalTargetQuantity, 10)
+			delta := new(big.Int).Sub(target, positions[key])
+			quantity, _ := new(big.Int).SetString(intent.Quantity, 10)
+			if delta.Sign() == 0 || new(big.Int).Abs(delta).Cmp(quantity) != 0 || (delta.Sign() > 0) != (intent.Side == "BUY") {
+				return errors.New("capitalized paper intent target delta is invalid")
+			}
+			active[key], filled[item.orderID] = item.orderID, new(big.Int)
+			continue
+		}
+		if item.eventType != "FILL_RECORDED" {
+			continue
+		}
+		var event OrderEvent
+		if err := json.Unmarshal([]byte(item.raw), &event); err != nil {
+			return err
+		}
+		quantity, _ := new(big.Int).SetString(event.Quantity, 10)
+		if intent.Side == "BUY" {
+			positions[key].Add(positions[key], quantity)
+		} else {
+			positions[key].Sub(positions[key], quantity)
+			if positions[key].Sign() < 0 {
+				return errors.New("capitalized paper SELL oversold holdings")
+			}
+		}
+		filled[item.orderID].Add(filled[item.orderID], quantity)
+		total, _ := new(big.Int).SetString(intent.Quantity, 10)
+		if filled[item.orderID].Cmp(total) > 0 {
+			return errors.New("capitalized paper fill exceeds its order")
+		}
+		if filled[item.orderID].Cmp(total) == 0 {
+			delete(active, key)
+		}
+	}
+	return nil
+}
+
+func paperFillBars(ctx context.Context, q orderQuerier, signal PaperSignalEvent, delay int64) ([]*PaperMarketBarObservation, error) {
+	if delay <= 0 {
+		return nil, errors.New("paper fill delay is invalid")
+	}
+	signalBar, _, err := loadPaperMarketBarByID(ctx, q, signal.SignalBarObservationID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.QueryContext(ctx, `SELECT observation_id FROM paper_market_bar_observations
+		WHERE source=? AND symbol=? AND venue=? AND interval=? AND timezone=? AND price_adjustment=? AND sequence>?
+		ORDER BY sequence LIMIT -1 OFFSET ?`, signalBar.Source, signalBar.Symbol, signalBar.Venue, signalBar.Interval,
+		signalBar.Timezone, signalBar.PriceAdjustment, signal.MarketObservationSequenceCutoff, delay-1)
+	if err != nil {
+		return nil, err
+	}
+	var observationIDs []string
+	for rows.Next() {
+		var observationID string
+		if err := rows.Scan(&observationID); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		observationIDs = append(observationIDs, observationID)
+	}
+	if err := closeRows(rows); err != nil {
+		return nil, err
+	}
+	bars := make([]*PaperMarketBarObservation, 0, len(observationIDs))
+	for _, observationID := range observationIDs {
+		bar, _, err := loadPaperMarketBarByID(ctx, q, observationID)
+		if err != nil {
+			return nil, err
+		}
+		bars = append(bars, bar)
+	}
+	return bars, nil
+}
+
+func validatePaperFillAuthority(ctx context.Context, q orderQuerier, accountRef string, event OrderEvent, recordedAt string) (executionAuthoritySnapshot, error) {
+	record, err := loadExecutionAuthorityRecordByID(ctx, q, event.ExecutionAuthorityEventID)
+	if err != nil || record.AccountRef != accountRef || !record.Armed || record.LeaseOwner == "" ||
+		record.ReasonCode != "lease_acquired" || record.FencingToken != event.FencingToken {
+		return executionAuthoritySnapshot{}, errors.New("paper fill execution authority binding is invalid")
+	}
+	fillTime, fillOK := canonicalUTCTime(recordedAt)
+	recorded, recordedOK := canonicalUTCTime(record.RecordedAt)
+	expires, expiresOK := canonicalUTCTime(record.LeaseExpiresAt)
+	if !fillOK || !recordedOK || !expiresOK || fillTime.Before(recorded) || !fillTime.Before(expires) {
+		return executionAuthoritySnapshot{}, errors.New("paper fill is outside its execution lease")
+	}
+	return executionAuthoritySnapshot{ExecutionAuthorityState: *authorityState(record), EventID: record.EventID}, nil
+}
+
+func paperReplayPosition(account *paperReplayAccount, symbol string) *big.Int {
+	position := new(big.Int)
+	for _, lot := range account.lots[symbol] {
+		position.Add(position, lot.quantity.Num())
+	}
+	return position
+}
+
+func applyPaperCalculatedFill(account *paperReplayAccount, symbol, side string, fill paperCalculatedFill) error {
+	quantity, err := parseDecimal(fill.Quantity)
+	if err != nil || !quantity.IsInt() {
+		return errors.New("paper fill quantity is invalid")
+	}
+	fee, _ := parseDecimal(fill.Fee)
+	tax, _ := parseDecimal(fill.Tax)
+	slippage, _ := parseDecimal(fill.Slippage)
+	cashDelta, _ := parseDecimal(fill.CashDelta)
+	account.cash.Add(account.cash, cashDelta)
+	account.fees.Add(account.fees, fee)
+	account.taxes.Add(account.taxes, tax)
+	account.slippage.Add(account.slippage, slippage)
+	if account.cash.Sign() < 0 {
+		return errors.New("paper fill makes cash negative")
+	}
+	if side == "BUY" {
+		cost := new(big.Rat).Neg(cashDelta)
+		account.lots[symbol] = append(account.lots[symbol], paperReplayLot{quantity: quantity, cost: cost})
+	} else {
+		remaining := new(big.Rat).Set(quantity)
+		allocated := new(big.Rat)
+		lots := account.lots[symbol]
+		for remaining.Sign() > 0 && len(lots) > 0 {
+			take := new(big.Rat).Set(remaining)
+			if take.Cmp(lots[0].quantity) > 0 {
+				take.Set(lots[0].quantity)
+			}
+			cost, err := fifoCostAllocation(lots[0].cost, take, lots[0].quantity)
+			if err != nil {
+				return err
+			}
+			allocated.Add(allocated, cost)
+			lots[0].quantity.Sub(lots[0].quantity, take)
+			lots[0].cost.Sub(lots[0].cost, cost)
+			remaining.Sub(remaining, take)
+			if lots[0].quantity.Sign() == 0 {
+				lots = lots[1:]
+			}
+		}
+		if remaining.Sign() != 0 {
+			return errors.New("paper SELL exceeds FIFO lots")
+		}
+		if len(lots) == 0 {
+			delete(account.lots, symbol)
+		} else {
+			account.lots[symbol] = lots
+		}
+		account.pnl.Add(account.pnl, new(big.Rat).Sub(cashDelta, allocated))
+	}
+	account.capitalizedFills++
+	return nil
+}
+
+func formatPaperAccountState(accountRef string, account *paperReplayAccount) (paperAccountState, error) {
+	state := paperAccountState{
+		AccountRef: accountRef, PaperAccountingSessionID: account.session.SessionID, Lots: map[string][]paperLotState{},
+		CapitalizedFills: account.capitalizedFills,
+	}
+	var err error
+	if state.Cash, err = formatDecimal(account.cash); err != nil {
+		return paperAccountState{}, err
+	}
+	if state.Fees, err = formatDecimal(account.fees); err != nil {
+		return paperAccountState{}, err
+	}
+	if state.Taxes, err = formatDecimal(account.taxes); err != nil {
+		return paperAccountState{}, err
+	}
+	if state.Slippage, err = formatDecimal(account.slippage); err != nil {
+		return paperAccountState{}, err
+	}
+	if state.RealizedPnL, err = formatDecimal(account.pnl); err != nil {
+		return paperAccountState{}, err
+	}
+	for symbol, lots := range account.lots {
+		for _, lot := range lots {
+			quantity, err := formatDecimal(lot.quantity)
+			if err != nil {
+				return paperAccountState{}, err
+			}
+			cost, err := formatDecimal(lot.cost)
+			if err != nil {
+				return paperAccountState{}, err
+			}
+			state.Lots[symbol] = append(state.Lots[symbol], paperLotState{Quantity: quantity, Cost: cost})
+		}
+	}
+	return state, nil
+}
+
+func mustFormatPaperRat(value *big.Rat) string {
+	formatted, _ := formatDecimal(value)
+	return formatted
 }
 
 func validateStoredPaperAccountingSession(ctx context.Context, q orderQuerier, session PaperAccountingSession, recordSHA, recordJSON string) error {

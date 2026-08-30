@@ -79,8 +79,8 @@ func TestG38C2PaperIntentBinding(t *testing.T) {
 		{name: "leading zero quantity", target: "10", quantity: "010"},
 		{name: "suffix junk quantity", target: "10", quantity: "10x"},
 		{name: "numeric JSON quantity", target: "10", quantity: float64(10)},
-		{name: "oversized quantity", target: strings.Repeat("9", 32), quantity: strings.Repeat("9", 33)},
-		{name: "overflow numeric quantity", target: strings.Repeat("9", 32), quantity: 1e40},
+		{name: "oversized quantity", target: paperMaxQuantity, quantity: "4611686018427387904"},
+		{name: "overflow numeric quantity", target: paperMaxQuantity, quantity: 1e40},
 	} {
 		t.Run("direct "+test.name, func(t *testing.T) {
 			svc, signal, _ := g38c2PaperSignalFixture(t, true)
@@ -293,54 +293,69 @@ func TestG38C2PaperAuthorization(t *testing.T) {
 		}
 	})
 
-	t.Run("direct authorization must be inside its lease", func(t *testing.T) {
-		svc, signal, _ := g38c2PaperSignalFixture(t, true)
-		signal.TargetQuantity = "10"
-		signalEvent, err := recordG38C2PaperSignalForTest(svc, k2aAccountRef, signal)
-		if err != nil {
-			t.Fatal(err)
-		}
-		tx, err := svc.db.BeginTx(context.Background(), nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		state, err := svc.recordOrderIntentTx(context.Background(), tx, capitalizedPaperOrderIntent(*signalEvent, "BUY", "10"))
-		if err != nil {
-			tx.Rollback()
-			t.Fatal(err)
-		}
-		if err := tx.Commit(); err != nil {
-			t.Fatal(err)
-		}
-		lease := mustK2CLease(t, svc, k2aAccountRef)
-		authority, err := loadExecutionAuthoritySnapshot(context.Background(), svc.db, k2aAccountRef)
-		if err != nil {
-			t.Fatal(err)
-		}
-		authorization := paperExecutionAuthorization{
-			AuthorizationID: paperEventID("authorization", state.OrderID), SchemaVersion: paperExecutionAuthorizationSchema,
-			OrderID: state.OrderID, AccountRef: k2aAccountRef, PaperAccountingSessionID: signalEvent.PaperAccountingSessionID,
-			ExecutionPolicySHA256: signalEvent.ExecutionPolicySHA256, PolicyVersion: paperAccountingPolicyVersion,
-			Side: "BUY", Quantity: "10", AuthorityEventID: authority.EventID, FencingToken: lease.FencingToken,
-			RiskEventID: paperEventID("risk", state.OrderID), DispatchEventID: paperEventID("dispatch", state.OrderID),
-			AuthorizedAt: lease.LeaseExpiresAt,
-		}
-		tx, err = svc.db.BeginTx(context.Background(), nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := insertPaperExecutionAuthorization(context.Background(), tx, authorization); err == nil {
-			tx.Rollback()
-			t.Fatal("direct authorization at lease expiry was accepted")
-		}
-		if err := tx.Rollback(); err != nil {
-			t.Fatal(err)
-		}
-		var count int
-		if err := svc.db.QueryRow(`SELECT COUNT(*) FROM paper_execution_authorizations`).Scan(&count); err != nil || count != 0 {
-			t.Fatalf("expired authorization rows=%d err=%v", count, err)
-		}
-	})
+	for _, boundary := range []struct {
+		name   string
+		offset time.Duration
+		accept bool
+	}{
+		{"direct authorization at expiry minus one nanosecond", -time.Nanosecond, true},
+		{"direct authorization at expiry", 0, false},
+	} {
+		t.Run(boundary.name, func(t *testing.T) {
+			svc, signal, _ := g38c2PaperSignalFixture(t, true)
+			signal.TargetQuantity = "10"
+			signalEvent, err := recordG38C2PaperSignalForTest(svc, k2aAccountRef, signal)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tx, err := svc.db.BeginTx(context.Background(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			state, err := svc.recordOrderIntentTx(context.Background(), tx, capitalizedPaperOrderIntent(*signalEvent, "BUY", "10"))
+			if err != nil {
+				tx.Rollback()
+				t.Fatal(err)
+			}
+			if err := tx.Commit(); err != nil {
+				t.Fatal(err)
+			}
+			lease := mustK2CLease(t, svc, k2aAccountRef)
+			authority, err := loadExecutionAuthoritySnapshot(context.Background(), svc.db, k2aAccountRef)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expires, _ := canonicalUTCTime(lease.LeaseExpiresAt)
+			authorization := paperExecutionAuthorization{
+				AuthorizationID: paperEventID("authorization", state.OrderID), SchemaVersion: paperExecutionAuthorizationSchema,
+				OrderID: state.OrderID, AccountRef: k2aAccountRef, PaperAccountingSessionID: signalEvent.PaperAccountingSessionID,
+				ExecutionPolicySHA256: signalEvent.ExecutionPolicySHA256, PolicyVersion: paperAccountingPolicyVersion,
+				Side: "BUY", Quantity: "10", AuthorityEventID: authority.EventID, FencingToken: lease.FencingToken,
+				RiskEventID: paperEventID("risk", state.OrderID), DispatchEventID: paperEventID("dispatch", state.OrderID),
+				AuthorizedAt: expires.Add(boundary.offset).Format(time.RFC3339Nano),
+			}
+			tx, err = svc.db.BeginTx(context.Background(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = insertPaperExecutionAuthorization(context.Background(), tx, authorization)
+			if boundary.accept && err != nil {
+				tx.Rollback()
+				t.Fatalf("authorization before lease expiry was rejected: %v", err)
+			}
+			if !boundary.accept && err == nil {
+				tx.Rollback()
+				t.Fatal("direct authorization at lease expiry was accepted")
+			}
+			if err := tx.Rollback(); err != nil {
+				t.Fatal(err)
+			}
+			var count int
+			if err := svc.db.QueryRow(`SELECT COUNT(*) FROM paper_execution_authorizations`).Scan(&count); err != nil || count != 0 {
+				t.Fatalf("authorization boundary rows=%d err=%v", count, err)
+			}
+		})
+	}
 
 	for _, test := range []struct {
 		name   string
@@ -451,11 +466,13 @@ func downgradePaperAuthorizationForTest(t testing.TB, db *sql.DB) {
 	if _, err := db.Exec(`DROP TRIGGER paper_execution_authorizations_no_update;
 		DROP TRIGGER paper_execution_authorizations_no_delete;
 		DROP TRIGGER paper_execution_authorizations_state_guard;
+		DROP TRIGGER paper_signal_events_capitalized_quantity_guard;
 		DROP TRIGGER order_idempotency_capitalized_paper_guard;
 		DROP TRIGGER order_idempotency_legacy_paper_signal_guard;
 		DROP TRIGGER order_events_risk_reservation_guard;
 		DROP TRIGGER order_events_dispatch_reservation_guard;
 		DROP TRIGGER order_events_non_authority_reservation_guard;
+		DROP TRIGGER order_events_capitalized_paper_fill_guard;
 		DROP TABLE paper_execution_authorizations;
 		ALTER TABLE order_events DROP COLUMN paper_authorization_id;
 		CREATE TRIGGER order_idempotency_legacy_paper_signal_guard BEFORE INSERT ON order_idempotency

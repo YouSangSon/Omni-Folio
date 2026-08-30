@@ -463,7 +463,7 @@ func TestG38C2PaperMarketBackupV11AndV10OwnedCopyMigration(t *testing.T) {
 	ownedPaper, paperErr := provePaperAccountingRecovery(ctx, candidate)
 	closeErr := candidate.Close()
 	if orderErr != nil || paperErr != nil || closeErr != nil || ownedOrders != legacyOrderProof || ownedPaper.Sessions != 1 ||
-		ownedPaper.MarketBars != 0 || ownedPaper.Signals != 0 {
+		ownedPaper.MarketBars != 0 || ownedPaper.Signals != 0 || ownedPaper.Authorizations != 0 || ownedPaper.CapitalizedFills != 0 {
 		t.Fatalf("v10 owned proof orders=%+v paper=%+v errors=(%v,%v,%v)", ownedOrders, ownedPaper, orderErr, paperErr, closeErr)
 	}
 }
