@@ -1430,13 +1430,53 @@ class _ActivityPageState extends State<ActivityPage> {
   final _csv = TextEditingController();
   ImportPreview? _preview;
   ApplyReceipt? _receipt;
+  LedgerActivityPage? _activities;
   String? _error;
   var _busy = false;
+  var _activityBusy = false;
+  var _activityFailed = false;
+  var _activityRefreshQueued = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshActivities();
+  }
 
   @override
   void dispose() {
     _csv.dispose();
     super.dispose();
+  }
+
+  Future<void> _refreshActivities() async {
+    if (!mounted) return;
+    if (_activityBusy) {
+      _activityRefreshQueued = true;
+      return;
+    }
+    setState(() {
+      _activityBusy = true;
+      _activityFailed = false;
+    });
+    try {
+      do {
+        _activityRefreshQueued = false;
+        try {
+          final activities = await widget.api.ledgerActivities();
+          if (mounted) {
+            setState(() {
+              _activities = activities;
+              _activityFailed = false;
+            });
+          }
+        } catch (_) {
+          if (mounted) setState(() => _activityFailed = true);
+        }
+      } while (mounted && _activityRefreshQueued);
+    } finally {
+      if (mounted) setState(() => _activityBusy = false);
+    }
   }
 
   Future<void> _previewCsv() async {
@@ -1482,7 +1522,9 @@ class _ActivityPageState extends State<ActivityPage> {
         preview.previewId,
         'import-${preview.previewId}',
       );
-      if (mounted) setState(() => _receipt = receipt);
+      if (!mounted) return;
+      setState(() => _receipt = receipt);
+      await _refreshActivities();
     } catch (_) {
       if (mounted) {
         setState(
@@ -1497,7 +1539,10 @@ class _ActivityPageState extends State<ActivityPage> {
   }
 
   void _invalidatePreviewOnEdit(String _) {
-    if (_preview == null && _receipt == null) return;
+    if (_preview == null && _receipt == null) {
+      setState(() {});
+      return;
+    }
     setState(() {
       _preview = null;
       _receipt = null;
@@ -1568,9 +1613,188 @@ class _ActivityPageState extends State<ActivityPage> {
           padding: const EdgeInsets.only(top: 12),
           child: _ReceiptCard(receipt: _receipt!),
         ),
+      if (_receipt != null ||
+          (_csv.text.isEmpty && _preview == null && _error == null)) ...[
+        const SizedBox(height: 12),
+        _ActivityHistoryCard(
+          page: _activities,
+          busy: _activityBusy,
+          failed: _activityFailed,
+          onRetry: _refreshActivities,
+        ),
+      ],
     ],
   );
 }
+
+class _ActivityHistoryCard extends StatelessWidget {
+  const _ActivityHistoryCard({
+    required this.page,
+    required this.busy,
+    required this.failed,
+    required this.onRetry,
+  });
+
+  final LedgerActivityPage? page;
+  final bool busy;
+  final bool failed;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = page;
+    return _SectionCard(
+      title: '최근 거래',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (value == null && busy) const _Loading(compact: true),
+          if (value == null && failed) ...[
+            Semantics(
+              liveRegion: true,
+              child: _Notice(
+                icon: Icons.error_outline,
+                text: '거래 내역을 불러오지 못했습니다. 다시 시도하세요.',
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: busy ? null : onRetry,
+              child: const Text('최근 거래 다시 불러오기'),
+            ),
+          ],
+          if (value != null) ...[
+            const Text('로컬 원장 기록 · 현재 증권사 상태 아님'),
+            const SizedBox(height: 4),
+            Text(
+              '기록 ${_time(DateTime.parse(value.recordedAt))} · 원장 ${value.ledgerRevision}',
+              style: _tabular(context),
+            ),
+            if (busy) ...[
+              const SizedBox(height: 8),
+              _Notice(
+                icon: Icons.sync,
+                text: '거래 내역을 다시 확인하는 중입니다.',
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ],
+            if (failed) ...[
+              const SizedBox(height: 8),
+              Semantics(
+                liveRegion: true,
+                child: _Notice(
+                  icon: Icons.error_outline,
+                  text: '새로고침에 실패해 마지막 정상 거래 내역을 유지합니다.',
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            if (value.events.isEmpty)
+              const Text('아직 가져온 거래가 없습니다. 아래에서 CSV 거래 내역을 가져오세요.')
+            else
+              for (var index = 0; index < value.events.length; index++) ...[
+                if (index > 0) const Divider(height: 24),
+                _ActivityRow(event: value.events[index]),
+              ],
+            if (value.nextCursor != null) ...[
+              const SizedBox(height: 12),
+              const Text('최근 50건만 표시합니다.', style: TextStyle(fontSize: 13)),
+            ],
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: busy ? null : onRetry,
+              child: const Text('최근 거래 다시 불러오기'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ActivityRow extends StatelessWidget {
+  const _ActivityRow({required this.event});
+  final LedgerActivity event;
+
+  @override
+  Widget build(BuildContext context) {
+    final occurred = _time(DateTime.parse(event.occurredAt));
+    if (event.type == 'FX_EXCHANGE') {
+      final sold = event.amount.substring(1);
+      final summary =
+          '환전 · ${event.currency} $sold 매도 → ${event.counterCurrency} ${event.counterAmount} 매수';
+      return Semantics(
+        container: true,
+        excludeSemantics: true,
+        label:
+            '$occurred, 환전, ${event.currency} $sold 매도, ${event.counterCurrency} ${event.counterAmount} 매수, 현재 환율 아님',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(summary, style: const TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            const Text('환율이나 현재 시세를 뜻하지 않습니다.'),
+            const SizedBox(height: 4),
+            Text(occurred, style: _tabular(context)),
+          ],
+        ),
+      );
+    }
+    final type = _activityType(event.type);
+    final title = event.symbol == null ? type : '$type · ${event.symbol}';
+    final details = <String>[
+      if (event.quantity != null) '수량 ${event.quantity}',
+      '${event.currency} ${event.amount}',
+      if (event.price != null) '가격 ${event.price}',
+      if (event.fee != null) '수수료 ${event.fee}',
+    ];
+    final semantics = [
+      occurred,
+      type,
+      if (event.symbol != null) event.symbol!,
+      ...details,
+      if (event.isCorrection) '원본 보존, 반대 금액으로 상쇄',
+    ].join(', ');
+    return Semantics(
+      container: true,
+      excludeSemantics: true,
+      label: semantics,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Text(details.take(2).join(' · '), style: _tabular(context)),
+          if (details.length > 2) ...[
+            const SizedBox(height: 4),
+            Text(details.skip(2).join(' · '), style: _tabular(context)),
+          ],
+          if (event.isCorrection) ...[
+            const SizedBox(height: 4),
+            const Text('원본 기록은 보존되고 반대 금액으로 상쇄됩니다.'),
+          ],
+          const SizedBox(height: 4),
+          Text(occurred, style: _tabular(context)),
+        ],
+      ),
+    );
+  }
+}
+
+String _activityType(String type) => switch (type) {
+  'BUY' => '매수',
+  'SELL' => '매도',
+  'DEPOSIT' => '입금',
+  'WITHDRAWAL' => '출금',
+  'DIVIDEND' => '배당',
+  'FEE' => '수수료',
+  'TAX' => '세금',
+  'SPLIT' => '주식 분할',
+  'CASH_VOID' => '현금 기록 취소',
+  _ => type,
+};
 
 class DataPage extends StatelessWidget {
   const DataPage({super.key, required this.api, required this.controller});

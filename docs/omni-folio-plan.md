@@ -1078,3 +1078,16 @@ G1.8 closes only exact append-only cash movement between two currencies. It does
 - RED/GREEN tests and mutations prove failed backup-candidate cleanup, the second replay leg, the distinct-currency DB guard and the Flutter type/leg binding. Full regression, race, smoke, vulnerability and resource-cleanup evidence is recorded in [`../gates/g1d-fx-exchange.md`](../gates/g1d-fx-exchange.md).
 
 Still open: FX rate series and base-currency valuation, FX correction, broker cash reconciliation, jurisdiction-specific tax classification, physical-device screen-reader evidence and every live-money path.
+
+## 2026-08-28 G1.9 continuation: replay-verified local ledger activity
+
+G1.9 closes the import-only History gap without adding a mutation surface, broker request, valuation, schema migration, index or dependency.
+
+- `GET /v1/ledger/activities` runs the existing deterministic snapshot replay and a canonical full-event proof inside one read transaction before returning any row. Revision/count/sequence drift, invalid timestamp/decimal/type shape, bad cash correction or economic replay failure returns only the generic 500 and never a partial page.
+- Results are newest-first by `(occurred_at, sequence)`. The 1..100 limit uses `limit+1`; the opaque keyset cursor binds the first page's ledger revision, last event tuple and last event-record time so later backdated imports neither duplicate nor insert rows into the continuation.
+- The closed DTO includes exact signed amount, applicable trade fields, both FX legs and correction boolean. It omits account, event, source, instrument, receipt, correction-target and sequence identifiers and labels broker freshness unverified.
+- Flutter strictly validates the fixed nullable shape and event-specific sign/field rules. `최근 거래` preserves the CSV import as the first decision, uses vertical 320px/200% rows with combined semantics, labels the source as local/not current broker state, and retains the last normal page when refresh fails.
+- The UI intentionally consumes only the first page and says `최근 50건만 표시합니다` when a cursor exists. Full browsing, filters, details, export and mutation wait for an actual user need; the HTTP cursor contract is already available without another schema change.
+- The current single-process profile keeps the cursor encryption key in memory, so a restart invalidates outstanding cursors. A shared secret-manager key is required before claiming restart-stable or multi-replica pagination.
+
+Still open: full history browsing/search/export, source-level drill-down, FX rate series and base-currency valuation, trade/split/FX correction, broker cash/fill reconciliation, physical-device screen-reader evidence and every live-money path.

@@ -23,11 +23,13 @@ class FakeApi implements OmniApi {
     required this.receiptValue,
     required this.candlesValue,
     required this.orderLogValue,
+    required this.activityValue,
     this.reconciliationValue,
     this.fail = false,
     this.failSnapshot = false,
     this.failReconciliation = false,
     this.failLocalOrders = false,
+    this.failActivities = false,
     this.applyFailures = 0,
     this.failureMessage = '서버를 다시 확인하세요.',
   });
@@ -38,18 +40,23 @@ class FakeApi implements OmniApi {
   final ApplyReceipt receiptValue;
   MarketCandles candlesValue;
   LocalOrderLog orderLogValue;
+  LedgerActivityPage activityValue;
   BrokerReconciliation? reconciliationValue;
   Completer<BrokerReconciliation?>? reconciliationCompleter;
   int reconciliationCalls = 0;
   Completer<LocalOrderLog>? localOrdersCompleter;
   int localOrderCalls = 0;
+  Completer<LedgerActivityPage>? activityCompleter;
+  int activityCalls = 0;
   Completer<MarketCandles>? candlesCompleter;
   int candleCalls = 0;
+  Completer<ApplyReceipt>? applyCompleter;
   final List<String> applyKeys = [];
   bool fail;
   bool failSnapshot;
   bool failReconciliation;
   bool failLocalOrders;
+  bool failActivities;
   int applyFailures;
   String failureMessage;
 
@@ -61,7 +68,7 @@ class FakeApi implements OmniApi {
       throw ApiException(failureMessage);
     }
     if (fail) throw ApiException(failureMessage);
-    return receiptValue;
+    return applyCompleter?.future ?? receiptValue;
   }
 
   @override
@@ -104,6 +111,15 @@ class FakeApi implements OmniApi {
   }
 
   @override
+  Future<LedgerActivityPage> ledgerActivities() async {
+    activityCalls += 1;
+    if (fail || failActivities) {
+      throw const ApiException('account-main event-secret receipt-secret');
+    }
+    return activityCompleter?.future ?? activityValue;
+  }
+
+  @override
   Future<ServiceStatus> status() async {
     if (fail) throw ApiException(failureMessage);
     return statusValue;
@@ -134,6 +150,7 @@ FakeApi goldenApi({
     receiptValue: receipt,
     candlesValue: marketCandles(),
     orderLogValue: LocalOrderLog.fromJson(localOrderLogJson(orders: const [])),
+    activityValue: LedgerActivityPage.fromJson(ledgerActivitiesJson()),
   );
 }
 
@@ -240,6 +257,46 @@ Json localOrderLogJson({List<Json>? orders}) => {
           'last_recorded_at': '2026-01-10T15:01:00Z',
         },
       ],
+};
+
+Json ledgerActivitiesJson({List<Json>? events, String? nextCursor}) => {
+  'source': 'local_ledger',
+  'broker_freshness': 'unverified',
+  'ledger_revision': 'rev_0000000004',
+  'recorded_at': '2026-01-10T15:01:00Z',
+  'events':
+      events ??
+      const [
+        {
+          'type': 'FX_EXCHANGE',
+          'occurred_at': '2026-01-03T00:00:00Z',
+          'recorded_at': '2026-01-10T15:01:00Z',
+          'symbol': null,
+          'quantity': null,
+          'price': null,
+          'fee': null,
+          'currency': 'USD',
+          'amount': '-100',
+          'counter_currency': 'KRW',
+          'counter_amount': '137000',
+          'is_correction': false,
+        },
+        {
+          'type': 'BUY',
+          'occurred_at': '2026-01-02T00:00:00Z',
+          'recorded_at': '2026-01-10T15:01:00Z',
+          'symbol': 'AAPL',
+          'quantity': '2',
+          'price': '10',
+          'fee': '0',
+          'currency': 'USD',
+          'amount': '-20',
+          'counter_currency': null,
+          'counter_amount': null,
+          'is_correction': false,
+        },
+      ],
+  'next_cursor': nextCursor,
 };
 
 Future<void> pumpUi(WidgetTester tester) async {
@@ -749,6 +806,106 @@ void main() {
     expect(result.orders.single.filledQuantity, '0');
   });
 
+  test('ledger activities parse a closed exact-money contract', () {
+    final page = LedgerActivityPage.fromJson(ledgerActivitiesJson());
+    expect(page.source, 'local_ledger');
+    expect(page.events.first.type, 'FX_EXCHANGE');
+    expect(page.events.first.counterCurrency, 'KRW');
+    expect(page.events.first.counterAmount, '137000');
+
+    final invalid = <Json>[
+      {...ledgerActivitiesJson(), 'account_id': 'account-main'},
+      {
+        ...ledgerActivitiesJson(),
+        'events': [
+          {
+            ...(ledgerActivitiesJson()['events'] as List).first as Json,
+            'event_id': 'event-secret',
+          },
+        ],
+      },
+      {...ledgerActivitiesJson(), 'recorded_at': '2026-01-10T15:01:00.120Z'},
+      {
+        ...ledgerActivitiesJson(),
+        'recorded_at': '2026-01-10T15:01:00.1234567891Z',
+      },
+      {
+        ...ledgerActivitiesJson(),
+        'events': List<Json>.generate(
+          101,
+          (_) => {...(ledgerActivitiesJson()['events'] as List).first as Json},
+        ),
+      },
+      {
+        ...ledgerActivitiesJson(),
+        'events': [...(ledgerActivitiesJson()['events'] as List).reversed],
+      },
+      {
+        ...ledgerActivitiesJson(),
+        'events': [
+          {
+            ...(ledgerActivitiesJson()['events'] as List).first as Json,
+            'occurred_at': '2026-02-30T00:00:00Z',
+          },
+        ],
+      },
+      {
+        ...ledgerActivitiesJson(),
+        'events': [
+          {
+            ...(ledgerActivitiesJson()['events'] as List).last as Json,
+            'counter_currency': 'USD',
+          },
+        ],
+      },
+      {
+        ...ledgerActivitiesJson(),
+        'events': [
+          {
+            ...(ledgerActivitiesJson()['events'] as List).first as Json,
+            'counter_currency': 'USD',
+          },
+        ],
+      },
+      {
+        ...ledgerActivitiesJson(),
+        'events': [
+          {
+            ...(ledgerActivitiesJson()['events'] as List).first as Json,
+            'amount': '-20.0',
+          },
+        ],
+      },
+      {
+        ...ledgerActivitiesJson(),
+        'events': [
+          {
+            ...(ledgerActivitiesJson()['events'] as List).first as Json,
+            'is_correction': true,
+          },
+        ],
+      },
+    ];
+    for (final value in invalid) {
+      expect(() => LedgerActivityPage.fromJson(value), throwsFormatException);
+    }
+  });
+
+  test('ledger activities use the fixed read-only path', () async {
+    late http.Request request;
+    final api = RestOmniApi(
+      client: MockClient((value) async {
+        request = value;
+        return http.Response(jsonEncode(ledgerActivitiesJson()), 200);
+      }),
+    );
+    final result = await api.ledgerActivities();
+    expect(request.method, 'GET');
+    expect(request.url.path, '/v1/ledger/activities');
+    expect(request.url.query, isEmpty);
+    expect(result.events.first.counterAmount, '137000');
+  });
+
   test(
     'latest broker reconciliation uses the fixed path and maps 404 to empty',
     () async {
@@ -778,6 +935,91 @@ void main() {
       expect(await empty.latestBrokerReconciliation(), isNull);
     },
   );
+
+  testWidgets('recent ledger activities stay readable at 200 percent text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final semantics = tester.ensureSemantics();
+    try {
+      await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+      await pumpUi(tester);
+      await tester.tap(find.text('내역'));
+      await pumpUi(tester);
+      await tester.fling(find.byType(ListView), const Offset(0, -2000), 3000);
+      await tester.pumpAndSettle();
+
+      expect(find.text('로컬 원장 기록 · 현재 증권사 상태 아님'), findsOneWidget);
+      expect(find.text('매수 · AAPL'), findsOneWidget);
+      expect(find.text('수량 2 · USD -20'), findsOneWidget);
+      expect(find.text('환전 · USD 100 매도 → KRW 137000 매수'), findsOneWidget);
+      expect(find.text('환율이나 현재 시세를 뜻하지 않습니다.'), findsOneWidget);
+      expect(
+        find.semantics.byLabel(
+          RegExp(r'매수, AAPL, 수량 2, USD -20, 가격 10, 수수료 0'),
+        ),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(
+        find.text('환전 · USD 100 매도 → KRW 137000 매수').first,
+      );
+      await tester.pump();
+      expect(
+        find.semantics.byLabel(
+          RegExp(r'환전, USD 100 매도, KRW 137000 매수, 현재 환율 아님'),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('ledger activity error is redacted and retryable', (
+    tester,
+  ) async {
+    final api = goldenApi()..failActivities = true;
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('내역'));
+    await pumpUi(tester);
+
+    expect(find.textContaining('account-main'), findsNothing);
+    expect(find.text('거래 내역을 불러오지 못했습니다. 다시 시도하세요.'), findsOneWidget);
+    api.failActivities = false;
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pump();
+    await tester.tap(find.text('최근 거래 다시 불러오기'));
+    await pumpUi(tester);
+    expect(find.text('매수 · AAPL'), findsOneWidget);
+  });
+
+  testWidgets('ledger activity refresh retains the last known-good page', (
+    tester,
+  ) async {
+    final api = goldenApi();
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('내역'));
+    await pumpUi(tester);
+    await tester.drag(find.byType(ListView), const Offset(0, -700));
+    await tester.pump();
+    expect(find.text('매수 · AAPL'), findsOneWidget);
+
+    api.failActivities = true;
+    await tester.tap(find.text('최근 거래 다시 불러오기'));
+    await pumpUi(tester);
+
+    expect(find.text('매수 · AAPL'), findsOneWidget);
+    expect(find.text('새로고침에 실패해 마지막 정상 거래 내역을 유지합니다.'), findsOneWidget);
+    expect(find.textContaining('event-secret'), findsNothing);
+  });
 
   testWidgets('live-disabled trust banner remains explicit', (tester) async {
     final api = goldenApi(neverVerified: true);
@@ -1597,8 +1839,61 @@ void main() {
     await pumpUi(tester);
     expect(find.text('적용 확인'), findsOneWidget);
     expect(find.textContaining('receipt_golden_001'), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -1000));
+    await tester.pump();
+    expect(find.text('최근 거래'), findsOneWidget);
     expect(api.applyKeys, hasLength(2));
     expect(api.applyKeys, everyElement('import-${api.previewValue.previewId}'));
+  });
+
+  testWidgets('apply queues activity refresh while initial load is running', (
+    tester,
+  ) async {
+    final initialActivities = Completer<LedgerActivityPage>();
+    final api = goldenApi()..activityCompleter = initialActivities;
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('내역'));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), 'header\nrow');
+    await tester.tap(find.text('미리보기 만들기'));
+    await pumpUi(tester);
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pump();
+    await tester.tap(find.text('원자적으로 적용'));
+    await tester.pump();
+
+    initialActivities.complete(
+      LedgerActivityPage.fromJson(ledgerActivitiesJson(events: const [])),
+    );
+    await pumpUi(tester);
+
+    expect(api.activityCalls, 2);
+  });
+
+  testWidgets('leaving activity during apply does not update disposed state', (
+    tester,
+  ) async {
+    final pendingApply = Completer<ApplyReceipt>();
+    final api = goldenApi()..applyCompleter = pendingApply;
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('내역'));
+    await pumpUi(tester);
+    await tester.enterText(find.byType(TextField), 'header\nrow');
+    await tester.tap(find.text('미리보기 만들기'));
+    await pumpUi(tester);
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pump();
+    await tester.tap(find.text('원자적으로 적용'));
+    await tester.pump();
+    await tester.tap(find.text('홈'));
+    await pumpUi(tester);
+
+    pendingApply.complete(api.receiptValue);
+    await pumpUi(tester);
+
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(
@@ -1651,6 +1946,8 @@ void main() {
       await pumpUi(tester);
       await tester.enterText(find.byType(TextField), 'header\nrow');
       await tester.ensureVisible(find.text('미리보기 만들기'));
+      await tester.pump();
+      await tester.drag(find.byType(ListView), const Offset(0, 160));
       await tester.pump();
       await tester.tap(find.text('미리보기 만들기'));
       await pumpUi(tester);
@@ -1765,6 +2062,8 @@ void main() {
     await pumpUi(tester);
     await tester.enterText(find.byType(TextField), 'header\nrow');
     await tester.ensureVisible(find.text('미리보기 만들기'));
+    await tester.pump();
+    await tester.drag(find.byType(ListView), const Offset(0, 160));
     await tester.pump();
     await tester.tap(find.text('미리보기 만들기'));
     await pumpUi(tester);

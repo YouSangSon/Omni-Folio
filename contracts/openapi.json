@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Omni-Folio Core API",
-    "version": "0.6.0",
-    "description": "Minimal cross-runtime contract for trust status, CSV import, deterministic portfolio snapshots, explicitly labeled sample market data, sanitized stored broker reconciliation, and verified local order lifecycle reads. JSON decimals are canonical strings; IDs are opaque strings."
+    "version": "0.7.0",
+    "description": "Minimal cross-runtime contract for trust status, CSV import, deterministic portfolio snapshots, explicitly labeled sample market data, sanitized ledger activity, stored broker reconciliation, and verified local order lifecycle reads. JSON decimals are canonical strings; IDs are opaque strings."
   },
   "paths": {
     "/healthz": {
@@ -229,6 +229,49 @@
         }
       }
     },
+    "/v1/ledger/activities": {
+      "get": {
+        "operationId": "getLedgerActivities",
+        "description": "Returns a replay-verified, newest-first page of sanitized local ledger events. This does not call or refresh a broker, prove current broker state, value the portfolio, or expose a mutation action. Internal event, source, account, instrument, receipt, correction-target, and sequence identifiers are omitted.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 50}
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {"type": "string", "minLength": 1, "maxLength": 1024},
+            "description": "Opaque keyset cursor bound to the ledger revision of the first page. The current local profile may invalidate it on service restart."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A complete local-ledger page, including an empty events array when no transactions exist.",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/LedgerActivityPage"}
+              }
+            }
+          },
+          "400": {"$ref": "#/components/responses/BadRequest"},
+          "500": {
+            "description": "The local ledger failed canonical validation or deterministic replay; no partial page is returned.",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Error"},
+                "examples": {
+                  "internal_error": {"value": {"code": "internal_error", "message": "internal server error"}}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/imports/preview": {
       "post": {
         "operationId": "previewImport",
@@ -376,6 +419,12 @@
         "format": "date-time",
         "description": "When Omni-Folio durably recorded the ledger mutation."
       },
+      "LedgerActivityTimestamp": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{0,8}[1-9])?Z$",
+        "description": "Canonical UTC RFC3339 timestamp used by the verified local ledger."
+      },
       "Health": {
         "type": "object",
         "additionalProperties": false,
@@ -507,6 +556,129 @@
             "type": "array",
             "items": {"$ref": "#/components/schemas/BrokerPositionDifference"}
           }
+        }
+      },
+      "LedgerActivity": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "occurred_at", "recorded_at", "symbol", "quantity", "price", "fee", "currency", "amount", "counter_currency", "counter_amount", "is_correction"],
+        "properties": {
+          "type": {"type": "string", "enum": ["BUY", "SELL", "DEPOSIT", "WITHDRAWAL", "DIVIDEND", "FEE", "TAX", "SPLIT", "CASH_VOID", "FX_EXCHANGE"]},
+          "occurred_at": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
+          "recorded_at": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
+          "symbol": {"type": ["string", "null"], "minLength": 1},
+          "quantity": {"anyOf": [{"$ref": "#/components/schemas/Decimal"}, {"type": "null"}]},
+          "price": {"anyOf": [{"$ref": "#/components/schemas/Decimal"}, {"type": "null"}]},
+          "fee": {"anyOf": [{"$ref": "#/components/schemas/Decimal"}, {"type": "null"}]},
+          "currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+          "amount": {"$ref": "#/components/schemas/Decimal", "description": "Exact signed cash effect; this is not a base-currency valuation."},
+          "counter_currency": {"type": ["string", "null"], "pattern": "^[A-Z]{3}$", "description": "Non-null only for FX_EXCHANGE and always distinct from currency."},
+          "counter_amount": {"anyOf": [{"$ref": "#/components/schemas/Decimal"}, {"type": "null"}], "description": "Positive exact bought amount for FX_EXCHANGE; it is not a quoted or current exchange rate."},
+          "is_correction": {"type": "boolean", "description": "True only for CASH_VOID. The correction target identifier is intentionally omitted."}
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "type": {"const": "BUY"},
+              "symbol": {"type": "string", "minLength": 1},
+              "quantity": {"$ref": "#/components/schemas/Decimal"},
+              "price": {"$ref": "#/components/schemas/Decimal"},
+              "fee": {"$ref": "#/components/schemas/Decimal"},
+              "amount": {"type": "string", "pattern": "^-(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$"},
+              "counter_currency": {"type": "null"},
+              "counter_amount": {"type": "null"},
+              "is_correction": {"const": false}
+            }
+          },
+          {
+            "properties": {
+              "type": {"const": "SELL"},
+              "symbol": {"type": "string", "minLength": 1},
+              "quantity": {"$ref": "#/components/schemas/Decimal"},
+              "price": {"$ref": "#/components/schemas/Decimal"},
+              "fee": {"$ref": "#/components/schemas/Decimal"},
+              "amount": {"type": "string", "pattern": "^(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$"},
+              "counter_currency": {"type": "null"},
+              "counter_amount": {"type": "null"},
+              "is_correction": {"const": false}
+            }
+          },
+          {
+            "properties": {
+              "type": {"const": "DIVIDEND"},
+              "symbol": {"type": "string", "minLength": 1},
+              "quantity": {"type": "null"},
+              "price": {"type": "null"},
+              "fee": {"type": "null"},
+              "amount": {"type": "string", "pattern": "^(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$"},
+              "counter_currency": {"type": "null"},
+              "counter_amount": {"type": "null"},
+              "is_correction": {"const": false}
+            }
+          },
+          {
+            "properties": {
+              "type": {"const": "SPLIT"},
+              "symbol": {"type": "string", "minLength": 1},
+              "quantity": {"$ref": "#/components/schemas/Decimal"},
+              "price": {"type": "null"},
+              "fee": {"type": "null"},
+              "amount": {"const": "0"},
+              "counter_currency": {"type": "null"},
+              "counter_amount": {"type": "null"},
+              "is_correction": {"const": false}
+            }
+          },
+          {
+            "properties": {
+              "type": {"const": "FX_EXCHANGE"},
+              "symbol": {"type": "null"},
+              "quantity": {"type": "null"},
+              "price": {"type": "null"},
+              "fee": {"type": "null"},
+              "amount": {"type": "string", "pattern": "^-(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$"},
+              "counter_currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+              "counter_amount": {"type": "string", "pattern": "^(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$"},
+              "is_correction": {"const": false}
+            }
+          },
+          {
+            "properties": {
+              "type": {"const": "CASH_VOID"},
+              "symbol": {"type": "null"},
+              "quantity": {"type": "null"},
+              "price": {"type": "null"},
+              "fee": {"type": "null"},
+              "counter_currency": {"type": "null"},
+              "counter_amount": {"type": "null"},
+              "is_correction": {"const": true}
+            }
+          },
+          {
+            "properties": {
+              "type": {"enum": ["DEPOSIT", "WITHDRAWAL", "FEE", "TAX"]},
+              "symbol": {"type": "null"},
+              "quantity": {"type": "null"},
+              "price": {"type": "null"},
+              "fee": {"type": "null"},
+              "counter_currency": {"type": "null"},
+              "counter_amount": {"type": "null"},
+              "is_correction": {"const": false}
+            }
+          }
+        ]
+      },
+      "LedgerActivityPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source", "broker_freshness", "ledger_revision", "recorded_at", "events", "next_cursor"],
+        "properties": {
+          "source": {"const": "local_ledger"},
+          "broker_freshness": {"const": "unverified", "description": "This read does not refresh a broker or prove current broker state."},
+          "ledger_revision": {"type": "string", "pattern": "^rev_[0-9]{10}$"},
+          "recorded_at": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
+          "events": {"type": "array", "maxItems": 100, "items": {"$ref": "#/components/schemas/LedgerActivity"}},
+          "next_cursor": {"type": ["string", "null"], "minLength": 1, "maxLength": 1024}
         }
       },
       "LocalOrderView": {

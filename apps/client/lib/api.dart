@@ -10,6 +10,7 @@ abstract interface class OmniApi {
   Future<MarketCandles> candles(String symbol);
   Future<BrokerReconciliation?> latestBrokerReconciliation();
   Future<LocalOrderLog> localOrders();
+  Future<LedgerActivityPage> ledgerActivities();
   Future<ImportPreview> preview(String csv);
   Future<ApplyReceipt> apply(String previewId, String idempotencyKey);
 }
@@ -129,6 +130,10 @@ class RestOmniApi implements OmniApi {
   @override
   Future<LocalOrderLog> localOrders() async =>
       LocalOrderLog.fromJson(await _get('/v1/orders'));
+
+  @override
+  Future<LedgerActivityPage> ledgerActivities() async =>
+      LedgerActivityPage.fromJson(await _get('/v1/ledger/activities'));
 
   @override
   Future<ImportPreview> preview(String csv) async {

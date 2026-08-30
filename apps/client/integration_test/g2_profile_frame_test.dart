@@ -243,6 +243,17 @@ class _ProfileApi implements OmniApi {
   Future<LocalOrderLog> localOrders() async => const LocalOrderLog(orders: []);
 
   @override
+  Future<LedgerActivityPage> ledgerActivities() async =>
+      const LedgerActivityPage(
+        source: 'local_ledger',
+        brokerFreshness: 'unverified',
+        ledgerRevision: 'rev_0000000000',
+        recordedAt: '1970-01-01T00:00:00Z',
+        events: [],
+        nextCursor: null,
+      );
+
+  @override
   Future<PortfolioSnapshot> snapshot() async => _snapshot;
 
   @override

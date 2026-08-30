@@ -17,6 +17,7 @@
 - **Dated execution scan**: 명시한 날짜의 합성 `kt00009` 요청에서 terminal cursor까지 읽은 K2B1 provider-private 결과. `PaginationComplete`는 그 요청의 page 순회만 뜻하고 전체 주문 이력이나 체결 완결성을 뜻하지 않는다. `ExecutionsComplete`는 false이며 `ExecutionClock`은 timezone 없는 `HH:mm:ss`로 보존한다.
 - **Mock submit transport**: 실제 credential이나 외부 broker 호출 없이 공식 `kt10000`/`POST /api/dostk/ordr` 요청·응답을 합성 transport로 검증하는 K2B2 내부 계약. public route/UI, credentialed 관찰, unknown-submit 조회 복구와 live 권한은 포함하지 않는다.
 - **Read model**: 원장과 주문 이벤트에서 결정적으로 다시 만들 수 있는 조회 결과. 모바일 캐시는 read model의 복제본일 뿐 권한자가 아니다.
+- **Ledger activity read view**: 전체 원장 event의 canonical shape와 경제 replay를 같은 read transaction에서 검증한 뒤 type·시각·공개 symbol·exact 금액만 최신순으로 반환하는 G1.9 local read model. revision-bound opaque keyset cursor는 backdated import 중에도 같은 첫 페이지 snapshot을 유지하며 account/event/source/instrument/receipt/correction-target/sequence ID를 노출하지 않는다. `source=local_ledger`, `broker_freshness=unverified`이고 현재 증권사 상태·평가금액·환율·수정 권한을 뜻하지 않는다.
 - **Import preview**: 입력을 쓰지 않고 정규화·검증해 신규, 중복, 오류, 미해결 행과 예상 변화를 보여주는 단계.
 - **Cash-flow ledger event**: `DEPOSIT`·`DIVIDEND`는 양수, `WITHDRAWAL`·`FEE`·`TAX`는 음수 cash impact만 갖는 append-only event. `DIVIDEND`만 instrument provenance를 요구한다.
 - **Stock-split ledger event**: 양수 분할 비율과 0 cash impact로 기존 열린 FIFO lot의 수량만 조정하고 총원가는 보존하는 append-only corporate action. 열린 lot가 없으면 전체 apply를 거절한다.

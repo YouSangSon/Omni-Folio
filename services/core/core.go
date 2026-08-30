@@ -47,12 +47,13 @@ var migrationFiles embed.FS
 var decimalPattern = regexp.MustCompile(`^(?:0|-?(?:[1-9][0-9]*(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9]))$`)
 
 type Service struct {
-	db             *sql.DB
-	now            func() time.Time
-	id             func(string) string
-	ttl            time.Duration
-	marketData     MarketDataPort
-	executionOwner string
+	db                *sql.DB
+	now               func() time.Time
+	id                func(string) string
+	ttl               time.Duration
+	marketData        MarketDataPort
+	executionOwner    string
+	activityCursorKey [32]byte
 }
 
 type APIError struct {
@@ -345,7 +346,12 @@ func migrate(db *sql.DB) error {
 }
 
 func newService(db *sql.DB, now func() time.Time, id func(string) string) *Service {
-	return &Service{db: db, now: now, id: id, ttl: 15 * time.Minute, executionOwner: randomID("execution_owner")}
+	service := &Service{db: db, now: now, id: id, ttl: 15 * time.Minute, executionOwner: randomID("execution_owner")}
+	// ponytail: local single-process cursors expire on restart; inject one shared key before multi-replica pagination.
+	if _, err := rand.Read(service.activityCursorKey[:]); err != nil {
+		panic(err)
+	}
+	return service
 }
 
 func randomID(prefix string) string {
@@ -368,6 +374,7 @@ func (s *Service) routes() http.Handler {
 	mux.HandleFunc("GET /v1/market-data/candles", s.handleMarketDataCandles)
 	mux.HandleFunc("GET /v1/broker-reconciliation/latest", s.handleLatestBrokerReconciliation)
 	mux.HandleFunc("GET /v1/orders", s.handleLocalOrders)
+	mux.HandleFunc("GET /v1/ledger/activities", s.handleLedgerActivities)
 	mux.HandleFunc("POST /v1/imports/preview", s.handlePreview)
 	mux.HandleFunc("POST /v1/imports/apply", s.handleApply)
 	mux.HandleFunc("GET /v1/portfolio/snapshot", s.handleSnapshot)
