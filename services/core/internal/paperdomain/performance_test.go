@@ -37,7 +37,8 @@ func TestValueAccountCashOnlyAndMultiSymbol(t *testing.T) {
 			state:        AccountState{Cash: "101.25", RealizedPnL: "1.25"},
 			closes:       map[string]string{},
 			want: Valuation{
-				Cash: "101.25", RealizedPnL: "1.25", TotalPnL: "1.25", Equity: "101.25",
+				Cash: "101.25", OpenCost: "0", MarketValue: "0", RealizedPnL: "1.25",
+				UnrealizedPnL: "0", TotalPnL: "1.25", Equity: "101.25",
 				Positions: map[string]PositionValuation{},
 			},
 		},
