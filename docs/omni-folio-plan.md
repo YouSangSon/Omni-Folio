@@ -1,6 +1,6 @@
 # Omni Folio 구현 계획
 
-상태: G0·G1·G3 로컬 통과(G3.8C2 SELL·capital-safe paper accounting 구현·태스크 리뷰·fresh local/mock 검증 완료), G2 build/widget/browser·자동 accessibility/reduced-motion 증거 확보 및 physical profile/screen-reader 증거 보강 중
+상태: G0·G1·G3 로컬 통과(G3.8C3 account-global paper performance·recovery 구현·태스크 리뷰·fresh local/mock 검증 완료), G2 build/widget/browser·자동 accessibility/reduced-motion 증거 확보 및 physical profile/screen-reader 증거 보강 중
 기준일: 2026-08-31
 
 ## 목표
@@ -1232,6 +1232,16 @@ The account-global session and current strategy must have the same execution-pol
 
 Schema v17 and backup v11 bind sessions, bars, cutoffs, authorizations, capitalized fills, and canonical replay-derived account state. Backup v10/schema v15 and older supported inputs migrate through owned copies without capitalizing legacy v1/v2 orders. Application/shared fill writers are closed; direct raw SQLite is outside that writer-authority boundary, and recovery/restore activation independently recalculates and rejects forged arithmetic.
 
-Task 1-4 independent reviews closed all scoped findings. Fresh `make check`, `make smoke`, full Go race, `govulncheck`, final documentation diff, and scoped owned-resource cleanup passed on 2026-08-31 KST; exact local/mock evidence is in [`../gates/g3k-paper-fill-accounting.md`](../gates/g3k-paper-fill-accounting.md). Still open under G3.8C3+: immutable order/price cutoffs for valuation, marks, equity, returns, drawdown, performance thresholds, scheduler, automatic halt/rollback, public API/UI, broker/live execution, and promotion authority.
+Task 1-4 independent reviews closed all scoped findings. Fresh `make check`, `make smoke`, full Go race, `govulncheck`, final documentation diff, and scoped owned-resource cleanup passed on 2026-08-31 KST; exact local/mock evidence is in [`../gates/g3k-paper-fill-accounting.md`](../gates/g3k-paper-fill-accounting.md). At this C2 checkpoint, immutable valuation cutoffs, marks, equity, returns, and drawdown were still open; G3.8C3 below supersedes that historical boundary.
 
-After C2 stabilization, a behavior-preserving R1 refactor moved the single canonical decimal/FIFO implementation into an infrastructure-free exact shared kernel and moved pure paper fill/account replay rules into `internal/paperdomain`. SQLite queries, transactions, lease/fencing, provenance validation, journal hashes, recovery, schema, backup, and public/UI contracts remain outside that domain package. Direct malformed fills now fail atomically without changing account state; this closes an internal seam and does not claim G3.8C3 performance evidence.
+After C2 stabilization, a behavior-preserving R1 refactor moved the single canonical decimal/FIFO implementation into an infrastructure-free exact shared kernel and moved pure paper fill/account replay rules into `internal/paperdomain`. SQLite queries, transactions, lease/fencing, provenance validation, journal hashes, recovery, schema, backup, and public/UI contracts remain outside that domain package. Direct malformed fills now fail atomically without changing account state; at that R1 checkpoint G3.8C3 performance evidence was not yet claimed.
+
+## 2026-08-31 G3.8C3 continuation: immutable account-global paper performance evidence
+
+G3.8C3 adds one append-only account-global performance series without copying the accounting algorithm. Each event captures transaction-current order and market cutoffs, exact current strategy-selection provenance including `no_strategy`, and complete same-`as_of` `paper_fixture` KRX/KRW daily-close marks for every open position. Cash-only points still require an eligible cutoff-bounded close anchor, while missing, ambiguous, arbitrary, or future marks fail with zero writes.
+
+Bounded replay uses only capitalized v3 fills at or below the event cutoff whose bound ex-post fill bar closes by `as_of`. It derives exact cash, open cost, market value, realized/unrealized/total PnL and equity, then records scale-8 half-even period/cumulative returns and drawdown from unrounded rational values. Strategy selection and rollback never reset the session baseline, account state, predecessor, peak, or max drawdown.
+
+Schema v18 and backup v12 independently reconstruct every cutoff, mark, value, predecessor, canonical JSON, and hash. Backup v11/schema v17 remains the historical C2 input: its source is verified first, then an owned copy migrates to an empty C3 log without synthesizing performance history. Fresh focused/full race, `make check`, `make smoke`, `govulncheck ./...`, `git diff --check`, independent review, and owned-resource cleanup evidence is in [`../gates/g3l-paper-performance-evidence.md`](../gates/g3l-paper-performance-evidence.md).
+
+Still open: versioned performance thresholds, scheduler, automatic halt/rollback provenance, public API/UI, broker-backed evaluation, credentials/live execution, deployment, promotion authority, and any profitability claim.
