@@ -11,6 +11,8 @@ import (
 	"math/big"
 	"strings"
 	"time"
+
+	"omni-folio/services/core/internal/paperdomain"
 )
 
 const paperAccountingSessionSchema = "paper-accounting-session.v1"
@@ -33,28 +35,8 @@ type paperAccountingRecoveryProof struct {
 	Sessions, MarketBars, Signals, Authorizations, CapitalizedFills int
 }
 
-type paperLotState struct {
-	Quantity string
-	Cost     string
-}
-
-type paperAccountState struct {
-	AccountRef, PaperAccountingSessionID, Cash string
-	Lots                                       map[string][]paperLotState
-	Fees, Taxes, Slippage, RealizedPnL         string
-	CapitalizedFills                           int
-}
-
-type paperReplayLot struct {
-	quantity, cost *big.Rat
-}
-
-type paperReplayAccount struct {
-	session                          *PaperAccountingSession
-	cash, fees, taxes, slippage, pnl *big.Rat
-	lots                             map[string][]paperReplayLot
-	capitalizedFills                 int
-}
+type paperLotState = paperdomain.Lot
+type paperAccountState = paperdomain.AccountState
 
 func (s *Service) openPaperAccountingSession(ctx context.Context, accountRef, resultSHA256, selectionEventID string) (*PaperAccountingSession, error) {
 	if s == nil || s.db == nil || !orderAlias(accountRef, "account") ||
@@ -273,7 +255,7 @@ func replayPaperAccounting(ctx context.Context, q orderQuerier) (map[string]pape
 }
 
 func replayPaperAccountingState(ctx context.Context, q orderQuerier) (map[string]paperAccountState, error) {
-	accounts := map[string]*paperReplayAccount{}
+	accounts := map[string]*paperdomain.Account{}
 	rows, err := q.QueryContext(ctx, `SELECT account_ref FROM paper_accounting_sessions ORDER BY sequence`)
 	if err != nil {
 		return nil, err
@@ -295,13 +277,9 @@ func replayPaperAccountingState(ctx context.Context, q orderQuerier) (map[string
 		if err != nil || !found {
 			return nil, fmt.Errorf("load paper accounting session %q: %w", accountRef, err)
 		}
-		cash, err := parseDecimal(session.StartingCash)
-		if err != nil || cash.Sign() < 0 {
-			return nil, errors.New("paper accounting starting cash is invalid")
-		}
-		accounts[accountRef] = &paperReplayAccount{
-			session: session, cash: cash, fees: new(big.Rat), taxes: new(big.Rat), slippage: new(big.Rat),
-			pnl: new(big.Rat), lots: map[string][]paperReplayLot{},
+		accounts[accountRef], err = paperdomain.NewAccount(accountRef, session.SessionID, session.StartingCash)
+		if err != nil {
+			return nil, err
 		}
 	}
 	if err := validatePaperIntentDeltas(ctx, q); err != nil {
@@ -384,7 +362,10 @@ func replayPaperAccountingState(ctx context.Context, q orderQuerier) (map[string
 			return nil, errors.New("capitalized paper fill provenance does not match its evidence")
 		}
 		account := accounts[intent.AccountRef]
-		if account == nil || account.session.SessionID != session.SessionID {
+		if account == nil {
+			return nil, errors.New("capitalized paper fill account session is missing")
+		}
+		if account.SessionID() != session.SessionID {
 			return nil, errors.New("capitalized paper fill account session is missing")
 		}
 		if orderFilled[stored.orderID] == nil {
@@ -392,7 +373,7 @@ func replayPaperAccountingState(ctx context.Context, q orderQuerier) (map[string
 		}
 		total, _ := new(big.Int).SetString(intent.Quantity, 10)
 		remaining := new(big.Int).Sub(total, orderFilled[stored.orderID])
-		position := paperReplayPosition(account, intent.Symbol)
+		position := account.PositionQuantity(intent.Symbol)
 		candidates, err := paperFillBars(ctx, q, *signal, policy.DelayBars)
 		if err != nil {
 			return nil, err
@@ -400,7 +381,7 @@ func replayPaperAccountingState(ctx context.Context, q orderQuerier) (map[string
 		if usedByOrder[stored.orderID] == nil {
 			usedByOrder[stored.orderID] = map[string]bool{}
 		}
-		var calculated paperCalculatedFill
+		var calculated paperdomain.Fill
 		var expectedBar *PaperMarketBarObservation
 		for _, candidate := range candidates {
 			if usedByOrder[stored.orderID][candidate.ObservationID] {
@@ -410,9 +391,9 @@ func replayPaperAccountingState(ctx context.Context, q orderQuerier) (map[string
 			if consumedByBar[candidateKey] == nil {
 				consumedByBar[candidateKey] = new(big.Int)
 			}
-			candidateFill, ok, err := calculatePaperFill(policy, paperFillInput{
+			candidateFill, ok, err := paperdomain.CalculateFill(paperExecutionPolicy(policy), paperdomain.FillInput{
 				Side: intent.Side, Open: candidate.Open, Volume: candidate.Volume, RemainingQuantity: remaining.String(),
-				Cash: mustFormatPaperRat(account.cash), PositionQuantity: position.String(), ConsumedCapacity: consumedByBar[candidateKey].String(),
+				Cash: account.Cash(), PositionQuantity: position, ConsumedCapacity: consumedByBar[candidateKey].String(),
 			})
 			if err != nil {
 				return nil, err
@@ -430,7 +411,7 @@ func replayPaperAccountingState(ctx context.Context, q orderQuerier) (map[string
 			event.Fee != calculated.Fee || event.Tax != calculated.Tax || event.Slippage != calculated.Slippage {
 			return nil, errors.New("stored capitalized paper fill calculation mismatch")
 		}
-		if err := applyPaperCalculatedFill(account, intent.Symbol, intent.Side, calculated); err != nil {
+		if err := account.ApplyFill(intent.Symbol, intent.Side, calculated); err != nil {
 			return nil, err
 		}
 		quantity, _ := new(big.Int).SetString(calculated.Quantity, 10)
@@ -440,7 +421,7 @@ func replayPaperAccountingState(ctx context.Context, q orderQuerier) (map[string
 	}
 	result := make(map[string]paperAccountState, len(accounts))
 	for accountRef, account := range accounts {
-		state, err := formatPaperAccountState(accountRef, account)
+		state, err := account.State()
 		if err != nil {
 			return nil, err
 		}
@@ -581,110 +562,6 @@ func validatePaperFillAuthority(ctx context.Context, q orderQuerier, accountRef 
 		return executionAuthoritySnapshot{}, errors.New("paper fill is outside its execution lease")
 	}
 	return executionAuthoritySnapshot{ExecutionAuthorityState: *authorityState(record), EventID: record.EventID}, nil
-}
-
-func paperReplayPosition(account *paperReplayAccount, symbol string) *big.Int {
-	position := new(big.Int)
-	for _, lot := range account.lots[symbol] {
-		position.Add(position, lot.quantity.Num())
-	}
-	return position
-}
-
-func applyPaperCalculatedFill(account *paperReplayAccount, symbol, side string, fill paperCalculatedFill) error {
-	quantity, err := parseDecimal(fill.Quantity)
-	if err != nil || !quantity.IsInt() {
-		return errors.New("paper fill quantity is invalid")
-	}
-	fee, _ := parseDecimal(fill.Fee)
-	tax, _ := parseDecimal(fill.Tax)
-	slippage, _ := parseDecimal(fill.Slippage)
-	cashDelta, _ := parseDecimal(fill.CashDelta)
-	account.cash.Add(account.cash, cashDelta)
-	account.fees.Add(account.fees, fee)
-	account.taxes.Add(account.taxes, tax)
-	account.slippage.Add(account.slippage, slippage)
-	if account.cash.Sign() < 0 {
-		return errors.New("paper fill makes cash negative")
-	}
-	if side == "BUY" {
-		cost := new(big.Rat).Neg(cashDelta)
-		account.lots[symbol] = append(account.lots[symbol], paperReplayLot{quantity: quantity, cost: cost})
-	} else {
-		remaining := new(big.Rat).Set(quantity)
-		allocated := new(big.Rat)
-		lots := account.lots[symbol]
-		for remaining.Sign() > 0 && len(lots) > 0 {
-			take := new(big.Rat).Set(remaining)
-			if take.Cmp(lots[0].quantity) > 0 {
-				take.Set(lots[0].quantity)
-			}
-			cost, err := fifoCostAllocation(lots[0].cost, take, lots[0].quantity)
-			if err != nil {
-				return err
-			}
-			allocated.Add(allocated, cost)
-			lots[0].quantity.Sub(lots[0].quantity, take)
-			lots[0].cost.Sub(lots[0].cost, cost)
-			remaining.Sub(remaining, take)
-			if lots[0].quantity.Sign() == 0 {
-				lots = lots[1:]
-			}
-		}
-		if remaining.Sign() != 0 {
-			return errors.New("paper SELL exceeds FIFO lots")
-		}
-		if len(lots) == 0 {
-			delete(account.lots, symbol)
-		} else {
-			account.lots[symbol] = lots
-		}
-		account.pnl.Add(account.pnl, new(big.Rat).Sub(cashDelta, allocated))
-	}
-	account.capitalizedFills++
-	return nil
-}
-
-func formatPaperAccountState(accountRef string, account *paperReplayAccount) (paperAccountState, error) {
-	state := paperAccountState{
-		AccountRef: accountRef, PaperAccountingSessionID: account.session.SessionID, Lots: map[string][]paperLotState{},
-		CapitalizedFills: account.capitalizedFills,
-	}
-	var err error
-	if state.Cash, err = formatDecimal(account.cash); err != nil {
-		return paperAccountState{}, err
-	}
-	if state.Fees, err = formatDecimal(account.fees); err != nil {
-		return paperAccountState{}, err
-	}
-	if state.Taxes, err = formatDecimal(account.taxes); err != nil {
-		return paperAccountState{}, err
-	}
-	if state.Slippage, err = formatDecimal(account.slippage); err != nil {
-		return paperAccountState{}, err
-	}
-	if state.RealizedPnL, err = formatDecimal(account.pnl); err != nil {
-		return paperAccountState{}, err
-	}
-	for symbol, lots := range account.lots {
-		for _, lot := range lots {
-			quantity, err := formatDecimal(lot.quantity)
-			if err != nil {
-				return paperAccountState{}, err
-			}
-			cost, err := formatDecimal(lot.cost)
-			if err != nil {
-				return paperAccountState{}, err
-			}
-			state.Lots[symbol] = append(state.Lots[symbol], paperLotState{Quantity: quantity, Cost: cost})
-		}
-	}
-	return state, nil
-}
-
-func mustFormatPaperRat(value *big.Rat) string {
-	formatted, _ := formatDecimal(value)
-	return formatted
 }
 
 func validateStoredPaperAccountingSession(ctx context.Context, q orderQuerier, session PaperAccountingSession, recordSHA, recordJSON string) error {

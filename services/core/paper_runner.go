@@ -12,6 +12,8 @@ import (
 	"math/big"
 	"strings"
 	"time"
+
+	"omni-folio/services/core/internal/paperdomain"
 )
 
 const (
@@ -300,7 +302,7 @@ func (s *Service) runPaperOrder(ctx context.Context, orderID string, fencingToke
 		position.Add(position, quantity)
 	}
 	var bar *PaperMarketBarObservation
-	var calculated paperCalculatedFill
+	var calculated paperdomain.Fill
 	for _, candidate := range candidates {
 		if usedBars[candidate.ObservationID] {
 			continue
@@ -309,7 +311,7 @@ func (s *Service) runPaperOrder(ctx context.Context, orderID string, fencingToke
 		if err != nil {
 			return nil, err
 		}
-		candidateFill, fillOK, err := calculatePaperFill(policy, paperFillInput{
+		candidateFill, fillOK, err := paperdomain.CalculateFill(paperExecutionPolicy(policy), paperdomain.FillInput{
 			Side: intent.Side, Open: candidate.Open, Volume: candidate.Volume, RemainingQuantity: remaining.String(), Cash: account.Cash,
 			PositionQuantity: position.String(), ConsumedCapacity: consumed.String(),
 		})

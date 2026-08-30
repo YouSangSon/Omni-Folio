@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"omni-folio/services/core/internal/paperdomain"
 )
 
 func TestG38C2PaperAccountingExactBuyAndSell(t *testing.T) {
@@ -770,7 +772,7 @@ func g38c2ForgedPaperFill(t *testing.T, delayBars int64) (*Service, OrderEvent) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	calculated, ok, err := calculatePaperFill(policy, paperFillInput{
+	calculated, ok, err := paperdomain.CalculateFill(paperExecutionPolicy(policy), paperdomain.FillInput{
 		Side: "BUY", Open: bar.Open, Volume: bar.Volume, RemainingQuantity: order.Quantity,
 		Cash: session.StartingCash, ConsumedCapacity: "0",
 	})

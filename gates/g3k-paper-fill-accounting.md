@@ -15,6 +15,7 @@ Scope: credential-free, ex-post paper BUY/SELL fills with exact replay-derived K
 - [x] Schema v17 and backup v11 bind sessions, bars, signal cutoffs, authorizations, capitalized fills, and canonical replay-derived account state. Backup v10/schema v15 and older supported inputs migrate only through an owned copy; legacy paper evidence is not capitalized.
 - [x] Application/shared writers cannot append a capitalized fill outside the replay-before-write path. Direct raw SQLite access is outside that writer authority boundary: SQL guards structure and provenance, while independent recovery and restore activation reject canonical-looking rows with forged arithmetic.
 - [x] Task 1-4 independent reviews closed every scoped Critical/Major/Important/Minor finding after bounded fix and re-review rounds. The later `orderdomain` extraction preserves the reviewed transition behavior but is not itself C2 completion proof.
+- [x] The later R1 refactor moves the already-proven exact arithmetic and pure paper fill/account rules into infrastructure-free internal domain packages. Direct invalid fills are fail-atomic; SQL, transaction, lease, provenance, durable journal, recovery, schema, backup, and public contracts remain unchanged. This is maintainability evidence, not new C2 or C3 product authority.
 - [x] No API, CLI, UI, scheduler, credential, broker request, general-ledger write, live order, external resource, push, merge, or deployment is part of this gate.
 
 ## Implementation and Task-Review Evidence
@@ -22,6 +23,7 @@ Scope: credential-free, ex-post paper BUY/SELL fills with exact replay-derived K
 - Design and implementation range: `6e10067..a55a3d0`; Task 1-4 final re-reviews report no remaining scoped findings.
 - Focused C2/accounting, backup/restore, K2C/G3 regressions and full core race evidence are recorded in the ignored SDD task reports. These are implementation-task records, not fresh Task 5 final command evidence.
 - Characterization and `internal/orderdomain` extraction commits `b4c7c02..bfe4a6c` are separately scoped refactoring evidence.
+- Exact-kernel checkpoint `c108300` and the subsequent `internal/paperdomain` checkpoint have direct RED/GREEN suites, exact production-import allowlists, full/race regressions, and independent GO reviews. They do not add marks, equity, returns, drawdown, broker execution, or live authority.
 
 ## Fresh Final Verification — 2026-08-31 KST
 
@@ -36,6 +38,13 @@ Scope: credential-free, ex-post paper BUY/SELL fills with exact replay-derived K
 - [x] Untrappable-exit recovery — a SIGKILL fixture left one owner-marked smoke root; the next smoke preflight removed it, then its intentional build failure also left no owned root or listener. `make test-resource-cleanup` preserves a live-owner fixture while reclaiming a dead-owner root and its exact-path server process.
 
 These are local/mock evidence only. They do not establish broker connectivity, profit, deploy, production, or G3.8C3 performance evidence.
+
+## Post-R1 Boundary Verification — 2026-08-31 KST
+
+- [x] Direct `internal/exact` and `internal/paperdomain` RED/GREEN suites, focused C2 recovery/restore regressions, full Go tests, and two independent full race runs passed after the final review fix.
+- [x] Independent exact-kernel and paper-domain reviews ended GO with no remaining severity finding; the paper review's malformed side/tax/cash-delta finding was closed by fail-atomic preflight examples.
+- [x] `make check`, `make smoke`, `govulncheck ./...`, and `git diff --check` passed on the final R1 tree.
+- [x] Post-run cleanup found no `:18080` listener, Omni-Folio test/smoke temp root, owned build/coverage/Python-cache artifact, labeled Podman container, or Omni-Folio Kind cluster.
 
 ## Still Open
 

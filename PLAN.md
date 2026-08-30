@@ -57,6 +57,7 @@
 - [x] G3.8B Go-trusted execution-policy contract: Go registry·복구 공통 디코더가 연구 산출물의 exact execution fields, canonical decimal, 범위와 close-signal/next-open-fill 의미를 Python과 독립적으로 검증하며 공개 result schema도 같은 구조를 강제
 - [x] G3.8C1 immutable paper accounting session: 계좌별 최초 선택 artifact에서만 starting cash와 전체 execution policy를 파생해 schema v15/backup v10의 insert-only 복구 증명으로 보존; strategy 변경은 reset하지 않고 legacy paper order는 replay-only·uncapitalized로 유지
 - [x] G3.8C2 ex-post closed-bar open·persisted sequence cutoff에 묶인 target reduction/SELL, KRX whole-share participation, fixed per-fill fee·SELL tax·adverse slippage, account-global session policy equality, one-active-order ceiling, current lease/fence, sole `FILL_RECORDED` journal의 replay-derived cash/FIFO/PnL, oversell/overdraft 및 schema v17/backup v11 복구 보호
+- [x] G3.8C2-R1 동작 보존형 domain 경계: exact decimal/FIFO shared kernel과 순수 paper fill·cash·FIFO·PnL `paperdomain`을 분리하고, 잘못된 직접 fill은 상태 무변경으로 fail-closed하며 SQL·lease·provenance·recovery orchestration은 application에 유지
 - [ ] G3.8C3 immutable order/price cutoff, marks, equity, returns, drawdown
 - [ ] G3.8C3 이후 versioned performance thresholds와 자동 halt/rollback provenance
 - [ ] strategy/risk/paper runner와 자동 paper/shadow promotion evidence

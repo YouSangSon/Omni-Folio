@@ -69,7 +69,7 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 
 - 기능은 실패하는 도메인 예제부터 시작해 `RED → 최소 GREEN → 리팩터링 → 회귀·race·복원 검증 → 독립 리뷰` 순서로 완성한다. 금액, 주문 권한, 체결, 원장, migration 변경은 실패 증거 없이 구현부터 추가하지 않는다.
 - bounded context는 `instrument/listing`, `ledger/portfolio`, `market data`, `order/execution`, `strategy/portfolio construction`, `risk/automation`, `broker integration`으로 구분한다. 서로의 저장 테이블이나 공급자 DTO를 직접 읽지 않고 versioned command, event, query contract로 협력한다.
-- 의존성 방향은 `domain → 없음`, `application/use case → domain과 port`, `adapter/infrastructure → port 구현`, `delivery/UI → versioned application contract`로 고정한다. 도메인 규칙은 Flutter, HTTP, SQLite, broker SDK, 환경변수와 credential을 참조하지 않는다.
+- 의존성 방향은 `domain → Go stdlib와 검증된 순수 shared kernel만`, `application/use case → domain과 port`, `adapter/infrastructure → port 구현`, `delivery/UI → versioned application contract`로 고정한다. shared kernel은 exact decimal·FIFO primitive처럼 둘 이상의 실제 domain 규칙이 이미 재사용하고 infrastructure를 전혀 참조하지 않을 때만 만들며 production import allowlist로 고정한다. 도메인 규칙은 다른 bounded-context application, Flutter, HTTP, SQLite, broker SDK, 환경변수와 credential을 참조하지 않는다.
 - exact 금액·수량 계산, 주문 상태 전이, 목표 수량, 위험 한도, FIFO와 회계 불변식은 가능한 한 순수하고 결정적인 domain 함수로 둔다. transaction, lease/fencing, durable append, retry와 외부 호출 순서는 application use case가 조정하고 SQLite·Kiwoom·Toss 구현은 adapter가 담당한다.
 - 테스트 피라미드는 domain 예제/속성 테스트, application use-case 테스트, port 공통 contract test, adapter 통합·migration/restore 테스트, 소수의 Flutter/API E2E로 구성한다. broker adapter는 같은 contract suite를 통과해야 하며 in-memory fake만 통과한 결과를 운영 증거로 승격하지 않는다.
 - 현재 시작점은 배포 가능한 modular monolith다. 패키지와 프로세스는 실제 응집도·변경 빈도·성능·장애 격리 증거가 생길 때 경계별로 분리하되, DB transaction을 분산시키거나 network hop을 늘리는 microservice 분리는 측정과 운영 근거 없이는 하지 않는다.

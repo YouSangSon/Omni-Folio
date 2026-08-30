@@ -3,6 +3,8 @@ package main
 import (
 	"math/big"
 	"testing"
+
+	"omni-folio/services/core/internal/paperdomain"
 )
 
 func TestArchitectureFIFOAllocationExactExamples(t *testing.T) {
@@ -30,10 +32,10 @@ func TestArchitectureFIFOAllocationExactExamples(t *testing.T) {
 
 func TestArchitecturePaperFillAndAccountingPureExamples(t *testing.T) {
 	policy := strategyExecutionPolicy{Fee: "1", Tax: "0.001", SlippageBPS: "10", MaxParticipation: "0.5"}
-	calculated, ok, err := calculatePaperFill(policy, paperFillInput{
+	calculated, ok, err := paperdomain.CalculateFill(paperExecutionPolicy(policy), paperdomain.FillInput{
 		Side: "BUY", Open: "100", Volume: "5", RemainingQuantity: "10", Cash: "10000", ConsumedCapacity: "0",
 	})
-	wantCalculated := paperCalculatedFill{
+	wantCalculated := paperdomain.Fill{
 		Quantity: "2", ReferencePrice: "100", Price: "100.1", Notional: "200.2",
 		Fee: "1", Tax: "0", Slippage: "0.2", CashDelta: "-201.2",
 	}
@@ -41,26 +43,25 @@ func TestArchitecturePaperFillAndAccountingPureExamples(t *testing.T) {
 		t.Fatalf("fill=%+v ok=%v err=%v want=%+v", calculated, ok, err, wantCalculated)
 	}
 
-	account := &paperReplayAccount{
-		session: &PaperAccountingSession{SessionID: "architecture-paper-session"},
-		cash:    big.NewRat(1000, 1), fees: new(big.Rat), taxes: new(big.Rat), slippage: new(big.Rat), pnl: new(big.Rat),
-		lots: map[string][]paperReplayLot{},
+	account, err := paperdomain.NewAccount("paper-account", "architecture-paper-session", "1000")
+	if err != nil {
+		t.Fatal(err)
 	}
 	steps := []struct {
 		side string
-		fill paperCalculatedFill
+		fill paperdomain.Fill
 	}{
-		{"BUY", paperCalculatedFill{Quantity: "2", Fee: "1", Tax: "0", Slippage: "0.2", CashDelta: "-201.2"}},
-		{"BUY", paperCalculatedFill{Quantity: "1", Fee: "1", Tax: "0", Slippage: "0.15", CashDelta: "-151.15"}},
-		{"SELL", paperCalculatedFill{Quantity: "1", Fee: "1", Tax: "0.12", Slippage: "0.1", CashDelta: "120"}},
-		{"SELL", paperCalculatedFill{Quantity: "2", Fee: "1", Tax: "0.3", Slippage: "0.2", CashDelta: "300"}},
+		{"BUY", paperdomain.Fill{Quantity: "2", Fee: "1", Tax: "0", Slippage: "0.2", CashDelta: "-201.2"}},
+		{"BUY", paperdomain.Fill{Quantity: "1", Fee: "1", Tax: "0", Slippage: "0.15", CashDelta: "-151.15"}},
+		{"SELL", paperdomain.Fill{Quantity: "1", Fee: "1", Tax: "0.12", Slippage: "0.1", CashDelta: "120"}},
+		{"SELL", paperdomain.Fill{Quantity: "2", Fee: "1", Tax: "0.3", Slippage: "0.2", CashDelta: "300"}},
 	}
 	for _, step := range steps {
-		if err := applyPaperCalculatedFill(account, "005930", step.side, step.fill); err != nil {
+		if err := account.ApplyFill("005930", step.side, step.fill); err != nil {
 			t.Fatal(err)
 		}
 	}
-	state, err := formatPaperAccountState("paper-account", account)
+	state, err := account.State()
 	if err != nil {
 		t.Fatal(err)
 	}

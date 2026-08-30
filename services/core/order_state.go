@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"omni-folio/services/core/internal/orderdomain"
+	"omni-folio/services/core/internal/paperdomain"
 )
 
 var (
@@ -473,7 +474,7 @@ func validateOrderIntent(intent OrderIntent) error {
 	}
 	capitalized := intent.Mode == "paper" && intent.SignalSchemaVersion == capitalizedPaperSignalSchema
 	if capitalized {
-		if intent.OrderType != "PAPER_MARKET" || intent.LimitPrice != "" || !validCapitalizedPaperQuantity(intent.Quantity, false) {
+		if intent.OrderType != "PAPER_MARKET" || intent.LimitPrice != "" || !paperdomain.ValidCapitalizedQuantity(intent.Quantity, false) {
 			return errors.New("capitalized paper order must be PAPER_MARKET without a limit price")
 		}
 	} else {
@@ -585,7 +586,7 @@ func validateOrderEvent(event OrderEvent) error {
 				!safeOrderID(event.PaperAuthorizationID) || event.FencingToken <= 0 || !safeOrderID(event.PaperAccountingSessionID) ||
 				!safeOrderID(event.PaperSignalEventID) || !safeOrderID(event.PaperBarObservationID) ||
 				event.PaperFillPolicyVersion != paperFillPolicyVersion || !safeOrderID(event.ExecutionAuthorityEventID) ||
-				!validCapitalizedPaperQuantity(event.Quantity, false) {
+				!paperdomain.ValidCapitalizedQuantity(event.Quantity, false) {
 				return errors.New("capitalized paper fill provenance is invalid")
 			}
 			for _, raw := range []string{event.ReferencePrice, event.Fee, event.Tax, event.Slippage} {

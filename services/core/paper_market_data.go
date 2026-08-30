@@ -11,6 +11,8 @@ import (
 	"math/big"
 	"strings"
 	"time"
+
+	"omni-folio/services/core/internal/paperdomain"
 )
 
 const (
@@ -563,7 +565,9 @@ func samePaperSignalInput(event PaperSignalEvent, signal PaperSignal) bool {
 		event.GeneratedAt == signal.GeneratedAt && event.ExpiresAt == signal.ExpiresAt
 }
 
-func validPaperTargetQuantity(raw string) bool { return validCapitalizedPaperQuantity(raw, true) }
+func validPaperTargetQuantity(raw string) bool {
+	return paperdomain.ValidCapitalizedQuantity(raw, true)
+}
 
 func canonicalPaperTime(raw string) (string, bool) {
 	value, ok := parsePaperTime(raw)
