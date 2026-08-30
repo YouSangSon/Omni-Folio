@@ -312,7 +312,7 @@ func TestK2AOrderTablesAreInsertOnly(t *testing.T) {
 	}
 }
 
-func TestSchemaMigratesV1ToV13AndReadinessRequiresV13(t *testing.T) {
+func TestSchemaMigratesV1ToV14AndReadinessRequiresV14(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v1.db")
 	db, err := openDB(path)
 	if err != nil {
@@ -340,8 +340,8 @@ func TestSchemaMigratesV1ToV13AndReadinessRequiresV13(t *testing.T) {
 	if err := db.QueryRow(`SELECT MAX(version), COUNT(*) FROM schema_migrations`).Scan(&version, &migrations); err != nil {
 		t.Fatal(err)
 	}
-	if version != 13 || migrations != 13 {
-		t.Fatalf("schema version=(%d,%d), want latest=13 with thirteen migrations", version, migrations)
+	if version != 14 || migrations != 14 {
+		t.Fatalf("schema version=(%d,%d), want latest=14 with fourteen migrations", version, migrations)
 	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM events WHERE event_id='preserved'`).Scan(&preserved); err != nil || preserved != 1 {
 		t.Fatalf("v1 data was not preserved: count=%d err=%v", preserved, err)
@@ -357,7 +357,7 @@ func TestSchemaMigratesV1ToV13AndReadinessRequiresV13(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name='events_cash_void_guard'`).Scan(&guard); err != nil || guard != 1 {
 		t.Fatalf("v9 cash-void guard is missing: count=%d err=%v", guard, err)
 	}
-	for _, table := range []string{"order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events"} {
+	for _, table := range []string{"order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "paper_evaluation_events"} {
 		var exists int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&exists); err != nil || exists != 1 {
 			t.Fatalf("migration did not create %s: exists=%d err=%v", table, exists, err)
@@ -379,7 +379,7 @@ func TestSchemaMigratesV1ToV13AndReadinessRequiresV13(t *testing.T) {
 	w := httptest.NewRecorder()
 	svc.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if w.Code != http.StatusOK {
-		t.Fatalf("v13 schema was not ready: status=%d body=%s", w.Code, w.Body.String())
+		t.Fatalf("v14 schema was not ready: status=%d body=%s", w.Code, w.Body.String())
 	}
 }
 

@@ -1,17 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://omni-folio.local/contracts/backup-manifest.v8.schema.json",
-  "title": "Omni-Folio Backup Manifest v8",
-  "description": "CLI contract for a separately restored schema-v13 backup candidate. Legacy v5/schema-v8 or schema-v9, v6/schema-v10, and v7/schema-v11 or schema-v12 artifacts are accepted only through an owned migrated copy. Schema validity never authorizes replacing the active DB: database, ledger snapshot, replayable order state, execution authority, risk reservations, known-good broker snapshots, strategy-registry, direct FX-observation, security-price-observation, and instrument-listing proofs must match and verification_receipt must be verified and eligible_for_activation before replacement.",
+  "$id": "https://omni-folio.local/contracts/backup-manifest.v9.schema.json",
+  "title": "Omni-Folio Backup Manifest v9",
+  "description": "CLI contract for a separately restored schema-v14 backup candidate. Legacy v5/schema-v8 or schema-v9, v6/schema-v10, v7/schema-v11 or schema-v12, and v8/schema-v13 artifacts are accepted only through an owned migrated copy. Schema validity never authorizes replacing the active DB: database, ledger snapshot, replayable order state, execution authority, risk reservations, known-good broker snapshots, strategy-registry including paper operational evaluations, direct FX-observation, security-price-observation, and instrument-listing proofs must match and verification_receipt must be verified and eligible_for_activation before replacement.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["format_version", "schema_version", "created_at", "source_ledger_revision", "order_state_sha256", "order_count", "order_event_count", "execution_authority_sha256", "execution_authority_event_count", "risk_reservation_sha256", "risk_reservation_count", "broker_state_sha256", "broker_snapshot_count", "broker_reconciliation_count", "strategy_registry_sha256", "strategy_evidence_count", "strategy_selection_event_count", "selected_strategy_result_sha256", "fx_observation_state_sha256", "fx_observation_count", "security_price_observation_state_sha256", "security_price_observation_count", "instrument_listing_state_sha256", "instrument_listing_event_count", "active_instrument_listing_count", "db_sha256", "size_bytes", "expected_snapshot_sha256", "encryption", "verification_receipt"],
+  "required": ["format_version", "schema_version", "created_at", "source_ledger_revision", "order_state_sha256", "order_count", "order_event_count", "execution_authority_sha256", "execution_authority_event_count", "risk_reservation_sha256", "risk_reservation_count", "broker_state_sha256", "broker_snapshot_count", "broker_reconciliation_count", "strategy_registry_sha256", "strategy_evidence_count", "strategy_selection_event_count", "paper_evaluation_event_count", "selected_strategy_result_sha256", "fx_observation_state_sha256", "fx_observation_count", "security_price_observation_state_sha256", "security_price_observation_count", "instrument_listing_state_sha256", "instrument_listing_event_count", "active_instrument_listing_count", "db_sha256", "size_bytes", "expected_snapshot_sha256", "encryption", "verification_receipt"],
   "properties": {
     "format_version": {
-      "const": "omni-folio-backup.v8"
+      "const": "omni-folio-backup.v9"
     },
     "schema_version": {
-      "const": "omni-folio.sqlite.v13"
+      "const": "omni-folio.sqlite.v14"
     },
     "created_at": {
       "$ref": "#/$defs/timestamp"
@@ -70,6 +70,11 @@
       "maximum": 9007199254740991
     },
     "strategy_selection_event_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "paper_evaluation_event_count": {
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991

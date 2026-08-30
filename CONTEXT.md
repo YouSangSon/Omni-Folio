@@ -46,6 +46,7 @@
 - **Strategy order binding**: 전략이 만든 주문 intent에 선택 result SHA와 exact selection event ID를 함께 보존하는 G3.5 fencing 계약. 신규 intent 기록과 durable dispatch 시점 모두 현재 registry replay와 일치해야 한다.
 - **Paper signal**: 선택된 전략 result·exact selection event, 입력 data hash, 생성·만료 시각, 종목과 목표 수량을 묶은 `paper-signal.v2` 내부 명령. 계좌·방향·주문 수량·가격이나 broker 주문 권한을 갖지 않는다.
 - **Paper execution adapter**: 실제 broker 호출 없이 한 시점의 local fixture ask와 가용 수량을 공통 주문 상태 머신의 결정적 ACK·부분/완전 체결 event로 바꾸는 G3.6 adapter.
+- **Paper operational evaluation**: G3.8A가 현재 선택·계좌에 묶인 paper 주문 전체를 replay해 완료 표본, 진행 중 상태, 미확정 submit/cancel을 append-only로 기록하는 운영 증거. 현금·가격 평가·수수료·세금·slippage가 없으므로 수익률, drawdown, 수익성 또는 자동 rollback 근거를 뜻하지 않는다.
 - **`no_promotion` / `no_strategy`**: 전자는 한 실험의 gate 실패 결과, 후자는 현재 선택이 없다는 registry sentinel이다.
 - **Live-disabled**: 어떤 UI 설정이나 프로세스 시작만으로도 실주문이 나갈 수 없는 기본 실행 상태.
 
@@ -59,6 +60,7 @@
 - 신규 paper intent 기록은 현재 process가 소유한 만료 전 lease와 exact fencing token을 검증하고 K2C 승인·durable dispatch까지 같은 transaction에 append한다. 수동 strategy rollback은 모든 활성 execution authority를 fencing halt하고 rollback event를 같은 transaction에 append하며, 어느 한 기록이라도 실패하면 둘 다 남기지 않는다.
 - Go는 같은 paper 계좌·종목의 체결 수량과 미완결 BUY 전체 수량을 목표에서 원자적으로 차감해 양수 delta만 `OrderIntent`로 만든다. 동시·반복 신호는 같은 목표를 중복 주문하지 않으며 `paper-signal.v1`은 복구만 허용한다.
 - paper mode는 Kiwoom mock/production transport에 진입하지 않는다. G3.6의 local fixture 체결은 수수료·세금·slippage·quote stream·실제 성능 또는 live parity를 증명하지 않는다.
+- G3.8A 평가는 caller metric을 받지 않고 검증된 주문 replay에서만 `INSUFFICIENT`, `PASS`, `DEGRADED`를 산출한다. `DEGRADED` 기록은 strategy selection이나 execution authority를 바꾸지 않으며, 자동 중단·rollback은 별도 성과·정책 gate 전에는 허용하지 않는다.
 - 주문 timeout은 실패가 아니라 결과 미확정 상태다. 같은 식별자로 조회·reconcile하기 전 재주문하지 않는다.
 - offline 상태에서 주문을 큐에 넣지 않는다.
 - 삭제나 덮어쓰기 대신 correction/event append를 기본으로 한다.

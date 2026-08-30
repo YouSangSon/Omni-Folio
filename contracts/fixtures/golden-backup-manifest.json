@@ -1,6 +1,6 @@
 {
-  "format_version": "omni-folio-backup.v8",
-  "schema_version": "omni-folio.sqlite.v13",
+  "format_version": "omni-folio-backup.v9",
+  "schema_version": "omni-folio.sqlite.v14",
   "created_at": "2026-01-10T15:02:00Z",
   "source_ledger_revision": "rev_0000000003",
   "order_state_sha256": "34b0bc819983f2fa08ee5e702db8aa5194bd2b2915dc389801b55cac79ed10a8",
@@ -16,6 +16,7 @@
   "strategy_registry_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "strategy_evidence_count": 0,
   "strategy_selection_event_count": 0,
+  "paper_evaluation_event_count": 0,
   "selected_strategy_result_sha256": "no_strategy",
   "fx_observation_state_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "fx_observation_count": 0,

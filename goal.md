@@ -49,6 +49,7 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 - 각 실험은 불변 데이터 snapshot과 비용·지연 모델에서 시계열 순서를 보존한 train/validation/test 및 walk-forward 평가를 수행하고, 전략·파라미터·데이터·엔진·평가정책 버전과 산출물 hash를 남긴다.
 - 후보 선택은 단일 최고 수익률이 아니라 비용 후 수익, 최대 낙폭, 거래 수, turnover/capacity, 구간·시장 국면별 안정성, 기존 champion 대비 개선을 함께 본다. 반복 탐색으로 test set에 과적합하지 않도록 실험 예산과 최종 holdout을 분리한다.
 - champion/challenger 승격은 `research_candidate → paper_candidate → paper → shadow`까지만 자동화할 수 있다. 데이터 오류, 성능 저하, paper/backtest 괴리, 위험 한도 위반이 생기면 자동 중지하고 직전 champion으로 롤백한다.
+- paper 주문의 완료·진행·결과 미확정 상태를 기록하는 운영 평가는 투자 성과와 분리한다. 자동 중지·롤백은 SELL, 현금, 수수료, 세금, slippage, 지연, durable price mark와 equity curve에서 결정적으로 계산한 versioned 성과 evidence가 준비된 뒤에만 운영 평가를 소비할 수 있다.
 - canary 또는 live로의 승격과 실제 자금 확대는 자동화하지 않는다. 별도 owner 승인, broker별 promotion evidence, reconciliation, healthy kill switch와 매 주문 risk gate를 요구한다.
 - live 전략은 paper trading에서 일정 기간 검증한 동일한 전략 정의와 동일한 주문 상태 머신만 사용한다. paper/live 환경, API key, 계좌, feature flag를 물리적으로 분리한다.
 - 자동매매 hot path는 p50/p95/p99 지연, 시장 데이터 freshness, queue depth, provider latency, 주문 접수/체결 지연, 실패·재시도 횟수를 측정한다.

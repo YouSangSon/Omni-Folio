@@ -61,7 +61,7 @@ func TestFXExchangePreviewApplyReplayAndBackupRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v8" || manifest.SchemaVersion != "omni-folio.sqlite.v13" {
+	if manifest.FormatVersion != "omni-folio-backup.v9" || manifest.SchemaVersion != "omni-folio.sqlite.v14" {
 		t.Fatalf("FX backup versions drifted: %+v", manifest)
 	}
 	if err := verifyManifest(backup, golden, manifestPath); err != nil {
@@ -167,6 +167,7 @@ func TestVerifyManifestMigratesV8BackupCopy(t *testing.T) {
 func TestVerifyManifestMigratesV9BackupCopy(t *testing.T) {
 	svc, _ := testService(t, nil, nil)
 	golden := writeCurrentSnapshot(t, svc.db)
+	downgradePaperEvaluationForTest(t, svc.db)
 	if _, err := svc.db.Exec(`DROP TRIGGER instrument_listing_events_no_update; DROP TRIGGER instrument_listing_events_no_delete; DROP TRIGGER instrument_listing_events_state_guard; DROP TABLE instrument_listing_events; DELETE FROM schema_migrations WHERE version=13; DROP TRIGGER security_price_observations_no_update; DROP TRIGGER security_price_observations_no_delete; DROP TABLE security_price_observations; DELETE FROM schema_migrations WHERE version IN (11,12); DROP TRIGGER fx_observations_no_update; DROP TRIGGER fx_observations_no_delete; DROP TABLE fx_observations; DELETE FROM schema_migrations WHERE version=10`); err != nil {
 		t.Fatal(err)
 	}
@@ -336,6 +337,7 @@ func writeLegacyV5Manifest(t *testing.T, db *sql.DB, backup, golden, schema stri
 	delete(legacy, "security_price_observation_state_sha256")
 	delete(legacy, "security_price_observation_count")
 	delete(legacy, "instrument_listing_state_sha256")
+	delete(legacy, "paper_evaluation_event_count")
 	delete(legacy, "instrument_listing_event_count")
 	delete(legacy, "active_instrument_listing_count")
 	receipt := legacy["verification_receipt"].(map[string]any)

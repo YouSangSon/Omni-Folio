@@ -1197,3 +1197,13 @@ Backup v8 binds the listing replay hash, total event count and active count to b
 G4T now resolves `XKRX/symbol/KRW` before calling the provider, so missing, revoked or corrupt ownership causes zero network calls. G4S and direct Kiwoom writes re-resolve inside the insert transaction and require the exact declared instrument. Existing v12 Kiwoom observations remain structurally replayable and exact replays remain no-ops, but they cannot create a new price or listing authority.
 
 Still open: authenticated declaration workflow, provider security-master evidence, effective dating, timezone/freshness/calendar/source-priority policy, runtime scheduling, valuation promotion, strategy/order use and all live-money paths. Evidence is in [`../gates/g4u-kiwoom-listing-ownership.md`](../gates/g4u-kiwoom-listing-ownership.md).
+
+## 2026-08-30 G3.8A continuation: append-only paper operational evaluation
+
+G3.8A adds only replay-derived operational completeness evidence for the exact current paper strategy selection and account. Go first proves the full append-only order and strategy registries, then classifies terminal samples, active orders, and unresolved submit/cancel actions as `INSUFFICIENT/no_terminal_sample`, `PASS/operationally_complete`, or `DEGRADED/unresolved_action`. Callers cannot supply metrics, decisions, or thresholds.
+
+Schema v14 stores canonical evaluation JSON and hashes in a STRICT insert-only log. Each strategy selection also seals the current global evaluation sequence. Recovery requires every evaluation sequence to be contiguous, after its selection's open boundary, and no later than the next selection's close boundary. This causal discriminator prevents a superseded strategy evaluation from being certified even when its timestamp equals the next selection time.
+
+Backup v9 binds the evaluation count and rows into strategy-registry recovery. Legacy v8/schema-v13 artifacts are hash-checked, copied, migrated, and verified without source mutation. Backfilled sequence zero preserves the legacy selection hash representation; nonzero boundaries are included in new proofs. A regression fixture contains real legacy strategy evidence and a selection rather than relying on an empty registry.
+
+This gate does not calculate investment performance and does not mutate strategy or execution authority. SELL/down-rebalance, cash accounting, fees, taxes, slippage, latency, durable price marks, an equity curve, and versioned return/drawdown thresholds remain prerequisites for automatic degradation halt or rollback. Evidence is in [`../gates/g3h-paper-operational-evaluation.md`](../gates/g3h-paper-operational-evaluation.md).
