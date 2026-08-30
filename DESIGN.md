@@ -62,4 +62,4 @@ The app may display a live capability but never owns it. A live confirmation sho
 
 Strategy rollback is a server-owned safety action: it atomically halts and fences every armed execution account before changing the selected strategy. The client may request and display that result, but it never emulates the halt locally.
 
-G3.8C2 paper fill accounting is an internal Go evidence boundary and adds no client surface. Until G3.8C3 supplies immutable marks, equity, returns, and drawdown plus a versioned read contract, the UI must not present its modeled cash, FIFO PnL, or ex-post bar-open fills as current portfolio value, broker execution, or strategy performance.
+G3.8C2 paper fill accounting, G3.8C3 account-global performance, and G3.8D strategy-window performance are internal Go evidence boundaries and add no client surface. The UI must not present modeled cash, FIFO PnL, ex-post bar-open fills, fixture marks, or strategy-window returns as current portfolio value, broker execution, or strategy performance until a later versioned read contract explicitly promotes them.

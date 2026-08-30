@@ -148,7 +148,10 @@ clean-test-resources:
 		if test -e "$$artifact_path"; then find "$$artifact_path" -depth -delete; fi; \
 	done; \
 	find "$(ROOT)/services/research" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete; \
-	find "$(ROOT)/services/research" -depth -type d -name __pycache__ -empty -delete; \
+	find "$(ROOT)/services/research" -depth -path '*/__pycache__/*' -delete; \
+	find "$(ROOT)/services/research" -depth -type d -name __pycache__ -delete; \
+	test -z "$$(find "$(ROOT)/services/research" -type f \( -name '*.pyc' -o -name '*.pyo' \) -print -quit)" || { echo "owned Python bytecode remains" >&2; exit 1; }; \
+	test -z "$$(find "$(ROOT)/services/research" -type d -name __pycache__ -print -quit)" || { echo "owned Python cache directory remains" >&2; exit 1; }; \
 	for artifact_path in "$(ROOT)/apps/client/build" "$(ROOT)/apps/client/coverage" "$(ROOT)/services/core/core"; do \
 		test ! -e "$$artifact_path" || { echo "owned test artifact remains: $$artifact_path" >&2; exit 1; }; \
 	done

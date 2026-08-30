@@ -1,6 +1,6 @@
 # Omni Folio 구현 계획
 
-상태: G0·G1·G3 로컬 통과(G3.8C3 account-global paper performance·recovery 구현·태스크 리뷰·fresh local/mock 검증 완료), G2 build/widget/browser·자동 accessibility/reduced-motion 증거 확보 및 physical profile/screen-reader 증거 보강 중
+상태: G0·G1·G3 로컬 통과(G3.8C3 account-global paper performance와 G3.8D current-selection strategy-window performance·recovery 구현·독립 리뷰·fresh local/mock 검증 완료), G2 build/widget/browser·자동 accessibility/reduced-motion 증거 확보 및 physical profile/screen-reader 증거 보강 중
 기준일: 2026-08-31
 
 ## 목표
@@ -1245,3 +1245,11 @@ Bounded replay uses only capitalized v3 fills at or below the event cutoff whose
 Schema v18 and backup v12 independently reconstruct every cutoff, mark, value, predecessor, canonical JSON, and hash. Backup v11/schema v17 remains the historical C2 input: its source is verified first, then an owned copy migrates to an empty C3 log without synthesizing performance history. Fresh focused/full race, `make check`, `make smoke`, `govulncheck ./...`, `git diff --check`, independent review, and owned-resource cleanup evidence is in [`../gates/g3l-paper-performance-evidence.md`](../gates/g3l-paper-performance-evidence.md).
 
 Still open: versioned performance thresholds, scheduler, automatic halt/rollback provenance, public API/UI, broker-backed evaluation, credentials/live execution, deployment, promotion authority, and any profitability claim.
+
+## 2026-08-31 G3.8D continuation: current-selection strategy-window performance evidence
+
+G3.8D adds one internal append-only series derived only from fully recovered G3.8C3 points that belong to the current strategy selection and account-global paper session. The first eligible point is a zero-return baseline; later points recompute exact peak, period/cumulative return, drawdown, and max drawdown from that selection window. Selection change starts a new window and `no_strategy`, stale selection, or stale latest point writes nothing.
+
+Schema v19 and backup v13 pin the table, uniqueness, five source foreign keys, insert-only/state guards, digest, event count, and accumulated sample count. Backup v12/schema v18 is verified at source, copied, migrated to an empty D log, and never mutated or backfilled. Focused/full/race and independent implementation review passed locally; final check, smoke, cleanup, and documentation evidence is in [`../gates/g3m-paper-strategy-performance.md`](../gates/g3m-paper-strategy-performance.md).
+
+Still open: a versioned threshold/action policy requiring at least two same-window points, automatic halt/rollback provenance, scheduler, API/UI, broker-backed evaluation, credential/live execution, deployment, promotion authority, and any profitability claim.
