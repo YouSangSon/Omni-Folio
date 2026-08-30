@@ -383,7 +383,10 @@ func strategyArtifact(t *testing.T, mutate func(map[string]any)) []byte {
 		"--bars", filepath.Join(root, "contracts", "fixtures", "strategy-market-bars.csv"),
 		"--config", configPath,
 	)
-	command.Env = append(os.Environ(), "PYTHONPATH="+filepath.Join(root, "services", "research"))
+	command.Env = append(os.Environ(),
+		"PYTHONDONTWRITEBYTECODE=1",
+		"PYTHONPATH="+filepath.Join(root, "services", "research"),
+	)
 	artifact, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("generate Python strategy artifact: %v\n%s", err, artifact)

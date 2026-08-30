@@ -12,7 +12,7 @@ func TestG38FScheduledPaperRunAppliesLatestAvailableCloseOnce(t *testing.T) {
 	svc, _ := g38EPerformanceWindow(t, []string{"100"})
 	ctx := context.Background()
 	asOf := "2026-01-12T06:30:00.000000000Z"
-	recordG38C3MarkBar(t, svc, "005930", "g38f-latest-close", asOf, "80")
+	recordG38C3MarkBar(t, svc, "005930", "g38f-latest-close", asOf, "10")
 
 	result, err := svc.runDuePaperPerformancePolicy(ctx, k2aAccountRef)
 	if err != nil {
@@ -47,7 +47,7 @@ func TestG38FScheduledPaperRunFailsClosedWithoutCurrentStrategyOrCompleteMark(t 
 		asOf := "2026-01-11T06:30:00.000000000Z"
 		recordG38C3MarkBar(t, svc, "005930", "g38f-no-strategy", asOf, "100")
 		if _, err := svc.runDuePaperPerformancePolicy(ctx, k2aAccountRef); err == nil ||
-			!strings.Contains(err.Error(), "current paper strategy") || scheduledPerformanceCount(t, svc) != 0 {
+			!strings.Contains(err.Error(), "current strategy selection is missing") || scheduledPerformanceCount(t, svc) != 0 {
 			t.Fatalf("no-strategy run wrote rows or returned wrong error asOf=%s err=%v rows=%d",
 				asOf, err, scheduledPerformanceCount(t, svc))
 		}
@@ -67,10 +67,10 @@ func TestG38FScheduledPaperRunFailsClosedWithoutCurrentStrategyOrCompleteMark(t 
 
 func TestG38FScheduledPaperRunConvergesAcrossTwoOwners(t *testing.T) {
 	primary, _ := g38EPerformanceWindow(t, []string{"100"})
-	secondary := secondG38C2Service(t, primary, mustTime("2026-01-12T07:00:00Z"))
 	asOf := "2026-01-12T06:30:00.000000000Z"
-	recordG38C3MarkBar(t, primary, "005930", "g38f-concurrent-close", asOf, "100")
 	primary.now = func() time.Time { return mustTime("2026-01-12T07:00:00Z") }
+	recordG38C3MarkBar(t, primary, "005930", "g38f-concurrent-close", asOf, "100")
+	secondary := secondG38C2Service(t, primary, mustTime("2026-01-12T07:00:00Z"))
 
 	start := make(chan struct{})
 	results := make(chan *PaperScheduledRunResult, 2)
@@ -105,6 +105,45 @@ func TestG38FScheduledPaperRunConvergesAcrossTwoOwners(t *testing.T) {
 	if scheduledPerformanceCount(t, primary) != 2 || strategyPerformanceCount(t, primary) != 2 || g38EJournalCounts(t, primary).Policy != 1 {
 		t.Fatalf("duplicate rows performance=%d strategy=%d g38e=%+v",
 			scheduledPerformanceCount(t, primary), strategyPerformanceCount(t, primary), g38EJournalCounts(t, primary))
+	}
+}
+
+func TestG38FPaperRunDueCLI(t *testing.T) {
+	svc, _ := g38EPerformanceWindow(t, []string{"100"})
+	asOf := "2026-01-12T06:30:00.000000000Z"
+	recordG38C3MarkBar(t, svc, "005930", "g38f-cli-close", asOf, "100")
+	var dbPath string
+	if err := svc.db.QueryRow(`SELECT file FROM pragma_database_list WHERE name='main'`).Scan(&dbPath); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 2; i++ {
+		if err := run([]string{"paper-run-due", "-db", dbPath, "-account", k2aAccountRef}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if scheduledPerformanceCount(t, svc) != 2 || strategyPerformanceCount(t, svc) != 2 || g38EJournalCounts(t, svc).Policy != 1 {
+		t.Fatalf("CLI rows performance=%d strategy=%d policy=%+v",
+			scheduledPerformanceCount(t, svc), strategyPerformanceCount(t, svc), g38EJournalCounts(t, svc))
+	}
+}
+
+func TestG38FScheduledPaperRunRetryRejectsPrerequisiteCorruption(t *testing.T) {
+	svc, _ := g38EPerformanceWindow(t, []string{"100"})
+	asOf := "2026-01-12T06:30:00.000000000Z"
+	recordG38C3MarkBar(t, svc, "005930", "g38f-corrupt-retry", asOf, "100")
+	result, err := svc.runDuePaperPerformancePolicy(context.Background(), k2aAccountRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.db.Exec(`DROP TRIGGER paper_market_bar_observations_no_update`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.db.Exec(`UPDATE paper_market_bar_observations SET record_sha256=? WHERE sequence=1`, strings.Repeat("0", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if retry, err := svc.runDuePaperPerformancePolicy(context.Background(), k2aAccountRef); err == nil || retry != nil {
+		t.Fatalf("corrupt prerequisite returned cached result first=%+v retry=%+v err=%v", result, retry, err)
 	}
 }
 

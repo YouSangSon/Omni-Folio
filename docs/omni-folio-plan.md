@@ -1,6 +1,6 @@
 # Omni Folio 구현 계획
 
-상태: G0·G1·G3 로컬 통과(G3.8C3 account-global paper performance, G3.8D current-selection strategy-window performance, G3.8E versioned local paper performance policy·atomic automatic halt/rollback 구현·독립 리뷰·fresh local/mock 검증 완료), G2 build/widget/browser·자동 accessibility/reduced-motion 증거 확보 및 physical profile/screen-reader 증거 보강 중
+상태: G0·G1·G3 로컬 통과(G3.8C3 account-global paper performance, G3.8D current-selection strategy-window performance, G3.8E versioned local paper performance policy·atomic automatic halt/rollback, G3.8F1 scheduled one-shot paper policy runner 구현·fresh local/mock 검증 완료), G2 build/widget/browser·자동 accessibility/reduced-motion 증거 확보 및 physical profile/screen-reader 증거 보강 중
 기준일: 2026-08-31
 
 ## 목표
@@ -1261,3 +1261,13 @@ One immediate SQLite transaction records the policy row first, deterministically
 Schema v20 and backup v14 pin the append-only policy journal, rebuilt authority/selection links, canonical v19 FK baseline, pre/post migration journal/FK/trigger proofs, restore objects, and policy digest/count/action receipt. Backup v13/schema v19 is verified unchanged, copied to an owned temporary candidate, and migrated only there to an empty policy log. Focused/full/race, `make check`, `make smoke`, `govulncheck`, independent clean review, success/failure/SIGINT/SIGTERM/stale-owner cleanup, and zero final inventory evidence is in [`../gates/g3n-paper-performance-policy.md`](../gates/g3n-paper-performance-policy.md).
 
 Still open: scheduler, alerting, API/UI, broker-backed evaluation, credential/live execution, deployment, shadow/live promotion authority, and any profitability claim.
+
+## 2026-08-31 G3.8F1 continuation: scheduled one-shot paper policy runner
+
+G3.8F1 adds `runDuePaperPerformancePolicy` and `omni-core paper-run-due -db <path> -account <kiwoom_account_...>`. The runner chooses only the latest available local `paper_fixture` KRX/KRW/1d/Asia-Seoul `price_adjustment=unspecified` close whose source availability, fetch time, and recorded time are not after the runner clock. It then closes the existing C3 account performance, D strategy-window performance, and E safety policy chain.
+
+This checkpoint deliberately adds no scheduler table or daemon. Duplicate local runs and crash retries are handled by the already durable unique keys for performance, strategy-performance, and policy events. A completed chain is returned on retry only after paper performance policy root recovery passes, even if the prior policy action already rolled the selection back to `no_strategy`; an incomplete mark set or no current strategy fails closed without writing a new performance row.
+
+Evidence: `go test -count=1 -run '^TestG38FScheduled' .` was RED on the missing runner, `go test -count=1 -run '^TestG38FPaperRunDueCLI$' .` was RED on the missing CLI command, `go test -count=1 -run '^TestG38FScheduledPaperRunRetryRejectsPrerequisiteCorruption$' .` was RED on cached retry hiding prerequisite corruption, and `go test -count=1 -run '^TestG38F' .`, `go test -race -count=1 -run '^TestG38F' .`, `make check`, `make smoke`, `make clean-test-resources`, and final owned-resource inventory passed after implementation. Details are in [`../gates/g3o-scheduled-paper-runner.md`](../gates/g3o-scheduled-paper-runner.md).
+
+Still open: G3.8F2 DB-leased/fenced always-on runner with heartbeat/TTL, stale-owner recovery, lease-loss fail-closed behavior, success/failure/SIGINT/SIGTERM cleanup proof, alerting, public API/UI, broker-backed evaluation, credential/live execution, CronJob packaging, deployment, shadow/live promotion authority, official market calendar/freshness proof, and any profitability claim.

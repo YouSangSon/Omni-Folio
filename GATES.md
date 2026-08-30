@@ -47,7 +47,10 @@ G3 research vertical slice
 ├─ G3.8C2 SELL and capital-safe paper accounting
 ├─ G3.8C3 immutable marks and account-global performance evidence
 ├─ G3.8D current-selection strategy-window performance evidence
-└─ G3.8E versioned paper performance safety policy and atomic automatic action
+├─ G3.8E versioned paper performance safety policy and atomic automatic action
+└─ G3.8F scheduled local paper policy runner
+   ├─ G3.8F1 one-shot paper policy command
+   └─ G3.8F2 DB-leased/fenced always-on runner
    |
 G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4A Kiwoom K0 read contract
@@ -90,6 +93,8 @@ G6 PostgreSQL and Kubernetes promotion
 - G3.8C3는 transaction-current order/market cutoff, complete `paper_fixture` daily-close marks, account-global cash/equity/return/drawdown, insert-only recovery proof를 local에서 검증한다. 이는 profit, threshold, automatic halt/rollback, public UI, broker truth, deployment 또는 live readiness가 아니며, 세부 근거는 [`gates/g3l-paper-performance-evidence.md`](gates/g3l-paper-performance-evidence.md)에 둔다.
 - G3.8D는 current non-`no_strategy` selection의 첫 C3 point를 attribution anchor로 삼는 strategy-window paper performance evidence와 schema v19/backup v13 proof를 검증한다. 이는 threshold, decision, automatic halt/rollback, public UI, broker truth, deployment 또는 live readiness가 아니며, 세부 근거는 [`gates/g3m-paper-strategy-performance.md`](gates/g3m-paper-strategy-performance.md)에 둔다.
 - G3.8E는 복구 검증된 latest same-selection G3.8D evidence에만 고정 v1 local paper threshold를 적용하고, action이면 모든 captured armed authority의 결정적 halt와 exact one-pop rollback을 한 transaction에서 append한다. schema v20/backup v14, v13 owned-copy, full forward/reverse recovery와 cleanup matrix를 검증하지만 scheduler, public API/UI, broker call, promotion, deployment, live authority 또는 수익성을 뜻하지 않는다. 세부 근거는 [`gates/g3n-paper-performance-policy.md`](gates/g3n-paper-performance-policy.md)에 둔다.
+- G3.8F1은 external scheduler가 호출할 수 있는 local one-shot CLI `paper-run-due`와 내부 `runDuePaperPerformancePolicy`를 추가한다. 최신 available local fixture close만 as_of로 쓰고 C3/D/E idempotent journal을 재사용해 retry와 두 owner 동시 실행이 같은 durable 결과로 수렴함을 검증하며, 완료 chain retry 전 paper 성과 정책 root recovery를 다시 증명한다. daemon, public API/UI, broker call, credential, deployment, shadow/live promotion 또는 수익성을 뜻하지 않는다. 세부 근거는 [`gates/g3o-scheduled-paper-runner.md`](gates/g3o-scheduled-paper-runner.md)에 둔다.
+- G3.8F2는 아직 열려 있다. owner-managed always-on runner는 별도 DB lease/fencing token, heartbeat/TTL, stale-owner 회수, lease 상실 fail-closed, success/failure/SIGINT/SIGTERM cleanup proof를 통과해야 한다.
 - local 검증, broker sandbox, live readiness, 실제 운영 증거를 따로 보고한다.
 - external deploy, credential, live 주문, push는 명시 승인 없이는 실행하지 않는다.
 

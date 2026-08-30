@@ -54,6 +54,7 @@
 - **Paper performance evidence**: G3.8C3가 account-global session에서 complete daily-close marks와 bounded fill replay로 cash, equity, return, drawdown을 append-only로 보존하는 local ex-post 증거. 전략 선택 변경 전후의 account health는 이어지며, 특정 전략 attribution이나 자동 rollback 판단이 아니다.
 - **Strategy-window paper performance**: G3.8D가 current non-`no_strategy` selection의 첫 C3 point를 zero-return anchor로 삼아 그 selection 안의 C3 points만 비교하는 내부 evidence. 최소 두 point 전에는 성과 판단으로 읽지 않으며 threshold, halt, rollback, UI, broker truth, live readiness가 아니다.
 - **Paper performance safety policy**: G3.8E가 recovered latest same-selection G3.8D row에만 `paper-strategy-performance-safety.v1`을 적용해 `INSUFFICIENT`, `HOLD`, `HALT_AND_ROLLBACK`을 append-only로 기록하는 local paper-only 경계. action은 captured armed authority 전체의 deterministic fencing halt와 exact one-pop selection rollback을 한 transaction에 묶지만 scheduler, broker submit, promotion 또는 live authority가 아니다.
+- **Scheduled paper policy runner**: G3.8F1의 local one-shot runner. 최신 available `paper_fixture` close를 as_of로 선택해 G3.8C3 account performance, G3.8D strategy-window performance, G3.8E safety policy를 순서대로 닫고 완료 chain retry 전 root recovery를 다시 증명한다. 외부 timer/CronJob이 호출할 수 있는 CLI entrypoint이지 always-on daemon, broker runner, alerting, promotion 또는 live authority가 아니다. G3.8F2 always-on runner는 별도 DB lease/fencing과 cleanup proof가 필요하다.
 - **`no_promotion` / `no_strategy`**: 전자는 한 실험의 gate 실패 결과, 후자는 현재 선택이 없다는 registry sentinel이다.
 - **Live-disabled**: 어떤 UI 설정이나 프로세스 시작만으로도 실주문이 나갈 수 없는 기본 실행 상태.
 
@@ -63,6 +64,7 @@
 - 모바일·웹·Python 연구 프로세스는 broker credential과 주문 제출 권한을 갖지 않는다.
 - Flutter는 upstream exception·provider raw message·account reference를 화면이나 semantics에 직접 표시하지 않고, 화면 맥락별 고정된 복구 안내만 노출한다.
 - strategy registry는 evidence와 선택 이력만 소유한다. 선택 상태만으로 paper/live runner 또는 주문 dispatch를 허용하지 않으며, 전략 주문은 exact current selection에 묶인 경우에만 기록·durable dispatch할 수 있다.
+- G3.8F1 scheduled paper policy runner는 새 scheduler 상태를 만들지 않고 기존 C3/D/E idempotent journal을 재사용한다. 같은 close의 완료 chain이 있으면 current selection이 이미 rollback되어도 root recovery 검증 뒤 같은 결과를 반환하고, 완료 chain이 없는데 current selection이 `no_strategy`이면 신규 성과 row 없이 fail-closed한다.
 - strategy registry와 복구는 execution policy의 exact keys, canonical decimal string, 양수 시작 현금, 비음수 비용, 1 이상 정수 지연, `(0,1]` 참여율, 고정 signal/fill 의미를 모두 검증하고 불일치하면 evidence를 저장하거나 선택 상태를 복원하지 않는다.
 - paper accounting session은 account 당 하나이며 strategy 변경으로 초기 capital authority를 교체하지 않는다. schema v17/backup v11은 session·bar·cutoff·authorization·capitalized fill과 replay-derived state의 digest/count 및 exact restore objects를 요구한다. backup v10/schema v15는 source를 바꾸지 않는 owned copy에서 migration하며 legacy paper order를 backfill하지 않는다.
 - 새 capitalized paper 주문은 현재 selection, session과 동일한 execution-policy SHA, 유효한 v3 signal, paper-specific authorization, 현재 lease/fencing을 요구한다. Synthetic K2C reservation policy를 paper SELL에 재사용하거나 약화하지 않으며 이미 durable dispatch된 주문은 immutable session/order policy로 잔여 체결을 복구한다.
