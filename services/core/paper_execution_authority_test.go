@@ -403,7 +403,7 @@ func TestG38C2PaperAuthorizationBackup(t *testing.T) {
 	golden := writeCurrentSnapshot(t, svc.db)
 	backup := filepath.Join(t.TempDir(), "paper-authorization.db")
 	manifest, err := createBackup(svc.db, backup, golden, backup+".manifest.json", svc.now, svc.id)
-	if err != nil || manifest.SchemaVersion != "omni-folio.sqlite.v17" || manifest.PaperExecutionAuthorizationCount != 1 || manifest.PaperCapitalizedFillCount != 0 {
+	if err != nil || manifest.SchemaVersion != "omni-folio.sqlite.v18" || manifest.PaperExecutionAuthorizationCount != 1 || manifest.PaperCapitalizedFillCount != 0 {
 		t.Fatalf("paper authorization manifest=%+v err=%v", manifest, err)
 	}
 	if err := verifyRestore(backup, golden); err != nil {

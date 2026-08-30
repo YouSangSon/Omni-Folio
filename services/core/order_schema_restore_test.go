@@ -7,6 +7,91 @@ import (
 	"testing"
 )
 
+func TestG38C3RestoreRejectsPaperPerformanceSchemaOrProtectionDrift(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, *sql.DB)
+	}{
+		{"missing table", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER paper_performance_events_state_guard;
+				DROP TRIGGER paper_performance_events_no_update;
+				DROP TRIGGER paper_performance_events_no_delete;
+				DROP INDEX paper_performance_events_account_idx;
+				DROP TABLE paper_performance_events`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"table drift", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`ALTER TABLE paper_performance_events ADD COLUMN untrusted TEXT`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"missing performance identity uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_performance_events", []string{"performance_id"})
+		}},
+		{"missing performance key uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_performance_events", []string{"policy_version", "account_ref", "paper_accounting_session_id", "as_of"})
+		}},
+		{"missing session foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_performance_events",
+				"paper_accounting_session_id TEXT NOT NULL REFERENCES paper_accounting_sessions(session_id)",
+				"paper_accounting_session_id TEXT NOT NULL")
+		}},
+		{"missing selection foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_performance_events",
+				"strategy_selection_event_id TEXT NOT NULL REFERENCES strategy_selection_events(event_id)",
+				"strategy_selection_event_id TEXT NOT NULL")
+		}},
+		{"missing account index", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP INDEX paper_performance_events_account_idx`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, trigger := range []string{"paper_performance_events_state_guard", "paper_performance_events_no_update", "paper_performance_events_no_delete"} {
+		trigger := trigger
+		tests = append(tests, struct {
+			name   string
+			mutate func(*testing.T, *sql.DB)
+		}{"missing " + trigger, func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER ` + trigger); err != nil {
+				t.Fatal(err)
+			}
+		}})
+	}
+	tests = append(tests, struct {
+		name   string
+		mutate func(*testing.T, *sql.DB)
+	}{"altered state guard", func(t *testing.T, db *sql.DB) {
+		if _, err := db.Exec(`DROP TRIGGER paper_performance_events_state_guard;
+			CREATE TRIGGER paper_performance_events_state_guard BEFORE INSERT ON paper_performance_events BEGIN SELECT 1; END`); err != nil {
+			t.Fatal(err)
+		}
+	}})
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			svc, _ := testService(t, nil, nil)
+			golden := writeCurrentSnapshot(t, svc.db)
+			path := filepath.Join(t.TempDir(), "paper-performance-schema.db")
+			if _, err := createBackup(svc.db, path, golden, path+".manifest.json", svc.now, svc.id); err != nil {
+				t.Fatal(err)
+			}
+			candidate, err := openExistingDB(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(t, candidate)
+			if err := candidate.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := verifyRestore(path, golden); err == nil {
+				t.Fatal("restore accepted paper performance schema drift")
+			}
+		})
+	}
+}
+
 func TestK2ARestoreRejectsOrderTablesWithoutDurabilityConstraints(t *testing.T) {
 	path, golden := weakOrderRestoreCandidate(t, `
 CREATE TABLE order_events (

@@ -163,8 +163,8 @@ func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 	properties := schema["properties"].(map[string]any)
-	if properties["format_version"].(map[string]any)["const"] != "omni-folio-backup.v11" ||
-		properties["schema_version"].(map[string]any)["const"] != "omni-folio.sqlite.v17" {
+	if properties["format_version"].(map[string]any)["const"] != "omni-folio-backup.v12" ||
+		properties["schema_version"].(map[string]any)["const"] != "omni-folio.sqlite.v18" {
 		t.Fatal("backup contract version drifted from the runtime")
 	}
 
@@ -216,6 +216,14 @@ func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
 	}
 	if goldenReceipt["candidate_paper_accounting_state_sha256"] != emptyV17PaperAccountingSHA {
 		t.Fatal("golden receipt candidate does not encode the empty v16 paper accounting proof")
+	}
+	const emptyPaperPerformanceSHA = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	performanceProof, err := provePaperPerformanceRecovery(context.Background(), svc.db)
+	if err != nil || performanceProof.SHA256 != emptyPaperPerformanceSHA || performanceProof.Events != 0 || performanceProof.Marks != 0 ||
+		golden["paper_performance_state_sha256"] != emptyPaperPerformanceSHA ||
+		goldenReceipt["candidate_paper_performance_state_sha256"] != emptyPaperPerformanceSHA ||
+		goldenReceipt["paper_performance_check"] != "ok" {
+		t.Fatalf("golden manifest does not encode empty performance proof: runtime=%+v err=%v", performanceProof, err)
 	}
 
 	var invalid map[string]any

@@ -220,7 +220,7 @@ func TestG38PaperEvaluationBackupAndLegacySchema13Migration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v11" || manifest.SchemaVersion != "omni-folio.sqlite.v17" ||
+	if manifest.FormatVersion != "omni-folio-backup.v12" || manifest.SchemaVersion != "omni-folio.sqlite.v18" ||
 		manifest.PaperEvaluationEventCount != 1 || manifest.StrategyRegistrySHA256 == "" {
 		t.Fatalf("backup omitted paper evaluation proof: %+v", manifest)
 	}

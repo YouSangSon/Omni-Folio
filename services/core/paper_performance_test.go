@@ -2,11 +2,376 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+func TestG38C3PaperPerformanceSeriesAndRetry(t *testing.T) {
+	t.Run("cash only baseline", func(t *testing.T) {
+		svc, asOf := g38c3CashPerformanceFixture(t)
+		event, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if event.SchemaVersion != "paper-performance-evaluation.v1" || event.PolicyVersion != "paper-performance-account-v1" ||
+			event.ExpectedPreviousPerformanceID != "no_performance" || event.SelectedStrategyResultRef == "" ||
+			event.MarkCount != 0 || event.MarksJSON != "[]" || event.Cash != "10000" || event.OpenCost != "0" ||
+			event.MarketValue != "0" || event.RealizedPnL != "0" || event.UnrealizedPnL != "0" || event.TotalPnL != "0" ||
+			event.Equity != "10000" || event.PeakEquity != "10000" || event.PeriodReturnState != "defined" ||
+			event.PeriodReturn != "0" || event.CumulativeReturn != "0" || event.Drawdown != "0" || event.MaxDrawdown != "0" {
+			t.Fatalf("cash-only event=%+v", event)
+		}
+		var selectionCutoff, orderCutoff, marketCutoff int64
+		if err := svc.db.QueryRow(`SELECT COALESCE(MAX(sequence),0) FROM strategy_selection_events`).Scan(&selectionCutoff); err != nil {
+			t.Fatal(err)
+		}
+		if err := svc.db.QueryRow(`SELECT COALESCE(MAX(sequence),0) FROM order_events`).Scan(&orderCutoff); err != nil {
+			t.Fatal(err)
+		}
+		if err := svc.db.QueryRow(`SELECT COALESCE(MAX(sequence),0) FROM paper_market_bar_observations`).Scan(&marketCutoff); err != nil {
+			t.Fatal(err)
+		}
+		if event.StrategySelectionSequenceCutoff != selectionCutoff || event.OrderEventSequenceCutoff != orderCutoff ||
+			event.PaperMarketSequenceCutoff != marketCutoff {
+			t.Fatalf("non-current transaction cutoffs: event=%+v current=(%d,%d,%d)", event, selectionCutoff, orderCutoff, marketCutoff)
+		}
+		proof, err := provePaperPerformanceRecovery(context.Background(), svc.db)
+		if err != nil || proof.Events != 1 || proof.Marks != 0 || proof.SHA256 == "" {
+			t.Fatalf("cash-only proof=%+v err=%v", proof, err)
+		}
+	})
+
+	t.Run("up down recovery series and exact retry", func(t *testing.T) {
+		svc, asOfs := g38c3HeldPerformanceFixture(t)
+		want := []struct {
+			equity, peak, period, cumulative, drawdown, maxDrawdown string
+		}{
+			{"10038.8", "10038.8", "0.00388", "0.00388", "0", "0"},
+			{"9958.8", "10038.8", "-0.00796907", "-0.00412", "0.00796907", "0.00796907"},
+			{"10018.8", "10038.8", "0.00602482", "0.00188", "0.00199227", "0.00796907"},
+		}
+		var previous string
+		for index, asOf := range asOfs {
+			event, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if event.ExpectedPreviousPerformanceID != map[bool]string{true: "no_performance", false: previous}[index == 0] ||
+				event.MarkCount != 1 || event.Equity != want[index].equity || event.PeakEquity != want[index].peak ||
+				event.PeriodReturn != want[index].period || event.CumulativeReturn != want[index].cumulative ||
+				event.Drawdown != want[index].drawdown || event.MaxDrawdown != want[index].maxDrawdown {
+				t.Fatalf("point %d=%+v", index, event)
+			}
+			previous = event.PerformanceID
+		}
+		first, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOfs[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		var count int
+		if err := svc.db.QueryRow(`SELECT COUNT(*) FROM paper_performance_events`).Scan(&count); err != nil || count != 3 {
+			t.Fatalf("retry rows=%d err=%v", count, err)
+		}
+		if first.AsOf != asOfs[0] {
+			t.Fatalf("retry returned wrong event: %+v", first)
+		}
+	})
+}
+
+func TestG38C3PaperPerformanceWindowSelectionAndDurability(t *testing.T) {
+	t.Run("requires session close before as-of and record time at or after it", func(t *testing.T) {
+		svc, _ := g38c3CashPerformanceFixture(t)
+		session := g38c3Session(t, svc)
+		for _, asOf := range []string{"2026-01-09T06:30:00.000000000Z", session.RecordedAt} {
+			if _, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf); err == nil {
+				t.Fatalf("invalid as_of %s was accepted", asOf)
+			}
+		}
+		svc.now = func() time.Time { return mustTime("2026-01-11T06:29:59Z") }
+		if _, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, "2026-01-11T06:30:00.000000000Z"); err == nil {
+			t.Fatal("future as_of was accepted")
+		}
+	})
+
+	t.Run("captures current selection and rollback to no_strategy", func(t *testing.T) {
+		svc, asOf := g38c3CashPerformanceFixture(t)
+		first, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rolled, err := svc.rollbackPaperCandidate(context.Background(), first.StrategySelectionEventID, first.StrategySelectionEventID)
+		if err != nil || rolled.SelectedResultSHA256 != noStrategySelection {
+			t.Fatalf("rollback=%+v err=%v", rolled, err)
+		}
+		svc.now = func() time.Time { return mustTime("2026-01-12T07:00:00Z") }
+		nextAsOf := "2026-01-12T06:30:00.000000000Z"
+		recordG38C3MarkBar(t, svc, "005930", "g38c3-cash-rollback", nextAsOf, "100")
+		second, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, nextAsOf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if second.SelectedStrategyResultRef != noStrategySelection || second.StrategySelectionEventID != rolled.CurrentEventID ||
+			second.StrategySelectionSequenceCutoff <= first.StrategySelectionSequenceCutoff {
+			t.Fatalf("rollback event=%+v", second)
+		}
+	})
+
+	t.Run("captures a changed current strategy", func(t *testing.T) {
+		svc, asOf := g38c3CashPerformanceFixture(t)
+		first, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		artifact := rehashedStrategyArtifact(t, strategyArtifact(t, nil), func(result map[string]any) {
+			result["experiment_id"] = "g38c3-selection-change"
+		})
+		evidence, err := svc.registerStrategyEvidence(context.Background(), artifact)
+		if err != nil {
+			t.Fatal(err)
+		}
+		selected, err := svc.selectPaperCandidate(context.Background(), evidence.ResultSHA256, first.StrategySelectionEventID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		svc.now = func() time.Time { return mustTime("2026-01-12T07:00:00Z") }
+		nextAsOf := "2026-01-12T06:30:00.000000000Z"
+		recordG38C3MarkBar(t, svc, "005930", "g38c3-selection-change", nextAsOf, "100")
+		second, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, nextAsOf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if second.SelectedStrategyResultRef != evidence.ResultSHA256 || second.StrategySelectionEventID != selected.CurrentEventID {
+			t.Fatalf("strategy change event=%+v", second)
+		}
+	})
+
+	t.Run("is insert only and rejects a changed duplicate", func(t *testing.T) {
+		svc, asOf := g38c3CashPerformanceFixture(t)
+		if _, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf); err != nil {
+			t.Fatal(err)
+		}
+		for _, statement := range []string{
+			`UPDATE paper_performance_events SET cash='1'`,
+			`DELETE FROM paper_performance_events`,
+			`INSERT INTO paper_performance_events(
+				performance_id,schema_version,policy_version,account_ref,paper_accounting_session_id,
+				strategy_selection_event_id,selected_strategy_result_ref,expected_previous_performance_id,
+				strategy_selection_sequence_cutoff,order_event_sequence_cutoff,paper_market_sequence_cutoff,as_of,
+				paper_account_state_sha256,marks_sha256,marks_json,mark_count,cash,open_cost,market_value,realized_pnl,
+				unrealized_pnl,total_pnl,equity,peak_equity,period_return_state,period_return,cumulative_return,drawdown,
+				max_drawdown,record_sha256,record_json,recorded_at)
+			 SELECT 'paper_performance_changed',schema_version,policy_version,account_ref,paper_accounting_session_id,
+				strategy_selection_event_id,selected_strategy_result_ref,expected_previous_performance_id,
+				strategy_selection_sequence_cutoff,order_event_sequence_cutoff,paper_market_sequence_cutoff,as_of,
+				paper_account_state_sha256,marks_sha256,marks_json,mark_count,cash,open_cost,market_value,realized_pnl,
+				unrealized_pnl,total_pnl,equity,peak_equity,period_return_state,period_return,cumulative_return,drawdown,
+				max_drawdown,record_sha256,record_json,recorded_at FROM paper_performance_events`,
+		} {
+			if _, err := svc.db.Exec(statement); err == nil {
+				t.Fatalf("durability mutation was accepted: %s", statement)
+			}
+		}
+	})
+}
+
+func TestG38C3PaperPerformanceRejectsCorruption(t *testing.T) {
+	mutations := []struct {
+		name, statement string
+	}{
+		{"cutoff", `UPDATE paper_performance_events SET order_event_sequence_cutoff=0 WHERE sequence=2`},
+		{"mark", `UPDATE paper_performance_events SET marks_sha256='0000000000000000000000000000000000000000000000000000000000000000' WHERE sequence=2`},
+		{"mark JSON", `UPDATE paper_performance_events SET marks_json='[]' WHERE sequence=2`},
+		{"value", `UPDATE paper_performance_events SET equity='1' WHERE sequence=2`},
+		{"ratio", `UPDATE paper_performance_events SET cumulative_return='0.1' WHERE sequence=2`},
+		{"predecessor", `UPDATE paper_performance_events SET expected_previous_performance_id='no_performance' WHERE sequence=2`},
+		{"record JSON", `UPDATE paper_performance_events SET record_json='{}' WHERE sequence=2`},
+		{"record hash", `UPDATE paper_performance_events SET record_sha256='0000000000000000000000000000000000000000000000000000000000000000' WHERE sequence=2`},
+	}
+	for _, test := range mutations {
+		t.Run(test.name, func(t *testing.T) {
+			svc, asOfs := g38c3HeldPerformanceFixture(t)
+			for _, asOf := range asOfs[:2] {
+				if _, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := svc.db.Exec(`DROP TRIGGER paper_performance_events_no_update`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := svc.db.Exec(test.statement); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := provePaperPerformanceRecovery(context.Background(), svc.db); err == nil {
+				t.Fatal("corrupt performance log was certified")
+			}
+		})
+	}
+}
+
+func TestG38C3PaperPerformanceRejectsLaterCorruptionAndLegacy(t *testing.T) {
+	t.Run("older retry accepts valid later evidence", func(t *testing.T) {
+		svc, asOf := g38c3CashPerformanceFixture(t)
+		first, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		svc.now = func() time.Time { return mustTime("2026-01-12T07:00:00Z") }
+		recordG38C3MarkBar(t, svc, "005930", "g38c3-later-valid", "2026-01-12T06:30:00.000000000Z", "100")
+		retry, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf)
+		if err != nil || retry.PerformanceID != first.PerformanceID {
+			t.Fatalf("older retry=%+v err=%v", retry, err)
+		}
+	})
+
+	t.Run("older retry proves later order evidence", func(t *testing.T) {
+		svc, asOf := g38c3CashPerformanceFixture(t)
+		if _, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf); err != nil {
+			t.Fatal(err)
+		}
+		state := mustRecordK2AOrder(t, svc, "g38c3-later-corrupt-order")
+		if _, err := svc.db.Exec(`DROP TRIGGER order_events_no_update`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.db.Exec(`UPDATE order_events SET event_sha256=? WHERE order_id=?`, strings.Repeat("0", 64), state.OrderID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf); err == nil {
+			t.Fatal("older retry hid later corrupt order evidence")
+		}
+	})
+
+	t.Run("older retry proves later market evidence", func(t *testing.T) {
+		svc, asOf := g38c3CashPerformanceFixture(t)
+		if _, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf); err != nil {
+			t.Fatal(err)
+		}
+		later := recordG38C3MarkBar(t, svc, "005930", "g38c3-later-corrupt", "2026-01-12T06:30:00.000000000Z", "100")
+		if _, err := svc.db.Exec(`DROP TRIGGER paper_market_bar_observations_no_update`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.db.Exec(`UPDATE paper_market_bar_observations SET record_sha256=? WHERE observation_id=?`, strings.Repeat("0", 64), later.ObservationID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf); err == nil {
+			t.Fatal("older retry hid later corrupt market evidence")
+		}
+	})
+
+	t.Run("account-scoped legacy v1 and v2 orders fail closed", func(t *testing.T) {
+		for _, schema := range []string{paperSignalSchema, "paper-signal.v2"} {
+			svc, _ := testService(t, nil, nil)
+			svc.now = func() time.Time { return mustTime("2026-01-10T15:00:00Z") }
+			evidence, selected := selectedPaperStrategy(t, svc)
+			if _, err := svc.openPaperAccountingSession(context.Background(), k2aAccountRef, evidence.ResultSHA256, selected.CurrentEventID); err != nil {
+				t.Fatal(err)
+			}
+			downgradePaperAuthorizationForTest(t, svc.db)
+			legacy := paperEvaluationSignal(evidence.ResultSHA256, selected.CurrentEventID, "g38c3-legacy-"+schema)
+			legacy.SchemaVersion = schema
+			if _, err := svc.recordOrderIntent(context.Background(), paperOrderIntent(k2aAccountRef, legacy, "1", "1000")); err != nil {
+				t.Fatal(err)
+			}
+			if err := migrate(svc.db); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, "2026-01-11T06:30:00.000000000Z"); err == nil {
+				t.Fatalf("legacy %s account was evaluated", schema)
+			}
+		}
+	})
+}
+
+func TestG38C3ConcurrentSameAndDifferentAsOf(t *testing.T) {
+	t.Run("same key writers converge", func(t *testing.T) {
+		primary, asOf := g38c3CashPerformanceFixture(t)
+		secondary := secondG38C2Service(t, primary, mustTime("2026-01-11T07:00:00Z"))
+		start := make(chan struct{})
+		results := make(chan *PaperPerformanceEvent, 2)
+		errors := make(chan error, 2)
+		var wg sync.WaitGroup
+		for _, svc := range []*Service{primary, secondary} {
+			wg.Add(1)
+			go func(svc *Service) {
+				defer wg.Done()
+				<-start
+				event, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf)
+				results <- event
+				errors <- err
+			}(svc)
+		}
+		close(start)
+		wg.Wait()
+		close(results)
+		close(errors)
+		for err := range errors {
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		var id string
+		for event := range results {
+			if event == nil || (id != "" && event.PerformanceID != id) {
+				t.Fatalf("same-key results diverged: prior=%s event=%+v", id, event)
+			}
+			id = event.PerformanceID
+		}
+		var count int
+		if err := primary.db.QueryRow(`SELECT COUNT(*) FROM paper_performance_events`).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("same-key rows=%d err=%v", count, err)
+		}
+	})
+
+	for _, laterFirst := range []bool{false, true} {
+		name := map[bool]string{false: "earlier first chains", true: "later first rejects backfill"}[laterFirst]
+		t.Run(name, func(t *testing.T) {
+			svc, asOfs := g38c3HeldPerformanceFixture(t)
+			first, second := asOfs[0], asOfs[1]
+			if laterFirst {
+				first, second = second, first
+			}
+			if _, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, first); err != nil {
+				t.Fatal(err)
+			}
+			_, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, second)
+			if laterFirst && err == nil {
+				t.Fatal("later-first writer admitted a historical backfill")
+			}
+			if !laterFirst && err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func g38c3CashPerformanceFixture(t *testing.T) (*Service, string) {
+	t.Helper()
+	svc, _, _ := g38c2PaperSignalFixture(t, true)
+	svc.now = func() time.Time { return mustTime("2026-01-11T07:00:00Z") }
+	asOf := "2026-01-11T06:30:00.000000000Z"
+	recordG38C3MarkBar(t, svc, "005930", "g38c3-cash-anchor", asOf, "100")
+	return svc, asOf
+}
+
+func g38c3HeldPerformanceFixture(t *testing.T) (*Service, []string) {
+	t.Helper()
+	svc, _, _ := g38c3HeldState(t)
+	asOfs := []string{
+		"2026-01-11T06:30:00.000000000Z",
+		"2026-01-12T06:30:00.000000000Z",
+		"2026-01-13T06:30:00.000000000Z",
+	}
+	for index, close := range []string{"120", "80", "110"} {
+		recordG38C3MarkBar(t, svc, "005930", fmt.Sprintf("g38c3-series-%d", index), asOfs[index], close)
+	}
+	return svc, asOfs
+}
+
+var _ orderQuerier = (*sql.Tx)(nil)
 
 func TestG38C3BoundedAccounting(t *testing.T) {
 	t.Run("excludes fills after the order sequence cutoff", func(t *testing.T) {
