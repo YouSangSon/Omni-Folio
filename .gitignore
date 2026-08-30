@@ -13,6 +13,7 @@ Thumbs.db
 secrets/
 credentials/
 /api-key/
+/.superpowers/
 *.key
 *.pem
 *.p12
