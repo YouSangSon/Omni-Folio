@@ -46,9 +46,9 @@ git diff --check
 (no output)
 ```
 
-Task 2 and Task 3 independent reviews returned GO; the Task 3 review confirmed
-the v11 source-first owned-copy migration boundary and C3 fail-closed creation
-and recovery behavior.
+Task 1 independent spec and quality reviews returned GO, as did the Task 2 and
+Task 3 independent reviews. The Task 3 review confirmed the v11 source-first
+owned-copy migration boundary and C3 fail-closed creation and recovery behavior.
 
 ## Owned-resource cleanup
 
