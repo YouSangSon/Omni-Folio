@@ -1,6 +1,6 @@
 # Omni Folio 구현 계획
 
-상태: G0·G1·G3 로컬 통과(G3.8C3 account-global paper performance와 G3.8D current-selection strategy-window performance·recovery 구현·독립 리뷰·fresh local/mock 검증 완료), G2 build/widget/browser·자동 accessibility/reduced-motion 증거 확보 및 physical profile/screen-reader 증거 보강 중
+상태: G0·G1·G3 로컬 통과(G3.8C3 account-global paper performance, G3.8D current-selection strategy-window performance, G3.8E versioned local paper performance policy·atomic automatic halt/rollback 구현·독립 리뷰·fresh local/mock 검증 완료), G2 build/widget/browser·자동 accessibility/reduced-motion 증거 확보 및 physical profile/screen-reader 증거 보강 중
 기준일: 2026-08-31
 
 ## 목표
@@ -1252,4 +1252,12 @@ G3.8D adds one internal append-only series derived only from fully recovered G3.
 
 Schema v19 and backup v13 pin the table, uniqueness, five source foreign keys, insert-only/state guards, digest, event count, and accumulated sample count. Backup v12/schema v18 is verified at source, copied, migrated to an empty D log, and never mutated or backfilled. Focused/full/race and independent implementation review passed locally; final check, smoke, cleanup, and documentation evidence is in [`../gates/g3m-paper-strategy-performance.md`](../gates/g3m-paper-strategy-performance.md).
 
-Still open: a versioned threshold/action policy requiring at least two same-window points, automatic halt/rollback provenance, scheduler, API/UI, broker-backed evaluation, credential/live execution, deployment, promotion authority, and any profitability claim.
+## 2026-08-31 G3.8E continuation: versioned paper performance safety policy
+
+G3.8E consumes only the fully recovered latest G3.8D row for the exact current non-`no_strategy` selection. The dependency-free `paper-strategy-performance-safety.v1` policy records `INSUFFICIENT` below two same-selection samples, otherwise prioritizes `max_drawdown >= 0.1`, then `cumulative_return <= -0.05`, and records `HOLD` inside those local paper bounds. These constants are conservative local defaults, not empirical optima, advice, live thresholds, or a profitability claim.
+
+One immediate SQLite transaction records the policy row first, deterministically halts every authority armed at the captured global cutoff in lexical account order, and appends one exact-source one-pop strategy rollback. Full non-recursive recovery verifies canonical JSON/hash, three cutoffs, latest-at-cutoff evidence, one-clock provenance, fencing, forward/reverse action coverage, deterministic IDs, retries, concurrency, and corruption before commit or cached retry.
+
+Schema v20 and backup v14 pin the append-only policy journal, rebuilt authority/selection links, canonical v19 FK baseline, pre/post migration journal/FK/trigger proofs, restore objects, and policy digest/count/action receipt. Backup v13/schema v19 is verified unchanged, copied to an owned temporary candidate, and migrated only there to an empty policy log. Focused/full/race, `make check`, `make smoke`, `govulncheck`, independent clean review, success/failure/SIGINT/SIGTERM/stale-owner cleanup, and zero final inventory evidence is in [`../gates/g3n-paper-performance-policy.md`](../gates/g3n-paper-performance-policy.md).
+
+Still open: scheduler, alerting, API/UI, broker-backed evaluation, credential/live execution, deployment, shadow/live promotion authority, and any profitability claim.

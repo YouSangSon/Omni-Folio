@@ -53,6 +53,7 @@
 - **Paper operational evaluation**: G3.8A가 현재 선택·계좌에 묶인 paper 주문 전체를 replay해 완료 표본, 진행 중 상태, 미확정 submit/cancel을 append-only로 기록하는 운영 증거. G3.8C2 accounting이 존재해도 이 평가는 marks·equity·return/drawdown을 소비하지 않으므로 수익성 또는 자동 rollback 근거가 아니다.
 - **Paper performance evidence**: G3.8C3가 account-global session에서 complete daily-close marks와 bounded fill replay로 cash, equity, return, drawdown을 append-only로 보존하는 local ex-post 증거. 전략 선택 변경 전후의 account health는 이어지며, 특정 전략 attribution이나 자동 rollback 판단이 아니다.
 - **Strategy-window paper performance**: G3.8D가 current non-`no_strategy` selection의 첫 C3 point를 zero-return anchor로 삼아 그 selection 안의 C3 points만 비교하는 내부 evidence. 최소 두 point 전에는 성과 판단으로 읽지 않으며 threshold, halt, rollback, UI, broker truth, live readiness가 아니다.
+- **Paper performance safety policy**: G3.8E가 recovered latest same-selection G3.8D row에만 `paper-strategy-performance-safety.v1`을 적용해 `INSUFFICIENT`, `HOLD`, `HALT_AND_ROLLBACK`을 append-only로 기록하는 local paper-only 경계. action은 captured armed authority 전체의 deterministic fencing halt와 exact one-pop selection rollback을 한 transaction에 묶지만 scheduler, broker submit, promotion 또는 live authority가 아니다.
 - **`no_promotion` / `no_strategy`**: 전자는 한 실험의 gate 실패 결과, 후자는 현재 선택이 없다는 registry sentinel이다.
 - **Live-disabled**: 어떤 UI 설정이나 프로세스 시작만으로도 실주문이 나갈 수 없는 기본 실행 상태.
 
@@ -72,6 +73,7 @@
 - 모든 local capitalized fill은 current execution-authority event와 exact fence를 요구한다. Direct raw SQLite는 application writer authority 밖이며 SQL이 재현하지 않는 exact 경제 산술은 recovery와 restore activation이 다시 계산해 불일치를 거절한다.
 - G3.8A 평가는 caller metric을 받지 않고 검증된 주문 replay에서만 `INSUFFICIENT`, `PASS`, `DEGRADED`를 산출한다. `DEGRADED` 기록은 strategy selection이나 execution authority를 바꾸지 않으며, 자동 중단·rollback은 별도 성과·정책 gate 전에는 허용하지 않는다.
 - G3.8D strategy-window 성과는 caller metric을 받지 않고 복구 검증된 C3 rows에서만 파생한다. 첫 same-selection C3 point는 attribution anchor일 뿐 수익/손실 판단 표본이 아니며, schema v19/backup v13은 D digest/event/sample count를 검증하고 v12/schema v18은 원본을 바꾸지 않는 owned copy에서 empty D log로만 migration한다.
+- G3.8E policy는 caller metric·threshold·decision·reason·action ID를 받지 않는다. 표본 2개 미만은 `INSUFFICIENT`, drawdown 0.1 이상을 우선 action, 그 외 cumulative return -0.05 이하를 action으로 판정하며 이 값은 보수적 local paper default일 뿐 실증 최적값·투자 권유·수익 보장 또는 live threshold가 아니다.
 - 주문 timeout은 실패가 아니라 결과 미확정 상태다. 같은 식별자로 조회·reconcile하기 전 재주문하지 않는다.
 - offline 상태에서 주문을 큐에 넣지 않는다.
 - 삭제나 덮어쓰기 대신 correction/event append를 기본으로 한다.

@@ -50,6 +50,7 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 - 후보 선택은 단일 최고 수익률이 아니라 비용 후 수익, 최대 낙폭, 거래 수, turnover/capacity, 구간·시장 국면별 안정성, 기존 champion 대비 개선을 함께 본다. 반복 탐색으로 test set에 과적합하지 않도록 실험 예산과 최종 holdout을 분리한다.
 - champion/challenger 승격은 `research_candidate → paper_candidate → paper → shadow`까지만 자동화할 수 있다. 데이터 오류, 성능 저하, paper/backtest 괴리, 위험 한도 위반이 생기면 자동 중지하고 직전 champion으로 롤백한다.
 - paper 주문의 완료·진행·결과 미확정 상태를 기록하는 운영 평가는 투자 성과와 분리한다. 자동 중지·롤백은 SELL, 현금, 수수료, 세금, slippage, 지연, durable price mark와 equity curve에서 결정적으로 계산한 versioned 성과 evidence가 준비된 뒤에만 운영 평가를 소비할 수 있다.
+- local paper 성과 안전정책 `paper-strategy-performance-safety.v1`은 현재 selection에 귀속된 복구 검증 G3.8D 표본만 소비한다. 같은 selection 표본이 2개 미만이면 `INSUFFICIENT`, `max_drawdown >= 0.1`이면 우선 `HALT_AND_ROLLBACK`, 그 외 `cumulative_return <= -0.05`이면 `HALT_AND_ROLLBACK`, 나머지는 `HOLD`를 append-only로 기록한다. 자동 action은 현재 armed authority 전체의 결정적 halt와 정확한 one-pop strategy rollback을 하나의 transaction에서 수행하고 full replay, cutoff·action provenance, schema/backup/legacy migration proof를 통과해야 한다. 이 값은 실증된 최적값·수익 보장·투자 권유·live threshold가 아니며 scheduler, broker submit, promotion, public API/UI 또는 live authority를 만들지 않는다.
 - canary 또는 live로의 승격과 실제 자금 확대는 자동화하지 않는다. 별도 owner 승인, broker별 promotion evidence, reconciliation, healthy kill switch와 매 주문 risk gate를 요구한다.
 - live 전략은 paper trading에서 일정 기간 검증한 동일한 전략 정의와 동일한 주문 상태 머신만 사용한다. paper/live 환경, API key, 계좌, feature flag를 물리적으로 분리한다.
 - 자동매매 hot path는 p50/p95/p99 지연, 시장 데이터 freshness, queue depth, provider latency, 주문 접수/체결 지연, 실패·재시도 횟수를 측정한다.
@@ -204,7 +205,7 @@ Market data adapters
 - 자동 승격 상한: research candidate에서 paper/shadow까지. canary/live 승격과 자금 확대는 owner 승인 없이 수행하지 않음
 - paper automation: 전략 신호를 포트폴리오 목표와 risk-adjusted target으로 변환한 뒤 공통 주문 pipeline이 paper order만 실행
 - G3.8C1은 계좌별 최초 선택 연구 산출물에서만 starting capital과 execution policy를 파생해 불변으로 보존한다. 이후 전략 변경은 이를 초기화하지 않으며, 이는 현금·체결·성과·자동 권한을 만들지 않는 선행 증거다.
-- G3.8C3는 transaction-current order/market cutoff 아래의 account-global paper accounting과 완전한 `paper_fixture` daily-close mark로 cash·equity·return·drawdown을 exact하게 복구한다. G3.8D는 current non-`no_strategy` selection에 귀속되는 strategy-window performance evidence만 별도 append-only로 보존해 선택 전 account movement를 현재 전략 성과로 오인하지 않게 한다. 현재 schema v19/backup v13은 C3 account-global proof와 D strategy-window proof를 모두 검증하며, 이는 local ex-post paper evidence일 뿐 수익성, performance threshold, 자동 halt/rollback, UI, broker truth, deployment 또는 live readiness를 뜻하지 않는다.
+- G3.8C3는 transaction-current order/market cutoff 아래의 account-global paper accounting과 완전한 `paper_fixture` daily-close mark로 cash·equity·return·drawdown을 exact하게 복구한다. G3.8D는 current non-`no_strategy` selection에 귀속되는 strategy-window performance evidence만 별도 append-only로 보존해 선택 전 account movement를 현재 전략 성과로 오인하지 않게 한다. 현재 schema v20/backup v14는 C3/D proof와 G3.8E의 versioned local paper policy·atomic halt/rollback provenance를 함께 검증하며, 이는 수익성, UI, broker truth, deployment 또는 live readiness를 뜻하지 않는다.
 - owner-managed always-on host에서 DB lease/fencing으로 단일 runner만 활성화하고 중복 scheduler·중복 주문을 검증
 - kill switch: 수동 중지, 일일 손실, 연속 실패, stale data, reconciliation mismatch, provider 장애
 - Strategy Lab, Backtest Report, Automation Monitor, Risk/Latency 화면: 전략 버전·모드·자금 배분·위험 한도·최근 신호/주문/체결·freshness·kill switch 표시

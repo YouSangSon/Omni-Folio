@@ -46,7 +46,8 @@ G3 research vertical slice
 ├─ G3.8C1 immutable account-global paper accounting session
 ├─ G3.8C2 SELL and capital-safe paper accounting
 ├─ G3.8C3 immutable marks and account-global performance evidence
-└─ G3.8D current-selection strategy-window performance evidence
+├─ G3.8D current-selection strategy-window performance evidence
+└─ G3.8E versioned paper performance safety policy and atomic automatic action
    |
 G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4A Kiwoom K0 read contract
@@ -88,6 +89,7 @@ G6 PostgreSQL and Kubernetes promotion
 - G3.8C2는 account-global session과 같은 execution policy에 묶인 ex-post closed-bar BUY/SELL, exact cost와 replay-derived cash/FIFO/PnL, schema v17/backup v11 복구만 증명한다. 브로커 체결, marks/equity/returns/drawdown, scheduler, threshold, 자동 halt/rollback 또는 live readiness가 아니다. 구현·태스크 리뷰와 fresh local/mock 명령 근거는 [`gates/g3k-paper-fill-accounting.md`](gates/g3k-paper-fill-accounting.md)에 분리한다.
 - G3.8C3는 transaction-current order/market cutoff, complete `paper_fixture` daily-close marks, account-global cash/equity/return/drawdown, insert-only recovery proof를 local에서 검증한다. 이는 profit, threshold, automatic halt/rollback, public UI, broker truth, deployment 또는 live readiness가 아니며, 세부 근거는 [`gates/g3l-paper-performance-evidence.md`](gates/g3l-paper-performance-evidence.md)에 둔다.
 - G3.8D는 current non-`no_strategy` selection의 첫 C3 point를 attribution anchor로 삼는 strategy-window paper performance evidence와 schema v19/backup v13 proof를 검증한다. 이는 threshold, decision, automatic halt/rollback, public UI, broker truth, deployment 또는 live readiness가 아니며, 세부 근거는 [`gates/g3m-paper-strategy-performance.md`](gates/g3m-paper-strategy-performance.md)에 둔다.
+- G3.8E는 복구 검증된 latest same-selection G3.8D evidence에만 고정 v1 local paper threshold를 적용하고, action이면 모든 captured armed authority의 결정적 halt와 exact one-pop rollback을 한 transaction에서 append한다. schema v20/backup v14, v13 owned-copy, full forward/reverse recovery와 cleanup matrix를 검증하지만 scheduler, public API/UI, broker call, promotion, deployment, live authority 또는 수익성을 뜻하지 않는다. 세부 근거는 [`gates/g3n-paper-performance-policy.md`](gates/g3n-paper-performance-policy.md)에 둔다.
 - local 검증, broker sandbox, live readiness, 실제 운영 증거를 따로 보고한다.
 - external deploy, credential, live 주문, push는 명시 승인 없이는 실행하지 않는다.
 
