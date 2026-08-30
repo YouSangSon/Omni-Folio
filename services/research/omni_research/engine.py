@@ -128,7 +128,7 @@ def request_execution(request: dict[str, Any]) -> tuple[dict[str, Any], Decimal,
     slippage_bps = decimal_input(execution["slippage_bps"], "execution.slippage_bps")
     delay = decimal_input(execution["delay_bars"], "execution.delay_bars")
     participation = decimal_input(execution["max_participation"], "execution.max_participation")
-    if starting_cash <= ZERO or min(fee, tax, slippage_bps) < ZERO or not ZERO < participation <= ONE:
+    if starting_cash <= ZERO or fee < ZERO or not ZERO <= tax <= ONE or not ZERO <= slippage_bps < BPS_DENOMINATOR or not ZERO < participation <= ONE:
         raise ValueError("execution values are out of range")
     if delay < ONE or delay != delay.to_integral_value():
         raise ValueError("execution.delay_bars must be a whole number of at least 1 to prevent lookahead")

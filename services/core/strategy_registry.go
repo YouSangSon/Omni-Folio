@@ -623,11 +623,17 @@ func decodeStrategyExecutionContract(value any) (strategyExecutionPolicy, error)
 	if err != nil || startingCash.Sign() <= 0 {
 		return strategyExecutionPolicy{}, errors.New("strategy execution contract is invalid")
 	}
-	for _, field := range []string{"fee", "tax", "slippage_bps"} {
-		value, err := parseDecimal(stringField(execution, field))
-		if err != nil || value.Sign() < 0 {
-			return strategyExecutionPolicy{}, errors.New("strategy execution contract is invalid")
-		}
+	fee, err := parseDecimal(stringField(execution, "fee"))
+	if err != nil || fee.Sign() < 0 {
+		return strategyExecutionPolicy{}, errors.New("strategy execution contract is invalid")
+	}
+	tax, err := parseDecimal(stringField(execution, "tax"))
+	if err != nil || tax.Sign() < 0 || tax.Cmp(big.NewRat(1, 1)) > 0 {
+		return strategyExecutionPolicy{}, errors.New("strategy execution contract is invalid")
+	}
+	slippage, err := parseDecimal(stringField(execution, "slippage_bps"))
+	if err != nil || slippage.Sign() < 0 || slippage.Cmp(big.NewRat(10000, 1)) >= 0 {
+		return strategyExecutionPolicy{}, errors.New("strategy execution contract is invalid")
 	}
 	delay, err := parseDecimal(stringField(execution, "delay_bars"))
 	if err != nil || delay.Sign() <= 0 || !delay.IsInt() || !delay.Num().IsInt64() {

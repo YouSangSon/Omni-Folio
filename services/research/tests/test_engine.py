@@ -58,6 +58,14 @@ class BacktestTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "prevent lookahead"):
             build_manifest(FIXTURES / "market-bars.csv", request, **RUN_ARGS)
 
+    def test_execution_rejects_tax_above_one_and_full_slippage(self) -> None:
+        for field, value in (("tax", "1.0001"), ("slippage_bps", "10000")):
+            with self.subTest(field=field):
+                request = self.request()
+                request["execution"] = {**request["execution"], field: value}  # type: ignore[index]
+                with self.assertRaisesRegex(ValueError, "out of range"):
+                    build_manifest(FIXTURES / "market-bars.csv", request, **RUN_ARGS)
+
     def test_invalid_capital_time_and_ohlc_are_rejected(self) -> None:
         request = self.request()
         request["execution"] = {**request["execution"], "starting_cash": "0"}  # type: ignore[index]

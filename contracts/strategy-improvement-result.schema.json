@@ -60,8 +60,8 @@
       "properties": {
         "starting_cash": { "$ref": "#/$defs/positive_decimal" },
         "fee": { "$ref": "#/$defs/non_negative_decimal" },
-        "tax": { "$ref": "#/$defs/non_negative_decimal" },
-        "slippage_bps": { "$ref": "#/$defs/non_negative_decimal" },
+        "tax": { "$ref": "#/$defs/tax_decimal" },
+        "slippage_bps": { "$ref": "#/$defs/slippage_bps_decimal" },
         "delay_bars": { "$ref": "#/$defs/positive_integer_decimal" },
         "max_participation": { "$ref": "#/$defs/participation_decimal" },
         "signal_price": { "const": "bar_close" },
@@ -117,6 +117,14 @@
     "non_negative_decimal": {
       "type": "string",
       "pattern": "^(?:0|[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$"
+    },
+    "tax_decimal": {
+      "type": "string",
+      "pattern": "^(?:0|1|0\\.[0-9]*[1-9])$"
+    },
+    "slippage_bps_decimal": {
+      "type": "string",
+      "pattern": "^(?:0|0\\.[0-9]*[1-9]|[1-9][0-9]{0,3}(?:\\.[0-9]*[1-9])?)$"
     },
     "positive_integer_decimal": {
       "type": "string",

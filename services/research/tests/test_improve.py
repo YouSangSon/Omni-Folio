@@ -196,14 +196,24 @@ class ImprovementTest(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "canonical decimal string"):
                         run_experiment(bars, config)
 
+    def test_execution_rejects_tax_above_one_and_full_slippage(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            bars = self.write_bars(Path(temporary))
+            for field, value in (("tax", "1.0001"), ("slippage_bps", "10000")):
+                with self.subTest(field=field):
+                    config = self.config()
+                    config["execution"] = {**config["execution"], field: value}  # type: ignore[index]
+                    with self.assertRaisesRegex(ValueError, "out of range"):
+                        run_experiment(bars, config)
+
     def test_result_schema_execution_ranges_match_runtime(self) -> None:
         schema = json.loads((ROOT / "contracts" / "strategy-improvement-result.schema.json").read_text(encoding="utf-8"))
         execution = schema["properties"]["execution"]["properties"]
         cases = {
             "starting_cash": (["1", "0.01"], ["0", "-1", "01", "1.0"]),
             "fee": (["0", "1", "0.01"], ["-0", "-1", "01", "1.0"]),
-            "tax": (["0", "0.001"], ["-0", "-0.1", "00"]),
-            "slippage_bps": (["0", "10", "0.5"], ["-0", "-1", "10.0"]),
+            "tax": (["0", "0.001", "1"], ["-0", "-0.1", "00", "1.0001"]),
+            "slippage_bps": (["0", "10", "0.5", "9999.999"], ["-0", "-1", "10.0", "10000"]),
             "delay_bars": (["1", "10"], ["0", "-1", "1.5", "01"]),
             "max_participation": (["1", "0.5", "0.001"], ["0", "-0", "-1", "1.1", "2"]),
         }

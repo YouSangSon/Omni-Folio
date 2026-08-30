@@ -99,6 +99,8 @@ def parse_config(config: dict[str, Any]) -> ExperimentConfig:
         raise ValueError("strategy grid must contain at most 64 fast windows strictly below every slow window")
 
     execution, starting_cash, fee, tax_rate, slippage_bps, delay_bars, participation = request_execution({"execution": config["execution"]})
+    if tax_rate > ONE or slippage_bps >= BPS_DENOMINATOR:
+        raise ValueError("execution values are out of range")
     splits = object_value(config["splits"], "splits")
     if set(splits) != {"train_bars", "validation_bars", "holdout_bars", "minimum_fold_bars"}:
         raise ValueError("splits fields are invalid")

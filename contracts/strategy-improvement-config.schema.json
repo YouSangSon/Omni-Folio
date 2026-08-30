@@ -64,6 +64,14 @@
       "type": "string",
       "pattern": "^(?:0|-?(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$"
     },
+    "tax_decimal": {
+      "type": "string",
+      "pattern": "^(?:0|1|0\\.[0-9]*[1-9])$"
+    },
+    "slippage_bps_decimal": {
+      "type": "string",
+      "pattern": "^(?:0|0\\.[0-9]*[1-9]|[1-9][0-9]{0,3}(?:\\.[0-9]*[1-9])?)$"
+    },
     "window_list": {
       "type": "array",
       "minItems": 1,
@@ -78,8 +86,8 @@
       "properties": {
         "starting_cash": { "$ref": "#/$defs/decimal" },
         "fee": { "$ref": "#/$defs/decimal" },
-        "tax": { "$ref": "#/$defs/decimal" },
-        "slippage_bps": { "$ref": "#/$defs/decimal" },
+        "tax": { "$ref": "#/$defs/tax_decimal" },
+        "slippage_bps": { "$ref": "#/$defs/slippage_bps_decimal" },
         "delay_bars": { "$ref": "#/$defs/decimal" },
         "max_participation": { "$ref": "#/$defs/decimal" },
         "signal_price": { "const": "bar_close" },

@@ -24,7 +24,9 @@ func TestG38BRegistryRejectsUnsafeExecutionContract(t *testing.T) {
 		{"zero starting cash", func(v map[string]any) { v["starting_cash"] = "0" }},
 		{"negative fee", func(v map[string]any) { v["fee"] = "-1" }},
 		{"negative tax", func(v map[string]any) { v["tax"] = "-0.001" }},
+		{"excess tax", func(v map[string]any) { v["tax"] = "1.0001" }},
 		{"negative slippage", func(v map[string]any) { v["slippage_bps"] = "-1" }},
+		{"excess slippage", func(v map[string]any) { v["slippage_bps"] = "10000" }},
 		{"zero delay", func(v map[string]any) { v["delay_bars"] = "0" }},
 		{"fractional delay", func(v map[string]any) { v["delay_bars"] = "1.5" }},
 		{"zero participation", func(v map[string]any) { v["max_participation"] = "0" }},
@@ -69,7 +71,7 @@ func TestG38C1LoadsOnlyCurrentSelectedExecutionPolicy(t *testing.T) {
 	}
 	if policy.StartingCash != "10000" || policy.Fee != "1" || policy.Tax != "0.001" || policy.SlippageBPS != "10" ||
 		policy.DelayBars != 1 || policy.MaxParticipation != "0.5" || policy.SignalPrice != "bar_close" ||
-		policy.FillPrice != "next_eligible_bar_open" || !strategySHA256Pattern.MatchString(policy.SHA256) {
+		policy.FillPrice != "next_eligible_bar_open" || policy.SHA256 != "84dab9f69764b1d9c880d45b2e1b440db5b6f0b9cb48ae7c3850ad831d382b23" {
 		t.Fatalf("execution policy=%+v", policy)
 	}
 	if _, err := svc.rollbackPaperCandidate(ctx, selected.CurrentEventID, selected.CurrentEventID); err != nil {
