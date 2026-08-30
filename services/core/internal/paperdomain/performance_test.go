@@ -43,18 +43,18 @@ func TestValueAccountCashOnlyAndMultiSymbol(t *testing.T) {
 		},
 		{
 			name:         "multiple symbols",
-			startingCash: "1000",
+			startingCash: "370.3",
 			state: AccountState{Cash: "100", RealizedPnL: "0", Lots: map[string][]Lot{
 				"005930": {{Quantity: "2", Cost: "120.2"}, {Quantity: "1", Cost: "60.1"}},
 				"000660": {{Quantity: "3", Cost: "90"}},
 			}},
 			closes: map[string]string{"000660": "40.5", "005930": "70.25"},
 			want: Valuation{
-				Cash: "100", OpenCost: "270.3", MarketValue: "261.5", RealizedPnL: "0",
-				UnrealizedPnL: "-8.8", TotalPnL: "-8.8", Equity: "361.5",
+				Cash: "100", OpenCost: "270.3", MarketValue: "332.25", RealizedPnL: "0",
+				UnrealizedPnL: "61.95", TotalPnL: "61.95", Equity: "432.25",
 				Positions: map[string]PositionValuation{
 					"000660": {Quantity: "3", OpenCost: "90", MarketValue: "121.5", UnrealizedPnL: "31.5"},
-					"005930": {Quantity: "3", OpenCost: "180.3", MarketValue: "140.5", UnrealizedPnL: "-39.8"},
+					"005930": {Quantity: "3", OpenCost: "180.3", MarketValue: "210.75", UnrealizedPnL: "30.45"},
 				},
 			},
 		},
@@ -83,11 +83,11 @@ func TestValueAccountIsIndependentOfMapOrder(t *testing.T) {
 			"005930": {Quantity: "1", OpenCost: "60", MarketValue: "70", UnrealizedPnL: "10"},
 		},
 	}
-	got, err := ValueAccount("100", state, closes)
+	got, err := ValueAccount("240", state, closes)
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("ValueAccount() = %+v, %v; want %+v, nil", got, err, want)
 	}
-	gotAgain, err := ValueAccount("100", state, map[string]string{"000660": "45", "005930": "70"})
+	gotAgain, err := ValueAccount("240", state, map[string]string{"000660": "45", "005930": "70"})
 	if err != nil || !reflect.DeepEqual(gotAgain, got) {
 		t.Fatalf("ValueAccount() with reordered marks = %+v, %v; want %+v, nil", gotAgain, err, got)
 	}
