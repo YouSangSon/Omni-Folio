@@ -177,6 +177,7 @@ class _ProfileApi implements OmniApi {
   );
   final _snapshot = PortfolioSnapshot(
     ledgerRevision: 'rev_profile',
+    costBasisPolicy: 'fifo_exact_else_half_even_residual_8_v1',
     recordedAt: DateTime.utc(2026, 8, 24),
     cash: const [Money('KRW', '1000000')],
     holdings: List.generate(

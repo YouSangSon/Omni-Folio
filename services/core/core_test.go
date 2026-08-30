@@ -56,6 +56,19 @@ func TestGoldenVerticalSliceAndBackupRestore(t *testing.T) {
 	if err := verifyManifest(backup, fixturePath("golden-snapshot.json"), backup+".manifest.json"); err != nil {
 		t.Fatal(err)
 	}
+	legacyGolden := bytes.Replace(
+		fixture(t, "golden-snapshot.json"),
+		[]byte("  \"cost_basis_policy\": \"fifo_exact_else_half_even_residual_8_v1\",\n"),
+		nil,
+		1,
+	)
+	legacyGoldenPath := filepath.Join(t.TempDir(), "legacy-golden-without-cost-policy.json")
+	if err := os.WriteFile(legacyGoldenPath, legacyGolden, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verifyRestoreProof(backup, legacyGoldenPath); err != nil {
+		t.Fatal("compatible legacy golden was rejected:", err)
+	}
 	if err := verifyManifest(backup, fixturePath("golden-snapshot.json"), fixturePath("invalid-backup-manifest.json")); err == nil {
 		t.Fatal("rejected backup manifest was accepted")
 	}
@@ -323,27 +336,111 @@ func TestFIFOAllocatesBuyAndSellFeesExactly(t *testing.T) {
 	}
 }
 
-func TestRecurringFIFOAllocationFailsClosedAtomically(t *testing.T) {
+func TestRecurringFIFOAllocationUsesVersionedResidualPolicy(t *testing.T) {
 	svc, _ := testService(t, nil, nil)
-	preview, appErr := svc.preview(context.Background(), []byte(testCSV(
+	applyTestCSV(t, svc, "recurring-fifo-first", testCSV(
 		"b1,account-main,BUY,2026-01-02T00:00:00Z,AAPL,3,0.3,0.1,USD,-1",
 		"s1,account-main,SELL,2026-01-03T00:00:00Z,AAPL,1,1,0,USD,1",
-	)))
-	if appErr != nil || !preview.CanApply {
-		t.Fatalf("finite input preview was unexpectedly rejected: preview=%+v err=%v", preview, appErr)
-	}
-	if _, appErr := svc.apply(context.Background(), ApplyRequest{preview.PreviewID, "recurring-fifo"}); appErr == nil || appErr.body.Code != "invalid_ledger" {
-		t.Fatalf("recurring FIFO allocation did not fail closed: %#v", appErr)
-	}
-	var events, revision int
-	if err := svc.db.QueryRow(`SELECT count(*) FROM events`).Scan(&events); err != nil {
+	))
+	assertRecurringFIFOSnapshot(t, svc, []Holding{{"instrument_aapl", "AAPL", "2", "0.66666667", "USD"}}, "0.66666667")
+
+	applyTestCSV(t, svc, "recurring-fifo-second", testCSV(
+		"s2,account-main,SELL,2026-01-04T00:00:00Z,AAPL,1,1,0,USD,1",
+	))
+	assertRecurringFIFOSnapshot(t, svc, []Holding{{"instrument_aapl", "AAPL", "1", "0.333333335", "USD"}}, "1.333333335")
+
+	applyTestCSV(t, svc, "recurring-fifo-final", testCSV(
+		"s3,account-main,SELL,2026-01-05T00:00:00Z,AAPL,1,1,0,USD,1",
+	))
+	assertRecurringFIFOSnapshot(t, svc, []Holding{}, "2")
+}
+
+func assertRecurringFIFOSnapshot(t *testing.T, svc *Service, holdings []Holding, realized string) {
+	t.Helper()
+	snapshot, err := snapshotFrom(context.Background(), svc.db)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.db.QueryRow(`SELECT revision FROM ledger_meta`).Scan(&revision); err != nil {
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if events != 0 || revision != 0 {
-		t.Fatalf("recurring FIFO allocation partially mutated the ledger: events=%d revision=%d", events, revision)
+	if !strings.Contains(string(encoded), `"cost_basis_policy":"fifo_exact_else_half_even_residual_8_v1"`) ||
+		!reflect.DeepEqual(snapshot.Holdings, holdings) ||
+		!reflect.DeepEqual(snapshot.RealizedPnL, []Money{{"USD", realized}}) {
+		t.Fatalf("recurring FIFO policy drifted: %s", encoded)
+	}
+}
+
+func TestFIFOQuantizationUsesHalfEvenAndCannotExceedTinyLotCost(t *testing.T) {
+	for _, test := range []struct {
+		value, want string
+	}{
+		{"1.234567845", "1.23456784"},
+		{"1.234567855", "1.23456786"},
+		{"-1.234567845", "-1.23456784"},
+	} {
+		value, err := parseDecimal(test.value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := formatDecimal(quantizeHalfEven(value, 8)); err != nil || got != test.want {
+			t.Fatalf("half-even %s: got=%q err=%v want=%q", test.value, got, err, test.want)
+		}
+	}
+
+	cost, _ := parseDecimal("0.000000006")
+	take, _ := parseDecimal("6")
+	quantity, _ := parseDecimal("7")
+	allocation, err := fifoCostAllocation(cost, take, quantity)
+	formatted, formatErr := formatDecimal(allocation)
+	if err != nil || formatErr != nil || formatted != "0.000000005" || allocation.Sign() < 0 || allocation.Cmp(cost) > 0 {
+		t.Fatalf("tiny partial lot over-allocated: allocation=%v cost=%v err=%v", allocation, cost, err)
+	}
+
+	exactCost, _ := parseDecimal("1")
+	exactTake, _ := parseDecimal("1")
+	exactQuantity, _ := parseDecimal("2048")
+	exactAllocation, err := fifoCostAllocation(exactCost, exactTake, exactQuantity)
+	exactFormatted, formatErr := formatDecimal(exactAllocation)
+	if err != nil || formatErr != nil || exactFormatted != "0.00048828125" {
+		t.Fatalf("previously exact FIFO allocation changed: allocation=%v err=%v", exactAllocation, err)
+	}
+}
+
+func TestFIFOResidualConservesCostAcrossSplitAndMultipleLots(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	applyTestCSV(t, svc, "fifo-split-multi-lot", testCSV(
+		"b1,account-main,BUY,2026-01-01T00:00:00Z,AAPL,3,0.3,0.1,USD,-1",
+		"b2,account-main,BUY,2026-01-02T00:00:00Z,AAPL,7,0.1,0.3,USD,-1",
+		"split,account-main,SPLIT,2026-01-03T00:00:00Z,AAPL,2,,,USD,0",
+		"s1,account-main,SELL,2026-01-04T00:00:00Z,AAPL,8,1,0,USD,8",
+		"s2,account-main,SELL,2026-01-05T00:00:00Z,AAPL,12,1,0,USD,12",
+	))
+	snapshot, err := snapshotFrom(context.Background(), svc.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Holdings) != 0 || !reflect.DeepEqual(snapshot.RealizedPnL, []Money{{"USD", "18"}}) {
+		t.Fatalf("split/multi-lot cost was not conserved: %+v", snapshot)
+	}
+}
+
+func TestOpenAPIPinsAnalyticalFIFOAllocationPolicy(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "contracts", "openapi.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := document["components"].(map[string]any)["schemas"].(map[string]any)["PortfolioSnapshot"].(map[string]any)
+	policy := snapshot["properties"].(map[string]any)["cost_basis_policy"].(map[string]any)
+	required := snapshot["required"].([]any)
+	if !containsJSONText(required, "cost_basis_policy") || policy["const"] != fifoCostBasisPolicy ||
+		!strings.Contains(policy["description"].(string), "not a jurisdictional tax-basis claim") {
+		t.Fatal("PortfolioSnapshot does not pin the analytical FIFO policy")
 	}
 }
 

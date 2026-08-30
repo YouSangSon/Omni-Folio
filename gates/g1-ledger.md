@@ -7,6 +7,7 @@
 - apply는 한 transaction이고 같은 idempotency key와 payload에는 같은 receipt를 반환한다.
 - key 재사용과 다른 payload는 conflict이며 부분 mutation이 없다.
 - FIFO snapshot에서 보유 수량, 현금, 실현손익, provenance가 golden fixture와 일치한다.
+- `fifo_exact_else_half_even_residual_8_v1`은 기존 유한 FIFO 원가 배분을 exact 유지하고 반복소수인 부분 lot만 half-even 양자화하며, 잔여 원가를 최종 lot 청산까지 보존한다. snapshot/OpenAPI/Flutter가 같은 버전을 고정하고 legacy golden의 필드 누락만 호환 보완한다.
 - exact-decimal cash-flow는 입금·출금·현금배당·수수료·세금의 부호를 fail-closed하고, stock split은 열린 FIFO lot 수량만 조정하며 총원가와 cash를 보존한다.
 - `CASH_VOID`는 이미 적용된 같은 계좌·통화의 입금·출금·현금배당·수수료·세금 하나만 exact 반전한다. 원본 event는 보존하고 거래·분할·같은-preview target·중복 void·chain을 차단한다.
 - `FX_EXCHANGE`는 매도 통화의 음수 cash leg와 다른 매수 통화의 양수 cash leg를 하나의 event로 원자 적용한다. 두 금액에서 환율이나 현재 시세를 주장하지 않는다.
@@ -30,4 +31,4 @@
 
 ## Still open
 
-- Provider FX/price ingestion, source priority/market-calendar policy, public/base-currency whole-portfolio and performance valuation, historical-FX cost policy, FIFO quantization, FX/trade/split/corporate-action correction, dividend reinvestment, jurisdiction-specific tax classification, and credentialed broker execution/cash reconciliation.
+- Provider FX/price ingestion, source priority/market-calendar policy, public/base-currency whole-portfolio and performance valuation, historical-FX cost policy, display/currency rounding, FX/trade/split/corporate-action correction, dividend reinvestment, jurisdiction-specific tax classification, and credentialed broker execution/cash reconciliation.

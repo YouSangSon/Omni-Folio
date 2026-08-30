@@ -13,7 +13,7 @@ Scope: credential-free, internal-only holding valuation from replay-verified led
 - [x] G1I7: corrupt ledger proof returns a sanitized internal error rather than certifying a valuation.
 - [x] G1I8: schema v11 and backup v7 remain unchanged, and `PortfolioSnapshot.valuation_status` remains `unavailable`.
 - [x] G1I9: no route, OpenAPI contract, Flutter UI, provider integration, credential, scheduler or live-money authority is added.
-- [x] G1I10: recurring rational FIFO allocation remains fail-closed and rolls the import back atomically while a versioned rounding/quantization policy is still open.
+- [x] G1I10 historical boundary: recurring rational FIFO allocation failed closed and rolled the import back atomically before G1.14 introduced a versioned policy.
 
 ## Evidence commands
 
@@ -26,13 +26,13 @@ Scope: credential-free, internal-only holding valuation from replay-verified led
 - Price identity prerequisite GREEN `0ad1dae`: price observations now accept the same safe internal instrument ID emitted by ledger replay while retaining strict symbol, venue and currency validation.
 - Valuation RED `b6f81de`: the focused contract failed because the internal native-currency holding read model did not exist.
 - Valuation GREEN `186cd2f`: exact native market value, unrealized PnL, per-currency totals, ledger proof and fail-closed durable-price selection were implemented without changing public authority.
-- FIFO boundary `c1406bc`: finite inputs that imply a recurring rational cost allocation fail with `invalid_ledger` and leave event count and revision unchanged.
+- Historical FIFO boundary `c1406bc`: finite inputs that implied a recurring rational cost allocation failed with `invalid_ledger` and left event count and revision unchanged. G1.14 supersedes this runtime behavior without changing any ledger that could previously commit.
 - Promotion regression `10d4db8`: the full read model selects the newest eligible row within one venue and excludes future observed, fetched and recorded timestamps.
 - Independent review: GO with no blocking findings; public promotion tests remain listed below.
 - Full verification: `make check`, `make smoke`, Go race, `govulncheck` and 77.9% Go statement coverage pass.
 
 ## Promotion gates still open
 
-- Define and version a rounding/quantization plus residual-allocation policy before accepting recurring rational FIFO allocations.
+- G1.14 now owns the accepted recurring-allocation policy and residual-conservation proof; jurisdictional tax-basis and display/currency rounding remain open.
 - Keep the model internal until a real price-ingestion path exists and the public route owns a server-trusted cutoff; do not make Flutter depend on the mobile device clock.
 - Add the closed read-only route, OpenAPI and accessible retained-state Flutter UX together only when the endpoint can return useful durable price evidence.

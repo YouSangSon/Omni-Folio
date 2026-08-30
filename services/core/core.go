@@ -165,6 +165,7 @@ type Provenance struct {
 type PortfolioSnapshot struct {
 	PortfolioID     string     `json:"portfolio_id"`
 	LedgerRevision  string     `json:"ledger_revision"`
+	CostBasisPolicy string     `json:"cost_basis_policy"`
 	AsOf            string     `json:"as_of"`
 	RecordedAt      string     `json:"recorded_at"`
 	LiveEnabled     bool       `json:"live_enabled"`
@@ -174,6 +175,8 @@ type PortfolioSnapshot struct {
 	RealizedPnL     []Money    `json:"realized_pnl"`
 	Provenance      Provenance `json:"provenance"`
 }
+
+const fifoCostBasisPolicy = "fifo_exact_else_half_even_residual_8_v1"
 
 type BackupManifest struct {
 	FormatVersion                       string              `json:"format_version"`
@@ -1138,7 +1141,10 @@ func snapshotFrom(ctx context.Context, q queryer) (*PortfolioSnapshot, error) {
 			if take.Cmp(current.quantity) > 0 {
 				take.Set(current.quantity)
 			}
-			allocation := new(big.Rat).Mul(current.cost, new(big.Rat).Quo(take, current.quantity))
+			allocation, err := fifoCostAllocation(current.cost, take, current.quantity)
+			if err != nil {
+				return nil, fmt.Errorf("SELL %s cost allocation: %w", eventID, err)
+			}
 			allocatedCost.Add(allocatedCost, allocation)
 			current.quantity.Sub(current.quantity, take)
 			current.cost.Sub(current.cost, allocation)
@@ -1156,7 +1162,7 @@ func snapshotFrom(ctx context.Context, q queryer) (*PortfolioSnapshot, error) {
 		return nil, err
 	}
 	snapshot := &PortfolioSnapshot{
-		PortfolioID: "portfolio_main", LedgerRevision: revision(rev), AsOf: asOf, RecordedAt: recorded,
+		PortfolioID: "portfolio_main", LedgerRevision: revision(rev), CostBasisPolicy: fifoCostBasisPolicy, AsOf: asOf, RecordedAt: recorded,
 		LiveEnabled: false, ValuationStatus: "unavailable", Cash: []Money{}, Holdings: []Holding{}, RealizedPnL: []Money{},
 		Provenance: Provenance{EventIDs: eventIDs, ReceiptIDs: receiptIDs},
 	}
@@ -1195,6 +1201,40 @@ func snapshotFrom(ctx context.Context, q queryer) (*PortfolioSnapshot, error) {
 		snapshot.RealizedPnL = append(snapshot.RealizedPnL, Money{currency, amount})
 	}
 	return snapshot, nil
+}
+
+func fifoCostAllocation(cost, take, quantity *big.Rat) (*big.Rat, error) {
+	if take.Cmp(quantity) == 0 {
+		return new(big.Rat).Set(cost), nil
+	}
+	allocation := new(big.Rat).Mul(cost, new(big.Rat).Quo(take, quantity))
+	if _, exact := allocation.FloatPrec(); exact {
+		return allocation, nil
+	}
+	costScale, exact := cost.FloatPrec()
+	if !exact {
+		return nil, errors.New("lot cost is not a finite decimal")
+	}
+	allocation = quantizeHalfEven(allocation, max(8, costScale))
+	if allocation.Sign() < 0 || allocation.Cmp(cost) > 0 {
+		return nil, errors.New("rounded allocation exceeds lot cost")
+	}
+	return allocation, nil
+}
+
+func quantizeHalfEven(value *big.Rat, scale int) *big.Rat {
+	factor := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(scale)), nil)
+	scaled := new(big.Int).Mul(new(big.Int).Abs(value.Num()), factor)
+	quotient, remainder := new(big.Int), new(big.Int)
+	quotient.QuoRem(scaled, value.Denom(), remainder)
+	comparison := new(big.Int).Lsh(new(big.Int).Set(remainder), 1).Cmp(value.Denom())
+	if comparison > 0 || comparison == 0 && quotient.Bit(0) == 1 {
+		quotient.Add(quotient, big.NewInt(1))
+	}
+	if value.Sign() < 0 {
+		quotient.Neg(quotient)
+	}
+	return new(big.Rat).SetFrac(quotient, factor)
 }
 
 func addRat(values map[string]*big.Rat, key string, value *big.Rat) {
@@ -1505,6 +1545,9 @@ func verifyRestoreProof(path, goldenPath string) (orderRecoveryProof, error) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&golden); err != nil {
 		return orderRecoveryProof{}, fmt.Errorf("golden snapshot: %w", err)
+	}
+	if golden.CostBasisPolicy == "" {
+		golden.CostBasisPolicy = fifoCostBasisPolicy
 	}
 	actualJSON, _ := json.Marshal(actual)
 	goldenJSON, _ := json.Marshal(&golden)

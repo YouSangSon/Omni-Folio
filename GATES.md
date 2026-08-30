@@ -25,7 +25,8 @@ G1 ledger vertical slice
 ├─ G1.10 append-only direct FX observation + schema v10/backup v6 proof
 ├─ G1.11 replay-verified direct-FX cash-only valuation
 ├─ G1.12 append-only security price observation + schema v11/backup v7 proof
-└─ G1.13 replay-verified native-currency holding valuation
+├─ G1.13 replay-verified native-currency holding valuation
+└─ G1.14 versioned recurring FIFO cost allocation + residual conservation
    |
 G2 client vertical slice
 ├─ G2.1 Flutter iOS/Android/web build

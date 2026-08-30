@@ -65,7 +65,7 @@
 - G1.11 cash valuation은 explicit canonical UTC `as_of`가 현재 ledger `as_of`와 `recorded_at` 이후일 때만 수행한다. eligible FX는 `observed_at <= fetched_at <= recorded_at <= as_of`이고 observation age 24시간 경계를 포함한다. inverse/cross/interpolation, `FX_EXCHANGE` inference, subtotal, 표시용 반올림은 사용하지 않으며 durable corruption은 일반화된 500으로 fail-closed한다.
 - G1.12 security price는 `observed_at <= fetched_at <= recorded_at`을 강제하고 as-of 조회에서 세 시각이 모두 cutoff 이하여야 한다. instrument/symbol/venue/currency/adjustment를 대체하거나 local fixture를 live/current로 승격하지 않으며, schema v11 복원은 빈 series에서도 전체 table DDL·index·insert-only trigger를 검증한다.
 - G1.13 holding valuation은 같은 read transaction에서 원장 proof와 전체 security-price replay를 검증한다. 보유자산의 internal instrument ID·symbol·currency와 연결되는 as-of venue가 하나일 때만 24시간 이내 exact 가격을 사용하며, 누락·복수 venue·stale·미래 기록은 aggregate 전체를 숨긴다. 기준통화 환산, historical FX 원가, 표시 반올림, public API/UI와 snapshot authority 변경은 하지 않는다.
-- FIFO 일부 매도가 `1/3`처럼 유한 decimal로 표현할 수 없는 원가 배분을 만들면 현재 apply는 `invalid_ledger`로 전체 transaction을 rollback한다. versioned quantization과 잔여 원가 보존 정책을 정하기 전에는 암묵적으로 반올림하지 않는다.
+- FIFO 일부 매도 원가는 `fifo_exact_else_half_even_residual_8_v1`을 따른다. 유한 decimal 비례 배분은 그대로 보존하고 반복소수만 현재 lot 원가 scale과 8자리 중 큰 scale에서 half-even 양자화한다. 잔여 원가는 열린 lot에 exact 보존하고 최종 청산이 모두 소비한다. 이는 canonical SELL event 순서의 분석용 정책이며 관할 세무 원가를 주장하지 않는다.
 - 현금 event의 부호와 분할의 0 cash impact를 신뢰하지 않고 import 경계와 SQLite CHECK에서 검증한다. 분할은 실현손익을 만들거나 기존 FIFO 총원가를 바꾸지 않는다.
 - sample market data는 live/current 상태로 승격하거나 실제 market source와 조용히 혼합하지 않는다.
 - G4O 범위 선택은 기기 현재 시각이 아니라 마지막 수신 봉을 기준으로 cutoff를 계산하고 경계 timestamp를 포함한다. 선택은 client display state일 뿐 broker 기간 조회, candle completeness, 실시간성 또는 새 provenance가 아니다.

@@ -10,7 +10,7 @@
 | Gate | 상태 | 증거 |
 |---|---|---|
 | G0 아키텍처·계약 | 통과 | versioned OpenAPI/JSON Schema, runtime ADR, root commands |
-| G1 로컬 원장 | 통과 | CSV preview → atomic apply → exact cash/trade/dividend/tax/split/FX replay → append-only cash void → direct FX observation → cash-only direct-FX valuation → durable security price observation → snapshot/receipt → schema v11/backup v7와 legacy v8/v9/v10 owned-copy migration restore proof |
+| G1 로컬 원장 | 통과 | CSV preview → atomic apply → exact cash/trade/dividend/tax/split/FX replay → versioned FIFO residual allocation → append-only cash void → direct FX observation → cash-only direct-FX valuation → durable security price observation → snapshot/receipt → schema v11/backup v7와 legacy v8/v9/v10 owned-copy migration restore proof |
 | G2 Flutter client | 부분 통과 | iOS·Android·web release build와 자동 parser/widget 테스트 통과; chart 포함 Android emulator build/raster p95 2회 통과, physical-device·수동 screen-reader 및 test-instrumentation 격리 증거 남음 |
 | G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, append-only candidate registry, exact selection-bound order authority, credential-free paper execution, atomic halt/rollback safety |
 | G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot, G4I/K2C 내부 합성 authority, G4J/K2B2 credential-free mock 지정가 submit, G4K 저장된 보유수량 대조 read view, G4L 검증된 로컬 주문 lifecycle read view, G4M 홈 저장 대조 신뢰 요약, G4N pending-action 안전 경고, G4O local daily chart 표시 범위, G4P 첫 실행 import 복구 경로, G4Q credential-free 최신 1틱 체결, G4R credential-free 0B 실시간 가격 frame 정규화 통과. 실제 키움 credentialed 시세·모의주문 관찰, freshness/scheduling, unknown-submit 조회 복구, 주문 mutation UI, production risk와 모든 live gate는 남는다. |
@@ -149,7 +149,7 @@ Backup v7은 가격 series digest/count를 검증하며 v6/schema-v10 artifact�
 
 G1.13의 `native_holding_valuation_v1`은 같은 read-only transaction에서 현재 ledger snapshot과 append-only event proof, 전체 security-price series를 다시 검증합니다. 보유자산의 internal instrument ID·symbol·currency에 연결되는 as-of venue가 정확히 하나일 때만 24시간 이내 local fixture 가격으로 원통화 시장가와 미실현손익을 계산합니다. 여러 venue, 누락, stale 또는 미래 observed/fetched/recorded 값은 해당 line에 sanitized issue를 남기고 모든 통화별 aggregate를 숨깁니다.
 
-이 모델은 Go package 내부 검증 경계입니다. 현재환율로 역사적 원가를 환산하지 않고 public route, OpenAPI, Flutter 평가 화면, provider ingestion, whole-portfolio total 또는 live/current authority를 만들지 않습니다. `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다. FIFO 일부 매도가 유한 decimal로 표현할 수 없는 원가를 만들면 versioned quantization 정책을 정하기 전까지 apply 전체가 원자적으로 실패합니다.
+이 모델은 Go package 내부 검증 경계입니다. 현재환율로 역사적 원가를 환산하지 않고 public route, Flutter 평가 화면, provider ingestion, whole-portfolio total 또는 live/current authority를 만들지 않습니다. `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다. G1.14부터 snapshot/OpenAPI는 `fifo_exact_else_half_even_residual_8_v1`을 명시합니다. 기존 유한 decimal FIFO 배분은 exact 유지하고 반복소수만 half-even 양자화하며, 잔여 원가는 열린 lot에 남아 최종 청산 때 모두 소비됩니다. 이 분석용 정책은 세무 원가 규칙을 대신하지 않습니다.
 
 ### Credential-free Kiwoom latest trade
 

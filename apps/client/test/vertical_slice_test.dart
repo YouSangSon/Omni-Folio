@@ -317,6 +317,7 @@ void main() {
     expect(preview.unresolvedRows, 0);
     expect(snapshot.cash.single.amount, '778');
     expect(snapshot.holdings.single.costBasis, '300.6');
+    expect(snapshot.costBasisPolicy, 'fifo_exact_else_half_even_residual_8_v1');
 
     expect(
       () => Money.fromJson({'currency': 'USD', 'amount': 778}),
@@ -369,6 +370,13 @@ void main() {
       () => PortfolioSnapshot.fromJson({
         ...fixture('golden-snapshot.json'),
         'valuation_status': 'live',
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => PortfolioSnapshot.fromJson({
+        ...fixture('golden-snapshot.json'),
+        'cost_basis_policy': 'unversioned',
       }),
       throwsFormatException,
     );

@@ -190,6 +190,7 @@ class Holding {
 class PortfolioSnapshot {
   const PortfolioSnapshot({
     required this.ledgerRevision,
+    required this.costBasisPolicy,
     required this.recordedAt,
     required this.cash,
     required this.holdings,
@@ -200,8 +201,13 @@ class PortfolioSnapshot {
         _text(json, 'valuation_status') != 'unavailable') {
       throw const FormatException('Live valuation is not supported');
     }
+    if (_text(json, 'cost_basis_policy') !=
+        'fifo_exact_else_half_even_residual_8_v1') {
+      throw const FormatException('Unsupported cost basis policy');
+    }
     return PortfolioSnapshot(
       ledgerRevision: _text(json, 'ledger_revision'),
+      costBasisPolicy: _text(json, 'cost_basis_policy'),
       recordedAt: DateTime.parse(_text(json, 'recorded_at')),
       cash: _moneyList(json, 'cash'),
       holdings: _jsonList(
@@ -213,6 +219,7 @@ class PortfolioSnapshot {
   }
 
   final String ledgerRevision;
+  final String costBasisPolicy;
   final DateTime recordedAt;
   final List<Money> cash;
   final List<Holding> holdings;

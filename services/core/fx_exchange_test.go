@@ -272,7 +272,7 @@ func legacyV8Backup(t *testing.T) (*sql.DB, string, string, string) {
 	}
 	golden := filepath.Join(dir, "legacy-golden.json")
 	writeJSONFile(t, golden, &PortfolioSnapshot{
-		PortfolioID: "portfolio_main", LedgerRevision: "rev_0000000001", AsOf: "2026-01-02T00:00:00Z", RecordedAt: "2026-01-02T00:01:00Z",
+		PortfolioID: "portfolio_main", LedgerRevision: "rev_0000000001", CostBasisPolicy: fifoCostBasisPolicy, AsOf: "2026-01-02T00:00:00Z", RecordedAt: "2026-01-02T00:01:00Z",
 		LiveEnabled: false, ValuationStatus: "unavailable", Cash: []Money{{Currency: "USD", Amount: "10"}}, Holdings: []Holding{}, RealizedPnL: []Money{},
 		Provenance: Provenance{EventIDs: []string{"legacy-event"}, ReceiptIDs: []string{"legacy-receipt"}},
 	})

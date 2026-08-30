@@ -1246,13 +1246,17 @@
       "PortfolioSnapshot": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["portfolio_id", "ledger_revision", "as_of", "recorded_at", "live_enabled", "valuation_status", "cash", "holdings", "realized_pnl", "provenance"],
+        "required": ["portfolio_id", "ledger_revision", "cost_basis_policy", "as_of", "recorded_at", "live_enabled", "valuation_status", "cash", "holdings", "realized_pnl", "provenance"],
         "properties": {
           "portfolio_id": {
             "$ref": "#/components/schemas/OpaqueId"
           },
           "ledger_revision": {
             "$ref": "#/components/schemas/OpaqueId"
+          },
+          "cost_basis_policy": {
+            "const": "fifo_exact_else_half_even_residual_8_v1",
+            "description": "A partial FIFO lot keeps an exact finite decimal allocation; only a recurring proportional result is rounded half-even to at least 8 decimal places, or the current finite lot-cost scale when greater. The residual remains with the open lot and is consumed exactly when it closes. This analytical policy is not a jurisdictional tax-basis claim."
           },
           "as_of": {
             "type": "string",
