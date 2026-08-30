@@ -463,6 +463,7 @@ func insertPaperOrderIntentJSONDirectForTest(svc *Service, intent OrderIntent, r
 
 func downgradePaperAuthorizationForTest(t testing.TB, db *sql.DB) {
 	t.Helper()
+	downgradePaperPerformanceForTest(t, db)
 	if _, err := db.Exec(`DROP TRIGGER paper_execution_authorizations_no_update;
 		DROP TRIGGER paper_execution_authorizations_no_delete;
 		DROP TRIGGER paper_execution_authorizations_state_guard;

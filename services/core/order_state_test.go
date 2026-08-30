@@ -340,8 +340,8 @@ func TestSchemaMigratesV1ToV14AndReadinessRequiresV14(t *testing.T) {
 	if err := db.QueryRow(`SELECT MAX(version), COUNT(*) FROM schema_migrations`).Scan(&version, &migrations); err != nil {
 		t.Fatal(err)
 	}
-	if version != 17 || migrations != 17 {
-		t.Fatalf("schema version=(%d,%d), want latest=17 with seventeen migrations", version, migrations)
+	if version != 18 || migrations != 18 {
+		t.Fatalf("schema version=(%d,%d), want latest=18 with eighteen migrations", version, migrations)
 	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM events WHERE event_id='preserved'`).Scan(&preserved); err != nil || preserved != 1 {
 		t.Fatalf("v1 data was not preserved: count=%d err=%v", preserved, err)

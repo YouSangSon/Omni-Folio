@@ -52,8 +52,8 @@ func TestG38C3PaperPerformanceSeriesAndRetry(t *testing.T) {
 			equity, peak, period, cumulative, drawdown, maxDrawdown string
 		}{
 			{"10038.8", "10038.8", "0.00388", "0.00388", "0", "0"},
-			{"9958.8", "10038.8", "-0.00796907", "-0.00412", "0.00796907", "0.00796907"},
-			{"10018.8", "10038.8", "0.00602482", "0.00188", "0.00199227", "0.00796907"},
+			{"9958.8", "10038.8", "-0.00796908", "-0.00412", "0.00796908", "0.00796908"},
+			{"10018.8", "10038.8", "0.00602482", "0.00188", "0.00199227", "0.00796908"},
 		}
 		var previous string
 		for index, asOf := range asOfs {
@@ -185,7 +185,7 @@ func TestG38C3PaperPerformanceRejectsCorruption(t *testing.T) {
 	}{
 		{"cutoff", `UPDATE paper_performance_events SET order_event_sequence_cutoff=0 WHERE sequence=2`},
 		{"mark", `UPDATE paper_performance_events SET marks_sha256='0000000000000000000000000000000000000000000000000000000000000000' WHERE sequence=2`},
-		{"mark JSON", `UPDATE paper_performance_events SET marks_json='[]' WHERE sequence=2`},
+		{"mark JSON", `UPDATE paper_performance_events SET marks_json='[{}]' WHERE sequence=2`},
 		{"value", `UPDATE paper_performance_events SET equity='1' WHERE sequence=2`},
 		{"ratio", `UPDATE paper_performance_events SET cumulative_return='0.1' WHERE sequence=2`},
 		{"predecessor", `UPDATE paper_performance_events SET expected_previous_performance_id='no_performance' WHERE sequence=2`},
@@ -250,6 +250,7 @@ func TestG38C3PaperPerformanceRejectsLaterCorruptionAndLegacy(t *testing.T) {
 		if _, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf); err != nil {
 			t.Fatal(err)
 		}
+		svc.now = func() time.Time { return mustTime("2026-01-12T07:00:00Z") }
 		later := recordG38C3MarkBar(t, svc, "005930", "g38c3-later-corrupt", "2026-01-12T06:30:00.000000000Z", "100")
 		if _, err := svc.db.Exec(`DROP TRIGGER paper_market_bar_observations_no_update`); err != nil {
 			t.Fatal(err)
@@ -273,7 +274,9 @@ func TestG38C3PaperPerformanceRejectsLaterCorruptionAndLegacy(t *testing.T) {
 			downgradePaperAuthorizationForTest(t, svc.db)
 			legacy := paperEvaluationSignal(evidence.ResultSHA256, selected.CurrentEventID, "g38c3-legacy-"+schema)
 			legacy.SchemaVersion = schema
-			if _, err := svc.recordOrderIntent(context.Background(), paperOrderIntent(k2aAccountRef, legacy, "1", "1000")); err != nil {
+			intent := paperOrderIntent(k2aAccountRef, legacy, "1", "1000")
+			intent.ClientOrderID = "g38c3-legacy-" + schema
+			if err := insertG38C2LegacyPaperOrderDirect(svc, intent, "order_g38c3_legacy"); err != nil {
 				t.Fatal(err)
 			}
 			if err := migrate(svc.db); err != nil {
