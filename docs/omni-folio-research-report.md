@@ -34,6 +34,8 @@
 
 K1 candle 작업은 공식 요청을 보내지 않는 합성 contract slice다. `ka10080`/`ka10081`의 timestamp timezone은 공식 문서에 명시되지 않아 Asia/Seoul을 운영 가정으로 둔다. 따라서 credential, live/current/freshness, adjustment event, realtime, persistence, public API 또는 주문 기능의 근거로 사용하지 않는다.
 
+G4Q는 공식 [`ka10079` 1틱 sample](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/9180debf7aea0074715dd8f7a15af432afbfc403/examples/%EA%B5%AD%EB%82%B4%EC%A3%BC%EC%8B%9D/%EC%B0%A8%ED%8A%B8/get_domestic_stock_tick_chart.py)의 `cur_prc`와 `cntr_tm`을 사용해 current-price-only `ka10001`보다 시간 provenance가 강한 내부 계약을 선택했다. 다만 durable event ID, timezone과 adjustment 근거는 확인되지 않아 가격 DB나 공개 평가로 승격하지 않는다.
+
 ### 미국·글로벌 브로커와 데이터
 
 | 후보 | 강점 | 적합한 용도 | 주의점 |

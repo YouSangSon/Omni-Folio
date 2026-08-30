@@ -1136,3 +1136,15 @@ The ledger still rejects a partial FIFO allocation whose exact rational cost has
 Public promotion audit found a narrow explicit-as-of GET contract feasible, but Flutter cannot safely manufacture that cutoff from a mobile device clock and no runtime path currently records prices outside tests. Decision: do not add a dead API/UI surface yet. Build the Kiwoom-first credential-free quote-to-durable-price contract, then promote the endpoint with a server-trusted cutoff and retained sample/stale UI state.
 
 Still open: public/base-currency whole-portfolio and performance valuation, historical FX cost semantics, versioned rounding/quantization, durable instrument/listing ownership, provider ingestion/source priority/calendar freshness, Flutter UI, broker reconciliation and every live-money path.
+
+## 2026-08-28 G4Q continuation: credential-free Kiwoom latest trade
+
+The next prerequisite stops before persistence. Kiwoom's official `ka10001` current-price sample carries `cur_prc` but no provider event time; the official `ka10079` one-tick sample carries both `cur_prc` and `cntr_tm`. G4Q therefore adds only an internal `LatestTrade` normalization contract on the existing OAuth/read transport.
+
+- The request is fixed to KRX six-digit symbol, `tic_scope=1` and `upd_stkpc_tp=0` on `/api/dostk/chart`.
+- The first newest tick becomes exact positive price plus separate provider-observed and locally fetched UTC times. Every returned first-page row must be valid and non-increasing; different prices sharing the provider's second-level timestamp and provider time after fetch time fail closed.
+- No provider message, account identifier or token enters the result. No credential, external request, dependency, route, Flutter surface, scheduler or database mutation was added.
+
+Persistence is deliberately deferred. The official sample does not establish a collision-safe event ID, timezone or price-adjustment provenance, while the current security-price series accepts only explicit `local_fixture`/`unspecified` identities. Inventing those fields would make replay and holding valuation look stronger than the evidence.
+
+TDD checkpoints are RED `f00230e`, GREEN `ea86544`, ambiguity regression RED `cb1acb3` and fix `cf5c15c`. The pinned primary source and executable checks are recorded in [`../gates/g4q-kiwoom-latest-trade.md`](../gates/g4q-kiwoom-latest-trade.md).

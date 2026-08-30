@@ -16,6 +16,7 @@
 - **Chart display range**: 이미 받은 daily bar 중 마지막 수신 봉을 기준으로 `30/90/365일` 또는 전체를 Flutter에서 고르는 G4O 표시 상태. 새 조회 범위·interval·broker freshness를 만들지 않으며 차트와 정확한 OHLCV 표가 같은 부분집합을 사용한다.
 - **First-run empty snapshot**: core가 `trust_state=never_verified`와 빈 cash/holdings/realized PnL snapshot을 함께 정상 반환하는 초기 상태. 조회 실패가 아니며 홈은 첫 거래 내역 가져오기 행동을 제공한다.
 - **Synthetic Kiwoom candle contract**: credential·broker 요청 없이 `POST /api/dostk/chart`의 `ka10080`/`ka10081` 경계를 재현하는 K1 adapter 계약. KRX 여섯 자리 symbol, `1d` 및 `1/3/5/10/15/30/45/60m`, canonical OHLCV만 노출하며 public route가 아니다.
+- **Synthetic Kiwoom latest trade**: credential·broker 요청 없이 `ka10079` 1틱 응답의 첫 최신 row를 canonical 가격과 provider 체결 시각으로 정규화하는 G4Q 내부 계약. Asia/Seoul은 기존 운영 가정이며 source observation identity, 조정 기준, durable persistence, freshness 또는 current/live 권한을 뜻하지 않는다.
 - **Synthetic Kiwoom order state**: broker 요청 없이 Go 내부에서만 실행하는 K2A `LIMIT`/`KRW`/`KRX` 주문 intent/event replay 계약. 실제 risk engine·broker submit/query·public route/UI·원장 반영은 포함하지 않는다.
 - **Known-order execution reconciliation**: 명시적 broker ACK로 opaque provider order ref가 이미 묶인 주문에 대해, 완결된 조회의 식별 가능한 체결만 기존 append-only 주문 이벤트에 반영하는 K2B0 계약. 주문번호 없는 unknown submit을 속성 유사도로 결합하지 않는다.
 - **Dated execution scan**: 명시한 날짜의 합성 `kt00009` 요청에서 terminal cursor까지 읽은 K2B1 provider-private 결과. `PaginationComplete`는 그 요청의 page 순회만 뜻하고 전체 주문 이력이나 체결 완결성을 뜻하지 않는다. `ExecutionsComplete`는 false이며 `ExecutionClock`은 timezone 없는 `HH:mm:ss`로 보존한다.

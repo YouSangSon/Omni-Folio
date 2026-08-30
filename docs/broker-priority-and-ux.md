@@ -56,6 +56,13 @@
 - 이 slice는 credential, broker request, live/current/freshness, public endpoint, persistence, realtime, adjustment event correctness, reconciliation, 또는 order capability를 증명하지 않는다. public market route는 계속 `local_fixture`/`sample`/`stale`다.
 - 실행 증거는 [`../gates/g4c-kiwoom-candle-contract.md`](../gates/g4c-kiwoom-candle-contract.md)에 기록한다.
 
+#### G4Q latest-trade synthetic contract
+
+- 공식 예제 commit [`9180deb`](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/commit/9180debf7aea0074715dd8f7a15af432afbfc403)의 [`ka10079` sample](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/9180debf7aea0074715dd8f7a15af432afbfc403/examples/%EA%B5%AD%EB%82%B4%EC%A3%BC%EC%8B%9D/%EC%B0%A8%ED%8A%B8/get_domestic_stock_tick_chart.py)에 고정된 `/api/dostk/chart`, `stk_cd`, `tic_scope`, `upd_stkpc_tp`, `cur_prc`, `cntr_tm` 경계만 사용한다.
+- 첫 page의 newest 1틱을 exact canonical 가격과 provider 체결 시각으로 정규화한다. 모든 받은 row가 유효하고 내림차순이어야 하며, 초 단위 시각이 같은데 가격이 다르거나 provider 시각이 fetch 시각보다 미래면 거절한다.
+- 공식 sample이 timezone, durable execution identity와 adjustment provenance를 제공하지 않으므로 기존 Asia/Seoul 운영 가정만 재사용하고 persistence용 source ID나 adjustment 값을 만들지 않는다.
+- credential, 외부 broker request, public API/UI, scheduler, DB mutation, live/current/freshness와 holding valuation 승격은 포함하지 않는다. 실행 증거는 [`../gates/g4q-kiwoom-latest-trade.md`](../gates/g4q-kiwoom-latest-trade.md)에 기록한다.
+
 #### G4D price-adjustment consumer contract
 
 - provider-neutral `MarketDataCandles`는 `price_adjustment`를 필수로 하고 `unspecified`와 `provider_adjusted`만 허용한다.

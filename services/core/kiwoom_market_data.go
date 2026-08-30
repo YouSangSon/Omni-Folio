@@ -23,8 +23,79 @@ type kiwoomCandleRow struct {
 type kiwoomCandleResponse struct {
 	kiwoomResult
 	StockCode  string            `json:"stk_cd"`
+	TickBars   []kiwoomCandleRow `json:"stk_tic_chart_qry"`
 	DailyBars  []kiwoomCandleRow `json:"stk_dt_pole_chart_qry"`
 	MinuteBars []kiwoomCandleRow `json:"stk_min_pole_chart_qry"`
+}
+
+type KiwoomLatestTrade struct {
+	Source      string            `json:"source"`
+	Environment KiwoomEnvironment `json:"environment"`
+	Exchange    KiwoomExchange    `json:"exchange"`
+	Symbol      string            `json:"symbol"`
+	Currency    string            `json:"currency"`
+	Price       string            `json:"price"`
+	ObservedAt  string            `json:"observed_at"`
+	FetchedAt   string            `json:"fetched_at"`
+}
+
+func (c *KiwoomClient) LatestTrade(ctx context.Context, symbol string) (*KiwoomLatestTrade, error) {
+	if c == nil {
+		return nil, &KiwoomError{Kind: "invalid_config"}
+	}
+	if !kiwoomStockPattern.MatchString(symbol) {
+		return nil, &KiwoomError{Kind: "invalid_symbol"}
+	}
+	const apiID = "ka10079"
+	page, err := c.readPage(ctx, apiID, map[string]string{
+		"stk_cd": symbol, "tic_scope": "1", "upd_stkpc_tp": "0",
+	}, "", "")
+	if err != nil {
+		return nil, err
+	}
+	var response kiwoomCandleResponse
+	if err := kiwoomDecode(page.body, &response); err != nil || response.ReturnCode == nil {
+		return nil, &KiwoomError{Kind: "invalid_response", APIID: apiID}
+	}
+	if err := kiwoomCheckResult(apiID, response.kiwoomResult); err != nil {
+		return nil, err
+	}
+	responseSymbol, ok := kiwoomStockCode(response.StockCode)
+	if !ok || responseSymbol != symbol {
+		return nil, &KiwoomError{Kind: "symbol_mismatch", APIID: apiID}
+	}
+	if len(response.TickBars) == 0 {
+		return nil, errMarketDataNotFound
+	}
+	latest, observedAt, ok := kiwoomNormalizeCandle(response.TickBars[0], true)
+	if !ok {
+		return nil, &KiwoomError{Kind: "invalid_trade", APIID: apiID}
+	}
+	previous := observedAt
+	previousPrice := latest.Close
+	for _, row := range response.TickBars[1:] {
+		trade, at, ok := kiwoomNormalizeCandle(row, true)
+		if !ok {
+			return nil, &KiwoomError{Kind: "invalid_trade", APIID: apiID}
+		}
+		if at.After(previous) {
+			return nil, &KiwoomError{Kind: "invalid_trade_order", APIID: apiID}
+		}
+		if at.Equal(previous) && trade.Close != previousPrice {
+			return nil, &KiwoomError{Kind: "ambiguous_trade_time", APIID: apiID}
+		}
+		previous = at
+		previousPrice = trade.Close
+	}
+	fetchedAt := c.now().UTC()
+	if observedAt.After(fetchedAt) {
+		return nil, &KiwoomError{Kind: "future_trade", APIID: apiID}
+	}
+	return &KiwoomLatestTrade{
+		Source: "kiwoom", Environment: c.environment, Exchange: KiwoomKRX,
+		Symbol: symbol, Currency: "KRW", Price: latest.Close,
+		ObservedAt: observedAt.UTC().Format(time.RFC3339Nano), FetchedAt: fetchedAt.Format(time.RFC3339Nano),
+	}, nil
 }
 
 func (c *KiwoomClient) Candles(ctx context.Context, symbol, interval string) (*MarketDataSeries, error) {
