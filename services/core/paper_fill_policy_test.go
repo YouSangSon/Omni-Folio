@@ -36,13 +36,13 @@ func TestG38C2PaperFillPolicyCapsAndNoFill(t *testing.T) {
 	tests := []struct {
 		name  string
 		input paperFillInput
-		want  string
+		want  *paperCalculatedFill
 	}{
-		{"BUY affordable exactly once", paperFillInput{Side: "BUY", Open: "100", Volume: "5", RemainingQuantity: "10", Cash: "101.1", ConsumedCapacity: "0"}, "1"},
-		{"BUY unaffordable", paperFillInput{Side: "BUY", Open: "100", Volume: "5", RemainingQuantity: "10", Cash: "101.09", ConsumedCapacity: "0"}, ""},
-		{"zero volume", paperFillInput{Side: "BUY", Open: "100", Volume: "0", RemainingQuantity: "10", Cash: "10000", ConsumedCapacity: "0"}, ""},
-		{"exhausted capacity", paperFillInput{Side: "BUY", Open: "100", Volume: "5", RemainingQuantity: "10", Cash: "10000", ConsumedCapacity: "2"}, ""},
-		{"SELL position", paperFillInput{Side: "SELL", Open: "120", Volume: "5", RemainingQuantity: "10", PositionQuantity: "1", ConsumedCapacity: "0"}, "1"},
+		{"BUY affordable exactly once", paperFillInput{Side: "BUY", Open: "100", Volume: "5", RemainingQuantity: "10", Cash: "101.1", ConsumedCapacity: "0"}, &paperCalculatedFill{Quantity: "1", ReferencePrice: "100", Price: "100.1", Notional: "100.1", Fee: "1", Tax: "0", Slippage: "0.1", CashDelta: "-101.1"}},
+		{"BUY unaffordable", paperFillInput{Side: "BUY", Open: "100", Volume: "5", RemainingQuantity: "10", Cash: "101.09", ConsumedCapacity: "0"}, nil},
+		{"zero volume", paperFillInput{Side: "BUY", Open: "100", Volume: "0", RemainingQuantity: "10", Cash: "10000", ConsumedCapacity: "0"}, nil},
+		{"exhausted capacity", paperFillInput{Side: "BUY", Open: "100", Volume: "5", RemainingQuantity: "10", Cash: "10000", ConsumedCapacity: "2"}, nil},
+		{"SELL position", paperFillInput{Side: "SELL", Open: "120", Volume: "5", RemainingQuantity: "10", PositionQuantity: "1", ConsumedCapacity: "0"}, &paperCalculatedFill{Quantity: "1", ReferencePrice: "120", Price: "119.88", Notional: "119.88", Fee: "1", Tax: "0.11988", Slippage: "0.12", CashDelta: "118.76012"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -51,14 +51,14 @@ func TestG38C2PaperFillPolicyCapsAndNoFill(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if test.want == "" {
+			if test.want == nil {
 				if ok || got != (paperCalculatedFill{}) {
 					t.Fatalf("fill=%+v ok=%v, want all-zero no fill", got, ok)
 				}
 				return
 			}
-			if !ok || got.Quantity != test.want {
-				t.Fatalf("fill=%+v ok=%v, want quantity %s", got, ok, test.want)
+			if !ok || got != *test.want {
+				t.Fatalf("fill=%+v ok=%v, want %+v", got, ok, *test.want)
 			}
 		})
 	}
@@ -74,8 +74,10 @@ func TestG38C2PaperFillPolicyRejectsInvalidInputs(t *testing.T) {
 		{"invalid side", policy, paperFillInput{Side: "HOLD", Open: "100", Volume: "5", RemainingQuantity: "10", Cash: "10000", ConsumedCapacity: "0"}},
 		{"fractional remaining", policy, paperFillInput{Side: "BUY", Open: "100", Volume: "5", RemainingQuantity: "1.5", Cash: "10000", ConsumedCapacity: "0"}},
 		{"fractional consumed capacity", policy, paperFillInput{Side: "BUY", Open: "100", Volume: "5", RemainingQuantity: "10", Cash: "10000", ConsumedCapacity: "0.5"}},
+		{"fractional position", policy, paperFillInput{Side: "SELL", Open: "100", Volume: "5", RemainingQuantity: "10", PositionQuantity: "1.5", ConsumedCapacity: "0"}},
 		{"consumed capacity above capacity", policy, paperFillInput{Side: "BUY", Open: "100", Volume: "5", RemainingQuantity: "10", Cash: "10000", ConsumedCapacity: "3"}},
-		{"non-positive sell price", strategyExecutionPolicy{Fee: "1", Tax: "0.001", SlippageBPS: "10000", MaxParticipation: "0.5"}, paperFillInput{Side: "SELL", Open: "100", Volume: "5", RemainingQuantity: "10", PositionQuantity: "10", ConsumedCapacity: "0"}},
+		{"slippage policy upper bound", strategyExecutionPolicy{Fee: "1", Tax: "0.001", SlippageBPS: "10000", MaxParticipation: "0.5"}, paperFillInput{Side: "SELL", Open: "100", Volume: "5", RemainingQuantity: "10", PositionQuantity: "10", ConsumedCapacity: "0"}},
+		{"non-positive open", policy, paperFillInput{Side: "SELL", Open: "0", Volume: "5", RemainingQuantity: "10", PositionQuantity: "10", ConsumedCapacity: "0"}},
 		{"negative sell proceeds", strategyExecutionPolicy{Fee: "1000", Tax: "0.001", SlippageBPS: "10", MaxParticipation: "0.5"}, paperFillInput{Side: "SELL", Open: "100", Volume: "5", RemainingQuantity: "10", PositionQuantity: "10", ConsumedCapacity: "0"}},
 	}
 	for _, test := range tests {

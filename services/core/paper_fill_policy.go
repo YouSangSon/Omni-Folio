@@ -95,11 +95,10 @@ func calculatePaperFill(policy strategyExecutionPolicy, input paperFillInput) (p
 			quantity.Set(affordable)
 		}
 	} else {
-		position, err := parseDecimal(input.PositionQuantity)
-		if err != nil || position.Sign() < 0 {
-			return paperCalculatedFill{}, false, errors.New("paper fill position is invalid")
+		available, err := paperFillInteger(input.PositionQuantity, "position quantity")
+		if err != nil {
+			return paperCalculatedFill{}, false, err
 		}
-		available := floorPositiveRat(position)
 		if quantity.Cmp(available) > 0 {
 			quantity.Set(available)
 		}
