@@ -312,7 +312,7 @@ func TestK2AOrderTablesAreInsertOnly(t *testing.T) {
 	}
 }
 
-func TestSchemaMigratesV1ToV14AndReadinessRequiresV14(t *testing.T) {
+func TestSchemaMigratesV1ToV20AndReadinessRequiresV20(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "v1.db")
 	db, err := openDB(path)
 	if err != nil {
@@ -340,8 +340,8 @@ func TestSchemaMigratesV1ToV14AndReadinessRequiresV14(t *testing.T) {
 	if err := db.QueryRow(`SELECT MAX(version), COUNT(*) FROM schema_migrations`).Scan(&version, &migrations); err != nil {
 		t.Fatal(err)
 	}
-	if version != 19 || migrations != 19 {
-		t.Fatalf("schema version=(%d,%d), want latest=19 with nineteen migrations", version, migrations)
+	if version != 20 || migrations != 20 {
+		t.Fatalf("schema version=(%d,%d), want latest=20 with twenty migrations", version, migrations)
 	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM events WHERE event_id='preserved'`).Scan(&preserved); err != nil || preserved != 1 {
 		t.Fatalf("v1 data was not preserved: count=%d err=%v", preserved, err)

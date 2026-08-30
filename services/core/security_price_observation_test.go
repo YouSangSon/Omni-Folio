@@ -597,7 +597,7 @@ func TestSecurityPriceObservationBackupProofAndLegacyCopyMigrations(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v13" || manifest.SchemaVersion != "omni-folio.sqlite.v19" ||
+	if manifest.FormatVersion != "omni-folio-backup.v14" || manifest.SchemaVersion != "omni-folio.sqlite.v20" ||
 		manifest.SecurityPriceObservationCount != 1 || len(manifest.SecurityPriceObservationStateSHA256) != 64 ||
 		manifest.VerificationReceipt.SecurityPriceObservationCheck != "ok" ||
 		manifest.VerificationReceipt.CandidateSecurityPriceObservationStateSHA256 != manifest.SecurityPriceObservationStateSHA256 {

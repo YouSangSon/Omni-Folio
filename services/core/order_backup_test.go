@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func TestG38DBackupV13StrategyPerformanceProof(t *testing.T) {
+func TestG38DBackupV14StrategyPerformanceProof(t *testing.T) {
 	svc, asOf := g38c3CashPerformanceFixture(t)
 	event, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf)
 	if err != nil {
@@ -31,13 +31,13 @@ func TestG38DBackupV13StrategyPerformanceProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	backup := filepath.Join(t.TempDir(), "paper-strategy-performance-v13.db")
+	backup := filepath.Join(t.TempDir(), "paper-strategy-performance-v14.db")
 	manifestPath := backup + ".manifest.json"
 	manifest, err := createBackup(svc.db, backup, golden, manifestPath, svc.now, svc.id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v13" || manifest.SchemaVersion != "omni-folio.sqlite.v19" ||
+	if manifest.FormatVersion != "omni-folio-backup.v14" || manifest.SchemaVersion != "omni-folio.sqlite.v20" ||
 		manifest.PaperPerformanceStateSHA256 != proof.SHA256 || manifest.PaperPerformanceEventCount != 1 ||
 		manifest.PaperPerformanceMarkCount != event.MarkCount || manifest.VerificationReceipt.PaperPerformanceCheck != "ok" ||
 		manifest.VerificationReceipt.CandidatePaperPerformanceStateSHA256 != proof.SHA256 ||
@@ -45,7 +45,7 @@ func TestG38DBackupV13StrategyPerformanceProof(t *testing.T) {
 		manifest.PaperStrategyPerformanceSampleCount != strategyEvent.SampleCount ||
 		manifest.VerificationReceipt.PaperStrategyPerformanceCheck != "ok" ||
 		manifest.VerificationReceipt.CandidatePaperStrategyPerformanceStateSHA256 != strategyProof.SHA256 {
-		t.Fatalf("v13 manifest omitted strategy performance proof: %+v", manifest)
+		t.Fatalf("v14 manifest omitted strategy performance proof: %+v", manifest)
 	}
 	if err := verifyManifest(backup, golden, manifestPath); err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func TestG38DBackupV13StrategyPerformanceProof(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "missing-"+field+".json")
 		writeJSONFile(t, path, tampered)
 		if err := verifyManifest(backup, golden, path); err == nil {
-			t.Fatalf("v13 manifest without %s was accepted", field)
+			t.Fatalf("v14 manifest without %s was accepted", field)
 		}
 	}
 	for _, field := range []string{
@@ -71,7 +71,7 @@ func TestG38DBackupV13StrategyPerformanceProof(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "missing-"+field+".json")
 		writeJSONFile(t, path, tampered)
 		if err := verifyManifest(backup, golden, path); err == nil {
-			t.Fatalf("v13 receipt without %s was accepted", field)
+			t.Fatalf("v14 receipt without %s was accepted", field)
 		}
 	}
 	for name, mutate := range map[string]func(map[string]any){
@@ -257,6 +257,13 @@ func downgradePaperPerformanceForTest(t testing.TB, db *sql.DB) {
 
 func downgradePaperStrategyPerformanceForTest(t testing.TB, db *sql.DB) {
 	t.Helper()
+	var currentVersion int
+	if err := db.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&currentVersion); err != nil {
+		t.Fatal(err)
+	}
+	if currentVersion >= 20 {
+		downgradePaperPerformancePolicyForTest(t, db)
+	}
 	if _, err := db.Exec(`DROP TRIGGER IF EXISTS paper_strategy_performance_events_state_guard;
 		DROP TRIGGER IF EXISTS paper_strategy_performance_events_no_update;
 		DROP TRIGGER IF EXISTS paper_strategy_performance_events_no_delete;
@@ -281,7 +288,7 @@ func TestK2ABackupProvesOrderRecoveryState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v13" || manifest.SchemaVersion != "omni-folio.sqlite.v19" {
+	if manifest.FormatVersion != "omni-folio-backup.v14" || manifest.SchemaVersion != "omni-folio.sqlite.v20" {
 		t.Fatalf("backup did not declare the order-aware schema: %+v", manifest)
 	}
 	if manifest.OrderStateSHA256 == "" || manifest.OrderCount != 1 || manifest.OrderEventCount != 3 ||
@@ -500,7 +507,7 @@ func TestG38C1PaperAccountingBackupProofAndV9OwnedCopyMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v13" || manifest.SchemaVersion != "omni-folio.sqlite.v19" ||
+	if manifest.FormatVersion != "omni-folio-backup.v14" || manifest.SchemaVersion != "omni-folio.sqlite.v20" ||
 		manifest.PaperAccountingSessionCount != 1 || manifest.PaperAccountingStateSHA256 == "" ||
 		manifest.VerificationReceipt.CandidatePaperAccountingStateSHA256 != manifest.PaperAccountingStateSHA256 {
 		t.Fatalf("backup omitted paper accounting proof: %+v", manifest)
@@ -622,7 +629,7 @@ func TestG38C2PaperMarketBackupV11AndV10OwnedCopyMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v13" || manifest.SchemaVersion != "omni-folio.sqlite.v19" ||
+	if manifest.FormatVersion != "omni-folio-backup.v14" || manifest.SchemaVersion != "omni-folio.sqlite.v20" ||
 		manifest.PaperAccountingSessionCount != 1 || manifest.PaperMarketBarObservationCount != 1 || manifest.PaperSignalEventCount != 1 ||
 		manifest.PaperExecutionAuthorizationCount != 0 || manifest.PaperCapitalizedFillCount != 0 ||
 		manifest.PaperAccountingStateSHA256 == "" || manifest.VerificationReceipt.CandidatePaperAccountingStateSHA256 != manifest.PaperAccountingStateSHA256 {

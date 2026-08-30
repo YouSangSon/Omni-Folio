@@ -1,17 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://omni-folio.local/contracts/backup-manifest.v13.schema.json",
-  "title": "Omni-Folio Backup Manifest v13",
-  "description": "CLI contract for a separately restored schema-v19 backup candidate. Legacy v5/schema-v8 or schema-v9, v6/schema-v10, v7/schema-v11 or schema-v12, v8/schema-v13, v9/schema-v14, v10/schema-v15, v11/schema-v17, and v12/schema-v18 artifacts are accepted only through an owned migrated copy. Schema validity never authorizes replacing the active DB: database, ledger snapshot, replayable order state, execution authority, risk reservations, paper execution authorizations, known-good broker snapshots, strategy-registry including paper operational evaluations, immutable paper-accounting sessions, closed paper bars and signal cutoffs, immutable paper performance, strategy-window paper performance, direct FX-observation, security-price-observation, and instrument-listing proofs must match and verification_receipt must be verified and eligible_for_activation before replacement.",
+  "$id": "https://omni-folio.local/contracts/backup-manifest.v14.schema.json",
+  "title": "Omni-Folio Backup Manifest v14",
+  "description": "CLI contract for a separately restored schema-v20 backup candidate. Legacy v5/schema-v8 or schema-v9, v6/schema-v10, v7/schema-v11 or schema-v12, v8/schema-v13, v9/schema-v14, v10/schema-v15, v11/schema-v17, v12/schema-v18, and v13/schema-v19 artifacts are accepted only through an owned migrated copy. Schema validity never authorizes replacing the active DB: database, ledger snapshot, replayable order state, execution authority, risk reservations, paper execution authorizations, known-good broker snapshots, strategy-registry including paper operational evaluations, immutable paper-accounting sessions, closed paper bars and signal cutoffs, immutable paper performance, strategy-window paper performance, paper performance policy, direct FX-observation, security-price-observation, and instrument-listing proofs must match and verification_receipt must be verified and eligible_for_activation before replacement.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["format_version", "schema_version", "created_at", "source_ledger_revision", "order_state_sha256", "order_count", "order_event_count", "execution_authority_sha256", "execution_authority_event_count", "risk_reservation_sha256", "risk_reservation_count", "broker_state_sha256", "broker_snapshot_count", "broker_reconciliation_count", "strategy_registry_sha256", "strategy_evidence_count", "strategy_selection_event_count", "paper_evaluation_event_count", "paper_accounting_state_sha256", "paper_accounting_session_count", "paper_market_bar_observation_count", "paper_signal_event_count", "paper_execution_authorization_count", "paper_capitalized_fill_count", "paper_performance_state_sha256", "paper_performance_event_count", "paper_performance_mark_count", "paper_strategy_performance_state_sha256", "paper_strategy_performance_event_count", "paper_strategy_performance_sample_count", "selected_strategy_result_sha256", "fx_observation_state_sha256", "fx_observation_count", "security_price_observation_state_sha256", "security_price_observation_count", "instrument_listing_state_sha256", "instrument_listing_event_count", "active_instrument_listing_count", "db_sha256", "size_bytes", "expected_snapshot_sha256", "encryption", "verification_receipt"],
+  "required": ["format_version", "schema_version", "created_at", "source_ledger_revision", "order_state_sha256", "order_count", "order_event_count", "execution_authority_sha256", "execution_authority_event_count", "risk_reservation_sha256", "risk_reservation_count", "broker_state_sha256", "broker_snapshot_count", "broker_reconciliation_count", "strategy_registry_sha256", "strategy_evidence_count", "strategy_selection_event_count", "paper_evaluation_event_count", "paper_accounting_state_sha256", "paper_accounting_session_count", "paper_market_bar_observation_count", "paper_signal_event_count", "paper_execution_authorization_count", "paper_capitalized_fill_count", "paper_performance_state_sha256", "paper_performance_event_count", "paper_performance_mark_count", "paper_strategy_performance_state_sha256", "paper_strategy_performance_event_count", "paper_strategy_performance_sample_count", "paper_performance_policy_state_sha256", "paper_performance_policy_event_count", "paper_performance_policy_action_count", "paper_performance_policy_automatic_halt_count", "selected_strategy_result_sha256", "fx_observation_state_sha256", "fx_observation_count", "security_price_observation_state_sha256", "security_price_observation_count", "instrument_listing_state_sha256", "instrument_listing_event_count", "active_instrument_listing_count", "db_sha256", "size_bytes", "expected_snapshot_sha256", "encryption", "verification_receipt"],
   "properties": {
     "format_version": {
-      "const": "omni-folio-backup.v13"
+      "const": "omni-folio-backup.v14"
     },
     "schema_version": {
-      "const": "omni-folio.sqlite.v19"
+      "const": "omni-folio.sqlite.v20"
     },
     "created_at": {
       "$ref": "#/$defs/timestamp"
@@ -132,6 +132,24 @@
       "minimum": 0,
       "maximum": 9007199254740991
     },
+    "paper_performance_policy_state_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "paper_performance_policy_event_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "paper_performance_policy_action_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "paper_performance_policy_automatic_halt_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
     "selected_strategy_result_sha256": {
       "oneOf": [
         { "$ref": "#/$defs/sha256" },
@@ -240,7 +258,7 @@
       "description": "Verification is performed against a separately restored candidate. Candidate database, ledger snapshot, order-state, known-good broker-state, strategy-registry, paper-accounting state, paper-performance state, strategy-window paper-performance state, direct FX-observation, security-price-observation, and instrument-listing proofs must equal the manifest before active DB replacement.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["receipt_id", "candidate_id", "verified_at", "status", "integrity_check", "golden_snapshot_check", "order_state_check", "broker_state_check", "strategy_registry_check", "fx_observation_check", "security_price_observation_check", "instrument_listing_check", "paper_performance_check", "paper_strategy_performance_check", "candidate_db_sha256", "candidate_snapshot_sha256", "candidate_order_state_sha256", "candidate_broker_state_sha256", "candidate_strategy_registry_sha256", "candidate_paper_accounting_state_sha256", "candidate_paper_performance_state_sha256", "candidate_paper_strategy_performance_state_sha256", "candidate_fx_observation_state_sha256", "candidate_security_price_observation_state_sha256", "candidate_instrument_listing_state_sha256", "eligible_for_activation", "errors"],
+      "required": ["receipt_id", "candidate_id", "verified_at", "status", "integrity_check", "golden_snapshot_check", "order_state_check", "broker_state_check", "strategy_registry_check", "fx_observation_check", "security_price_observation_check", "instrument_listing_check", "paper_performance_check", "paper_strategy_performance_check", "paper_performance_policy_check", "candidate_db_sha256", "candidate_snapshot_sha256", "candidate_order_state_sha256", "candidate_broker_state_sha256", "candidate_strategy_registry_sha256", "candidate_paper_accounting_state_sha256", "candidate_paper_performance_state_sha256", "candidate_paper_strategy_performance_state_sha256", "candidate_paper_performance_policy_state_sha256", "candidate_fx_observation_state_sha256", "candidate_security_price_observation_state_sha256", "candidate_instrument_listing_state_sha256", "eligible_for_activation", "errors"],
       "properties": {
         "receipt_id": {
           "$ref": "#/$defs/opaque_id"
@@ -295,6 +313,10 @@
           "type": "string",
           "enum": ["ok", "failed"]
         },
+        "paper_performance_policy_check": {
+          "type": "string",
+          "enum": ["ok", "failed"]
+        },
         "candidate_db_sha256": {
           "$ref": "#/$defs/sha256"
         },
@@ -317,6 +339,9 @@
           "$ref": "#/$defs/sha256"
         },
         "candidate_paper_strategy_performance_state_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "candidate_paper_performance_policy_state_sha256": {
           "$ref": "#/$defs/sha256"
         },
         "candidate_fx_observation_state_sha256": {
@@ -364,6 +389,9 @@
               "const": "ok"
             },
             "paper_strategy_performance_check": {
+              "const": "ok"
+            },
+            "paper_performance_policy_check": {
               "const": "ok"
             },
             "eligible_for_activation": {

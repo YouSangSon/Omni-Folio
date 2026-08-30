@@ -44,16 +44,17 @@ type strategyExecutionPolicy struct {
 }
 
 type StrategySelectionEvent struct {
-	EventID                      string `json:"event_id"`
-	EventType                    string `json:"event_type"`
-	CandidateResultSHA256        string `json:"candidate_result_sha256,omitempty"`
-	ExpectedCurrentEventID       string `json:"expected_current_event_id"`
-	SourceEventID                string `json:"source_event_id,omitempty"`
-	PreviousSelectedResultSHA256 string `json:"previous_selected_result_sha256"`
-	SelectedResultSHA256         string `json:"selected_result_sha256"`
-	ReasonCode                   string `json:"reason_code"`
-	PaperEvaluationSequence      int64  `json:"paper_evaluation_sequence,omitempty"`
-	RecordedAt                   string `json:"recorded_at"`
+	EventID                       string `json:"event_id"`
+	EventType                     string `json:"event_type"`
+	CandidateResultSHA256         string `json:"candidate_result_sha256,omitempty"`
+	ExpectedCurrentEventID        string `json:"expected_current_event_id"`
+	SourceEventID                 string `json:"source_event_id,omitempty"`
+	PreviousSelectedResultSHA256  string `json:"previous_selected_result_sha256"`
+	SelectedResultSHA256          string `json:"selected_result_sha256"`
+	ReasonCode                    string `json:"reason_code"`
+	PaperEvaluationSequence       int64  `json:"paper_evaluation_sequence,omitempty"`
+	PaperPerformancePolicyEventID string `json:"paper_performance_policy_event_id,omitempty"`
+	RecordedAt                    string `json:"recorded_at"`
 }
 
 type StrategySelectionState struct {
@@ -123,6 +124,9 @@ func (s *Service) registerStrategyEvidence(ctx context.Context, artifact []byte)
 		return nil, err
 	}
 	defer tx.Rollback()
+	if _, err := provePaperPerformancePolicyRecovery(ctx, tx); err != nil {
+		return nil, fmt.Errorf("strategy evidence policy recovery: %w", err)
+	}
 	var storedArtifact, recordedAt string
 	err = tx.QueryRowContext(ctx, `SELECT artifact_json,recorded_at FROM strategy_research_evidence WHERE result_sha256=?`, evidence.ResultSHA256).Scan(&storedArtifact, &recordedAt)
 	if err == nil {
@@ -158,6 +162,9 @@ func (s *Service) selectPaperCandidate(ctx context.Context, resultSHA256, expect
 		return nil, err
 	}
 	defer tx.Rollback()
+	if _, err := provePaperPerformancePolicyRecovery(ctx, tx); err != nil {
+		return nil, fmt.Errorf("strategy selection policy recovery: %w", err)
+	}
 	state, err := replayStrategyRegistry(ctx, tx)
 	if err != nil {
 		return nil, err
@@ -183,10 +190,11 @@ func (s *Service) selectPaperCandidate(ctx context.Context, resultSHA256, expect
 		ExpectedCurrentEventID: expectedCurrentEventID, PreviousSelectedResultSHA256: state.SelectedResultSHA256,
 		SelectedResultSHA256: resultSHA256, ReasonCode: "manual_selection", RecordedAt: s.now().UTC().Format(time.RFC3339Nano),
 	}
-	event.PaperEvaluationSequence, err = latestPaperEvaluationSequence(ctx, tx)
+	sequence, err := latestPaperEvaluationSequence(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
+	event.PaperEvaluationSequence = sequence
 	if err := insertStrategySelectionEvent(ctx, tx, event); err != nil {
 		return nil, err
 	}
@@ -205,38 +213,52 @@ func (s *Service) rollbackPaperCandidate(ctx context.Context, expectedCurrentEve
 		return nil, err
 	}
 	defer tx.Rollback()
+	if _, err := provePaperPerformancePolicyRecovery(ctx, tx); err != nil {
+		return nil, fmt.Errorf("strategy rollback policy recovery: %w", err)
+	}
 	state, err := replayStrategyRegistry(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
+	now := s.now().UTC()
+	if err := s.haltAllSyntheticExecutionTx(ctx, tx, now); err != nil {
+		return nil, err
+	}
+	returned, err := s.rollbackPaperCandidateTx(ctx, tx, state, expectedCurrentEventID, sourceEventID, "manual_rollback", "", s.id("strategy_selection"), now)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return returned, nil
+}
+
+func (s *Service) rollbackPaperCandidateTx(ctx context.Context, tx *sql.Tx, state strategyRegistryRecoveryProof, expectedCurrentEventID, sourceEventID, reasonCode, policyEventID, eventID string, now time.Time) (*StrategySelectionState, error) {
 	if state.CurrentEventID != expectedCurrentEventID || sourceEventID != state.CurrentEventID {
 		return nil, errors.New("stale or mismatched strategy rollback source")
 	}
-	if len(state.stack) == 0 {
-		return nil, errors.New("no selected paper candidate to roll back")
+	if len(state.stack) == 0 || (reasonCode == "manual_rollback") != (policyEventID == "") ||
+		(reasonCode != "manual_rollback" && reasonCode != "automatic_performance_rollback") || !safeOrderID(eventID) {
+		return nil, errors.New("strategy rollback transition is invalid")
 	}
 	nextStack := append([]string(nil), state.stack[:len(state.stack)-1]...)
 	selected := noStrategySelection
 	if len(nextStack) != 0 {
 		selected = nextStack[len(nextStack)-1]
 	}
-	now := s.now().UTC()
-	if err := s.haltAllSyntheticExecutionTx(ctx, tx, now); err != nil {
-		return nil, err
-	}
 	event := StrategySelectionEvent{
-		EventID: s.id("strategy_selection"), EventType: "ROLLBACK", ExpectedCurrentEventID: expectedCurrentEventID,
+		EventID: eventID, EventType: "ROLLBACK", ExpectedCurrentEventID: expectedCurrentEventID,
 		SourceEventID: sourceEventID, PreviousSelectedResultSHA256: state.SelectedResultSHA256,
-		SelectedResultSHA256: selected, ReasonCode: "manual_rollback", RecordedAt: now.Format(time.RFC3339Nano),
+		SelectedResultSHA256: selected, ReasonCode: reasonCode, PaperPerformancePolicyEventID: policyEventID,
+		RecordedAt: now.Format(time.RFC3339Nano),
 	}
-	event.PaperEvaluationSequence, err = latestPaperEvaluationSequence(ctx, tx)
+	sequence, err := latestPaperEvaluationSequence(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
+	event.PaperEvaluationSequence = sequence
 	if err := insertStrategySelectionEvent(ctx, tx, event); err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return &StrategySelectionState{CurrentEventID: event.EventID, SelectedResultSHA256: selected}, nil
@@ -247,12 +269,25 @@ func insertStrategySelectionEvent(ctx context.Context, tx *sql.Tx, event Strateg
 	if err != nil {
 		return err
 	}
+	hasPolicySchema, err := hasPaperPerformancePolicySchema(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if !hasPolicySchema {
+		_, err = tx.ExecContext(ctx, `INSERT INTO strategy_selection_events(
+			event_id,event_type,candidate_result_sha256,expected_current_event_id,source_event_id,
+			previous_selected_result_sha256,selected_result_sha256,reason_code,paper_evaluation_sequence,record_sha256,record_json,recorded_at
+		) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, event.EventID, event.EventType, nullable(event.CandidateResultSHA256),
+			event.ExpectedCurrentEventID, nullable(event.SourceEventID), event.PreviousSelectedResultSHA256,
+			event.SelectedResultSHA256, event.ReasonCode, event.PaperEvaluationSequence, recordSHA, string(recordJSON), event.RecordedAt)
+		return err
+	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO strategy_selection_events(
 		event_id,event_type,candidate_result_sha256,expected_current_event_id,source_event_id,
-		previous_selected_result_sha256,selected_result_sha256,reason_code,paper_evaluation_sequence,record_sha256,record_json,recorded_at
-	) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, event.EventID, event.EventType, nullable(event.CandidateResultSHA256),
+		previous_selected_result_sha256,selected_result_sha256,reason_code,paper_evaluation_sequence,paper_performance_policy_event_id,record_sha256,record_json,recorded_at
+	) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, event.EventID, event.EventType, nullable(event.CandidateResultSHA256),
 		event.ExpectedCurrentEventID, nullable(event.SourceEventID), event.PreviousSelectedResultSHA256,
-		event.SelectedResultSHA256, event.ReasonCode, event.PaperEvaluationSequence, recordSHA, string(recordJSON), event.RecordedAt)
+		event.SelectedResultSHA256, event.ReasonCode, event.PaperEvaluationSequence, nullable(event.PaperPerformancePolicyEventID), recordSHA, string(recordJSON), event.RecordedAt)
 	return err
 }
 
@@ -313,12 +348,18 @@ func replayStrategyRegistry(ctx context.Context, q orderQuerier) (strategyRegist
 	selectionNextAt := map[string]time.Time{}
 	selectionOpenSequence := map[string]int64{}
 	selectionCloseSequence := map[string]int64{}
+	type policyLink struct{ policyID, eventID string }
+	var linkedRollbacks []policyLink
 	selectionQuery := `SELECT sequence,event_id,event_type,candidate_result_sha256,expected_current_event_id,
-		source_event_id,previous_selected_result_sha256,selected_result_sha256,reason_code,0,record_sha256,record_json,recorded_at
+		 source_event_id,previous_selected_result_sha256,selected_result_sha256,reason_code,0,NULL,record_sha256,record_json,recorded_at
 		FROM strategy_selection_events ORDER BY sequence`
-	if schemaVersion >= 14 {
+	if schemaVersion >= 20 {
 		selectionQuery = `SELECT sequence,event_id,event_type,candidate_result_sha256,expected_current_event_id,
-		source_event_id,previous_selected_result_sha256,selected_result_sha256,reason_code,paper_evaluation_sequence,record_sha256,record_json,recorded_at
+		 source_event_id,previous_selected_result_sha256,selected_result_sha256,reason_code,paper_evaluation_sequence,paper_performance_policy_event_id,record_sha256,record_json,recorded_at
+		FROM strategy_selection_events ORDER BY sequence`
+	} else if schemaVersion >= 14 {
+		selectionQuery = `SELECT sequence,event_id,event_type,candidate_result_sha256,expected_current_event_id,
+		 source_event_id,previous_selected_result_sha256,selected_result_sha256,reason_code,paper_evaluation_sequence,NULL,record_sha256,record_json,recorded_at
 		FROM strategy_selection_events ORDER BY sequence`
 	}
 	rows, err = q.QueryContext(ctx, selectionQuery)
@@ -328,9 +369,9 @@ func replayStrategyRegistry(ctx context.Context, q orderQuerier) (strategyRegist
 	for rows.Next() {
 		var sequence, paperEvaluationSequence int64
 		var eventID, eventType, expectedCurrent, previousSelected, nextSelected, reason, recordSHA, recordJSON, recordedAt string
-		var candidateSHA, sourceEvent sql.NullString
+		var candidateSHA, sourceEvent, policyEventID sql.NullString
 		if err := rows.Scan(&sequence, &eventID, &eventType, &candidateSHA, &expectedCurrent, &sourceEvent,
-			&previousSelected, &nextSelected, &reason, &paperEvaluationSequence, &recordSHA, &recordJSON, &recordedAt); err != nil {
+			&previousSelected, &nextSelected, &reason, &paperEvaluationSequence, &policyEventID, &recordSHA, &recordJSON, &recordedAt); err != nil {
 			rows.Close()
 			return strategyRegistryRecoveryProof{}, err
 		}
@@ -344,20 +385,23 @@ func replayStrategyRegistry(ctx context.Context, q orderQuerier) (strategyRegist
 			event.CandidateResultSHA256 != candidateSHA.String || event.ExpectedCurrentEventID != expectedCurrent ||
 			event.SourceEventID != sourceEvent.String || event.PreviousSelectedResultSHA256 != previousSelected ||
 			event.SelectedResultSHA256 != nextSelected || event.ReasonCode != reason ||
-			event.PaperEvaluationSequence != paperEvaluationSequence || event.RecordedAt != recordedAt ||
+			event.PaperEvaluationSequence != paperEvaluationSequence || event.PaperPerformancePolicyEventID != policyEventID.String ||
+			(event.PaperPerformancePolicyEventID != "") != policyEventID.Valid || event.RecordedAt != recordedAt ||
 			!safeOrderID(eventID) || !canonicalUTCString(recordedAt) || expectedCurrent != currentEvent || previousSelected != selected {
 			rows.Close()
 			return strategyRegistryRecoveryProof{}, fmt.Errorf("strategy selection event %q metadata or hash mismatch", eventID)
 		}
 		switch eventType {
 		case "SELECT":
-			if evidenceTargets[candidateSHA.String] != "paper_candidate" || sourceEvent.Valid || reason != "manual_selection" || nextSelected != candidateSHA.String || nextSelected == selected {
+			if evidenceTargets[candidateSHA.String] != "paper_candidate" || sourceEvent.Valid || reason != "manual_selection" || policyEventID.Valid || nextSelected != candidateSHA.String || nextSelected == selected {
 				rows.Close()
 				return strategyRegistryRecoveryProof{}, fmt.Errorf("strategy selection event %q is invalid", eventID)
 			}
 			stack = append(stack, nextSelected)
 		case "ROLLBACK":
-			if candidateSHA.Valid || !sourceEvent.Valid || sourceEvent.String != currentEvent || !knownEvents[sourceEvent.String] || reason != "manual_rollback" || len(stack) == 0 {
+			if candidateSHA.Valid || !sourceEvent.Valid || sourceEvent.String != currentEvent || !knownEvents[sourceEvent.String] ||
+				(reason != "manual_rollback" && reason != "automatic_performance_rollback") ||
+				(reason == "automatic_performance_rollback") != policyEventID.Valid || len(stack) == 0 {
 				rows.Close()
 				return strategyRegistryRecoveryProof{}, fmt.Errorf("strategy rollback event %q is invalid", eventID)
 			}
@@ -370,6 +414,9 @@ func replayStrategyRegistry(ctx context.Context, q orderQuerier) (strategyRegist
 				rows.Close()
 				return strategyRegistryRecoveryProof{}, fmt.Errorf("strategy rollback event %q skipped selection history", eventID)
 			}
+			if policyEventID.Valid {
+				linkedRollbacks = append(linkedRollbacks, policyLink{policyID: policyEventID.String, eventID: eventID})
+			}
 		default:
 			rows.Close()
 			return strategyRegistryRecoveryProof{}, fmt.Errorf("strategy selection event %q has unsupported type", eventID)
@@ -378,6 +425,9 @@ func replayStrategyRegistry(ctx context.Context, q orderQuerier) (strategyRegist
 			sourceEvent, previousSelected, nextSelected, reason}
 		if schemaVersion >= 14 && paperEvaluationSequence != 0 {
 			selectionHashFields = append(selectionHashFields, paperEvaluationSequence)
+		}
+		if policyEventID.Valid {
+			selectionHashFields = append(selectionHashFields, policyEventID)
 		}
 		selectionHashFields = append(selectionHashFields, recordSHA, recordJSON, recordedAt)
 		if err := encoder.Encode(selectionHashFields); err != nil {
@@ -401,6 +451,11 @@ func replayStrategyRegistry(ctx context.Context, q orderQuerier) (strategyRegist
 	}
 	if err := rows.Close(); err != nil {
 		return strategyRegistryRecoveryProof{}, err
+	}
+	for _, link := range linkedRollbacks {
+		if err := proveLinkedPaperPerformancePolicyMetadata(ctx, q, link.policyID, "rollback", link.eventID, ""); err != nil {
+			return strategyRegistryRecoveryProof{}, err
+		}
 	}
 
 	evaluationCount := 0

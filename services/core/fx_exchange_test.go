@@ -61,7 +61,7 @@ func TestFXExchangePreviewApplyReplayAndBackupRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v13" || manifest.SchemaVersion != "omni-folio.sqlite.v19" {
+	if manifest.FormatVersion != "omni-folio-backup.v14" || manifest.SchemaVersion != "omni-folio.sqlite.v20" {
 		t.Fatalf("FX backup versions drifted: %+v", manifest)
 	}
 	if err := verifyManifest(backup, golden, manifestPath); err != nil {

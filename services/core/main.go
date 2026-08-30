@@ -53,7 +53,7 @@ func run(args []string) error {
 			return err
 		}
 		defer db.Close()
-		if err := requireSchema(db); err != nil {
+		if err := requireServerStartupRecovery(db); err != nil {
 			return err
 		}
 		svc := newService(db, time.Now, randomID)

@@ -425,6 +425,9 @@ func (s *Service) recordPaperTarget(ctx context.Context, accountRef string, sign
 		return nil, err
 	}
 	defer tx.Rollback()
+	if _, _, err := proveExecutionAuthorityRecovery(ctx, tx); err != nil {
+		return nil, fmt.Errorf("execution authority recovery: %w", err)
+	}
 	orderID, exists, err := paperOrderBySignalFrom(ctx, tx, accountRef, signal.SignalID)
 	if err != nil {
 		return nil, err
