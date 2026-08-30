@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show SemanticsAction;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -318,6 +319,8 @@ void main() {
     expect(snapshot.cash.single.amount, '778');
     expect(snapshot.holdings.single.costBasis, '300.6');
     expect(snapshot.costBasisPolicy, 'fifo_exact_else_half_even_residual_8_v1');
+    expect(snapshot.eventCount, 3);
+    expect(snapshot.receiptCount, 1);
 
     expect(
       () => Money.fromJson({'currency': 'USD', 'amount': 778}),
@@ -378,6 +381,36 @@ void main() {
         ...fixture('golden-snapshot.json'),
         'cost_basis_policy': 'unversioned',
       }),
+      throwsFormatException,
+    );
+    final missingProvenance = Json.from(fixture('golden-snapshot.json'))
+      ..remove('provenance');
+    for (final provenance in [
+      null,
+      {
+        'event_ids': ['event_1'],
+        'receipt_ids': null,
+      },
+      {
+        'event_ids': [''],
+        'receipt_ids': [],
+      },
+      {
+        'event_ids': ['event_1', 2],
+        'receipt_ids': [],
+      },
+      {'event_ids': [], 'receipt_ids': [], 'raw_id': 'must-not-accept'},
+    ]) {
+      expect(
+        () => PortfolioSnapshot.fromJson({
+          ...fixture('golden-snapshot.json'),
+          'provenance': provenance,
+        }),
+        throwsFormatException,
+      );
+    }
+    expect(
+      () => PortfolioSnapshot.fromJson(missingProvenance),
       throwsFormatException,
     );
     expect(marketCandles().bars.last.close, '101');
@@ -1190,9 +1223,14 @@ void main() {
         await pumpUi(tester);
         expect(api.reconciliationCalls, 1);
 
-        await tester.drag(find.byType(ListView), const Offset(0, -900));
+        final storedSummary = find.textContaining('마지막 저장 기록 · 현재 상태 아님');
+        await tester.dragUntilVisible(
+          storedSummary,
+          find.byType(ListView),
+          const Offset(0, -300),
+        );
         await tester.pumpAndSettle();
-        expect(find.textContaining('마지막 저장 기록 · 현재 상태 아님'), findsOneWidget);
+        expect(storedSummary, findsOneWidget);
         expect(find.textContaining('2개 중 2개 불일치'), findsOneWidget);
         expect(
           find.semantics.byLabel(
@@ -2495,5 +2533,203 @@ void main() {
     expect(find.text('OHLCV 표'), findsOneWidget);
     expect(find.text('2026-08-22T20:00:00Z'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('desktop uses a rail and keeps portfolio content readable', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+    await pumpUi(tester);
+
+    expect(find.byType(NavigationRail), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(
+      tester.getSize(find.byKey(const Key('portfolio-content-frame'))).width,
+      lessThanOrEqualTo(1040),
+    );
+  });
+
+  testWidgets('overview leads with useful portfolio data', (tester) async {
+    await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+    await pumpUi(tester);
+
+    expect(find.text('내 투자 기록'), findsOneWidget);
+    expect(find.text('USD 778'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('내 투자 기록')).dy,
+      lessThan(tester.getTopLeft(find.textContaining('데이터 상태:')).dy),
+    );
+    await tester.dragUntilVisible(
+      find.text('AAPL'),
+      find.byType(ListView),
+      const Offset(0, -300),
+    );
+  });
+
+  testWidgets('first-run action stays compact on desktop', (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = goldenApi(
+      neverVerified: true,
+      snapshot: PortfolioSnapshot.fromJson({
+        ...fixture('golden-snapshot.json'),
+        'ledger_revision': 'rev_0000000000',
+        'cash': const [],
+        'holdings': const [],
+        'realized_pnl': const [],
+        'provenance': {'event_ids': const [], 'receipt_ids': const []},
+      }),
+    );
+
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+
+    expect(
+      tester.getSize(find.byKey(const Key('empty-primary-action'))).width,
+      lessThanOrEqualTo(320),
+    );
+  });
+
+  testWidgets(
+    'realized gain shows a signed Korean status with positive color',
+    (tester) async {
+      await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+      await pumpUi(tester);
+
+      final gain = find.text('실현 이익 USD +78.6');
+      expect(gain, findsOneWidget);
+      expect(tester.widget<Text>(gain).style!.color, const Color(0xFF047857));
+    },
+  );
+
+  testWidgets(
+    'realized loss shows a signed Korean status with negative color',
+    (tester) async {
+      final api = goldenApi(
+        snapshot: PortfolioSnapshot.fromJson({
+          ...fixture('golden-snapshot.json'),
+          'realized_pnl': [
+            {'currency': 'USD', 'amount': '-12.5'},
+          ],
+        }),
+      );
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+
+      final loss = find.text('실현 손실 USD -12.5');
+      expect(loss, findsOneWidget);
+      expect(tester.widget<Text>(loss).style!.color, const Color(0xFFB91C1C));
+    },
+  );
+
+  testWidgets(
+    'mixed-currency realized PnL keeps each signed status and color',
+    (tester) async {
+      final api = goldenApi(
+        snapshot: PortfolioSnapshot.fromJson({
+          ...fixture('golden-snapshot.json'),
+          'realized_pnl': [
+            {'currency': 'USD', 'amount': '10'},
+            {'currency': 'KRW', 'amount': '-200'},
+          ],
+        }),
+      );
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+
+      final gain = find.text('실현 이익 USD +10');
+      final loss = find.text('실현 손실 KRW -200');
+      expect(gain, findsOneWidget);
+      expect(loss, findsOneWidget);
+      expect(tester.widget<Text>(gain).style!.color, const Color(0xFF047857));
+      expect(tester.widget<Text>(loss).style!.color, const Color(0xFFB91C1C));
+    },
+  );
+
+  testWidgets(
+    'snapshot provenance counts precede realized PnL without raw IDs',
+    (tester) async {
+      await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+      await pumpUi(tester);
+
+      final provenance = find.text('최근 원장 기록 · 이벤트 3건 · 가져오기 1건');
+      final pnl = find.text('실현 이익 USD +78.6');
+      expect(provenance, findsOneWidget);
+      expect(
+        tester.getTopLeft(provenance).dy,
+        lessThan(tester.getTopLeft(pnl).dy),
+      );
+      expect(find.textContaining('event_cash_001'), findsNothing);
+      expect(find.textContaining('receipt_golden_001'), findsNothing);
+      expect(find.textContaining('백업 정보'), findsNothing);
+    },
+  );
+
+  testWidgets('holdings list stays lazy and overview preview is bounded', (
+    tester,
+  ) async {
+    final holdings = List<Json>.generate(
+      6,
+      (index) => {
+        'instrument_id': 'instrument_$index',
+        'symbol': 'T$index',
+        'quantity': '1',
+        'cost_basis': '1',
+        'currency': 'USD',
+      },
+    );
+    final api = goldenApi(
+      snapshot: PortfolioSnapshot.fromJson({
+        ...fixture('golden-snapshot.json'),
+        'holdings': holdings,
+      }),
+    );
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+
+    await tester.dragUntilVisible(
+      find.text('보유 탭에서 전체 6종목 보기'),
+      find.byType(ListView),
+      const Offset(0, -300),
+    );
+    expect(find.text('T3'), findsNothing);
+
+    await tester.tap(find.text('보유'));
+    await pumpUi(tester);
+    final list = tester.widget<ListView>(find.byType(ListView));
+    expect(list.childrenDelegate, isA<SliverChildBuilderDelegate>());
+  });
+
+  testWidgets('holding row exposes one combined actionable semantics label', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+      await pumpUi(tester);
+      await tester.tap(find.text('보유'));
+      await pumpUi(tester);
+
+      final combined = find.semantics.byLabel('AAPL, 수량 6, 원가 USD 300.6');
+      expect(combined, findsOneWidget);
+      expect(
+        combined.evaluate().single.getSemanticsData().hasAction(
+          SemanticsAction.tap,
+        ),
+        isTrue,
+      );
+      expect(find.semantics.byLabel('AAPL'), findsNothing);
+      expect(find.semantics.byLabel('수량 6'), findsNothing);
+      expect(find.semantics.byLabel('USD 300.6'), findsNothing);
+    } finally {
+      semantics.dispose();
+    }
   });
 }

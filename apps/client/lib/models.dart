@@ -195,6 +195,8 @@ class PortfolioSnapshot {
     required this.cash,
     required this.holdings,
     required this.realizedPnl,
+    this.eventCount = 0,
+    this.receiptCount = 0,
   });
   factory PortfolioSnapshot.fromJson(Json json) {
     if (_bool(json, 'live_enabled') ||
@@ -205,6 +207,11 @@ class PortfolioSnapshot {
         'fifo_exact_else_half_even_residual_8_v1') {
       throw const FormatException('Unsupported cost basis policy');
     }
+    final provenance = json['provenance'];
+    if (provenance is! Json) {
+      throw const FormatException('Missing provenance');
+    }
+    _requireExactKeys(provenance, {'event_ids', 'receipt_ids'});
     return PortfolioSnapshot(
       ledgerRevision: _text(json, 'ledger_revision'),
       costBasisPolicy: _text(json, 'cost_basis_policy'),
@@ -215,6 +222,8 @@ class PortfolioSnapshot {
         'holdings',
       ).map(Holding.fromJson).toList(growable: false),
       realizedPnl: _moneyList(json, 'realized_pnl'),
+      eventCount: _nonEmptyStringCount(provenance, 'event_ids'),
+      receiptCount: _nonEmptyStringCount(provenance, 'receipt_ids'),
     );
   }
 
@@ -224,10 +233,21 @@ class PortfolioSnapshot {
   final List<Money> cash;
   final List<Holding> holdings;
   final List<Money> realizedPnl;
+  final int eventCount;
+  final int receiptCount;
 }
 
 List<Money> _moneyList(Json value, String key) =>
     _jsonList(value, key).map(Money.fromJson).toList(growable: false);
+
+int _nonEmptyStringCount(Json value, String key) {
+  final result = value[key];
+  if (result is! List<dynamic> ||
+      result.any((item) => item is! String || item.isEmpty)) {
+    throw const FormatException('Invalid provenance IDs');
+  }
+  return result.length;
+}
 
 String _currency(Json value, String key) {
   final result = _text(value, key);

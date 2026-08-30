@@ -74,6 +74,7 @@ G6 PostgreSQL and Kubernetes promotion
 - `make check` 또는 동등한 단일 명령이 각 활성 서브프로젝트의 format, lint, unit, contract test를 실행한다.
 - 검증 명령은 성공·실패·중단 뒤 자신이 만든 프로세스, 임시 파일, Podman/Kind/Testcontainers 리소스를 소유 label·세션·명시적 ID 기준으로 회수하며 전역 prune을 사용하지 않는다.
 - 동일 fixture의 decimal·ID·timestamp가 Flutter, Go, Python contract test에서 일치한다.
+- 2026-08-30 `make check`와 `make smoke`는 실제 preview/apply API를 쓰는 demo seed의 적용·완전 중복 no-op·충돌 fail-closed와 65개 Flutter parser/widget 검증을 통과했다. G2의 physical-device profile과 수동 screen-reader 증거는 여전히 열려 있다.
 - local 검증, broker sandbox, live readiness, 실제 운영 증거를 따로 보고한다.
 - external deploy, credential, live 주문, push는 명시 승인 없이는 실행하지 않는다.
 

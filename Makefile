@@ -16,8 +16,9 @@ FLUTTER_WEB_PORT ?= 8081
 WEB_ORIGIN ?= http://$(FLUTTER_WEB_HOST):$(FLUTTER_WEB_PORT)
 RESEARCH_PYTHONPATH ?= $(ROOT)/services/research
 MARKET_FIXTURE ?= $(ROOT)/contracts/fixtures/market-bars.csv
+SEED_DEMO_CSV ?= $(ROOT)/contracts/fixtures/golden-import.csv
 
-.PHONY: bootstrap format format-check lint test contract-check check clean clean-test-resources run-core run-client run-research run-improvement smoke
+.PHONY: bootstrap format format-check lint test contract-check check clean clean-test-resources run-core run-client seed-demo run-research run-improvement smoke
 
 bootstrap:
 	mkdir -p "$(ROOT)/data"
@@ -85,6 +86,17 @@ run-core:
 run-client:
 	cd apps/client && "$(FLUTTER)" run -d "$(FLUTTER_DEVICE)" --web-hostname "$(FLUTTER_WEB_HOST)" --web-port "$(FLUTTER_WEB_PORT)" --dart-define=OMNI_API_URL="$(API_URL)"
 
+seed-demo:
+	@set -eu; \
+	preview_json="$$(curl --fail --silent -X POST -H 'Content-Type: text/csv' --data-binary @"$(SEED_DEMO_CSV)" "$(API_URL)/v1/imports/preview")"; \
+	preview_state="$$(printf '%s' "$$preview_json" | "$(PYTHON)" -c 'import json,sys; p=json.load(sys.stdin); t=p.get("totals"); rows=p.get("rows"); fail=lambda message: sys.exit(message); (p.get("can_apply") is True) or fail("demo preview cannot apply"); isinstance(t,dict) or fail("demo preview has invalid totals"); isinstance(rows,list) or fail("demo preview has invalid rows"); t.get("error_rows") == 0 or fail("demo preview has errors"); t.get("unresolved_rows") == 0 or fail("demo preview has unresolved rows"); new=t.get("new_rows"); isinstance(new,int) and new >= 0 or fail("demo preview has invalid new row count"); noop=new == 0; (not noop or (rows and t.get("duplicate_rows") == len(rows) and all(isinstance(row,dict) and row.get("status") == "duplicate" for row in rows))) or fail("demo preview is not an exact duplicate replay"); print("noop" if noop else "apply")')"; \
+	new_rows="$$(printf '%s' "$$preview_json" | "$(PYTHON)" -c 'import json,sys; print(json.load(sys.stdin)["totals"]["new_rows"])')"; \
+	if test "$$preview_state" = noop; then printf '%s\n' 'demo: sample ledger already present'; exit 0; fi; \
+	preview_id="$$(printf '%s' "$$preview_json" | "$(PYTHON)" -c 'import json,sys; print(json.load(sys.stdin)["preview_id"])')"; \
+	request_json="$$("$(PYTHON)" -c 'import json,sys; print(json.dumps({"preview_id":sys.argv[1],"idempotency_key":"demo-"+sys.argv[1]}))' "$$preview_id")"; \
+	apply_json="$$(curl --fail --silent -X POST -H 'Content-Type: application/json' --data "$$request_json" "$(API_URL)/v1/imports/apply")"; \
+	printf '%s' "$$apply_json" | "$(PYTHON)" -c 'import json,sys; d=json.load(sys.stdin); expected=int(sys.argv[1]); applied=d.get("applied_rows"); (isinstance(applied,int) and applied == expected and applied > 0) or sys.exit("demo apply row count mismatch"); print("demo: applied", applied, "sample rows at", d.get("ledger_revision_after"))' "$$new_rows"
+
 run-research:
 	@PYTHONPATH="$(RESEARCH_PYTHONPATH)" "$(PYTHON)" -m omni_research \
 		--bars "$(ROOT)/contracts/fixtures/market-bars.csv" \
@@ -120,12 +132,14 @@ smoke:
 	curl --fail --silent http://127.0.0.1:18080/readyz >/dev/null; \
 	status_json="$$(curl --fail --silent http://127.0.0.1:18080/v1/status)"; \
 	"$(PYTHON)" -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["service"] == "omni-folio" and d["ledger_revision"] == "rev_0000000000" and d["live_enabled"] is False' "$$status_json"; \
-	preview_json="$$(curl --fail --silent -X POST -H 'Content-Type: text/csv' --data-binary @contracts/fixtures/golden-import.csv http://127.0.0.1:18080/v1/imports/preview)"; \
-	preview_id="$$(printf '%s' "$$preview_json" | "$(PYTHON)" -c 'import json,sys; print(json.load(sys.stdin)["preview_id"])')"; \
-	apply_json="$$(curl --fail --silent -X POST -H 'Content-Type: application/json' --data "{\"preview_id\":\"$$preview_id\",\"idempotency_key\":\"smoke-apply-001\"}" http://127.0.0.1:18080/v1/imports/apply)"; \
-	"$(PYTHON)" -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["applied_rows"] == 3 and d["ledger_revision_after"] == "rev_0000000003"' "$$apply_json"; \
+	$(MAKE) --no-print-directory seed-demo API_URL=http://127.0.0.1:18080; \
 	snapshot_json="$$(curl --fail --silent http://127.0.0.1:18080/v1/portfolio/snapshot)"; \
 	"$(PYTHON)" -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["ledger_revision"] == "rev_0000000003" and d["cost_basis_policy"] == "fifo_exact_else_half_even_residual_8_v1" and d["live_enabled"] is False and d["cash"][0]["amount"] == "778"' "$$snapshot_json"; \
+	duplicate_output="$$( $(MAKE) --no-print-directory seed-demo API_URL=http://127.0.0.1:18080 )"; \
+	test "$$duplicate_output" = 'demo: sample ledger already present'; \
+	conflict_csv="$$smoke_dir/conflicting-import.csv"; \
+	sed 's/,USD,1000$$/,USD,1001/' contracts/fixtures/golden-import.csv > "$$conflict_csv"; \
+	if PYTHONOPTIMIZE=1 $(MAKE) --no-print-directory seed-demo API_URL=http://127.0.0.1:18080 SEED_DEMO_CSV="$$conflict_csv" >/dev/null 2>&1; then echo 'seed-demo accepted a conflicting preview' >&2; exit 1; fi; \
 	activity_json="$$(curl --fail --silent http://127.0.0.1:18080/v1/ledger/activities)"; \
 	"$(PYTHON)" -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["source"] == "local_ledger" and d["broker_freshness"] == "unverified" and d["ledger_revision"] == "rev_0000000003" and [row["type"] for row in d["events"]] == ["SELL", "BUY", "DEPOSIT"] and d["next_cursor"] is None; assert not ({"event_id", "source_event_id", "account_id", "instrument_id", "receipt_id", "corrects_source_event_id", "sequence"} & set().union(*(row.keys() for row in d["events"])))' "$$activity_json"; \
 	market_json="$$(curl --fail --silent 'http://127.0.0.1:18080/v1/market-data/candles?symbol=AAPL&interval=1d')"; \

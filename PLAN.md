@@ -8,7 +8,7 @@
 - [x] Flutter/Go/Python 및 state-authority ADR
 - [x] G0 contracts와 monorepo 실행 명령
 - [x] G1 CSV preview → atomic apply → ledger snapshot/receipt, exact cash-flow·split·두 통화 환전 replay, append-only `CASH_VOID`, direct FX observation, cash-only direct-FX valuation, durable security price observation, internal native-currency holding valuation와 versioned FIFO residual allocation, schema v11/backup v7 및 legacy v8/v9/v10 owned-copy migration/restore proof
-- [ ] G2 동일 fixture를 표시하는 Flutter client와 iOS·Android·web build 완료; semantics·touch target·light/dark contrast·reduced-motion·upstream error 상세 비노출 자동 검증과 chart 포함 Android emulator profile 2회 통과, 수동 screen-reader·physical-device profile 증거 남음
+- [ ] G2 동일 fixture를 표시하는 Flutter client와 iOS·Android·web build 완료; 실제 import API 기반 demo seed, 모바일 bottom navigation·desktop rail, bounded Overview·lazy Holdings, provenance count·signed PnL·단일 actionable semantics를 포함한 자동 검증 통과, chart 포함 Android emulator profile 2회 통과, 수동 screen-reader·physical-device profile 증거 남음
 - [x] G3 동일 market fixture를 읽는 deterministic Python backtest와 walk-forward 개선 runner
 - [x] local OCI/Compose 정의와 root check/smoke
 

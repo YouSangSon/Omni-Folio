@@ -47,6 +47,8 @@ Overview may also warn about unresolved local submit or cancel actions from the 
 
 On first run, `never_verified` with an empty snapshot is an empty state rather than a successful zero-portfolio summary. Overview offers one primary action to open the existing transaction import flow; a non-empty unverified snapshot remains visible with its trust warning.
 
+For local product review, `make seed-demo` sends the existing golden CSV through the real import preview/apply API and is idempotent once those rows exist. It must not bypass the API, write the database directly, invent broker freshness, or turn unavailable valuation into a displayed estimate.
+
 ## Interaction and accessibility
 
 - Minimum 48×48 logical-pixel interactive targets, which also clears the 44pt iOS floor; default text/control size 16 logical px or larger.

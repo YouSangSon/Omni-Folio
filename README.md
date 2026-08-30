@@ -70,6 +70,7 @@ make run-core WEB_ORIGIN=http://localhost:8081
 두 번째 터미널:
 
 ```sh
+make seed-demo
 make run-client
 ```
 
@@ -77,12 +78,15 @@ make run-client
 - Flutter web: `http://localhost:8081`
 - local DB: `data/omni-folio.db`
 
+`make seed-demo`는 판단 가능한 첫 화면을 위해 기존 `golden-import.csv`를 실제 preview/apply API로 통과시켜 USD 현금, AAPL 보유 수량과 FIFO 원가, 실현 손익을 채웁니다. 별도 mock API나 우회 쓰기를 만들지 않으며, 이미 적용된 이벤트는 다시 넣지 않습니다. 개인 데이터를 바로 시작하려면 이 명령만 생략하세요. 실행 중인 앱에서는 상단 새로고침을 누르면 샘플 원장이 표시됩니다.
+
 `make run-core`는 `contracts/fixtures/market-bars.csv`를 명시적으로 전달하므로 AAPL 보유 항목에서 샘플 종목 차트를 확인할 수 있습니다. 화면과 API 모두 이를 `샘플 데이터 · 실시간 아님`으로 표시합니다. fixture 없이 fail-closed 동작을 확인하려면 `make run-core MARKET_FIXTURE=`를 사용합니다.
 
 다른 API 포트를 사용할 때는 core와 client를 함께 바꿉니다.
 
 ```sh
 make run-core CORE_ADDR=127.0.0.1:18080 WEB_ORIGIN=http://localhost:8081
+make seed-demo API_URL=http://127.0.0.1:18080
 make run-client API_URL=http://127.0.0.1:18080
 ```
 
