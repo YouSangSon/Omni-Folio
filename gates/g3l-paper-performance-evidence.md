@@ -4,14 +4,14 @@ Scope: account-global `paper_fixture` daily-close marks and replay-derived equit
 
 ## Contract
 
-- [ ] One schema-v18 append-only performance event owns transaction-current order and market cutoffs, current selection provenance, and an account-global predecessor.
-- [ ] Bounded accounting reuses the sole capitalized `FILL_RECORDED` journal and excludes fill evidence whose sequence exceeds the order cutoff or whose bound bar closes after `as_of`.
-- [ ] Every open KRX/KRW position has exactly one same-`as_of` immutable `paper_fixture` daily close at or below the price cutoff; cash-only points still require cutoff-bounded daily-close existence, and missing, ambiguous, arbitrary, or future `as_of` fails with zero writes.
-- [ ] Exact cash, open cost, market value, realized/unrealized/total PnL, equity, scale-8 half-even returns, peak, drawdown, and max drawdown reconcile from unrounded rationals.
-- [ ] Strategy selection or rollback never resets the session baseline, cash/lots, previous point, peak, or max drawdown; rollback to `no_strategy` remains markable with an explicit non-attribution provenance value.
-- [ ] Exact retries return the first validated event; conflicting duplicate, out-of-order `as_of`, concurrent divergence, UPDATE, and DELETE fail closed.
-- [ ] Recovery independently reconstructs every cutoff, mark, value, predecessor, JSON, and hash; backup v12/schema v18 proves digest/event/mark counts and v11 migrates only through an owned copy to an empty C3 log.
-- [ ] Focused RED/GREEN, race, full `make check`, `make smoke`, `govulncheck ./...`, `git diff --check`, independent review, and owned-resource inventory pass.
+- [x] One schema-v18 append-only performance event owns transaction-current order and market cutoffs, current selection provenance, and an account-global predecessor.
+- [x] Bounded accounting reuses the sole capitalized `FILL_RECORDED` journal and excludes fill evidence whose sequence exceeds the order cutoff or whose bound bar closes after `as_of`.
+- [x] Every open KRX/KRW position has exactly one same-`as_of` immutable `paper_fixture` daily close at or below the price cutoff; cash-only points still require cutoff-bounded daily-close existence, and missing, ambiguous, arbitrary, or future `as_of` fails with zero writes.
+- [x] Exact cash, open cost, market value, realized/unrealized/total PnL, equity, scale-8 half-even returns, peak, drawdown, and max drawdown reconcile from unrounded rationals.
+- [x] Strategy selection or rollback never resets the session baseline, cash/lots, previous point, peak, or max drawdown; rollback to `no_strategy` remains markable with an explicit non-attribution provenance value.
+- [x] Exact retries return the first validated event; conflicting duplicate, out-of-order `as_of`, concurrent divergence, UPDATE, and DELETE fail closed.
+- [x] Recovery independently reconstructs every cutoff, mark, value, predecessor, JSON, and hash; backup v12/schema v18 proves digest/event/mark counts and v11 migrates only through an owned copy to an empty C3 log.
+- [x] Focused RED/GREEN, race, full `make check`, `make smoke`, `govulncheck ./...`, `git diff --check`, independent review, and owned-resource inventory pass.
 
 ## Forbidden until later gates
 

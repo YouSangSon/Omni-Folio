@@ -85,6 +85,7 @@ G6 PostgreSQL and Kubernetes promotion
 - 2026-08-30 `make check`와 `make smoke`는 실제 preview/apply API를 쓰는 demo seed의 적용·완전 중복 no-op·충돌 fail-closed와 65개 Flutter parser/widget 검증을 통과했다. G2의 physical-device profile과 수동 screen-reader 증거는 여전히 열려 있다.
 - G3.8C1은 계좌 전역 최초 선택 artifact의 불변 starting-capital authority만 증명한다. schema v15/backup v10의 독립 session digest/count, exact restore objects, v9/schema-v14 owned-copy empty-session proof와 strategy/order corruption fail-closed가 필요하며, runner·성과·profit·production readiness를 뜻하지 않는다. 세부 근거는 [`gates/g3j-paper-accounting-session.md`](gates/g3j-paper-accounting-session.md)에 둔다.
 - G3.8C2는 account-global session과 같은 execution policy에 묶인 ex-post closed-bar BUY/SELL, exact cost와 replay-derived cash/FIFO/PnL, schema v17/backup v11 복구만 증명한다. 브로커 체결, marks/equity/returns/drawdown, scheduler, threshold, 자동 halt/rollback 또는 live readiness가 아니다. 구현·태스크 리뷰와 fresh local/mock 명령 근거는 [`gates/g3k-paper-fill-accounting.md`](gates/g3k-paper-fill-accounting.md)에 분리한다.
+- G3.8C3는 transaction-current order/market cutoff, complete `paper_fixture` daily-close marks, account-global cash/equity/return/drawdown, insert-only schema v18/backup v12 recovery proof를 local에서 검증한다. 이는 profit, threshold, automatic halt/rollback, public UI, broker truth, deployment 또는 live readiness가 아니며, 세부 근거는 [`gates/g3l-paper-performance-evidence.md`](gates/g3l-paper-performance-evidence.md)에 둔다.
 - local 검증, broker sandbox, live readiness, 실제 운영 증거를 따로 보고한다.
 - external deploy, credential, live 주문, push는 명시 승인 없이는 실행하지 않는다.
 

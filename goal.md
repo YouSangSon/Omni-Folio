@@ -204,6 +204,7 @@ Market data adapters
 - 자동 승격 상한: research candidate에서 paper/shadow까지. canary/live 승격과 자금 확대는 owner 승인 없이 수행하지 않음
 - paper automation: 전략 신호를 포트폴리오 목표와 risk-adjusted target으로 변환한 뒤 공통 주문 pipeline이 paper order만 실행
 - G3.8C1은 계좌별 최초 선택 연구 산출물에서만 starting capital과 execution policy를 파생해 불변으로 보존한다. 이후 전략 변경은 이를 초기화하지 않으며, 이는 현금·체결·성과·자동 권한을 만들지 않는 선행 증거다.
+- G3.8C3는 transaction-current order/market cutoff 아래의 account-global paper accounting과 완전한 `paper_fixture` daily-close mark로 cash·equity·return·drawdown을 exact하게 복구하고, 이를 schema v18/backup v12의 insert-only evidence로 보존한다. 이는 local ex-post paper evidence일 뿐 수익성, performance threshold, 자동 halt/rollback, UI, broker truth, deployment 또는 live readiness를 뜻하지 않는다.
 - owner-managed always-on host에서 DB lease/fencing으로 단일 runner만 활성화하고 중복 scheduler·중복 주문을 검증
 - kill switch: 수동 중지, 일일 손실, 연속 실패, stale data, reconciliation mismatch, provider 장애
 - Strategy Lab, Backtest Report, Automation Monitor, Risk/Latency 화면: 전략 버전·모드·자금 배분·위험 한도·최근 신호/주문/체결·freshness·kill switch 표시
