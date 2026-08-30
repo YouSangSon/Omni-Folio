@@ -1,7 +1,7 @@
 # Omni Folio 구현 계획
 
-상태: G0·G1·G3 로컬 통과(G3.7 atomic paper halt/rollback safety 포함), G2 build/widget/browser·자동 accessibility/reduced-motion 증거 확보 및 physical profile/screen-reader 증거 보강 중
-기준일: 2026-08-24
+상태: G0·G1·G3 로컬 통과(G3.8C2 SELL·capital-safe paper accounting 구현·태스크 리뷰·fresh local/mock 검증 완료), G2 build/widget/browser·자동 accessibility/reduced-motion 증거 확보 및 physical profile/screen-reader 증거 보강 중
+기준일: 2026-08-31
 
 ## 목표
 
@@ -1220,4 +1220,16 @@ G3.8C1 records one immutable starting-capital authority per paper account before
 
 Schema v15 adds the insert-only session registry and backup v10 adds an independent digest/count. Recovery pins the exact table, uniqueness, state guard, and no-update/no-delete triggers. v9/schema-v14 inputs are hash-checked, copied, migrated, and verified with the empty session proof; their legacy paper orders remain replayable but uncapitalized and are never backfilled. The selected-policy loader and dedicated recovery proof fail closed on either strategy or order corruption. Independent reviews found two Important gaps: standalone recovery omitted order proof, and SQLite's starting-cash predicate disagreed with the shared positive canonical-decimal contract at `0.01`/`1.0`. Both were reproduced by focused RED regressions, fixed, and returned GO on re-review.
 
-Fresh local evidence on 2026-08-30 KST: `make check`, `make smoke`, `go test -race -count=1 ./...`, `govulncheck ./...`, and `git diff --check` all exited 0. This is neither profit nor production readiness: no runner behavior, fill, cash, lot, fee/tax/slippage accounting, marks, equity, return, drawdown, automatic halt/rollback, scheduler, alert, credential, broker call, or live-money path was added. G3.8C2 must land target reduction/SELL with eligible-bar fill and complete cash/lot/cost protection; G3.8C3 must add immutable order/price cutoffs, marks, equity, returns, and drawdown before thresholds or automatic authority can consume performance evidence. Evidence is in [`../gates/g3j-paper-accounting-session.md`](../gates/g3j-paper-accounting-session.md).
+Fresh local evidence at the 2026-08-30 C1 checkpoint was `make check`, `make smoke`, `go test -race -count=1 ./...`, `govulncheck ./...`, and `git diff --check`, all exit 0. At that checkpoint no runner fill or accounting existed; G3.8C2 below supersedes that runtime boundary without changing this historical C1 evidence. Evidence is in [`../gates/g3j-paper-accounting-session.md`](../gates/g3j-paper-accounting-session.md).
+
+## 2026-08-31 G3.8C2 continuation: ex-post paper fills and capital-safe accounting
+
+G3.8C2 supersedes G3.6's historical BUY-only ask fixture for capitalized paper orders with immutable `paper-signal.v3` and closed `paper_fixture` bars. The signal transaction persists a global observation sequence cutoff, requires the signal bar to be latest in its series at that cutoff, and allows only later bars. The exact `delay_bars`-th later bar is first eligible; execution uses its open and final volume only after `source_available_at`, so modeled `occurred_at=open_at` is explicitly ex-post and not opening-auction or live broker evidence.
+
+The account-global session and current strategy must have the same execution-policy SHA. Signed target delta creates BUY or SELL, target zero requests full reduction, and a different target fails while one account/symbol order remains active. KRX quantity is a canonical whole share capped at `4611686018427387903`; capacity is floored participation after prior account/symbol/bar consumption. Each non-zero fill applies the exact fixed KRW fee, SELL-only notional tax, and adverse slippage from the eligible open.
+
+`order_events.FILL_RECORDED` remains the sole durable fill journal. Complete replay from session starting cash derives cash, FIFO quantities/cost, fees, taxes, slippage, realized PnL, and capitalized fill count while preventing overdraft and oversell. Local admission and every fill require the current execution lease event and exact fencing token. Paper-specific authorization does not weaken synthetic K2C, call Kiwoom, write the imported general ledger, or create mutable cash/lot tables.
+
+Schema v17 and backup v11 bind sessions, bars, cutoffs, authorizations, capitalized fills, and canonical replay-derived account state. Backup v10/schema v15 and older supported inputs migrate through owned copies without capitalizing legacy v1/v2 orders. Application/shared fill writers are closed; direct raw SQLite is outside that writer-authority boundary, and recovery/restore activation independently recalculates and rejects forged arithmetic.
+
+Task 1-4 independent reviews closed all scoped findings. Fresh `make check`, `make smoke`, full Go race, `govulncheck`, final documentation diff, and scoped owned-resource cleanup passed on 2026-08-31 KST; exact local/mock evidence is in [`../gates/g3k-paper-fill-accounting.md`](../gates/g3k-paper-fill-accounting.md). Still open under G3.8C3+: immutable order/price cutoffs for valuation, marks, equity, returns, drawdown, performance thresholds, scheduler, automatic halt/rollback, public API/UI, broker/live execution, and promotion authority.

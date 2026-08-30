@@ -43,12 +43,14 @@
 - **Promotion evidence**: paper, shadow, canary, limited-live 단계의 검증 결과와 승인 기록.
 - **Research evidence**: Python이 만든 immutable `strategy-improvement-result.v1`. 재현 가능한 평가 산출물이지 실행 권한이 아니다.
 - **Strategy execution policy**: 연구 산출물의 시작 현금, 수수료, 세금, slippage, bar 지연, 최대 참여율과 close-signal/next-open-fill 의미를 묶은 계약. Python 생성 성공이나 result hash만으로 신뢰하지 않고 Go registry·복구 경계가 독립 검증한다.
-- **Paper accounting session**: G3.8C1의 계좌 전역 불변 starting-capital authority. 최초 현재 선택의 immutable research artifact에서 starting cash와 complete execution-policy JSON/hash를 파생하며 이후 전략 변경으로 reset하지 않는다. legacy paper order는 replay-only·uncapitalized이고, 이 session은 현금·체결·lot·성과 계산 또는 runner 권한이 아니다.
+- **Paper accounting session**: G3.8C1의 계좌 전역 불변 starting-capital authority. 최초 현재 선택의 immutable research artifact에서 starting cash와 complete execution-policy JSON/hash를 파생하며 이후 전략 변경으로 reset하지 않는다. G3.8C2는 같은 policy SHA인 capitalized order만 이 session의 cash와 lot을 공유하게 하며 legacy paper order는 replay-only·uncapitalized로 유지한다.
+- **Paper market cutoff**: `paper-signal.v3`를 기록한 immediate transaction이 소유하는 전체 paper bar sequence 상한. Signal bar는 cutoff에서 같은 series의 최신 bar여야 하고 eligible fill bar는 반드시 cutoff 뒤에 있어 `signal_bar.sequence <= cutoff < eligible_bar.sequence`를 보존한다.
 - **Selected paper candidate**: Go registry replay가 가리키는 최신 `paper_candidate`; paper에서 실행 중인 champion이나 주문 승인과 동일하지 않다.
 - **Strategy order binding**: 전략이 만든 주문 intent에 선택 result SHA와 exact selection event ID를 함께 보존하는 G3.5 fencing 계약. 신규 intent 기록과 durable dispatch 시점 모두 현재 registry replay와 일치해야 한다.
-- **Paper signal**: 선택된 전략 result·exact selection event, 입력 data hash, 생성·만료 시각, 종목과 목표 수량을 묶은 `paper-signal.v2` 내부 명령. 계좌·방향·주문 수량·가격이나 broker 주문 권한을 갖지 않는다.
-- **Paper execution adapter**: 실제 broker 호출 없이 한 시점의 local fixture ask와 가용 수량을 공통 주문 상태 머신의 결정적 ACK·부분/완전 체결 event로 바꾸는 G3.6 adapter.
-- **Paper operational evaluation**: G3.8A가 현재 선택·계좌에 묶인 paper 주문 전체를 replay해 완료 표본, 진행 중 상태, 미확정 submit/cancel을 append-only로 기록하는 운영 증거. 현금·가격 평가·수수료·세금·slippage가 없으므로 수익률, drawdown, 수익성 또는 자동 rollback 근거를 뜻하지 않는다.
+- **Paper signal**: 현재 선택·account-global session·signal bar·입력 hash·생성/만료 시각·종목·0 이상 목표 수량과 persisted cutoff를 묶은 현재 `paper-signal.v3` 내부 명령. Side, 주문 수량, 비용, 현금 또는 broker 주문 권한은 Go가 별도로 결정하며 v1/v2는 recovery-only다.
+- **Paper execution adapter**: G3.8C2가 실제 broker 호출 없이 cutoff 뒤 exact eligible closed bar의 open과 나중에 알려진 최종 volume으로 ex-post `PAPER_MARKET` fill을 모델링하는 adapter. KRX whole share, fixed per-fill fee, SELL tax, adverse slippage를 적용하지만 opening-auction 또는 live execution을 뜻하지 않는다.
+- **Paper accounting replay**: account session starting KRW cash에서 sole `order_events.FILL_RECORDED` capitalized fill을 global sequence로 재생해 cash, FIFO lots/cost, fee, tax, slippage와 realized PnL을 만드는 G3.8C2 내부 증거. General ledger, mutable balance/lot projection, equity 또는 performance evidence가 아니다.
+- **Paper operational evaluation**: G3.8A가 현재 선택·계좌에 묶인 paper 주문 전체를 replay해 완료 표본, 진행 중 상태, 미확정 submit/cancel을 append-only로 기록하는 운영 증거. G3.8C2 accounting이 존재해도 이 평가는 marks·equity·return/drawdown을 소비하지 않으므로 수익성 또는 자동 rollback 근거가 아니다.
 - **`no_promotion` / `no_strategy`**: 전자는 한 실험의 gate 실패 결과, 후자는 현재 선택이 없다는 registry sentinel이다.
 - **Live-disabled**: 어떤 UI 설정이나 프로세스 시작만으로도 실주문이 나갈 수 없는 기본 실행 상태.
 
@@ -59,11 +61,13 @@
 - Flutter는 upstream exception·provider raw message·account reference를 화면이나 semantics에 직접 표시하지 않고, 화면 맥락별 고정된 복구 안내만 노출한다.
 - strategy registry는 evidence와 선택 이력만 소유한다. 선택 상태만으로 paper/live runner 또는 주문 dispatch를 허용하지 않으며, 전략 주문은 exact current selection에 묶인 경우에만 기록·durable dispatch할 수 있다.
 - strategy registry와 복구는 execution policy의 exact keys, canonical decimal string, 양수 시작 현금, 비음수 비용, 1 이상 정수 지연, `(0,1]` 참여율, 고정 signal/fill 의미를 모두 검증하고 불일치하면 evidence를 저장하거나 선택 상태를 복원하지 않는다.
-- paper accounting session은 account 당 하나이며 strategy 변경으로 초기 capital authority를 교체하지 않는다. selected-policy loader와 session recovery는 독립적으로 strategy와 order replay를 먼저 증명하고, schema v15/backup v10은 session digest/count와 exact insert-only restore objects를 요구한다. v9/schema-v14는 owned copy에서 empty session만 증명하며 legacy paper order를 backfill하지 않는다.
-- 새 paper 주문은 현재 selection, 유효한 signal, K2C lease/fencing과 risk reservation을 모두 요구한다. 이미 durable dispatch된 paper 주문은 selection rollback이나 signal 만료 뒤에도 같은 관찰의 idempotent replay와 잔여 체결 복구를 계속한다.
-- 신규 paper intent 기록은 현재 process가 소유한 만료 전 lease와 exact fencing token을 검증하고 K2C 승인·durable dispatch까지 같은 transaction에 append한다. 수동 strategy rollback은 모든 활성 execution authority를 fencing halt하고 rollback event를 같은 transaction에 append하며, 어느 한 기록이라도 실패하면 둘 다 남기지 않는다.
-- Go는 같은 paper 계좌·종목의 체결 수량과 미완결 BUY 전체 수량을 목표에서 원자적으로 차감해 양수 delta만 `OrderIntent`로 만든다. 동시·반복 신호는 같은 목표를 중복 주문하지 않으며 `paper-signal.v1`은 복구만 허용한다.
-- paper mode는 Kiwoom mock/production transport에 진입하지 않는다. G3.6의 local fixture 체결은 수수료·세금·slippage·quote stream·실제 성능 또는 live parity를 증명하지 않는다.
+- paper accounting session은 account 당 하나이며 strategy 변경으로 초기 capital authority를 교체하지 않는다. schema v17/backup v11은 session·bar·cutoff·authorization·capitalized fill과 replay-derived state의 digest/count 및 exact restore objects를 요구한다. backup v10/schema v15는 source를 바꾸지 않는 owned copy에서 migration하며 legacy paper order를 backfill하지 않는다.
+- 새 capitalized paper 주문은 현재 selection, session과 동일한 execution-policy SHA, 유효한 v3 signal, paper-specific authorization, 현재 lease/fencing을 요구한다. Synthetic K2C reservation policy를 paper SELL에 재사용하거나 약화하지 않으며 이미 durable dispatch된 주문은 immutable session/order policy로 잔여 체결을 복구한다.
+- 신규 capitalized paper intent는 현재 process가 소유한 만료 전 lease와 exact fencing token을 검증하고 paper authorization·risk approval·durable dispatch·local ACK까지 같은 transaction에 append한다. 수동 strategy rollback은 모든 활성 execution authority를 fencing halt하고 rollback event를 같은 transaction에 append하며, 어느 한 기록이라도 실패하면 둘 다 남기지 않는다.
+- Go는 같은 paper 계좌·종목의 실제 BUY-SELL fill position과 한 active order의 signed remaining quantity를 목표에서 원자 차감한다. 양수 delta는 BUY, 음수 delta는 SELL, target zero는 full reduction이며 active order 중 다른 target은 fail-closed한다.
+- Capitalized fill은 cutoff 뒤 exact eligible bar를 한 번만 소비하고 KRX participation capacity를 whole share로 내린다. 매 non-zero fill의 fixed fee, SELL-only tax와 방향별 adverse slippage를 exact 적용하며 affordability/holdings cap으로 overdraft와 oversell을 막는다.
+- paper mode는 Kiwoom mock/production transport나 general ledger에 진입하지 않는다. `FILL_RECORDED` 하나만 durable fill authority이고 cash/FIFO/PnL은 replay로만 파생한다.
+- 모든 local capitalized fill은 current execution-authority event와 exact fence를 요구한다. Direct raw SQLite는 application writer authority 밖이며 SQL이 재현하지 않는 exact 경제 산술은 recovery와 restore activation이 다시 계산해 불일치를 거절한다.
 - G3.8A 평가는 caller metric을 받지 않고 검증된 주문 replay에서만 `INSUFFICIENT`, `PASS`, `DEGRADED`를 산출한다. `DEGRADED` 기록은 strategy selection이나 execution authority를 바꾸지 않으며, 자동 중단·rollback은 별도 성과·정책 gate 전에는 허용하지 않는다.
 - 주문 timeout은 실패가 아니라 결과 미확정 상태다. 같은 식별자로 조회·reconcile하기 전 재주문하지 않는다.
 - offline 상태에서 주문을 큐에 넣지 않는다.

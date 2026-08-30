@@ -28,7 +28,7 @@
 - JSON/decimal/fixture 계약: [`../contracts/`](../contracts/)
 - Gate별 acceptance: [`../gates/`](../gates/)
 - Strategy/order authority: [`../gates/g3-research.md`](../gates/g3-research.md)
-- 현재 paper execution leaf: [`../gates/g3f-paper-runner-foundation.md`](../gates/g3f-paper-runner-foundation.md)
+- 현재 paper accounting leaf: [`../gates/g3k-paper-fill-accounting.md`](../gates/g3k-paper-fill-accounting.md)
 - 현재 Kiwoom mock-submit leaf: [`../gates/g4j-k2b2-kiwoom-mock-submit.md`](../gates/g4j-k2b2-kiwoom-mock-submit.md)
 - 현재 stored reconciliation read leaf: [`../gates/g4k-stored-reconciliation-read.md`](../gates/g4k-stored-reconciliation-read.md)
 - 현재 chart display-range leaf: [`../gates/g4o-chart-range-selection.md`](../gates/g4o-chart-range-selection.md)

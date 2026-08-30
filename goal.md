@@ -126,6 +126,8 @@ Market data adapters
 - 주문 상태 머신과 거래 원장을 분리하고 체결 이벤트를 통해 reconciliation한다.
 - 전략 정의는 브로커 SDK, credential, 주문 API에 접근하지 않고 `Signal`만 만든다. 포트폴리오 구성기가 여러 전략의 신호와 자금 배분을 `PortfolioTarget`으로 합치고, 공통 risk/execution pipeline만 주문을 만든다.
 - Python 연구 산출물의 수수료·세금·slippage·지연·참여율·신호/체결 시점 계약은 hash 일치만으로 신뢰하지 않는다. Go가 exact field, canonical decimal과 허용 범위를 독립 검증한 산출물만 registry·복구·paper 실행 입력으로 인정한다.
+- Capitalized paper 체결은 account-global session과 동일한 execution policy, transaction-owned market sequence cutoff, cutoff 뒤 exact eligible closed bar, current lease/fence를 함께 요구한다. Later-known final volume과 bar open을 쓰는 `paper_bar_open_v1`은 ex-post simulation이며 opening-auction이나 broker/live 체결 증거가 아니다.
+- KRX paper target은 whole share로 제한하고 account/symbol당 active order를 하나만 허용한다. Fixed per-fill fee, SELL-only tax와 adverse slippage를 적용한 sole `FILL_RECORDED` journal에서 cash·FIFO lot·실현손익을 replay하며, general ledger나 mutable balance/lot projection을 두 번째 권한으로 만들지 않는다.
 - 실행 모드는 `backtest`, `paper`, `shadow`, `live-disabled`, `live-enabled`로 구분하며 UI·로그·credential·계좌를 섞지 않는다.
 - 위험 제어는 전략이 우회할 수 없는 공통 레이어에 둔다: 종목/시장 허용 목록, 가격 collar, 1회 주문 수량·금액, 총/순 익스포저, 포지션·미체결 주문, 일일 손실, 주문 속도, 거래 시간, stale data, clock drift, provider/reconciliation 장애.
 - kill switch는 전략 프로세스와 독립적으로 동작하고 기본적으로 신규 주문을 차단하며, 필요하면 미체결 취소와 위험 축소 주문만 허용한다.

@@ -18,7 +18,7 @@ RESEARCH_PYTHONPATH ?= $(ROOT)/services/research
 MARKET_FIXTURE ?= $(ROOT)/contracts/fixtures/market-bars.csv
 SEED_DEMO_CSV ?= $(ROOT)/contracts/fixtures/golden-import.csv
 
-.PHONY: bootstrap format format-check lint test test-body contract-check check clean clean-test-resources run-core run-client seed-demo run-research run-improvement smoke
+.PHONY: bootstrap format format-check lint test test-body test-resource-cleanup contract-check check clean clean-test-resources run-core run-client seed-demo run-research run-improvement smoke
 
 bootstrap:
 	mkdir -p "$(ROOT)/data"
@@ -42,6 +42,7 @@ lint:
 test:
 	+@test_root="$$(mktemp -d "$${TMPDIR:-/tmp}/omni-folio-test.XXXXXX")"; \
 	printf '%s\n' "$$$$" >"$$test_root/.owner-pid"; \
+	ps -p "$$$$" -o command= >"$$test_root/.owner-command"; \
 	cleanup() { \
 		cleanup_status=0; \
 		trap - EXIT INT TERM; \
@@ -58,6 +59,35 @@ test-body:
 	cd services/core && "$(GO)" test ./...
 	cd apps/client && "$(FLUTTER)" test
 	cd services/research && "$(PYTHON)" -m unittest discover -s tests -v
+	$(MAKE) --no-print-directory test-resource-cleanup
+
+test-resource-cleanup:
+	@set -eu; \
+	stale_root=; active_root=; reused_pid_root=; stale_pid=; \
+	cleanup() { \
+		if test -n "$$stale_pid"; then kill "$$stale_pid" 2>/dev/null || true; wait "$$stale_pid" 2>/dev/null || true; fi; \
+		for root in "$$stale_root" "$$active_root" "$$reused_pid_root"; do test -z "$$root" || test ! -e "$$root" || find "$$root" -depth -delete; done; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	stale_root="$$(mktemp -d "$${TMPDIR:-/tmp}/omni-folio-smoke.XXXXXX")"; \
+	active_root="$$(mktemp -d "$${TMPDIR:-/tmp}/omni-folio-smoke.XXXXXX")"; \
+	reused_pid_root="$$(mktemp -d "$${TMPDIR:-/tmp}/omni-folio-smoke.XXXXXX")"; \
+	ln -s /bin/sleep "$$stale_root/omni-core"; \
+	"$$stale_root/omni-core" 60 & stale_pid=$$!; \
+	kill -0 "$$stale_pid"; \
+	printf '%s\n' 2147483647 >"$$stale_root/.owner-pid"; \
+	printf '%s\n' '/definitely/not/running' >"$$stale_root/.owner-command"; \
+	printf '%s\n' "$$stale_pid" >"$$stale_root/.server-pid"; \
+	printf '%s\n' "$$$$" >"$$active_root/.owner-pid"; \
+	ps -p "$$$$" -o command= >"$$active_root/.owner-command"; \
+	touch "$$active_root/active-marker"; \
+	printf '%s\n' "$$$$" >"$$reused_pid_root/.owner-pid"; \
+	printf '%s\n' '/pid/reused/by/another/process' >"$$reused_pid_root/.owner-command"; \
+	$(MAKE) --no-print-directory clean-test-resources; \
+	wait "$$stale_pid" 2>/dev/null || true; stale_pid=; \
+	test ! -e "$$stale_root"; \
+	test -e "$$active_root/active-marker"; \
+	test ! -e "$$reused_pid_root"
 
 contract-check:
 	"$(PYTHON)" -c 'import json, pathlib; files=sorted(pathlib.Path("contracts").rglob("*.json")); assert files, "no JSON contract files found"; [json.loads(path.read_text(encoding="utf-8")) for path in files]; print(f"validated {len(files)} JSON contract files")'
@@ -81,13 +111,35 @@ clean-test-resources:
 		case "$$TEST_SESSION_ROOT" in "$${TMPDIR:-/tmp}"/omni-folio-test.*) ;; *) echo "refusing unsafe test session root: $$TEST_SESSION_ROOT" >&2; exit 1;; esac; \
 		if test -d "$$TEST_SESSION_ROOT"; then find "$$TEST_SESSION_ROOT" -depth -delete; fi; \
 	fi; \
-	for session_path in "$${TMPDIR:-/tmp}"/omni-folio-test.*; do \
+	for session_path in "$${TMPDIR:-/tmp}"/omni-folio-test.* "$${TMPDIR:-/tmp}"/omni-folio-smoke.*; do \
 		test -d "$$session_path" || continue; \
 		owner_file="$$session_path/.owner-pid"; \
 		test -f "$$owner_file" || continue; \
 		owner_pid="$$(sed -n '1p' "$$owner_file")"; \
 		case "$$owner_pid" in ''|*[!0-9]*) continue;; esac; \
-		if ! kill -0 "$$owner_pid" 2>/dev/null; then find "$$session_path" -depth -delete; fi; \
+		owner_active=0; \
+		if kill -0 "$$owner_pid" 2>/dev/null; then \
+			owner_command_file="$$session_path/.owner-command"; \
+			if test -f "$$owner_command_file"; then \
+				owner_command="$$(ps -p "$$owner_pid" -o command= 2>/dev/null || true)"; \
+				expected_owner_command="$$(sed -n '1p' "$$owner_command_file")"; \
+				if test "$$owner_command" = "$$expected_owner_command"; then owner_active=1; fi; \
+			else \
+				owner_active=1; \
+			fi; \
+		fi; \
+		if test "$$owner_active" -eq 0; then \
+			server_file="$$session_path/.server-pid"; \
+			if test -f "$$server_file"; then \
+				server_pid="$$(sed -n '1p' "$$server_file")"; \
+				case "$$server_pid" in ''|*[!0-9]*) server_pid=;; esac; \
+				if test -n "$$server_pid"; then \
+					server_command="$$(ps -p "$$server_pid" -o command= 2>/dev/null || true)"; \
+					case "$$server_command" in "$$session_path/omni-core"*) kill "$$server_pid" 2>/dev/null || true;; esac; \
+				fi; \
+			fi; \
+			find "$$session_path" -depth -delete; \
+		fi; \
 	done; \
 	for artifact_path in \
 		"$(ROOT)/apps/client/build" \
@@ -143,7 +195,10 @@ run-improvement:
 
 smoke:
 	@set -eu; \
+	$(MAKE) --no-print-directory clean-test-resources; \
 	smoke_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/omni-folio-smoke.XXXXXX")"; \
+	printf '%s\n' "$$$$" >"$$smoke_dir/.owner-pid"; \
+	ps -p "$$$$" -o command= >"$$smoke_dir/.owner-command"; \
 	pid=; \
 	trap 'status=$$?; if test -n "$$pid"; then kill "$$pid" 2>/dev/null || true; wait "$$pid" 2>/dev/null || true; fi; rm -rf "$$smoke_dir"; exit "$$status"' EXIT INT TERM; \
 	db="$$smoke_dir/omni-folio.db"; \
@@ -153,6 +208,7 @@ smoke:
 	"$$bin" migrate -db "$$db"; \
 	"$$bin" serve -db "$$db" -addr 127.0.0.1:18080 -market-fixture "$(MARKET_FIXTURE)" >"$$log" 2>&1 & \
 	pid=$$!; \
+	printf '%s\n' "$$pid" >"$$smoke_dir/.server-pid"; \
 	ready=0; \
 	for _ in $$(seq 1 30); do \
 		if curl --fail --silent http://127.0.0.1:18080/healthz >/dev/null; then ready=1; break; fi; \
