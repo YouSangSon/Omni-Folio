@@ -1187,3 +1187,13 @@ G4T closes only the missing internal seam between G4Q normalization and G4S pers
 The capture layer adds no retry. An identical later fetch returns the first durable observation; provider failure or a same-provider-second different-price conflict returns no observation and leaves the complete price series and recovery proof unchanged. Existing read transport behavior, environment-to-source mapping, schema v12, backup v7 and the `local_fixture`-only valuation boundary are reused without modification.
 
 No durable listing registry, runtime caller, scheduler, worker, route, OpenAPI/Flutter surface, credential, external request, freshness/source-priority/calendar policy, strategy input, order authority or live-money path was added. Symbol changes, multi-venue listings and identifier corrections remain explicit prerequisites for a future owner-declared registry. Evidence is in [`../gates/g4t-kiwoom-one-shot-price-capture.md`](../gates/g4t-kiwoom-one-shot-price-capture.md).
+
+## 2026-08-30 G4U continuation: owner-declared instrument listing ownership
+
+G4U replaces G4T's symbol-derived write authority with a local owner-declared current listing registry. Schema v13 adds an insert-only `DECLARE`/`REVOKE` event log keyed by `(venue,symbol,currency)`, with tuple-local predecessor checks, canonical row hashes, legal-transition replay and explicit revoke-before-correction. The declaration is local authority only; it is not provider verification or historical listing truth.
+
+Backup v8 binds the listing replay hash, total event count and active count to both source and restored candidate. Legacy v8-v12 artifacts are hash-checked, copied, migrated and verified without modifying the source. Migration 013 creates an empty registry and never rewrites price rows or infers a declaration from `instrument_<symbol>` or existing Kiwoom observations.
+
+G4T now resolves `XKRX/symbol/KRW` before calling the provider, so missing, revoked or corrupt ownership causes zero network calls. G4S and direct Kiwoom writes re-resolve inside the insert transaction and require the exact declared instrument. Existing v12 Kiwoom observations remain structurally replayable and exact replays remain no-ops, but they cannot create a new price or listing authority.
+
+Still open: authenticated declaration workflow, provider security-master evidence, effective dating, timezone/freshness/calendar/source-priority policy, runtime scheduling, valuation promotion, strategy/order use and all live-money paths. Evidence is in [`../gates/g4u-kiwoom-listing-ownership.md`](../gates/g4u-kiwoom-listing-ownership.md).

@@ -65,7 +65,7 @@ func validateSecurityPriceObservationInput(input SecurityPriceObservationInput) 
 		return errors.New("security price observation identifier is invalid")
 	}
 	if kiwoomSecurityPriceObservationSource(input.Source) {
-		if !kiwoomStockPattern.MatchString(input.Symbol) || input.InstrumentID != instrumentIDForSymbol(input.Symbol) || input.Venue != "XKRX" || input.Currency != "KRW" {
+		if !kiwoomStockPattern.MatchString(input.Symbol) || input.Venue != "XKRX" || input.Currency != "KRW" {
 			return errors.New("Kiwoom price observation market identity is invalid")
 		}
 		wantID, err := kiwoomLatestTradeObservationID(input.Source, input.InstrumentID, input.Symbol, input.Venue, input.Currency, input.PriceAdjustment, input.ObservedAt)
@@ -91,6 +91,9 @@ func validateSecurityPriceObservationInput(input SecurityPriceObservationInput) 
 }
 
 func (s *Service) recordKiwoomLatestTradeObservation(ctx context.Context, trade KiwoomLatestTrade) (*SecurityPriceObservation, error) {
+	if s == nil || s.db == nil {
+		return nil, errors.New("Kiwoom latest trade service is unavailable")
+	}
 	source := ""
 	switch trade.Environment {
 	case KiwoomMock:
@@ -102,7 +105,11 @@ func (s *Service) recordKiwoomLatestTradeObservation(ctx context.Context, trade 
 		!kiwoomStockPattern.MatchString(trade.Symbol) {
 		return nil, errors.New("Kiwoom latest trade identity is invalid")
 	}
-	instrumentID := instrumentIDForSymbol(trade.Symbol)
+	listing, err := resolveInstrumentListing(ctx, s.db, "XKRX", trade.Symbol, trade.Currency)
+	if err != nil {
+		return nil, err
+	}
+	instrumentID := listing.InstrumentID
 	sourceID, err := kiwoomLatestTradeObservationID(source, instrumentID, trade.Symbol, "XKRX", trade.Currency, marketDataAdjustmentUnspecified, trade.ObservedAt)
 	if err != nil {
 		return nil, err
@@ -118,6 +125,9 @@ func (s *Service) recordKiwoomLatestTradeObservation(ctx context.Context, trade 
 func (s *Service) captureKiwoomLatestTradeObservation(ctx context.Context, client *KiwoomClient, symbol string) (*SecurityPriceObservation, error) {
 	if s == nil || s.db == nil || client == nil || !kiwoomStockPattern.MatchString(symbol) {
 		return nil, errors.New("Kiwoom latest trade capture identity is invalid")
+	}
+	if _, err := resolveInstrumentListing(ctx, s.db, "XKRX", symbol, "KRW"); err != nil {
+		return nil, err
 	}
 	trade, err := client.LatestTrade(ctx, symbol)
 	if err != nil {
@@ -180,6 +190,15 @@ func (s *Service) recordSecurityPriceObservation(ctx context.Context, input Secu
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
+	}
+	if kiwoomSecurityPriceObservationSource(input.Source) {
+		listing, err := resolveInstrumentListing(ctx, tx, input.Venue, input.Symbol, input.Currency)
+		if err != nil {
+			return nil, err
+		}
+		if listing.InstrumentID != input.InstrumentID {
+			return nil, errors.New("Kiwoom price observation instrument is not owner-declared")
+		}
 	}
 	observation := &SecurityPriceObservation{
 		ObservationID: s.id("security_price_observation"), Source: input.Source, SourceObservationID: input.SourceObservationID,

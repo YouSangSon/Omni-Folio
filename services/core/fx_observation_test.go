@@ -143,7 +143,7 @@ func TestFXObservationBackupProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v7" || manifest.SchemaVersion != "omni-folio.sqlite.v12" ||
+	if manifest.FormatVersion != "omni-folio-backup.v8" || manifest.SchemaVersion != "omni-folio.sqlite.v13" ||
 		manifest.FXObservationCount != 1 || len(manifest.FXObservationStateSHA256) != 64 ||
 		manifest.VerificationReceipt.FXObservationCheck != "ok" ||
 		manifest.VerificationReceipt.CandidateFXObservationStateSHA256 != manifest.FXObservationStateSHA256 {

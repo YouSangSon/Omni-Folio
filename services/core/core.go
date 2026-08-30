@@ -30,16 +30,17 @@ import (
 )
 
 const (
-	maxBodyBytes         = 1 << 20
-	maxImportRows        = 10_000
-	latestSchema         = 12
-	zeroTime             = "1970-01-01T00:00:00Z"
-	csvSchema            = "omni-folio.csv.v1"
-	mappingSchema        = "canonical-transaction.v4"
-	backupFormat         = "omni-folio-backup.v7"
-	backupSchema         = "omni-folio.sqlite.v12"
-	legacyBackupFormat   = "omni-folio-backup.v5"
-	legacyFXBackupFormat = "omni-folio-backup.v6"
+	maxBodyBytes            = 1 << 20
+	maxImportRows           = 10_000
+	latestSchema            = 13
+	zeroTime                = "1970-01-01T00:00:00Z"
+	csvSchema               = "omni-folio.csv.v1"
+	mappingSchema           = "canonical-transaction.v4"
+	backupFormat            = "omni-folio-backup.v8"
+	backupSchema            = "omni-folio.sqlite.v13"
+	legacyBackupFormat      = "omni-folio-backup.v5"
+	legacyFXBackupFormat    = "omni-folio-backup.v6"
+	legacyPriceBackupFormat = "omni-folio-backup.v7"
 )
 
 //go:embed migrations/*.sql
@@ -201,6 +202,9 @@ type BackupManifest struct {
 	FXObservationCount                  int                 `json:"fx_observation_count"`
 	SecurityPriceObservationStateSHA256 string              `json:"security_price_observation_state_sha256"`
 	SecurityPriceObservationCount       int                 `json:"security_price_observation_count"`
+	InstrumentListingStateSHA256        string              `json:"instrument_listing_state_sha256"`
+	InstrumentListingEventCount         int                 `json:"instrument_listing_event_count"`
+	ActiveInstrumentListingCount        int                 `json:"active_instrument_listing_count"`
 	DBSHA256                            string              `json:"db_sha256"`
 	SizeBytes                           int64               `json:"size_bytes"`
 	ExpectedSnapshotSHA256              string              `json:"expected_snapshot_sha256"`
@@ -225,6 +229,7 @@ type VerificationReceipt struct {
 	StrategyRegistryCheck                        string   `json:"strategy_registry_check"`
 	FXObservationCheck                           string   `json:"fx_observation_check"`
 	SecurityPriceObservationCheck                string   `json:"security_price_observation_check"`
+	InstrumentListingCheck                       string   `json:"instrument_listing_check"`
 	CandidateDBSHA256                            string   `json:"candidate_db_sha256"`
 	CandidateSnapshotSHA256                      string   `json:"candidate_snapshot_sha256"`
 	CandidateOrderStateSHA256                    string   `json:"candidate_order_state_sha256"`
@@ -232,6 +237,7 @@ type VerificationReceipt struct {
 	CandidateStrategyRegistrySHA256              string   `json:"candidate_strategy_registry_sha256"`
 	CandidateFXObservationStateSHA256            string   `json:"candidate_fx_observation_state_sha256"`
 	CandidateSecurityPriceObservationStateSHA256 string   `json:"candidate_security_price_observation_state_sha256"`
+	CandidateInstrumentListingStateSHA256        string   `json:"candidate_instrument_listing_state_sha256"`
 	EligibleForActivation                        bool     `json:"eligible_for_activation"`
 	Errors                                       []string `json:"errors"`
 }
@@ -297,7 +303,7 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("unsupported schema version %d", current)
 		}
 	}
-	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql"}
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql", "013_instrument_listing_events.sql"}
 	for version := current + 1; version <= latestSchema; version++ {
 		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
 		if err != nil {
@@ -1359,6 +1365,10 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err != nil {
 		return nil, fmt.Errorf("source security price observation recovery proof: %w", err)
 	}
+	sourceInstrumentListings, err := proveInstrumentListingRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source instrument listing recovery proof: %w", err)
+	}
 	createdAt := now().UTC()
 	quoted := strings.ReplaceAll(out, "'", "''")
 	if _, err := db.Exec(`VACUUM INTO '` + quoted + `'`); err != nil {
@@ -1385,6 +1395,10 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err != nil {
 		return nil, err
 	}
+	candidateInstrumentListings, err := verifyInstrumentListingRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
 	if sourceOrders != candidateOrders {
 		return nil, errors.New("backup order recovery proof does not match source")
 	}
@@ -1399,6 +1413,9 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	}
 	if sourceSecurityPrices != candidateSecurityPrices {
 		return nil, errors.New("backup security price observation recovery proof does not match source")
+	}
+	if sourceInstrumentListings != candidateInstrumentListings {
+		return nil, errors.New("backup instrument listing recovery proof does not match source")
 	}
 	dbSHA, size, err := hashFile(out)
 	if err != nil {
@@ -1420,14 +1437,17 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 		StrategySelectionEventCount: sourceStrategy.Events, SelectedStrategyResultSHA256: sourceStrategy.SelectedResultSHA256,
 		FXObservationStateSHA256: sourceFX.SHA256, FXObservationCount: sourceFX.Observations,
 		SecurityPriceObservationStateSHA256: sourceSecurityPrices.SHA256, SecurityPriceObservationCount: sourceSecurityPrices.Observations,
-		DBSHA256: dbSHA, SizeBytes: size, ExpectedSnapshotSHA256: snapshotSHA,
+		InstrumentListingStateSHA256: sourceInstrumentListings.SHA256, InstrumentListingEventCount: sourceInstrumentListings.Events,
+		ActiveInstrumentListingCount: sourceInstrumentListings.Active,
+		DBSHA256:                     dbSHA, SizeBytes: size, ExpectedSnapshotSHA256: snapshotSHA,
 		Encryption: BackupEncryption{Encrypted: false, Algorithm: "none"},
 		VerificationReceipt: VerificationReceipt{
 			ReceiptID: id("backup_verification"), CandidateID: id("restore_candidate"), VerifiedAt: verifiedAt.Format(time.RFC3339Nano),
-			Status: "verified", IntegrityCheck: "ok", GoldenSnapshotCheck: "ok", OrderStateCheck: "ok", BrokerStateCheck: "ok", StrategyRegistryCheck: "ok", FXObservationCheck: "ok", SecurityPriceObservationCheck: "ok", CandidateDBSHA256: dbSHA,
+			Status: "verified", IntegrityCheck: "ok", GoldenSnapshotCheck: "ok", OrderStateCheck: "ok", BrokerStateCheck: "ok", StrategyRegistryCheck: "ok", FXObservationCheck: "ok", SecurityPriceObservationCheck: "ok", InstrumentListingCheck: "ok", CandidateDBSHA256: dbSHA,
 			CandidateSnapshotSHA256: snapshotSHA, CandidateOrderStateSHA256: candidateOrders.SHA256,
 			CandidateBrokerStateSHA256: candidateBroker.SHA256, CandidateStrategyRegistrySHA256: candidateStrategy.SHA256,
-			CandidateFXObservationStateSHA256: candidateFX.SHA256, CandidateSecurityPriceObservationStateSHA256: candidateSecurityPrices.SHA256, EligibleForActivation: true, Errors: []string{},
+			CandidateFXObservationStateSHA256: candidateFX.SHA256, CandidateSecurityPriceObservationStateSHA256: candidateSecurityPrices.SHA256,
+			CandidateInstrumentListingStateSHA256: candidateInstrumentListings.SHA256, EligibleForActivation: true, Errors: []string{},
 		},
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
@@ -1465,6 +1485,10 @@ func verifyRestore(path, goldenPath string) error {
 		return err
 	}
 	_, err = verifySecurityPriceObservationRestoreProof(path)
+	if err != nil {
+		return err
+	}
+	_, err = verifyInstrumentListingRestoreProof(path)
 	return err
 }
 
@@ -1490,6 +1514,19 @@ func verifySecurityPriceObservationRestoreProof(path string) (securityPriceObser
 	proof, err := proveSecurityPriceObservationRecovery(context.Background(), db)
 	if err != nil {
 		return securityPriceObservationRecoveryProof{}, fmt.Errorf("candidate security price observation recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func verifyInstrumentListingRestoreProof(path string) (instrumentListingRecoveryProof, error) {
+	db, err := openExistingDB(path)
+	if err != nil {
+		return instrumentListingRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := proveInstrumentListingRecovery(context.Background(), db)
+	if err != nil {
+		return instrumentListingRecoveryProof{}, fmt.Errorf("candidate instrument listing recovery proof: %w", err)
 	}
 	return proof, nil
 }
@@ -1622,6 +1659,7 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		{"security_price_observations", []string{"observation_id"}, "u"},
 		{"security_price_observations", []string{"source", "source_observation_id"}, "u"},
 		{"security_price_observations", []string{"source", "instrument_id", "symbol", "venue", "currency", "observed_at", "price_adjustment"}, "u"},
+		{"instrument_listing_events", []string{"event_id"}, "u"},
 	} {
 		ok, err := hasUniqueIndex(db, unique.table, unique.columns, unique.origin)
 		if err != nil {
@@ -1666,7 +1704,45 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		strings.ToLower(strings.Join(strings.Fields(expectedSecurityPriceTable), " ")) {
 		return errors.New("restore security price observations lack the required table definition")
 	}
-	for _, table := range []string{"events", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "fx_observations", "security_price_observations"} {
+	listingMigration, err := migrationFiles.ReadFile("migrations/013_instrument_listing_events.sql")
+	if err != nil {
+		return fmt.Errorf("restore instrument listing definition source: %w", err)
+	}
+	listingSQL := string(listingMigration)
+	const listingTablePrefix = "CREATE TABLE instrument_listing_events"
+	listingTableStart := strings.Index(listingSQL, listingTablePrefix)
+	if listingTableStart < 0 {
+		return errors.New("restore instrument listing definition source is invalid")
+	}
+	expectedListingTable := strings.TrimSuffix(strings.TrimSpace(strings.SplitN(listingSQL[listingTableStart:], "\n\nCREATE INDEX", 2)[0]), ";")
+	var listingTableDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='instrument_listing_events'`).Scan(&listingTableDefinition); err != nil {
+		return fmt.Errorf("restore instrument listing definition: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(listingTableDefinition), " ")) != strings.ToLower(strings.Join(strings.Fields(expectedListingTable), " ")) {
+		return errors.New("restore instrument listings lack the required table definition")
+	}
+	var listingIndexDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='index' AND name='instrument_listing_events_current_idx' AND tbl_name='instrument_listing_events'`).Scan(&listingIndexDefinition); err != nil {
+		return fmt.Errorf("restore instrument listing current index: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(listingIndexDefinition), " ")) !=
+		"create index instrument_listing_events_current_idx on instrument_listing_events(venue, symbol, currency, sequence desc)" {
+		return errors.New("restore instrument listings lack the required current index")
+	}
+	stateTriggerStart := strings.Index(listingSQL, "CREATE TRIGGER instrument_listing_events_state_guard")
+	if stateTriggerStart < 0 {
+		return errors.New("restore instrument listing state guard source is invalid")
+	}
+	expectedStateTrigger := strings.TrimSuffix(strings.TrimSpace(listingSQL[stateTriggerStart:]), ";")
+	var stateTriggerDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='trigger' AND name='instrument_listing_events_state_guard' AND tbl_name='instrument_listing_events'`).Scan(&stateTriggerDefinition); err != nil {
+		return fmt.Errorf("restore instrument listing state guard: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(stateTriggerDefinition), " ")) != strings.ToLower(strings.Join(strings.Fields(expectedStateTrigger), " ")) {
+		return errors.New("restore instrument listings lack the required state guard")
+	}
+	for _, table := range []string{"events", "order_events", "execution_authority_events", "risk_reservations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "fx_observations", "security_price_observations", "instrument_listing_events"} {
 		var sequenceType string
 		var sequencePK, primaryKeyColumns, primaryKeyIndexes int
 		if err := db.QueryRow(`SELECT type, pk FROM pragma_table_info(?) WHERE name='sequence'`, table).Scan(&sequenceType, &sequencePK); err != nil {
@@ -1754,6 +1830,8 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		"fx_observations_no_delete":                 {"fx_observations", "delete"},
 		"security_price_observations_no_update":     {"security_price_observations", "update"},
 		"security_price_observations_no_delete":     {"security_price_observations", "delete"},
+		"instrument_listing_events_no_update":       {"instrument_listing_events", "update"},
+		"instrument_listing_events_no_delete":       {"instrument_listing_events", "delete"},
 	}
 	rows, err := db.Query(`SELECT name, tbl_name, sql FROM sqlite_master WHERE type='trigger'`)
 	if err != nil {
@@ -1877,24 +1955,30 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	legacyV5Manifest := manifest.FormatVersion == legacyBackupFormat &&
 		(manifest.SchemaVersion == "omni-folio.sqlite.v8" || manifest.SchemaVersion == "omni-folio.sqlite.v9")
 	legacyV6Manifest := manifest.FormatVersion == legacyFXBackupFormat && manifest.SchemaVersion == "omni-folio.sqlite.v10"
-	legacyV7Manifest := manifest.FormatVersion == backupFormat && manifest.SchemaVersion == "omni-folio.sqlite.v11"
+	legacyV7Manifest := manifest.FormatVersion == legacyPriceBackupFormat &&
+		(manifest.SchemaVersion == "omni-folio.sqlite.v11" || manifest.SchemaVersion == "omni-folio.sqlite.v12")
 	legacyManifest := legacyV5Manifest || legacyV6Manifest || legacyV7Manifest
 	if (!currentManifest && !legacyManifest) || manifest.Encryption.Encrypted || manifest.Encryption.Algorithm != "none" {
 		return errors.New("unsupported backup manifest version or encryption")
 	}
-	if legacyV5Manifest || legacyV6Manifest {
+	if legacyManifest {
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(manifestBytes, &fields); err != nil {
 			return fmt.Errorf("backup manifest fields: %w", err)
-		}
-		if fields["security_price_observation_state_sha256"] != nil || fields["security_price_observation_count"] != nil {
-			return errors.New("legacy backup manifest contains current security price observation fields")
 		}
 		var receiptFields map[string]json.RawMessage
 		if err := json.Unmarshal(fields["verification_receipt"], &receiptFields); err != nil {
 			return fmt.Errorf("backup verification receipt fields: %w", err)
 		}
-		if receiptFields["security_price_observation_check"] != nil || receiptFields["candidate_security_price_observation_state_sha256"] != nil {
+		if fields["instrument_listing_state_sha256"] != nil || fields["instrument_listing_event_count"] != nil ||
+			fields["active_instrument_listing_count"] != nil || receiptFields["instrument_listing_check"] != nil ||
+			receiptFields["candidate_instrument_listing_state_sha256"] != nil {
+			return errors.New("legacy backup manifest contains current instrument listing fields")
+		}
+		if (legacyV5Manifest || legacyV6Manifest) && (fields["security_price_observation_state_sha256"] != nil || fields["security_price_observation_count"] != nil) {
+			return errors.New("legacy backup manifest contains current security price observation fields")
+		}
+		if (legacyV5Manifest || legacyV6Manifest) && (receiptFields["security_price_observation_check"] != nil || receiptFields["candidate_security_price_observation_state_sha256"] != nil) {
 			return errors.New("legacy backup receipt contains current security price observation fields")
 		}
 		if legacyV5Manifest && (fields["fx_observation_state_sha256"] != nil || fields["fx_observation_count"] != nil ||
@@ -1909,7 +1993,8 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	receipt := manifest.VerificationReceipt
 	if receipt.Status != "verified" || receipt.IntegrityCheck != "ok" || receipt.GoldenSnapshotCheck != "ok" || receipt.OrderStateCheck != "ok" || receipt.BrokerStateCheck != "ok" || receipt.StrategyRegistryCheck != "ok" ||
 		((currentManifest || legacyV6Manifest || legacyV7Manifest) && receipt.FXObservationCheck != "ok") ||
-		((currentManifest || legacyV7Manifest) && receipt.SecurityPriceObservationCheck != "ok") || !receipt.EligibleForActivation || len(receipt.Errors) != 0 {
+		((currentManifest || legacyV7Manifest) && receipt.SecurityPriceObservationCheck != "ok") ||
+		(currentManifest && receipt.InstrumentListingCheck != "ok") || !receipt.EligibleForActivation || len(receipt.Errors) != 0 {
 		return errors.New("backup manifest is not eligible for activation")
 	}
 	dbSHA, size, err := hashFile(path)
@@ -2026,6 +2111,21 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 		}
 	} else if securityPrices.Observations != 0 || securityPrices.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
 		return errors.New("legacy backup unexpectedly contains security price observations")
+	}
+	instrumentListings, err := verifyInstrumentListingRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if currentManifest {
+		if manifest.InstrumentListingStateSHA256 != instrumentListings.SHA256 ||
+			receipt.CandidateInstrumentListingStateSHA256 != instrumentListings.SHA256 ||
+			manifest.InstrumentListingEventCount != instrumentListings.Events ||
+			manifest.ActiveInstrumentListingCount != instrumentListings.Active {
+			return errors.New("backup instrument listing recovery proof mismatch")
+		}
+	} else if instrumentListings.Events != 0 || instrumentListings.Active != 0 ||
+		instrumentListings.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
+		return errors.New("legacy backup unexpectedly contains instrument listings")
 	}
 	db, err := openExistingDB(verificationPath)
 	if err != nil {
