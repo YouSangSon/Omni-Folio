@@ -13,7 +13,7 @@
 | G1 로컬 원장 | 통과 | CSV preview → atomic apply → exact cash/trade/dividend/tax/split/FX replay → append-only cash void → direct FX observation → cash-only direct-FX valuation → durable security price observation → snapshot/receipt → schema v11/backup v7와 legacy v8/v9/v10 owned-copy migration restore proof |
 | G2 Flutter client | 부분 통과 | iOS·Android·web release build와 자동 parser/widget 테스트 통과; chart 포함 Android emulator build/raster p95 2회 통과, physical-device·수동 screen-reader 및 test-instrumentation 격리 증거 남음 |
 | G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, append-only candidate registry, exact selection-bound order authority, credential-free paper execution, atomic halt/rollback safety |
-| G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot, G4I/K2C 내부 합성 authority, G4J/K2B2 credential-free mock 지정가 submit, G4K 저장된 보유수량 대조 read view, G4L 검증된 로컬 주문 lifecycle read view, G4M 홈 저장 대조 신뢰 요약, G4N pending-action 안전 경고, G4O local daily chart 표시 범위, G4P 첫 실행 import 복구 경로, G4Q credential-free 최신 1틱 체결 정규화 통과. 실제 키움 credentialed 시세·모의주문 관찰, freshness/scheduling, unknown-submit 조회 복구, 주문 mutation UI, production risk와 모든 live gate는 남는다. |
+| G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot, G4I/K2C 내부 합성 authority, G4J/K2B2 credential-free mock 지정가 submit, G4K 저장된 보유수량 대조 read view, G4L 검증된 로컬 주문 lifecycle read view, G4M 홈 저장 대조 신뢰 요약, G4N pending-action 안전 경고, G4O local daily chart 표시 범위, G4P 첫 실행 import 복구 경로, G4Q credential-free 최신 1틱 체결, G4R credential-free 0B 실시간 가격 frame 정규화 통과. 실제 키움 credentialed 시세·모의주문 관찰, freshness/scheduling, unknown-submit 조회 복구, 주문 mutation UI, production risk와 모든 live gate는 남는다. |
 
 세부 상태와 완료 조건은 [`PLAN.md`](PLAN.md)와 [`GATES.md`](GATES.md)에서 관리합니다.
 
@@ -156,6 +156,12 @@ G1.13의 `native_holding_valuation_v1`은 같은 read-only transaction에서 현
 G4Q는 공식 `ka10079` 1틱 응답을 기존 Kiwoom OAuth/read transport의 합성 in-memory 응답으로 검증합니다. KRX 6자리 symbol, exact 가격 magnitude, provider `cntr_tm`과 별도 fetch 시각만 canonical 내부 DTO로 반환하며 잘못된 row, 시간 역행, 같은 초의 서로 다른 가격과 로컬 수신 시각보다 미래인 체결은 전체 거절합니다.
 
 이 계약은 실제 credential·외부 요청·public API·DB writer를 추가하지 않습니다. 공식 응답에 durable event ID와 명시적 timezone/price-adjustment 근거가 없으므로 G1.12 가격 series나 G1.13 평가에 아직 연결하지 않습니다.
+
+### Credential-free Kiwoom realtime price
+
+G4R는 공식 WebSocket `0B`의 단일 KRX-format symbol 등록 packet과 `REAL` JSON frame만 stdlib로 검증합니다. signed 현재가는 exact magnitude로, 필드 `20`은 날짜 없는 `provider_clock`, 로컬 수신 시각은 별도 `received_at`으로 보존합니다. 같은 frame의 동일 symbol/clock/price는 한 번만 반환하고 같은 clock의 다른 가격은 모호성 오류로 전체 거절합니다. 외부 입력은 1 MiB와 100 entries로 제한합니다.
+
+WebSocket 연결, LOGIN/PING, 재연결·재구독, backpressure, credential, persistence, public API/UI는 아직 없습니다. 공식 FID `9081`의 값 의미도 실제 관찰 전에는 해석하지 않아 DTO가 venue를 주장하지 않습니다. 따라서 이 내부 DTO는 live/current/freshness나 durable 체결·가격 관측 근거가 아닙니다.
 
 ### Internal synthetic order recovery, execution authority, reconciliation, and mock submit
 

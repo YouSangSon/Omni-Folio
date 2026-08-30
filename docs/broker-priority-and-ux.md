@@ -63,6 +63,13 @@
 - 공식 sample이 timezone, durable execution identity와 adjustment provenance를 제공하지 않으므로 기존 Asia/Seoul 운영 가정만 재사용하고 persistence용 source ID나 adjustment 값을 만들지 않는다.
 - credential, 외부 broker request, public API/UI, scheduler, DB mutation, live/current/freshness와 holding valuation 승격은 포함하지 않는다. 실행 증거는 [`../gates/g4q-kiwoom-latest-trade.md`](../gates/g4q-kiwoom-latest-trade.md)에 기록한다.
 
+#### G4R realtime-price synthetic contract
+
+- 공식 예제 commit [`9180deb`](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/commit/9180debf7aea0074715dd8f7a15af432afbfc403)의 [`0B` sample](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/9180debf7aea0074715dd8f7a15af432afbfc403/examples/%EA%B5%AD%EB%82%B4%EC%A3%BC%EC%8B%9D/%EC%8B%A4%EC%8B%9C%EA%B0%84%EC%8B%9C%EC%84%B8/subscribe_domestic_stock_trade_async.py)에 고정된 `REG` packet과 `REAL.data[].type/item/values` shape, FID `10` 현재가와 `20` 체결시간만 사용한다.
+- 첫 계약은 하나의 bare 6자리 symbol, group `1`, refresh `1`로 닫는다. frame은 HTTP provider 응답과 같은 1 MiB, 공식 등록 item 상한에 맞춘 100 entries로 제한하고 모든 entry가 `0B`이고 유효해야 한다. 동일 symbol/clock의 같은 가격은 dedupe하고 다른 가격은 모호성으로 거절한다.
+- `HHMMSS`를 수신 날짜와 결합하지 않고 `HH:mm:ss` provider clock으로 보존한다. 별도 UTC `received_at`은 로컬 수신 evidence이지 broker observed time이 아니다.
+- `0B`가 FID `9081` 거래소구분을 제공하지만 값 의미는 공식 sample만으로 고정할 수 없어 DTO에서 venue를 생략한다. WebSocket dependency/connection, LOGIN/PING, reconnect/resubscribe/backpressure, credential, persistence, source identity, public API/UI와 live/current/freshness는 포함하지 않는다. 실행 증거는 [`../gates/g4r-kiwoom-realtime-price.md`](../gates/g4r-kiwoom-realtime-price.md)에 기록한다.
+
 #### G4D price-adjustment consumer contract
 
 - provider-neutral `MarketDataCandles`는 `price_adjustment`를 필수로 하고 `unspecified`와 `provider_adjusted`만 허용한다.

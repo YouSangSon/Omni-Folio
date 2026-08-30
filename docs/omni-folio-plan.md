@@ -1148,3 +1148,14 @@ The next prerequisite stops before persistence. Kiwoom's official `ka10001` curr
 Persistence is deliberately deferred. The official sample does not establish a collision-safe event ID, timezone or price-adjustment provenance, while the current security-price series accepts only explicit `local_fixture`/`unspecified` identities. Inventing those fields would make replay and holding valuation look stronger than the evidence.
 
 TDD checkpoints are RED `f00230e`, GREEN `ea86544`, ambiguity regression RED `cb1acb3` and fix `cf5c15c`. The pinned primary source and executable checks are recorded in [`../gates/g4q-kiwoom-latest-trade.md`](../gates/g4q-kiwoom-latest-trade.md).
+
+## 2026-08-28 G4R continuation: credential-free Kiwoom realtime price frame
+
+G4R fixes the smallest consumer-safe part of official realtime `0B` before selecting a WebSocket library. One pure registration builder emits the official single-symbol `REG` shape; one stdlib JSON parser accepts only `REAL` frames and returns internal price updates.
+
+- FID `10` becomes an exact positive price. FID `20` becomes only a naive `HH:mm:ss` provider clock; a separately injected canonical UTC receive time is not relabeled as provider observation time.
+- Same-frame equal symbol/clock/price rows dedupe, while different prices sharing that second fail closed. Every entry must validate before any result is returned.
+- External frames are capped at 1 MiB before decode and 100 entries before normalization. Numeric JSON prices, mixed event types and trailing JSON fail closed.
+- The official sample lists FID `9081` as exchange classification but does not pin values. The DTO therefore omits exchange instead of claiming KRX from a bare item.
+
+No WebSocket dependency, connection, LOGIN/PING, reconnect/resubscribe/backpressure, credential, durable identity, persistence, scheduler, route or Flutter consumer was added. RED/GREEN commits are `2e80583`/`35116ea`; review boundary regression/fix commits are `dac201e`/`4da510f`. Evidence is in [`../gates/g4r-kiwoom-realtime-price.md`](../gates/g4r-kiwoom-realtime-price.md).

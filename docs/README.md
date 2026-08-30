@@ -34,6 +34,7 @@
 - 현재 chart display-range leaf: [`../gates/g4o-chart-range-selection.md`](../gates/g4o-chart-range-selection.md)
 - 현재 first-run import recovery leaf: [`../gates/g4p-first-run-import-recovery.md`](../gates/g4p-first-run-import-recovery.md)
 - 현재 Kiwoom latest-trade leaf: [`../gates/g4q-kiwoom-latest-trade.md`](../gates/g4q-kiwoom-latest-trade.md)
+- 현재 Kiwoom realtime-price leaf: [`../gates/g4r-kiwoom-realtime-price.md`](../gates/g4r-kiwoom-realtime-price.md)
 - 현재 sanitized ledger activity leaf: [`../gates/g1e-ledger-activity.md`](../gates/g1e-ledger-activity.md)
 - 현재 direct FX observation leaf: [`../gates/g1f-fx-observation-storage.md`](../gates/g1f-fx-observation-storage.md)
 - 현재 direct-FX cash valuation leaf: [`../gates/g1g-direct-fx-cash-valuation.md`](../gates/g1g-direct-fx-cash-valuation.md)
