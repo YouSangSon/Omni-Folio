@@ -65,6 +65,17 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 
 확장성은 처음부터 분산 시스템을 만드는 것이 아니라, 새 공급자를 추가할 때 검증된 코어를 수정하지 않는 것으로 정의한다.
 
+### TDD + DDD + Clean Architecture 운영 원칙
+
+- 기능은 실패하는 도메인 예제부터 시작해 `RED → 최소 GREEN → 리팩터링 → 회귀·race·복원 검증 → 독립 리뷰` 순서로 완성한다. 금액, 주문 권한, 체결, 원장, migration 변경은 실패 증거 없이 구현부터 추가하지 않는다.
+- bounded context는 `instrument/listing`, `ledger/portfolio`, `market data`, `order/execution`, `strategy/portfolio construction`, `risk/automation`, `broker integration`으로 구분한다. 서로의 저장 테이블이나 공급자 DTO를 직접 읽지 않고 versioned command, event, query contract로 협력한다.
+- 의존성 방향은 `domain → 없음`, `application/use case → domain과 port`, `adapter/infrastructure → port 구현`, `delivery/UI → versioned application contract`로 고정한다. 도메인 규칙은 Flutter, HTTP, SQLite, broker SDK, 환경변수와 credential을 참조하지 않는다.
+- exact 금액·수량 계산, 주문 상태 전이, 목표 수량, 위험 한도, FIFO와 회계 불변식은 가능한 한 순수하고 결정적인 domain 함수로 둔다. transaction, lease/fencing, durable append, retry와 외부 호출 순서는 application use case가 조정하고 SQLite·Kiwoom·Toss 구현은 adapter가 담당한다.
+- 테스트 피라미드는 domain 예제/속성 테스트, application use-case 테스트, port 공통 contract test, adapter 통합·migration/restore 테스트, 소수의 Flutter/API E2E로 구성한다. broker adapter는 같은 contract suite를 통과해야 하며 in-memory fake만 통과한 결과를 운영 증거로 승격하지 않는다.
+- 현재 시작점은 배포 가능한 modular monolith다. 패키지와 프로세스는 실제 응집도·변경 빈도·성능·장애 격리 증거가 생길 때 경계별로 분리하되, DB transaction을 분산시키거나 network hop을 늘리는 microservice 분리는 측정과 운영 근거 없이는 하지 않는다.
+- 인터페이스는 실제 교체 지점과 테스트 seam에만 둔다. 한 구현만 있는 내부 함수에 repository/service/factory 계층을 기계적으로 추가하거나 DDD 이름을 붙인 빈 wrapper를 만들지 않는다.
+- 도메인 동작 변경과 대규모 패키지 이동을 한 커밋에 섞지 않는다. characterization/contract test로 현재 동작을 고정한 뒤 의존성 역전과 물리적 모듈 분리를 별도 리팩터링 커밋으로 수행하고, API·DB·backup 호환성을 각각 증명한다.
+
 ```text
 Flutter client (iOS / Android / app-centric web)
        |
@@ -229,6 +240,9 @@ Market data adapters
 - 주문·체결 이벤트는 과부하와 재시작 상황에서도 유실되지 않는 테스트가 있다.
 - submit timeout·ack 전후 crash·runner lease 상실·두 runner 동시 기동에서도 중복 주문이 발생하지 않고 신규 주문은 fail-closed한다.
 - 두 번째 샘플 전략은 manifest, 전략 모듈, fixture 추가만으로 등록되고 공통 주문·리스크·원장 코드는 변경되지 않는다.
+- 핵심 domain 테스트는 SQLite, HTTP server, Flutter, broker SDK 없이 실행되며 exact 회계·주문 상태·위험 불변식을 결정적으로 검증한다.
+- application use case는 fake port로 오류·timeout·retry·lease 상실을 검증하고, 실제 SQLite와 broker adapter는 동일 contract suite 및 migration/restore 통합 테스트를 별도로 통과한다.
+- 새 broker나 market-data provider는 adapter와 capability/contract test 추가만으로 연결되며 domain/application에 공급자 DTO·TR code·credential 분기가 유입되지 않는다.
 - 실전 자동매매는 기본 비활성이고, paper/live parity와 사용자 승인 없이는 어떤 경로에서도 주문을 낼 수 없다.
 - API 키 redaction 테스트와 핵심 원장·주문 테스트가 통과한다.
 - read-only, paper, live 실행 profile과 secret binding을 분리한다. provider가 scope를 제공하면 최소 권한을 강제하고, 제공하지 않으면 허용 API·route·process authority를 고정해 fail-closed한다.
