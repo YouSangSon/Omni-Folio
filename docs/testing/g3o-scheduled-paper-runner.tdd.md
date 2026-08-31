@@ -54,4 +54,4 @@ Passed with final owned local resource inventory clean.
 
 ## Non-Goals
 
-No scheduler table, daemon, public API, Flutter screen, broker call, credential access, deployment artifact, alerting, shadow/live promotion, or profitability claim was added. G3.8F2 remains the DB-leased/fenced always-on runner with heartbeat/TTL, stale-owner recovery, lease-loss fail-closed behavior, and success/failure/SIGINT/SIGTERM/SIGKILL cleanup proof.
+No scheduler table, daemon, public API, Flutter screen, broker call, credential access, deployment artifact, alerting, shadow/live promotion, or profitability claim was added at the F1 checkpoint. The later local G3.8F2 runner evidence is recorded separately in [`g3p-always-on-paper-runner.tdd.md`](g3p-always-on-paper-runner.tdd.md).

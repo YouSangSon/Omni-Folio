@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -867,7 +868,7 @@ func TestG38EMigration20ReenablesAndRechecksForeignKeys(t *testing.T) {
 			if err := svc.db.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil {
 				t.Fatal(err)
 			}
-			wantVersion := 20
+			wantVersion := latestSchema
 			if name == "failure" {
 				wantVersion = 19
 			}
@@ -1085,6 +1086,13 @@ func TestG38EMigration20PreservesNonemptyV19JournalsProofsAndForeignKeys(t *test
 		t.Fatal(err)
 	}
 	expectedForeignKeys, expectedForeignKeyErr := migration20ExpectedForeignKeys(before.ForeignKeys)
+	expectedForeignKeys = append(expectedForeignKeys,
+		migration20ForeignKey{Child: "paper_runner_leases", Parent: "strategy_selection_events", From: "strategy_selection_event_id", To: "event_id", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+		migration20ForeignKey{Child: "paper_runner_leases", Parent: "strategy_selection_events", From: "selected_result_sha256", To: "selected_result_sha256", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+	)
+	sort.Slice(expectedForeignKeys, func(i, j int) bool {
+		return migration20ForeignKeyKey(expectedForeignKeys[i]) < migration20ForeignKeyKey(expectedForeignKeys[j])
+	})
 	if expectedForeignKeyErr != nil ||
 		authorityAfter != before.AuthoritySHA || authorityCountAfter != before.AuthorityCount ||
 		!sameStrategyRegistryProof(before.Strategy, strategyAfter) || performanceBefore != performanceAfter ||
@@ -1166,7 +1174,7 @@ func TestG38EBackupV14CarriesAndVerifiesPolicyRecoveryProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v14" || manifest.SchemaVersion != "omni-folio.sqlite.v20" ||
+	if manifest.FormatVersion != "omni-folio-backup.v15" || manifest.SchemaVersion != "omni-folio.sqlite.v21" ||
 		manifest.PaperPerformancePolicyStateSHA256 != proof.SHA256 || manifest.PaperPerformancePolicyEventCount != proof.Events ||
 		manifest.PaperPerformancePolicyActionCount != proof.Actions || manifest.PaperPerformancePolicyAutomaticHaltCount != proof.AutomaticHalts ||
 		manifest.VerificationReceipt.PaperPerformancePolicyCheck != "ok" ||
@@ -1326,6 +1334,17 @@ func sameStringSet(left, right []string) bool {
 
 func downgradePaperPerformancePolicyForTest(t testing.TB, db *sql.DB) {
 	t.Helper()
+	var currentVersion int
+	if err := db.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&currentVersion); err != nil {
+		t.Fatal(err)
+	}
+	if currentVersion >= 21 {
+		if _, err := db.Exec(`DROP TABLE paper_runner_leases;
+			DROP INDEX strategy_selection_events_runner_binding_idx;
+			DELETE FROM schema_migrations WHERE version=21`); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if _, err := db.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
 		t.Fatal(err)
 	}

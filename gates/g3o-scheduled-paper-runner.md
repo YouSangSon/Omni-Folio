@@ -33,5 +33,5 @@ It does not add a daemon, cron resource, Kubernetes object, public API, Flutter 
 ## Still Open
 
 - No always-on scheduler process, alerting, shadow promotion, broker-backed evaluation, credential/live authority, deployment, or real-money readiness.
-- G3.8F2 still needs DB lease/fencing, heartbeat/TTL, stale-owner recovery, lease-loss fail-closed behavior, and success/failure/SIGINT/SIGTERM/SIGKILL cleanup proof.
+- At this F1 checkpoint G3.8F2 was still open; it is now closed locally by [`g3p-always-on-paper-runner.md`](g3p-always-on-paper-runner.md). Broker/live and deployment evidence remain separate.
 - Official Kiwoom calendar/timezone/freshness behavior is not proven. The checkpoint only trusts local fixture availability timestamps.

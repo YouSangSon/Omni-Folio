@@ -32,12 +32,14 @@ import (
 const (
 	maxBodyBytes                       = 1 << 20
 	maxImportRows                      = 10_000
-	latestSchema                       = 20
+	latestSchema                       = 21
 	zeroTime                           = "1970-01-01T00:00:00Z"
 	csvSchema                          = "omni-folio.csv.v1"
 	mappingSchema                      = "canonical-transaction.v4"
-	backupFormat                       = "omni-folio-backup.v14"
-	backupSchema                       = "omni-folio.sqlite.v20"
+	backupFormat                       = "omni-folio-backup.v15"
+	backupSchema                       = "omni-folio.sqlite.v21"
+	legacyPaperRunnerFormat            = "omni-folio-backup.v14"
+	legacyPaperRunnerSchema            = "omni-folio.sqlite.v20"
 	legacyPaperPerformancePolicyFormat = "omni-folio-backup.v13"
 	legacyPaperPerformancePolicySchema = "omni-folio.sqlite.v19"
 	legacyStrategyPerformanceFormat    = "omni-folio-backup.v12"
@@ -64,6 +66,7 @@ type Service struct {
 	ttl               time.Duration
 	marketData        MarketDataPort
 	executionOwner    string
+	paperRunnerOwner  string
 	activityCursorKey [32]byte
 }
 
@@ -223,6 +226,9 @@ type BackupManifest struct {
 	PaperPerformancePolicyEventCount         int                 `json:"paper_performance_policy_event_count"`
 	PaperPerformancePolicyActionCount        int                 `json:"paper_performance_policy_action_count"`
 	PaperPerformancePolicyAutomaticHaltCount int                 `json:"paper_performance_policy_automatic_halt_count"`
+	PaperRunnerLeaseStateSHA256              string              `json:"paper_runner_lease_state_sha256"`
+	PaperRunnerLeaseCount                    int                 `json:"paper_runner_lease_count"`
+	ActivePaperRunnerLeaseCount              int                 `json:"active_paper_runner_lease_count"`
 	SelectedStrategyResultSHA256             string              `json:"selected_strategy_result_sha256"`
 	FXObservationStateSHA256                 string              `json:"fx_observation_state_sha256"`
 	FXObservationCount                       int                 `json:"fx_observation_count"`
@@ -259,6 +265,7 @@ type VerificationReceipt struct {
 	PaperPerformanceCheck                        string   `json:"paper_performance_check"`
 	PaperStrategyPerformanceCheck                string   `json:"paper_strategy_performance_check"`
 	PaperPerformancePolicyCheck                  string   `json:"paper_performance_policy_check"`
+	PaperRunnerLeaseCheck                        string   `json:"paper_runner_lease_check"`
 	CandidateDBSHA256                            string   `json:"candidate_db_sha256"`
 	CandidateSnapshotSHA256                      string   `json:"candidate_snapshot_sha256"`
 	CandidateOrderStateSHA256                    string   `json:"candidate_order_state_sha256"`
@@ -271,6 +278,7 @@ type VerificationReceipt struct {
 	CandidatePaperPerformanceStateSHA256         string   `json:"candidate_paper_performance_state_sha256"`
 	CandidatePaperStrategyPerformanceStateSHA256 string   `json:"candidate_paper_strategy_performance_state_sha256"`
 	CandidatePaperPerformancePolicyStateSHA256   string   `json:"candidate_paper_performance_policy_state_sha256"`
+	CandidatePaperRunnerLeaseStateSHA256         string   `json:"candidate_paper_runner_lease_state_sha256"`
 	EligibleForActivation                        bool     `json:"eligible_for_activation"`
 	Errors                                       []string `json:"errors"`
 }
@@ -329,6 +337,9 @@ func requireServerStartupRecovery(db *sql.DB) error {
 	if _, err := provePaperPerformancePolicyRecovery(context.Background(), db); err != nil {
 		return fmt.Errorf("paper performance policy startup recovery: %w", err)
 	}
+	if _, err := provePaperRunnerLeaseRecovery(context.Background(), db); err != nil {
+		return fmt.Errorf("paper runner lease startup recovery: %w", err)
+	}
 	return nil
 }
 
@@ -347,7 +358,7 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("unsupported schema version %d", current)
 		}
 	}
-	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql", "013_instrument_listing_events.sql", "014_paper_evaluation_events.sql", "015_paper_accounting_sessions.sql", "016_paper_market_signals.sql", "017_paper_execution_authorizations.sql", "018_paper_performance_events.sql", "019_paper_strategy_performance_events.sql", "020_paper_performance_policy_events.sql"}
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql", "013_instrument_listing_events.sql", "014_paper_evaluation_events.sql", "015_paper_accounting_sessions.sql", "016_paper_market_signals.sql", "017_paper_execution_authorizations.sql", "018_paper_performance_events.sql", "019_paper_strategy_performance_events.sql", "020_paper_performance_policy_events.sql", "021_paper_runner_leases.sql"}
 	for version := current + 1; version <= latestSchema; version++ {
 		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
 		if err != nil {
@@ -752,7 +763,14 @@ func verifyMigration20TemporaryNames(ctx context.Context, q orderQuerier, foreig
 }
 
 func newService(db *sql.DB, now func() time.Time, id func(string) string) *Service {
-	service := &Service{db: db, now: now, id: id, ttl: 15 * time.Minute, executionOwner: randomID("execution_owner")}
+	service := &Service{
+		db:               db,
+		now:              now,
+		id:               id,
+		ttl:              15 * time.Minute,
+		executionOwner:   randomID("execution_owner"),
+		paperRunnerOwner: randomID("paper_runner_owner"),
+	}
 	// ponytail: local single-process cursors expire on restart; inject one shared key before multi-replica pagination.
 	if _, err := rand.Read(service.activityCursorKey[:]); err != nil {
 		panic(err)
@@ -1705,6 +1723,9 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err != nil {
 		return nil, fmt.Errorf("source paper performance policy recovery proof: %w", err)
 	}
+	if _, err := provePaperRunnerLeaseRecovery(context.Background(), db); err != nil {
+		return nil, fmt.Errorf("source paper runner lease recovery proof: %w", err)
+	}
 	sourceFX, err := proveFXObservationRecovery(context.Background(), db)
 	if err != nil {
 		return nil, fmt.Errorf("source FX observation recovery proof: %w", err)
@@ -1748,6 +1769,10 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 		return nil, err
 	}
 	candidatePaperPerformancePolicy, err := verifyPaperPerformancePolicyRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
+	candidatePaperRunnerLease, err := verifyPaperRunnerLeaseRestoreProof(out)
 	if err != nil {
 		return nil, err
 	}
@@ -1802,6 +1827,11 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 		return nil, err
 	}
 	verifiedAt := now().UTC()
+	status, eligible, verificationErrors := "verified", true, []string{}
+	if candidatePaperRunnerLease.Active != 0 {
+		status, eligible = "rejected", false
+		verificationErrors = []string{"active_paper_runner_lease_present"}
+	}
 	manifest := &BackupManifest{
 		FormatVersion: backupFormat, SchemaVersion: backupSchema, CreatedAt: createdAt.Format(time.RFC3339Nano),
 		SourceLedgerRevision: revision(sourceRevision), OrderStateSHA256: sourceOrders.SHA256, OrderCount: sourceOrders.Orders,
@@ -1826,6 +1856,9 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 		PaperPerformancePolicyEventCount:         sourcePaperPerformancePolicy.Events,
 		PaperPerformancePolicyActionCount:        sourcePaperPerformancePolicy.Actions,
 		PaperPerformancePolicyAutomaticHaltCount: sourcePaperPerformancePolicy.AutomaticHalts,
+		PaperRunnerLeaseStateSHA256:              candidatePaperRunnerLease.SHA256,
+		PaperRunnerLeaseCount:                    candidatePaperRunnerLease.Leases,
+		ActivePaperRunnerLeaseCount:              candidatePaperRunnerLease.Active,
 		FXObservationStateSHA256:                 sourceFX.SHA256, FXObservationCount: sourceFX.Observations,
 		SecurityPriceObservationStateSHA256: sourceSecurityPrices.SHA256, SecurityPriceObservationCount: sourceSecurityPrices.Observations,
 		InstrumentListingStateSHA256: sourceInstrumentListings.SHA256, InstrumentListingEventCount: sourceInstrumentListings.Events,
@@ -1834,15 +1867,16 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 		Encryption: BackupEncryption{Encrypted: false, Algorithm: "none"},
 		VerificationReceipt: VerificationReceipt{
 			ReceiptID: id("backup_verification"), CandidateID: id("restore_candidate"), VerifiedAt: verifiedAt.Format(time.RFC3339Nano),
-			Status: "verified", IntegrityCheck: "ok", GoldenSnapshotCheck: "ok", OrderStateCheck: "ok", BrokerStateCheck: "ok", StrategyRegistryCheck: "ok", FXObservationCheck: "ok", SecurityPriceObservationCheck: "ok", InstrumentListingCheck: "ok", PaperPerformanceCheck: "ok", PaperStrategyPerformanceCheck: "ok", PaperPerformancePolicyCheck: "ok", CandidateDBSHA256: dbSHA,
+			Status: status, IntegrityCheck: "ok", GoldenSnapshotCheck: "ok", OrderStateCheck: "ok", BrokerStateCheck: "ok", StrategyRegistryCheck: "ok", FXObservationCheck: "ok", SecurityPriceObservationCheck: "ok", InstrumentListingCheck: "ok", PaperPerformanceCheck: "ok", PaperStrategyPerformanceCheck: "ok", PaperPerformancePolicyCheck: "ok", PaperRunnerLeaseCheck: "ok", CandidateDBSHA256: dbSHA,
 			CandidateSnapshotSHA256: snapshotSHA, CandidateOrderStateSHA256: candidateOrders.SHA256,
 			CandidateBrokerStateSHA256: candidateBroker.SHA256, CandidateStrategyRegistrySHA256: candidateStrategy.SHA256,
 			CandidatePaperAccountingStateSHA256:          candidatePaperAccounting.SHA256,
 			CandidatePaperPerformanceStateSHA256:         candidatePaperPerformance.SHA256,
 			CandidatePaperStrategyPerformanceStateSHA256: candidatePaperStrategyPerformance.SHA256,
 			CandidatePaperPerformancePolicyStateSHA256:   candidatePaperPerformancePolicy.SHA256,
+			CandidatePaperRunnerLeaseStateSHA256:         candidatePaperRunnerLease.SHA256,
 			CandidateFXObservationStateSHA256:            candidateFX.SHA256, CandidateSecurityPriceObservationStateSHA256: candidateSecurityPrices.SHA256,
-			CandidateInstrumentListingStateSHA256: candidateInstrumentListings.SHA256, EligibleForActivation: true, Errors: []string{},
+			CandidateInstrumentListingStateSHA256: candidateInstrumentListings.SHA256, EligibleForActivation: eligible, Errors: verificationErrors,
 		},
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
@@ -1887,7 +1921,14 @@ func verifyRestore(path, goldenPath string) error {
 	if _, err := verifyPaperPerformancePolicyRestoreProof(path); err != nil {
 		return err
 	}
-	_, err := verifyFXObservationRestoreProof(path)
+	runnerLease, err := verifyPaperRunnerLeaseRestoreProof(path)
+	if err != nil {
+		return err
+	}
+	if runnerLease.Active != 0 {
+		return errors.New("restore candidate contains an active paper runner lease")
+	}
+	_, err = verifyFXObservationRestoreProof(path)
 	if err != nil {
 		return err
 	}
@@ -1999,6 +2040,19 @@ func verifyPaperPerformancePolicyRestoreProof(path string) (paperPerformancePoli
 	proof, err := provePaperPerformancePolicyRecovery(context.Background(), db)
 	if err != nil {
 		return paperPerformancePolicyRecoveryProof{}, fmt.Errorf("candidate paper performance policy recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func verifyPaperRunnerLeaseRestoreProof(path string) (paperRunnerLeaseRecoveryProof, error) {
+	db, err := openExistingDB(path)
+	if err != nil {
+		return paperRunnerLeaseRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := provePaperRunnerLeaseRecovery(context.Background(), db)
+	if err != nil {
+		return paperRunnerLeaseRecoveryProof{}, fmt.Errorf("candidate paper runner lease recovery proof: %w", err)
 	}
 	return proof, nil
 }
@@ -2880,6 +2934,25 @@ func verifyLegacyV13SourceManifest(ctx context.Context, db *sql.DB, manifest Bac
 	return nil
 }
 
+func verifyLegacyV14SourceManifest(ctx context.Context, db *sql.DB, manifest BackupManifest) error {
+	if err := verifyLegacyV13SourceManifest(ctx, db, manifest); err != nil {
+		return fmt.Errorf("v14 source prerequisite proof: %w", err)
+	}
+	policy, err := provePaperPerformancePolicyRecovery(ctx, db)
+	if err != nil {
+		return fmt.Errorf("v14 source paper performance policy recovery proof: %w", err)
+	}
+	receipt := manifest.VerificationReceipt
+	if manifest.PaperPerformancePolicyStateSHA256 != policy.SHA256 ||
+		receipt.CandidatePaperPerformancePolicyStateSHA256 != policy.SHA256 ||
+		manifest.PaperPerformancePolicyEventCount != policy.Events ||
+		manifest.PaperPerformancePolicyActionCount != policy.Actions ||
+		manifest.PaperPerformancePolicyAutomaticHaltCount != policy.AutomaticHalts {
+		return errors.New("v14 source paper performance policy recovery proof mismatch")
+	}
+	return nil
+}
+
 func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	manifestBytes, err := os.ReadFile(manifestPath)
 	if err != nil {
@@ -2892,6 +2965,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 		return fmt.Errorf("backup manifest: %w", err)
 	}
 	currentManifest := manifest.FormatVersion == backupFormat && manifest.SchemaVersion == backupSchema
+	legacyV14Manifest := manifest.FormatVersion == legacyPaperRunnerFormat && manifest.SchemaVersion == legacyPaperRunnerSchema
 	legacyV13Manifest := manifest.FormatVersion == legacyPaperPerformancePolicyFormat && manifest.SchemaVersion == legacyPaperPerformancePolicySchema
 	legacyV12Manifest := manifest.FormatVersion == legacyStrategyPerformanceFormat && manifest.SchemaVersion == legacyStrategyPerformanceSchema
 	legacyV11Manifest := manifest.FormatVersion == legacyPaperPerformanceBackupFormat && manifest.SchemaVersion == legacyPaperPerformanceBackupSchema
@@ -2903,7 +2977,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	legacyV8Manifest := manifest.FormatVersion == legacyListingBackupFormat && manifest.SchemaVersion == "omni-folio.sqlite.v13"
 	legacyV9Manifest := manifest.FormatVersion == legacyPaperAccountingBackupFormat && manifest.SchemaVersion == legacyPaperAccountingBackupSchema
 	legacyV10Manifest := manifest.FormatVersion == legacyPaperFillBackupFormat && manifest.SchemaVersion == legacyPaperFillBackupSchema
-	legacyManifest := legacyV5Manifest || legacyV6Manifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest
+	legacyManifest := legacyV5Manifest || legacyV6Manifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest
 	if (!currentManifest && !legacyManifest) || manifest.Encryption.Encrypted || manifest.Encryption.Algorithm != "none" {
 		return errors.New("unsupported backup manifest version or encryption")
 	}
@@ -2915,7 +2989,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err := json.Unmarshal(fields["verification_receipt"], &receiptFields); err != nil {
 		return fmt.Errorf("backup verification receipt fields: %w", err)
 	}
-	if currentManifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest {
+	if currentManifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
 		if fields["paper_evaluation_event_count"] == nil || fields["paper_accounting_state_sha256"] == nil ||
 			fields["paper_accounting_session_count"] == nil || fields["paper_market_bar_observation_count"] == nil ||
 			fields["paper_signal_event_count"] == nil || fields["paper_execution_authorization_count"] == nil ||
@@ -2923,26 +2997,38 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 			return errors.New("current backup manifest omits paper accounting proof")
 		}
 	}
-	if currentManifest || legacyV12Manifest || legacyV13Manifest {
+	if currentManifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
 		if fields["paper_performance_state_sha256"] == nil || fields["paper_performance_event_count"] == nil ||
 			fields["paper_performance_mark_count"] == nil || receiptFields["candidate_paper_performance_state_sha256"] == nil ||
 			receiptFields["paper_performance_check"] == nil {
 			return errors.New("current backup manifest omits paper performance proof")
 		}
 	}
-	if currentManifest || legacyV13Manifest {
+	if currentManifest || legacyV13Manifest || legacyV14Manifest {
 		if fields["paper_strategy_performance_state_sha256"] == nil || fields["paper_strategy_performance_event_count"] == nil ||
 			fields["paper_strategy_performance_sample_count"] == nil || receiptFields["candidate_paper_strategy_performance_state_sha256"] == nil ||
 			receiptFields["paper_strategy_performance_check"] == nil {
 			return errors.New("current backup manifest omits paper strategy performance proof")
 		}
 	}
-	if currentManifest {
+	if currentManifest || legacyV14Manifest {
 		if fields["paper_performance_policy_state_sha256"] == nil || fields["paper_performance_policy_event_count"] == nil ||
 			fields["paper_performance_policy_action_count"] == nil || fields["paper_performance_policy_automatic_halt_count"] == nil ||
 			receiptFields["candidate_paper_performance_policy_state_sha256"] == nil || receiptFields["paper_performance_policy_check"] == nil {
 			return errors.New("current backup manifest omits paper performance policy proof")
 		}
+	}
+	if currentManifest {
+		if fields["paper_runner_lease_state_sha256"] == nil || fields["paper_runner_lease_count"] == nil ||
+			fields["active_paper_runner_lease_count"] == nil || receiptFields["candidate_paper_runner_lease_state_sha256"] == nil ||
+			receiptFields["paper_runner_lease_check"] == nil {
+			return errors.New("current backup manifest omits paper runner lease proof")
+		}
+	}
+	if legacyV14Manifest && (fields["paper_runner_lease_state_sha256"] != nil || fields["paper_runner_lease_count"] != nil ||
+		fields["active_paper_runner_lease_count"] != nil || receiptFields["candidate_paper_runner_lease_state_sha256"] != nil ||
+		receiptFields["paper_runner_lease_check"] != nil) {
+		return errors.New("v14 backup manifest contains v15 paper runner lease fields")
 	}
 	if legacyV13Manifest && (fields["paper_performance_policy_state_sha256"] != nil || fields["paper_performance_policy_event_count"] != nil ||
 		fields["paper_performance_policy_action_count"] != nil || fields["paper_performance_policy_automatic_halt_count"] != nil ||
@@ -2974,7 +3060,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 			return errors.New("v10 backup manifest contains v11 paper fields")
 		}
 	}
-	if legacyManifest && !legacyV10Manifest && !legacyV11Manifest && !legacyV12Manifest && !legacyV13Manifest {
+	if legacyManifest && !legacyV10Manifest && !legacyV11Manifest && !legacyV12Manifest && !legacyV13Manifest && !legacyV14Manifest {
 		if fields["paper_accounting_state_sha256"] != nil || fields["paper_accounting_session_count"] != nil ||
 			receiptFields["candidate_paper_accounting_state_sha256"] != nil {
 			return errors.New("legacy backup manifest contains paper accounting fields")
@@ -3016,12 +3102,13 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	}
 	receipt := manifest.VerificationReceipt
 	if receipt.Status != "verified" || receipt.IntegrityCheck != "ok" || receipt.GoldenSnapshotCheck != "ok" || receipt.OrderStateCheck != "ok" || receipt.BrokerStateCheck != "ok" || receipt.StrategyRegistryCheck != "ok" ||
-		((currentManifest || legacyV6Manifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest) && receipt.FXObservationCheck != "ok") ||
-		((currentManifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest) && receipt.SecurityPriceObservationCheck != "ok") ||
-		((currentManifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest) && receipt.InstrumentListingCheck != "ok") ||
-		((currentManifest || legacyV12Manifest || legacyV13Manifest) && receipt.PaperPerformanceCheck != "ok") ||
-		((currentManifest || legacyV13Manifest) && receipt.PaperStrategyPerformanceCheck != "ok") ||
-		(currentManifest && receipt.PaperPerformancePolicyCheck != "ok") || !receipt.EligibleForActivation || len(receipt.Errors) != 0 {
+		((currentManifest || legacyV6Manifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest) && receipt.FXObservationCheck != "ok") ||
+		((currentManifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest) && receipt.SecurityPriceObservationCheck != "ok") ||
+		((currentManifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest) && receipt.InstrumentListingCheck != "ok") ||
+		((currentManifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest) && receipt.PaperPerformanceCheck != "ok") ||
+		((currentManifest || legacyV13Manifest || legacyV14Manifest) && receipt.PaperStrategyPerformanceCheck != "ok") ||
+		((currentManifest || legacyV14Manifest) && receipt.PaperPerformancePolicyCheck != "ok") ||
+		(currentManifest && receipt.PaperRunnerLeaseCheck != "ok") || !receipt.EligibleForActivation || len(receipt.Errors) != 0 {
 		return errors.New("backup manifest is not eligible for activation")
 	}
 	dbSHA, size, err := hashFile(path)
@@ -3088,6 +3175,12 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 			return err
 		}
 	}
+	if legacyV14Manifest {
+		if err := verifyLegacyV14SourceManifest(context.Background(), sourceDB, manifest); err != nil {
+			_ = sourceDB.Close()
+			return err
+		}
+	}
 	if currentManifest {
 		policy, err := provePaperPerformancePolicyRecovery(context.Background(), sourceDB)
 		if err != nil {
@@ -3099,6 +3192,18 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 			manifest.PaperPerformancePolicyAutomaticHaltCount != policy.AutomaticHalts {
 			_ = sourceDB.Close()
 			return errors.New("source paper performance policy recovery proof mismatch")
+		}
+		runnerLease, err := provePaperRunnerLeaseRecovery(context.Background(), sourceDB)
+		if err != nil {
+			_ = sourceDB.Close()
+			return fmt.Errorf("source paper runner lease recovery proof: %w", err)
+		}
+		if manifest.PaperRunnerLeaseStateSHA256 != runnerLease.SHA256 ||
+			receipt.CandidatePaperRunnerLeaseStateSHA256 != runnerLease.SHA256 ||
+			manifest.PaperRunnerLeaseCount != runnerLease.Leases ||
+			manifest.ActivePaperRunnerLeaseCount != runnerLease.Active {
+			_ = sourceDB.Close()
+			return errors.New("source paper runner lease recovery proof mismatch")
 		}
 	}
 	if err := sourceDB.Close(); err != nil {
@@ -3164,7 +3269,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 		manifest.SelectedStrategyResultSHA256 != strategy.SelectedResultSHA256 {
 		return errors.New("backup strategy registry recovery proof mismatch")
 	}
-	if currentManifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest {
+	if currentManifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
 		if manifest.PaperEvaluationEventCount != strategy.Evaluations {
 			return errors.New("backup paper evaluation recovery proof mismatch")
 		}
@@ -3175,7 +3280,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err != nil {
 		return err
 	}
-	if currentManifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest {
+	if currentManifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
 		if manifest.PaperAccountingStateSHA256 != paperAccounting.SHA256 ||
 			receipt.CandidatePaperAccountingStateSHA256 != paperAccounting.SHA256 ||
 			manifest.PaperAccountingSessionCount != paperAccounting.Sessions ||
@@ -3198,7 +3303,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err != nil {
 		return err
 	}
-	if currentManifest || legacyV12Manifest || legacyV13Manifest {
+	if currentManifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
 		if manifest.PaperPerformanceStateSHA256 != paperPerformance.SHA256 ||
 			receipt.CandidatePaperPerformanceStateSHA256 != paperPerformance.SHA256 ||
 			manifest.PaperPerformanceEventCount != paperPerformance.Events ||
@@ -3213,7 +3318,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err != nil {
 		return err
 	}
-	if currentManifest || legacyV13Manifest {
+	if currentManifest || legacyV13Manifest || legacyV14Manifest {
 		if manifest.PaperStrategyPerformanceStateSHA256 != paperStrategyPerformance.SHA256 ||
 			receipt.CandidatePaperStrategyPerformanceStateSHA256 != paperStrategyPerformance.SHA256 ||
 			manifest.PaperStrategyPerformanceEventCount != paperStrategyPerformance.Events ||
@@ -3228,7 +3333,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err != nil {
 		return err
 	}
-	if currentManifest {
+	if currentManifest || legacyV14Manifest {
 		if manifest.PaperPerformancePolicyStateSHA256 != paperPerformancePolicy.SHA256 ||
 			receipt.CandidatePaperPerformancePolicyStateSHA256 != paperPerformancePolicy.SHA256 ||
 			manifest.PaperPerformancePolicyEventCount != paperPerformancePolicy.Events ||
@@ -3240,11 +3345,25 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 		paperPerformancePolicy.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
 		return errors.New("legacy backup unexpectedly contains paper performance policy")
 	}
+	paperRunnerLease, err := verifyPaperRunnerLeaseRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if currentManifest {
+		if manifest.PaperRunnerLeaseStateSHA256 != paperRunnerLease.SHA256 ||
+			receipt.CandidatePaperRunnerLeaseStateSHA256 != paperRunnerLease.SHA256 ||
+			manifest.PaperRunnerLeaseCount != paperRunnerLease.Leases ||
+			manifest.ActivePaperRunnerLeaseCount != paperRunnerLease.Active || paperRunnerLease.Active != 0 {
+			return errors.New("backup paper runner lease recovery proof mismatch")
+		}
+	} else if paperRunnerLease.Leases != 1 || paperRunnerLease.Active != 0 || len(paperRunnerLease.SHA256) != sha256.Size*2 {
+		return errors.New("legacy backup paper runner lease migration proof mismatch")
+	}
 	fx, err := verifyFXObservationRestoreProof(verificationPath)
 	if err != nil {
 		return err
 	}
-	if currentManifest || legacyV6Manifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest {
+	if currentManifest || legacyV6Manifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
 		if manifest.FXObservationStateSHA256 != fx.SHA256 || receipt.CandidateFXObservationStateSHA256 != fx.SHA256 ||
 			manifest.FXObservationCount != fx.Observations {
 			return errors.New("backup FX observation recovery proof mismatch")
@@ -3256,7 +3375,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err != nil {
 		return err
 	}
-	if currentManifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest {
+	if currentManifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
 		if manifest.SecurityPriceObservationStateSHA256 != securityPrices.SHA256 ||
 			receipt.CandidateSecurityPriceObservationStateSHA256 != securityPrices.SHA256 ||
 			manifest.SecurityPriceObservationCount != securityPrices.Observations {
@@ -3269,7 +3388,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err != nil {
 		return err
 	}
-	if currentManifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest {
+	if currentManifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
 		if manifest.InstrumentListingStateSHA256 != instrumentListings.SHA256 ||
 			receipt.CandidateInstrumentListingStateSHA256 != instrumentListings.SHA256 ||
 			manifest.InstrumentListingEventCount != instrumentListings.Events ||

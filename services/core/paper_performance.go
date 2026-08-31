@@ -71,6 +71,27 @@ type paperPerformanceMark struct {
 }
 
 func (s *Service) evaluatePaperPerformance(ctx context.Context, accountRef, asOf string) (*PaperPerformanceEvent, error) {
+	return s.evaluatePaperPerformanceTx(ctx, accountRef, asOf, nil)
+}
+
+func (s *Service) evaluatePaperPerformanceWithClaim(ctx context.Context, accountRef, asOf string, claim *paperRunnerClaim) (*PaperPerformanceEvent, error) {
+	if s == nil || s.db == nil || s.now == nil || claim == nil || claim.AccountRef != accountRef || !orderAlias(accountRef, "account") {
+		return nil, errors.New("paper performance runner claim is missing")
+	}
+	if _, ok := canonicalPaperTime(asOf); !ok {
+		return nil, errors.New("paper performance as_of is invalid")
+	}
+	stageCtx, cancel := context.WithTimeout(ctx, paperRunnerStageTimeout)
+	defer cancel()
+	renewed, err := s.heartbeatPaperRunnerLease(stageCtx, claim)
+	if err != nil {
+		return nil, err
+	}
+	*claim = *renewed
+	return s.evaluatePaperPerformanceTx(stageCtx, accountRef, asOf, claim)
+}
+
+func (s *Service) evaluatePaperPerformanceTx(ctx context.Context, accountRef, asOf string, claim *paperRunnerClaim) (*PaperPerformanceEvent, error) {
 	if s == nil || s.db == nil || s.now == nil || !orderAlias(accountRef, "account") {
 		return nil, errors.New("paper performance evaluator is not configured")
 	}
@@ -84,6 +105,11 @@ func (s *Service) evaluatePaperPerformance(ctx context.Context, accountRef, asOf
 		return nil, err
 	}
 	defer tx.Rollback()
+	if claim != nil {
+		if err := validatePaperRunnerLeaseTx(ctx, tx, claim, accountRef, s.paperRunnerOwner, s.now()); err != nil {
+			return nil, err
+		}
+	}
 	if _, err := provePaperPerformanceRecovery(ctx, tx); err != nil {
 		return nil, fmt.Errorf("paper performance recovery: %w", err)
 	}
@@ -92,6 +118,19 @@ func (s *Service) evaluatePaperPerformance(ctx context.Context, accountRef, asOf
 		return nil, err
 	}
 	if found {
+		if claim != nil {
+			if existing.StrategySelectionEventID != claim.StrategySelectionEventID || existing.SelectedStrategyResultRef != claim.SelectedResultSHA256 {
+				return nil, errPaperRunnerPriorSelection
+			}
+			renewed, err := renewPaperRunnerLeaseTx(ctx, tx, claim, s.paperRunnerOwner, s.now())
+			if err != nil {
+				return nil, err
+			}
+			if err := tx.Commit(); err != nil {
+				return nil, err
+			}
+			*claim = *renewed
+		}
 		return existing, nil
 	}
 
@@ -169,8 +208,18 @@ func (s *Service) evaluatePaperPerformance(ctx context.Context, accountRef, asOf
 	if _, err := provePaperPerformanceRecovery(ctx, tx); err != nil {
 		return nil, fmt.Errorf("proposed paper performance recovery: %w", err)
 	}
+	var renewed *paperRunnerClaim
+	if claim != nil {
+		renewed, err = renewPaperRunnerLeaseTx(ctx, tx, claim, s.paperRunnerOwner, s.now())
+		if err != nil {
+			return nil, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
+	}
+	if renewed != nil {
+		*claim = *renewed
 	}
 	return &event, nil
 }
@@ -575,7 +624,7 @@ func derivePaperPerformanceMarks(ctx context.Context, q orderQuerier, state pape
 		selected[bar.Symbol] = selectedMark{bar: bar, sequence: sequence}
 	}
 	if len(selected) != len(positions) {
-		return nil, paperdomain.Valuation{}, errors.New("paper performance marks are incomplete")
+		return nil, paperdomain.Valuation{}, errPaperRunnerIncompleteMarks
 	}
 
 	closes := make(map[string]string, len(selected))

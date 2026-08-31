@@ -163,8 +163,8 @@ func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 	properties := schema["properties"].(map[string]any)
-	if properties["format_version"].(map[string]any)["const"] != "omni-folio-backup.v14" ||
-		properties["schema_version"].(map[string]any)["const"] != "omni-folio.sqlite.v20" {
+	if properties["format_version"].(map[string]any)["const"] != "omni-folio-backup.v15" ||
+		properties["schema_version"].(map[string]any)["const"] != "omni-folio.sqlite.v21" {
 		t.Fatal("backup contract version drifted from the runtime")
 	}
 
@@ -224,6 +224,14 @@ func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
 		goldenReceipt["candidate_paper_performance_state_sha256"] != emptyPaperPerformanceSHA ||
 		goldenReceipt["paper_performance_check"] != "ok" {
 		t.Fatalf("golden manifest does not encode empty performance proof: runtime=%+v err=%v", performanceProof, err)
+	}
+	const releasedPaperRunnerLeaseSHA = "c67546c4ef5be4f429f81a5e7efe9a118d3330bf3858079ce9dcc16379009d71"
+	runnerLeaseProof, err := provePaperRunnerLeaseRecovery(context.Background(), svc.db)
+	if err != nil || runnerLeaseProof.SHA256 != releasedPaperRunnerLeaseSHA || runnerLeaseProof.Leases != 1 || runnerLeaseProof.Active != 0 ||
+		golden["paper_runner_lease_state_sha256"] != releasedPaperRunnerLeaseSHA ||
+		golden["paper_runner_lease_count"] != float64(1) || golden["active_paper_runner_lease_count"] != float64(0) ||
+		goldenReceipt["candidate_paper_runner_lease_state_sha256"] != releasedPaperRunnerLeaseSHA || goldenReceipt["paper_runner_lease_check"] != "ok" {
+		t.Fatalf("golden manifest does not encode released paper runner lease proof: runtime=%+v err=%v", runnerLeaseProof, err)
 	}
 
 	var invalid map[string]any
@@ -637,7 +645,7 @@ func TestHealthAndReadinessAreSeparate(t *testing.T) {
 	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(1, ?)`, "2026-01-10T15:00:00Z"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(21, ?)`, "2026-01-10T15:01:00Z"); err != nil {
+	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(22, ?)`, "2026-01-10T15:01:00Z"); err != nil {
 		t.Fatal(err)
 	}
 	if w := request("/readyz"); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), `"code":"not_ready"`) {

@@ -1,6 +1,6 @@
 # Omni Folio 구현 계획
 
-상태: G0·G1·G3 로컬 통과(G3.8C3 account-global paper performance, G3.8D current-selection strategy-window performance, G3.8E versioned local paper performance policy·atomic automatic halt/rollback, G3.8F1 scheduled one-shot paper policy runner 구현·fresh local/mock 검증 완료), G2 build/widget/browser·자동 accessibility/reduced-motion 증거 확보 및 physical profile/screen-reader 증거 보강 중
+상태: G0·G1·G3 로컬 통과(G3.8C3 account-global paper performance, G3.8D current-selection strategy-window performance, G3.8E versioned local paper performance policy·atomic automatic halt/rollback, G3.8F1 one-shot과 G3.8F2 DB-leased/fenced always-on local paper policy runner 구현·fresh local/mock 검증 완료), G2 build/widget/browser·자동 accessibility/reduced-motion 증거 확보 및 physical profile/screen-reader 증거 보강 중
 기준일: 2026-08-31
 
 ## 목표
@@ -1270,4 +1270,12 @@ This checkpoint deliberately adds no scheduler table or daemon. Duplicate local 
 
 Evidence: `go test -count=1 -run '^TestG38FScheduled' .` was RED on the missing runner, `go test -count=1 -run '^TestG38FPaperRunDueCLI$' .` was RED on the missing CLI command, `go test -count=1 -run '^TestG38FScheduledPaperRunRetryRejectsPrerequisiteCorruption$' .` was RED on cached retry hiding prerequisite corruption, and `go test -count=1 -run '^TestG38F' .`, `go test -race -count=1 -run '^TestG38F' .`, `make check`, `make smoke`, `make clean-test-resources`, and final owned-resource inventory passed after implementation. Details are in [`../gates/g3o-scheduled-paper-runner.md`](../gates/g3o-scheduled-paper-runner.md).
 
-Still open: G3.8F2 DB-leased/fenced always-on runner with heartbeat/TTL, stale-owner recovery, lease-loss fail-closed behavior, success/failure/SIGINT/SIGTERM cleanup proof, alerting, public API/UI, broker-backed evaluation, credential/live execution, CronJob packaging, deployment, shadow/live promotion authority, official market calendar/freshness proof, and any profitability claim.
+## 2026-08-31 G3.8F2 continuation: DB-leased always-on local paper runner
+
+G3.8F2 adds `paper-run-loop` around the recovered G3.8F1 chain. Schema v21 owns one global selection-bound lease with a monotonic fencing token; the loop heartbeats every 10 seconds, uses a 30-second TTL, polls due work after six completed heartbeats, and proves the exact owner/account/selection/fence inside every C3/D/E write transaction. Current strategy selection is global, so the smallest correct lease is also global; account-parallel leases wait until selection becomes account-scoped.
+
+Stale owners can be replaced only after expiry. Manual selection/rollback rejects a live runner, automatic E rollback is the exact fenced exception, and success, fatal failure, HALT rollback, SIGINT, SIGTERM, and cancellation under a contended SQLite writer conditionally release only the runner's own claim. Backup v15/schema v21 proves the lease row, transition objects and selection binding; v14/schema v20 migrates only an owned copy and an active captured candidate is rejected.
+
+Fresh evidence: focused G3.8F and race tests, full core and full core race, `make check`, `make smoke`, resource-cleanup self-tests, `govulncheck ./...`, and `git diff --check` passed. Details are in [`../gates/g3p-always-on-paper-runner.md`](../gates/g3p-always-on-paper-runner.md).
+
+Still open: alerting, public API/UI, broker-backed evaluation, credentials/live execution, deployment/CronJob packaging, broker-coupled per-order runner fencing, shadow/live promotion authority, official market calendar/freshness proof, and any profitability claim.

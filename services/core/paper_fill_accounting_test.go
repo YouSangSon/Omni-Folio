@@ -230,7 +230,6 @@ func TestG38C2PaperAccountingRecurringFIFOResidual(t *testing.T) {
 
 func TestG38C2PaperAccountingIgnoresLegacyFills(t *testing.T) {
 	svc, _ := testService(t, nil, nil)
-	downgradePaperAuthorizationForTest(t, svc.db)
 	svc.now = func() time.Time { return mustTime("2026-01-10T15:00:00Z") }
 	evidence, err := svc.registerStrategyEvidence(context.Background(), strategyArtifact(t, nil))
 	if err != nil {
@@ -240,6 +239,7 @@ func TestG38C2PaperAccountingIgnoresLegacyFills(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	downgradePaperAuthorizationForTest(t, svc.db)
 	signal := PaperSignal{
 		SchemaVersion: paperSignalSchema, SignalID: "g38c2-legacy-accounting-fill",
 		StrategyResultSHA256: evidence.ResultSHA256, StrategySelectionEventID: selected.CurrentEventID,
