@@ -51,6 +51,25 @@ type paperPerformancePolicyRecoveryProof struct {
 }
 
 func (s *Service) applyPaperPerformancePolicy(ctx context.Context, accountRef, expectedSelectionEventID, expectedStrategyPerformanceID string) (*PaperPerformancePolicyEvent, error) {
+	return s.applyPaperPerformancePolicyTx(ctx, accountRef, expectedSelectionEventID, expectedStrategyPerformanceID, nil)
+}
+
+func (s *Service) applyPaperPerformancePolicyWithClaim(ctx context.Context, accountRef, expectedSelectionEventID, expectedStrategyPerformanceID string, claim *paperRunnerClaim) (*PaperPerformancePolicyEvent, error) {
+	if s == nil || s.db == nil || s.now == nil || claim == nil || claim.AccountRef != accountRef ||
+		!orderAlias(accountRef, "account") || !safeOrderID(expectedSelectionEventID) || !safeOrderID(expectedStrategyPerformanceID) {
+		return nil, errors.New("paper performance policy runner claim is missing")
+	}
+	stageCtx, cancel := context.WithTimeout(ctx, paperRunnerStageTimeout)
+	defer cancel()
+	renewed, err := s.heartbeatPaperRunnerLease(stageCtx, claim)
+	if err != nil {
+		return nil, err
+	}
+	*claim = *renewed
+	return s.applyPaperPerformancePolicyTx(stageCtx, accountRef, expectedSelectionEventID, expectedStrategyPerformanceID, claim)
+}
+
+func (s *Service) applyPaperPerformancePolicyTx(ctx context.Context, accountRef, expectedSelectionEventID, expectedStrategyPerformanceID string, claim *paperRunnerClaim) (*PaperPerformancePolicyEvent, error) {
 	if s == nil || s.db == nil || s.now == nil || !orderAlias(accountRef, "account") ||
 		!safeOrderID(expectedSelectionEventID) || !safeOrderID(expectedStrategyPerformanceID) {
 		return nil, errors.New("paper performance policy identifiers are invalid")
@@ -60,12 +79,27 @@ func (s *Service) applyPaperPerformancePolicy(ctx context.Context, accountRef, e
 		return nil, err
 	}
 	defer tx.Rollback()
+	if claim != nil {
+		if err := validatePaperRunnerLeaseTx(ctx, tx, claim, accountRef, s.paperRunnerOwner, s.now()); err != nil {
+			return nil, err
+		}
+	}
 	if _, err := provePaperPerformancePolicyRecovery(ctx, tx); err != nil {
 		return nil, fmt.Errorf("paper performance policy recovery: %w", err)
 	}
 	if existing, found, err := loadPaperPerformancePolicyByKey(ctx, tx, accountRef, expectedSelectionEventID, expectedStrategyPerformanceID); err != nil {
 		return nil, err
 	} else if found {
+		if claim != nil {
+			renewed, err := renewPaperRunnerLeaseTx(ctx, tx, claim, s.paperRunnerOwner, s.now())
+			if err != nil {
+				return nil, err
+			}
+			if err := tx.Commit(); err != nil {
+				return nil, err
+			}
+			*claim = *renewed
+		}
 		return existing, nil
 	}
 	strategy, err := replayStrategyRegistry(ctx, tx)
@@ -149,8 +183,22 @@ func (s *Service) applyPaperPerformancePolicy(ctx context.Context, accountRef, e
 	if _, err := provePaperPerformancePolicyRecovery(ctx, tx); err != nil {
 		return nil, fmt.Errorf("proposed paper performance policy recovery: %w", err)
 	}
+	var renewed *paperRunnerClaim
+	if claim != nil {
+		if event.Decision == "HALT_AND_ROLLBACK" {
+			renewed, err = renewPaperRunnerLeaseAfterPolicyRollbackTx(ctx, tx, claim, event.PolicyEventID, event.RollbackSelectionEventID, s.paperRunnerOwner, s.now())
+		} else {
+			renewed, err = renewPaperRunnerLeaseTx(ctx, tx, claim, s.paperRunnerOwner, s.now())
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
+	}
+	if renewed != nil {
+		*claim = *renewed
 	}
 	return &event, nil
 }

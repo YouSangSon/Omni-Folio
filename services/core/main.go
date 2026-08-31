@@ -9,19 +9,35 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
 func main() {
-	if err := run(os.Args[1:]); err != nil {
+	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "paper-run-loop" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if err := runContext(ctx, args); err != nil && !errors.Is(err, context.Canceled) {
+			log.Print(err)
+			os.Exit(1)
+		}
+		return
+	}
+	if err := run(args); err != nil {
 		log.Print(err)
 		os.Exit(1)
 	}
 }
 
 func run(args []string) error {
+	return runContext(context.Background(), args)
+}
+
+func runContext(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: omni-core <migrate|serve|backup|verify-restore|strategy-register|strategy-status|strategy-select|strategy-rollback|paper-run-due>")
+		return fmt.Errorf("usage: omni-core <migrate|serve|backup|verify-restore|strategy-register|strategy-status|strategy-select|strategy-rollback|paper-run-due|paper-run-loop>")
 	}
 	switch args[0] {
 	case "migrate":
@@ -227,6 +243,25 @@ func run(args []string) error {
 			return err
 		}
 		return json.NewEncoder(os.Stdout).Encode(result)
+	case "paper-run-loop":
+		fs := flag.NewFlagSet("paper-run-loop", flag.ContinueOnError)
+		dbPath := fs.String("db", "omni-folio.db", "SQLite database path")
+		accountRef := fs.String("account", "", "paper account reference")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *accountRef == "" || fs.NArg() != 0 {
+			return errors.New("paper-run-loop requires -account and no positional arguments")
+		}
+		db, err := openExistingDB(*dbPath)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		if err := requireSchema(db); err != nil {
+			return err
+		}
+		return newService(db, time.Now, randomID).runPaperPerformanceLoop(ctx, *accountRef)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}

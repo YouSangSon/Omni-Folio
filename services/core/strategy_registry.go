@@ -165,6 +165,10 @@ func (s *Service) selectPaperCandidate(ctx context.Context, resultSHA256, expect
 	if _, err := provePaperPerformancePolicyRecovery(ctx, tx); err != nil {
 		return nil, fmt.Errorf("strategy selection policy recovery: %w", err)
 	}
+	now := s.now().UTC()
+	if err := rejectLivePaperRunnerLease(ctx, tx, now); err != nil {
+		return nil, err
+	}
 	state, err := replayStrategyRegistry(ctx, tx)
 	if err != nil {
 		return nil, err
@@ -188,7 +192,7 @@ func (s *Service) selectPaperCandidate(ctx context.Context, resultSHA256, expect
 	event := StrategySelectionEvent{
 		EventID: s.id("strategy_selection"), EventType: "SELECT", CandidateResultSHA256: resultSHA256,
 		ExpectedCurrentEventID: expectedCurrentEventID, PreviousSelectedResultSHA256: state.SelectedResultSHA256,
-		SelectedResultSHA256: resultSHA256, ReasonCode: "manual_selection", RecordedAt: s.now().UTC().Format(time.RFC3339Nano),
+		SelectedResultSHA256: resultSHA256, ReasonCode: "manual_selection", RecordedAt: now.Format(time.RFC3339Nano),
 	}
 	sequence, err := latestPaperEvaluationSequence(ctx, tx)
 	if err != nil {
@@ -216,11 +220,17 @@ func (s *Service) rollbackPaperCandidate(ctx context.Context, expectedCurrentEve
 	if _, err := provePaperPerformancePolicyRecovery(ctx, tx); err != nil {
 		return nil, fmt.Errorf("strategy rollback policy recovery: %w", err)
 	}
+	now := s.now().UTC()
+	if err := rejectLivePaperRunnerLease(ctx, tx, now); err != nil {
+		return nil, err
+	}
 	state, err := replayStrategyRegistry(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
-	now := s.now().UTC()
+	if state.CurrentEventID != expectedCurrentEventID || sourceEventID != state.CurrentEventID {
+		return nil, errors.New("stale or mismatched strategy rollback source")
+	}
 	if err := s.haltAllSyntheticExecutionTx(ctx, tx, now); err != nil {
 		return nil, err
 	}
