@@ -12,7 +12,7 @@
 | G0 아키텍처·계약 | 통과 | versioned OpenAPI/JSON Schema, runtime ADR, root commands |
 | G1 로컬 원장 | 통과 | CSV preview → atomic apply → exact cash/trade/dividend/tax/split/FX replay → versioned FIFO residual allocation → append-only cash void → direct FX·security price observation → owner-declared instrument listing → snapshot/receipt → schema v20/backup v14와 supported legacy owned-copy migration/restore proof |
 | G2 Flutter client | 부분 통과 | iOS·Android·web release build와 자동 parser/widget 테스트 통과; chart 포함 Android emulator build/raster p95 2회 통과, physical-device·수동 screen-reader 및 test-instrumentation 격리 증거 남음 |
-| G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, append-only candidate registry, exact selection-bound order authority, atomic halt/rollback safety, G3.8C2 ex-post closed-bar BUY/SELL·paper accounting, G3.8C3 account-global 성과, G3.8D strategy-window evidence, G3.8E local safety action, G3.8F1 scheduled one-shot runner |
+| G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, append-only candidate registry, exact selection-bound order authority, atomic halt/rollback safety, G3.8C2 ex-post closed-bar BUY/SELL·paper accounting, G3.8C3 account-global 성과, G3.8D strategy-window evidence, G3.8E local safety action, G3.8F1 one-shot·G3.8F2 DB-leased always-on local runner |
 | G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot, G4I/K2C 내부 합성 authority, G4J/K2B2 credential-free mock 지정가 submit, G4K 저장된 보유수량 대조 read view, G4L 검증된 로컬 주문 lifecycle read view, G4M 홈 저장 대조 신뢰 요약, G4N pending-action 안전 경고, G4O local daily chart 표시 범위, G4P 첫 실행 import 복구 경로, G4Q 최신 1틱 체결, G4R 0B 실시간 가격 frame, G4S durable 체결 관측, G4T one-shot capture, G4U owner-declared listing enforcement 통과. 실제 키움 credentialed 시세·모의주문 관찰, freshness/scheduling, valuation 승격, unknown-submit 조회 복구, 주문 mutation UI, production risk와 모든 live gate는 남는다. |
 
 세부 상태와 완료 조건은 [`PLAN.md`](PLAN.md)와 [`GATES.md`](GATES.md)에서 관리합니다.
@@ -266,7 +266,9 @@ G3.8E는 recovered latest same-selection G3.8D row만 소비하는 `paper-strate
 
 G3.8F1은 외부 timer, launchd, systemd timer 또는 Kubernetes CronJob이 호출할 수 있는 local one-shot CLI를 추가합니다. `omni-core paper-run-due -db <path> -account <kiwoom_account_...>`는 최신 available local fixture close를 골라 G3.8C3 account performance, G3.8D strategy-window performance, G3.8E safety policy를 순서대로 닫습니다. 같은 close의 완료 chain은 retry와 두 owner 동시 실행에서도 root recovery 검증 뒤 같은 durable 결과로 수렴합니다. 세부 근거는 [`gates/g3o-scheduled-paper-runner.md`](gates/g3o-scheduled-paper-runner.md)에 있습니다.
 
-이 증거는 local ex-post fixture 결과입니다. G3.8E 정책은 같은 전략 구간 point가 최소 2개일 때만 action을 판단합니다. G3.8F1은 daemon, public API/UI, broker-backed 평가, credential/live 실행, deployment, alerting, shadow/live promotion과 수익성 주장을 추가하지 않습니다. 항상 켜진 G3.8F2 runner는 별도 DB lease/fencing, heartbeat/TTL, stale-owner 회수와 success/failure/SIGINT/SIGTERM cleanup proof가 필요합니다.
+G3.8F2는 `omni-core paper-run-loop -db <path> -account <kiwoom_account_...>`를 추가합니다. schema v21 singleton lease가 current strategy selection과 account를 묶고 fencing token을 단조 증가시키며, runner는 10초 heartbeat와 30초 TTL로 C3/D/E 각 transaction 안에서 exact claim을 다시 검증합니다. stale owner는 TTL 이후에만 회수되고 SIGINT/SIGTERM·오류·정상 rollback 종료는 자기 claim만 조건부 release합니다. 현재 selection이 전역이라 이 local runner도 전역 직렬화합니다. 세부 근거는 [`gates/g3p-always-on-paper-runner.md`](gates/g3p-always-on-paper-runner.md)에 있습니다.
+
+이 증거는 local ex-post fixture 결과입니다. daemon process 자체는 추가됐지만 public API/UI, broker-backed 평가, credential/live 실행, deployment, alerting, CronJob packaging, shadow/live promotion과 수익성 주장은 추가하지 않습니다.
 
 ## 주요 명령
 
