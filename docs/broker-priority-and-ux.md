@@ -56,6 +56,20 @@
 - 이 slice는 credential, broker request, live/current/freshness, public endpoint, persistence, realtime, adjustment event correctness, reconciliation, 또는 order capability를 증명하지 않는다. public market route는 계속 `local_fixture`/`sample`/`stale`다.
 - 실행 증거는 [`../gates/g4c-kiwoom-candle-contract.md`](../gates/g4c-kiwoom-candle-contract.md)에 기록한다.
 
+#### G4Q latest-trade synthetic contract
+
+- 공식 예제 commit [`9180deb`](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/commit/9180debf7aea0074715dd8f7a15af432afbfc403)의 [`ka10079` sample](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/9180debf7aea0074715dd8f7a15af432afbfc403/examples/%EA%B5%AD%EB%82%B4%EC%A3%BC%EC%8B%9D/%EC%B0%A8%ED%8A%B8/get_domestic_stock_tick_chart.py)에 고정된 `/api/dostk/chart`, `stk_cd`, `tic_scope`, `upd_stkpc_tp`, `cur_prc`, `cntr_tm` 경계만 사용한다.
+- 첫 page의 newest 1틱을 exact canonical 가격과 provider 체결 시각으로 정규화한다. 모든 받은 row가 유효하고 내림차순이어야 하며, 초 단위 시각이 같은데 가격이 다르거나 provider 시각이 fetch 시각보다 미래면 거절한다.
+- 공식 sample이 timezone, durable execution identity와 adjustment provenance를 제공하지 않으므로 기존 Asia/Seoul 운영 가정만 재사용하고 persistence용 source ID나 adjustment 값을 만들지 않는다.
+- credential, 외부 broker request, public API/UI, scheduler, DB mutation, live/current/freshness와 holding valuation 승격은 포함하지 않는다. 실행 증거는 [`../gates/g4q-kiwoom-latest-trade.md`](../gates/g4q-kiwoom-latest-trade.md)에 기록한다.
+
+#### G4R realtime-price synthetic contract
+
+- 공식 예제 commit [`9180deb`](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/commit/9180debf7aea0074715dd8f7a15af432afbfc403)의 [`0B` sample](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/9180debf7aea0074715dd8f7a15af432afbfc403/examples/%EA%B5%AD%EB%82%B4%EC%A3%BC%EC%8B%9D/%EC%8B%A4%EC%8B%9C%EA%B0%84%EC%8B%9C%EC%84%B8/subscribe_domestic_stock_trade_async.py)에 고정된 `REG` packet과 `REAL.data[].type/item/values` shape, FID `10` 현재가와 `20` 체결시간만 사용한다.
+- 첫 계약은 하나의 bare 6자리 symbol, group `1`, refresh `1`로 닫는다. frame은 HTTP provider 응답과 같은 1 MiB, 공식 등록 item 상한에 맞춘 100 entries로 제한하고 모든 entry가 `0B`이고 유효해야 한다. 동일 symbol/clock의 같은 가격은 dedupe하고 다른 가격은 모호성으로 거절한다.
+- `HHMMSS`를 수신 날짜와 결합하지 않고 `HH:mm:ss` provider clock으로 보존한다. 별도 UTC `received_at`은 로컬 수신 evidence이지 broker observed time이 아니다.
+- `0B`가 FID `9081` 거래소구분을 제공하지만 값 의미는 공식 sample만으로 고정할 수 없어 DTO에서 venue를 생략한다. WebSocket dependency/connection, LOGIN/PING, reconnect/resubscribe/backpressure, credential, persistence, source identity, public API/UI와 live/current/freshness는 포함하지 않는다. 실행 증거는 [`../gates/g4r-kiwoom-realtime-price.md`](../gates/g4r-kiwoom-realtime-price.md)에 기록한다.
+
 #### G4D price-adjustment consumer contract
 
 - provider-neutral `MarketDataCandles`는 `price_adjustment`를 필수로 하고 `unspecified`와 `provider_adjusted`만 허용한다.
@@ -68,7 +82,7 @@
 - 기존 credential-free 합성 `KiwoomSnapshot` 중 `complete=true`인 KRX/KRW 결과만 identity, canonical UTC/decimal, unique ascending position/open-order 계약을 다시 검증해 Go/SQLite에 저장한다.
 - 한 transaction에서 현재 ledger revision과 `account-main`의 KRX/KRW 종목 수량을 읽고 raw snapshot과 `broker - ledger` exact quantity diff reconciliation을 분리 insert한다. 이는 비교 evidence이며 원장을 자동 보정하지 않는다.
 - 같은 fetched-at와 같은 payload는 raw snapshot을 중복 저장하지 않는다. 같은 raw snapshot·같은 ledger revision replay는 같은 reconciliation을 반환하고, ledger revision이 바뀌면 새 reconciliation만 append한다. payload 충돌, 불완전 snapshot, 잘못된 generated ID는 전체 거절하고 최근 fetched-at의 known-good를 유지한다.
-- 현재 schema v9/backup v5는 ledger event, broker snapshot, broker reconciliation, execution-authority event, risk reservation과 synthetic/paper 주문을 insert-only로 보호하고 각 state digest/count, canonical row hash와 restore schema/trigger를 검증한다.
+- 현재 schema v10/backup v6는 ledger event, direct FX observation, broker snapshot, broker reconciliation, execution-authority event, risk reservation과 synthetic/paper 주문을 insert-only로 보호하고 각 state digest/count, canonical row hash와 restore schema/trigger를 검증한다.
 - credential, 실제 broker request, scheduling, freshness/timezone, 현금·평가금액 reconciliation, public API/UI 또는 risk authority는 증명하지 않는다. 실행 증거는 [`../gates/g4h-kiwoom-known-good-snapshot.md`](../gates/g4h-kiwoom-known-good-snapshot.md)에 기록한다.
 
 ### K2A — 내부 합성 주문 상태 로그
@@ -76,7 +90,7 @@
 - Go 내부에서만 `kiwoom`/`synthetic`/`KRX`/`KRW` 지정가 매수·매도 intent를 기록한다. client-order ID, event ID와 provider execution alias의 동일 payload replay만 허용하고 충돌은 거절한다.
 - risk verdict 순서 뒤 submit dispatch를 append하고 즉시 `SUBMIT_UNKNOWN`으로 보존한다. 같은 주문의 blind resubmit과 해당 계좌의 신규 submit을 차단하지만, 이미 알려진 open order의 cancel은 위험 축소 경로로 허용한다.
 - explicit ack/reject/fill/cancel event만 상태를 확정한다. provider에서 찾지 못했다는 사실만으로 unknown을 성공·실패로 바꾸지 않는다.
-- 현재 SQLite schema v9/backup v5는 append-only order log의 exact row hash/metadata, replay, STRICT/UNIQUE/FK/rowid sequence/trigger를 source와 restore 후보에서 계속 검증한다.
+- 현재 SQLite schema v10/backup v6는 append-only order log의 exact row hash/metadata, replay, STRICT/UNIQUE/FK/rowid sequence/trigger를 source와 restore 후보에서 계속 검증한다.
 - K2A leaf 자체는 risk verdict의 **순서만** 증명했다. 이후 K2C가 별도 credential-free 고정 BUY policy와 lease/fencing을 추가했지만 broker network, credential, public route/UI, production risk, 시장가·정정 또는 ledger reconciliation 증거는 아니다. K2A 실행 증거는 [`../gates/g4e-kiwoom-synthetic-order-state.md`](../gates/g4e-kiwoom-synthetic-order-state.md)에 기록한다.
 
 ### G4I/K2C — 내부 합성 execution authority
@@ -84,7 +98,7 @@
 - 권한 기록이 없으면 신규 submit을 차단한다. 수동 arm/halt는 account별 append-only full-state event를 남기며 halt는 fencing token을 증가시키고 현재 lease를 무효화한다.
 - 각 Go service는 config나 DB에서 재사용하지 않는 crypto-random owner를 만들고, 30초 SQLite lease와 단조 증가 fencing token을 소유한 경우에만 신규 합성 BUY를 승인한다.
 - 고정 `credential_free_buy_v1`은 `005930`·`000660`, `BUY/LIMIT/KRX/KRW`, 수량 10주, 주문 limit notional 100만 원, 계좌 active reservation 100만 원으로 제한한다. 이는 production exposure/cash 한도가 아니다.
-- immutable reservation과 reservation-bound `RISK_APPROVED`·`SUBMIT_DISPATCHED`를 한 transaction에 연속 기록하고 DB trigger가 일반 event 경로와 직접 SQL 우회를 차단한다. backup v5는 authority/reservation digest/count와 replay/schema/trigger를 검증한다.
+- immutable reservation과 reservation-bound `RISK_APPROVED`·`SUBMIT_DISPATCHED`를 한 transaction에 연속 기록하고 DB trigger가 일반 event 경로와 직접 SQL 우회를 차단한다. backup v6는 authority/reservation digest/count와 replay/schema/trigger를 검증한다.
 - 실제 broker request·credential·송신 증거, SELL, 현금·보유·수수료·손실·시장시간·freshness 한도, owner/strategy 승인, public route/UI, paper/live readiness는 없다. 실행 증거는 [`../gates/g4i-k2c-execution-authority.md`](../gates/g4i-k2c-execution-authority.md)에 기록한다.
 
 ### K2B0 — 알려진 주문의 내부 합성 체결 조정

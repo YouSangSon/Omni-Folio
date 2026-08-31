@@ -28,11 +28,21 @@
 - JSON/decimal/fixture 계약: [`../contracts/`](../contracts/)
 - Gate별 acceptance: [`../gates/`](../gates/)
 - Strategy/order authority: [`../gates/g3-research.md`](../gates/g3-research.md)
-- 현재 paper execution leaf: [`../gates/g3f-paper-runner-foundation.md`](../gates/g3f-paper-runner-foundation.md)
+- 현재 paper accounting leaf: [`../gates/g3k-paper-fill-accounting.md`](../gates/g3k-paper-fill-accounting.md)
+- 현재 paper performance leaf: [`../gates/g3l-paper-performance-evidence.md`](../gates/g3l-paper-performance-evidence.md)
 - 현재 Kiwoom mock-submit leaf: [`../gates/g4j-k2b2-kiwoom-mock-submit.md`](../gates/g4j-k2b2-kiwoom-mock-submit.md)
 - 현재 stored reconciliation read leaf: [`../gates/g4k-stored-reconciliation-read.md`](../gates/g4k-stored-reconciliation-read.md)
 - 현재 chart display-range leaf: [`../gates/g4o-chart-range-selection.md`](../gates/g4o-chart-range-selection.md)
 - 현재 first-run import recovery leaf: [`../gates/g4p-first-run-import-recovery.md`](../gates/g4p-first-run-import-recovery.md)
+- 현재 Kiwoom latest-trade leaf: [`../gates/g4q-kiwoom-latest-trade.md`](../gates/g4q-kiwoom-latest-trade.md)
+- 현재 Kiwoom realtime-price leaf: [`../gates/g4r-kiwoom-realtime-price.md`](../gates/g4r-kiwoom-realtime-price.md)
+- 현재 Kiwoom listing-ownership leaf: [`../gates/g4u-kiwoom-listing-ownership.md`](../gates/g4u-kiwoom-listing-ownership.md)
+- 현재 sanitized ledger activity leaf: [`../gates/g1e-ledger-activity.md`](../gates/g1e-ledger-activity.md)
+- 현재 direct FX observation leaf: [`../gates/g1f-fx-observation-storage.md`](../gates/g1f-fx-observation-storage.md)
+- 현재 direct-FX cash valuation leaf: [`../gates/g1g-direct-fx-cash-valuation.md`](../gates/g1g-direct-fx-cash-valuation.md)
+- 현재 durable security price observation leaf: [`../gates/g1h-security-price-observation.md`](../gates/g1h-security-price-observation.md)
+- 현재 native-currency holding valuation leaf: [`../gates/g1i-native-holding-valuation.md`](../gates/g1i-native-holding-valuation.md)
+- 현재 FIFO allocation policy leaf: [`../gates/g1j-fifo-allocation-policy.md`](../gates/g1j-fifo-allocation-policy.md)
 - Root 검증 명령: `make check && make smoke`
 
 문서가 코드·계약과 충돌하면 실제 동작을 조용히 문서에 맞추지 않습니다. 먼저 충돌을 기록하고 owner 계약과 executable test를 함께 갱신합니다. 브로커 limit·인증·endpoint는 바뀔 수 있으므로 adapter 구현 시 공식 문서와 실제 응답을 다시 확인합니다.

@@ -1,6 +1,7 @@
 {
   "portfolio_id": "portfolio_main",
   "ledger_revision": "rev_0000000003",
+  "cost_basis_policy": "fifo_exact_else_half_even_residual_8_v1",
   "as_of": "2026-01-10T15:00:00Z",
   "recorded_at": "2026-01-10T15:01:00.125Z",
   "live_enabled": false,

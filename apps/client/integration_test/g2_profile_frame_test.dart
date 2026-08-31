@@ -177,6 +177,7 @@ class _ProfileApi implements OmniApi {
   );
   final _snapshot = PortfolioSnapshot(
     ledgerRevision: 'rev_profile',
+    costBasisPolicy: 'fifo_exact_else_half_even_residual_8_v1',
     recordedAt: DateTime.utc(2026, 8, 24),
     cash: const [Money('KRW', '1000000')],
     holdings: List.generate(
@@ -241,6 +242,17 @@ class _ProfileApi implements OmniApi {
 
   @override
   Future<LocalOrderLog> localOrders() async => const LocalOrderLog(orders: []);
+
+  @override
+  Future<LedgerActivityPage> ledgerActivities() async =>
+      const LedgerActivityPage(
+        source: 'local_ledger',
+        brokerFreshness: 'unverified',
+        ledgerRevision: 'rev_0000000000',
+        recordedAt: '1970-01-01T00:00:00Z',
+        events: [],
+        nextCursor: null,
+      );
 
   @override
   Future<PortfolioSnapshot> snapshot() async => _snapshot;

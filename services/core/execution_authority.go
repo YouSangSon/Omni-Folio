@@ -29,14 +29,15 @@ type ExecutionAuthorityState struct {
 }
 
 type executionAuthorityRecord struct {
-	EventID        string `json:"event_id"`
-	AccountRef     string `json:"account_ref"`
-	Armed          bool   `json:"armed"`
-	LeaseOwner     string `json:"lease_owner,omitempty"`
-	FencingToken   int64  `json:"fencing_token"`
-	LeaseExpiresAt string `json:"lease_expires_at,omitempty"`
-	ReasonCode     string `json:"reason_code"`
-	RecordedAt     string `json:"recorded_at"`
+	EventID                       string `json:"event_id"`
+	AccountRef                    string `json:"account_ref"`
+	Armed                         bool   `json:"armed"`
+	LeaseOwner                    string `json:"lease_owner,omitempty"`
+	FencingToken                  int64  `json:"fencing_token"`
+	LeaseExpiresAt                string `json:"lease_expires_at,omitempty"`
+	ReasonCode                    string `json:"reason_code"`
+	PaperPerformancePolicyEventID string `json:"paper_performance_policy_event_id,omitempty"`
+	RecordedAt                    string `json:"recorded_at"`
 }
 
 type executionAuthoritySnapshot struct {
@@ -69,6 +70,9 @@ func (s *Service) setSyntheticExecutionArmed(ctx context.Context, accountRef str
 		return nil, err
 	}
 	defer tx.Rollback()
+	if _, err := provePaperPerformancePolicyRecovery(ctx, tx); err != nil {
+		return nil, fmt.Errorf("execution authority policy recovery: %w", err)
+	}
 	current, err := loadExecutionAuthoritySnapshot(ctx, tx, accountRef)
 	if err != nil {
 		return nil, err
@@ -104,6 +108,9 @@ func (s *Service) acquireSyntheticExecutionLease(ctx context.Context, accountRef
 		return nil, err
 	}
 	defer tx.Rollback()
+	if _, err := provePaperPerformancePolicyRecovery(ctx, tx); err != nil {
+		return nil, fmt.Errorf("execution authority policy recovery: %w", err)
+	}
 	current, err := loadExecutionAuthoritySnapshot(ctx, tx, accountRef)
 	if err != nil {
 		return nil, err
@@ -150,6 +157,9 @@ func (s *Service) authorizeSyntheticDispatchOnce(ctx context.Context, orderID st
 		return nil, false, err
 	}
 	defer tx.Rollback()
+	if _, _, err := proveExecutionAuthorityRecovery(ctx, tx); err != nil {
+		return nil, false, fmt.Errorf("execution authority recovery: %w", err)
+	}
 	state, dispatched, err := s.authorizeSyntheticDispatchOnceTx(ctx, tx, orderID, fencingToken)
 	if err != nil {
 		return nil, false, err
@@ -262,43 +272,44 @@ func (s *Service) requireCurrentSyntheticExecutionLease(ctx context.Context, q o
 }
 
 func (s *Service) haltAllSyntheticExecutionTx(ctx context.Context, tx *sql.Tx, now time.Time) error {
-	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT account_ref FROM execution_authority_events ORDER BY account_ref`)
+	accountRefs, err := armedExecutionAccounts(ctx, tx)
 	if err != nil {
 		return err
 	}
-	var accountRefs []string
-	for rows.Next() {
-		var accountRef string
-		if err := rows.Scan(&accountRef); err != nil {
-			rows.Close()
-			return err
-		}
-		accountRefs = append(accountRefs, accountRef)
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return err
-	}
-	if err := rows.Close(); err != nil {
-		return err
+	_, err = s.haltSyntheticExecutionTx(ctx, tx, now, "manual_halt", "", accountRefs, nil)
+	return err
+}
+
+func (s *Service) haltSyntheticExecutionTx(ctx context.Context, tx *sql.Tx, now time.Time, reasonCode, policyEventID string, accountRefs []string, automaticHaltIDs map[string]string) (int, error) {
+	if (reasonCode == "manual_halt") != (policyEventID == "") ||
+		(reasonCode != "manual_halt" && reasonCode != "automatic_performance_halt") {
+		return 0, errors.New("execution halt provenance is invalid")
 	}
 	recordedAt := now.Format(time.RFC3339Nano)
 	for _, accountRef := range accountRefs {
 		current, err := loadExecutionAuthoritySnapshot(ctx, tx, accountRef)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if !current.Armed {
-			continue
+			return 0, errors.New("captured execution authority is no longer armed")
+		}
+		eventID := s.id("execution_authority")
+		if reasonCode == "automatic_performance_halt" {
+			eventID = automaticHaltIDs[accountRef]
+			if eventID != paperPerformanceAutomaticHaltID(policyEventID, accountRef) {
+				return 0, errors.New("automatic execution halt identifier is invalid")
+			}
 		}
 		if err := insertExecutionAuthorityRecord(ctx, tx, executionAuthorityRecord{
-			EventID: s.id("execution_authority"), AccountRef: accountRef,
-			FencingToken: current.FencingToken + 1, ReasonCode: "manual_halt", RecordedAt: recordedAt,
+			EventID: eventID, AccountRef: accountRef,
+			FencingToken: current.FencingToken + 1, ReasonCode: reasonCode,
+			PaperPerformancePolicyEventID: policyEventID, RecordedAt: recordedAt,
 		}); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	return nil
+	return len(accountRefs), nil
 }
 
 func validateSyntheticBuyPolicy(intent OrderIntent) (string, *big.Rat, error) {
@@ -443,14 +454,28 @@ func insertExecutionAuthorityRecord(ctx context.Context, tx *sql.Tx, record exec
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO execution_authority_events(event_id,account_ref,armed,lease_owner,fencing_token,lease_expires_at,reason_code,record_sha256,record_json,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+	hasPolicySchema, err := hasPaperPerformancePolicySchema(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if !hasPolicySchema {
+		_, err = tx.ExecContext(ctx, `INSERT INTO execution_authority_events(event_id,account_ref,armed,lease_owner,fencing_token,lease_expires_at,reason_code,record_sha256,record_json,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+			record.EventID, record.AccountRef, boolInt(record.Armed), nullable(record.LeaseOwner), record.FencingToken, nullable(record.LeaseExpiresAt),
+			record.ReasonCode, hash, string(raw), record.RecordedAt)
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO execution_authority_events(event_id,account_ref,armed,lease_owner,fencing_token,lease_expires_at,reason_code,paper_performance_policy_event_id,record_sha256,record_json,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
 		record.EventID, record.AccountRef, boolInt(record.Armed), nullable(record.LeaseOwner), record.FencingToken, nullable(record.LeaseExpiresAt),
-		record.ReasonCode, hash, string(raw), record.RecordedAt)
+		record.ReasonCode, nullable(record.PaperPerformancePolicyEventID), hash, string(raw), record.RecordedAt)
 	return err
 }
 
 func loadExecutionAuthoritySnapshot(ctx context.Context, q orderQuerier, accountRef string) (executionAuthoritySnapshot, error) {
-	rows, err := q.QueryContext(ctx, `SELECT event_id,armed,lease_owner,fencing_token,lease_expires_at,reason_code,record_sha256,record_json,recorded_at
+	policyColumn, err := executionAuthorityPolicyColumn(ctx, q)
+	if err != nil {
+		return executionAuthoritySnapshot{}, err
+	}
+	rows, err := q.QueryContext(ctx, `SELECT event_id,armed,lease_owner,fencing_token,lease_expires_at,reason_code,`+policyColumn+`,record_sha256,record_json,recorded_at
 		FROM execution_authority_events WHERE account_ref=? ORDER BY sequence`, accountRef)
 	if err != nil {
 		return executionAuthoritySnapshot{}, err
@@ -486,9 +511,9 @@ type rowScanner interface{ Scan(...any) error }
 func scanExecutionAuthorityRecord(row rowScanner, accountRef string) (executionAuthorityRecord, error) {
 	var eventID, reason, hash, raw, recordedAt string
 	var armed int
-	var owner, expires sql.NullString
+	var owner, expires, policyEventID sql.NullString
 	var token int64
-	if err := row.Scan(&eventID, &armed, &owner, &token, &expires, &reason, &hash, &raw, &recordedAt); err != nil {
+	if err := row.Scan(&eventID, &armed, &owner, &token, &expires, &reason, &policyEventID, &hash, &raw, &recordedAt); err != nil {
 		return executionAuthorityRecord{}, err
 	}
 	var record executionAuthorityRecord
@@ -502,7 +527,8 @@ func scanExecutionAuthorityRecord(row rowScanner, accountRef string) (executionA
 	if string(canonical) != raw || actualHash != hash || record.EventID != eventID || record.AccountRef != accountRef ||
 		boolInt(record.Armed) != armed || record.LeaseOwner != owner.String || (record.LeaseOwner != "") != owner.Valid ||
 		record.FencingToken != token || record.LeaseExpiresAt != expires.String || (record.LeaseExpiresAt != "") != expires.Valid ||
-		record.ReasonCode != reason || record.RecordedAt != recordedAt {
+		record.ReasonCode != reason || record.PaperPerformancePolicyEventID != policyEventID.String ||
+		(record.PaperPerformancePolicyEventID != "") != policyEventID.Valid || record.RecordedAt != recordedAt {
 		return executionAuthorityRecord{}, errors.New("execution authority record metadata or hash mismatch")
 	}
 	return record, nil
@@ -527,7 +553,7 @@ func validateExecutionAuthorityRecord(record executionAuthorityRecord, previous 
 		if previous.Armed || !record.Armed || record.LeaseOwner != "" {
 			return errors.New("execution authority arm transition is invalid")
 		}
-	case "manual_halt":
+	case "manual_halt", "automatic_performance_halt":
 		if !previous.Armed || record.Armed || record.LeaseOwner != "" {
 			return errors.New("execution authority halt transition is invalid")
 		}
@@ -561,6 +587,13 @@ func validateExecutionAuthorityRecordBasic(record executionAuthorityRecord) erro
 	}
 	switch record.ReasonCode {
 	case "manual_arm", "manual_halt", "lease_acquired":
+		if record.PaperPerformancePolicyEventID != "" {
+			return errors.New("manual execution authority record has policy link")
+		}
+	case "automatic_performance_halt":
+		if record.PaperPerformancePolicyEventID == "" {
+			return errors.New("automatic execution authority record lacks policy link")
+		}
 	default:
 		return errors.New("execution authority reason is invalid")
 	}
@@ -572,7 +605,11 @@ func loadExecutionAuthorityRecordByID(ctx context.Context, q orderQuerier, event
 	if err := q.QueryRowContext(ctx, `SELECT account_ref FROM execution_authority_events WHERE event_id=?`, eventID).Scan(&accountRef); err != nil {
 		return executionAuthorityRecord{}, err
 	}
-	row := q.QueryRowContext(ctx, `SELECT event_id,armed,lease_owner,fencing_token,lease_expires_at,reason_code,record_sha256,record_json,recorded_at
+	policyColumn, err := executionAuthorityPolicyColumn(ctx, q)
+	if err != nil {
+		return executionAuthorityRecord{}, err
+	}
+	row := q.QueryRowContext(ctx, `SELECT event_id,armed,lease_owner,fencing_token,lease_expires_at,reason_code,`+policyColumn+`,record_sha256,record_json,recorded_at
 		FROM execution_authority_events WHERE event_id=?`, eventID)
 	record, err := scanExecutionAuthorityRecord(row, accountRef)
 	if err != nil {
@@ -676,7 +713,11 @@ func loadAuthorizedOrderEvent(ctx context.Context, q orderQuerier, eventID strin
 }
 
 func proveExecutionAuthorityRecovery(ctx context.Context, q orderQuerier) (string, int, error) {
-	rows, err := q.QueryContext(ctx, `SELECT sequence,account_ref,event_id,armed,lease_owner,fencing_token,lease_expires_at,reason_code,record_sha256,record_json,recorded_at
+	policyColumn, err := executionAuthorityPolicyColumn(ctx, q)
+	if err != nil {
+		return "", 0, err
+	}
+	rows, err := q.QueryContext(ctx, `SELECT sequence,account_ref,event_id,armed,lease_owner,fencing_token,lease_expires_at,reason_code,`+policyColumn+`,record_sha256,record_json,recorded_at
 		FROM execution_authority_events ORDER BY sequence`)
 	if err != nil {
 		return "", 0, err
@@ -685,13 +726,15 @@ func proveExecutionAuthorityRecovery(ctx context.Context, q orderQuerier) (strin
 	hash := sha256.New()
 	encoder := json.NewEncoder(hash)
 	previous := map[string]*executionAuthorityRecord{}
+	type policyLink struct{ policyID, eventID, accountRef string }
+	var linkedHalts []policyLink
 	count := 0
 	for rows.Next() {
 		var sequence, token int64
 		var accountRef, eventID, reason, recordSHA, raw, recordedAt string
 		var armed int
-		var owner, expires sql.NullString
-		if err := rows.Scan(&sequence, &accountRef, &eventID, &armed, &owner, &token, &expires, &reason, &recordSHA, &raw, &recordedAt); err != nil {
+		var owner, expires, policyEventID sql.NullString
+		if err := rows.Scan(&sequence, &accountRef, &eventID, &armed, &owner, &token, &expires, &reason, &policyEventID, &recordSHA, &raw, &recordedAt); err != nil {
 			return "", 0, err
 		}
 		var record executionAuthorityRecord
@@ -702,15 +745,23 @@ func proveExecutionAuthorityRecovery(ctx context.Context, q orderQuerier) (strin
 		if err != nil || string(canonical) != raw || actualSHA != recordSHA || record.EventID != eventID ||
 			record.AccountRef != accountRef || boolInt(record.Armed) != armed || record.LeaseOwner != owner.String ||
 			(record.LeaseOwner != "") != owner.Valid || record.FencingToken != token || record.LeaseExpiresAt != expires.String ||
-			(record.LeaseExpiresAt != "") != expires.Valid || record.ReasonCode != reason || record.RecordedAt != recordedAt {
+			(record.LeaseExpiresAt != "") != expires.Valid || record.ReasonCode != reason ||
+			record.PaperPerformancePolicyEventID != policyEventID.String || (record.PaperPerformancePolicyEventID != "") != policyEventID.Valid || record.RecordedAt != recordedAt {
 			return "", 0, errors.New("execution authority recovery metadata or hash mismatch")
 		}
 		if err := validateExecutionAuthorityRecord(record, previous[accountRef]); err != nil {
 			return "", 0, err
 		}
+		if record.PaperPerformancePolicyEventID != "" {
+			linkedHalts = append(linkedHalts, policyLink{policyID: record.PaperPerformancePolicyEventID, eventID: record.EventID, accountRef: record.AccountRef})
+		}
 		copy := record
 		previous[accountRef] = &copy
-		if err := encoder.Encode([]any{"execution_authority_events", sequence, accountRef, eventID, armed, owner, token, expires, reason, recordSHA, raw, recordedAt}); err != nil {
+		hashFields := []any{"execution_authority_events", sequence, accountRef, eventID, armed, owner, token, expires, reason, recordSHA, raw, recordedAt}
+		if policyEventID.Valid {
+			hashFields = append(hashFields, policyEventID)
+		}
+		if err := encoder.Encode(hashFields); err != nil {
 			return "", 0, err
 		}
 		count++
@@ -718,7 +769,34 @@ func proveExecutionAuthorityRecovery(ctx context.Context, q orderQuerier) (strin
 	if err := rows.Err(); err != nil {
 		return "", 0, err
 	}
+	if err := rows.Close(); err != nil {
+		return "", 0, err
+	}
+	for _, link := range linkedHalts {
+		if err := proveLinkedPaperPerformancePolicyMetadata(ctx, q, link.policyID, "halt", link.eventID, link.accountRef); err != nil {
+			return "", 0, err
+		}
+	}
 	return hex.EncodeToString(hash.Sum(nil)), count, nil
+}
+
+func executionAuthorityPolicyColumn(ctx context.Context, q orderQuerier) (string, error) {
+	hasPolicySchema, err := hasPaperPerformancePolicySchema(ctx, q)
+	if err != nil {
+		return "", err
+	}
+	if hasPolicySchema {
+		return "paper_performance_policy_event_id", nil
+	}
+	return "NULL", nil
+}
+
+func hasPaperPerformancePolicySchema(ctx context.Context, q orderQuerier) (bool, error) {
+	var schemaVersion int
+	if err := q.QueryRowContext(ctx, `SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&schemaVersion); err != nil {
+		return false, err
+	}
+	return schemaVersion >= 20, nil
 }
 
 func proveRiskReservationRecovery(ctx context.Context, q orderQuerier) (string, int, error) {

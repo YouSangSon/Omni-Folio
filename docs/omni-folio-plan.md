@@ -1,7 +1,7 @@
 # Omni Folio 구현 계획
 
-상태: G0·G1·G3 로컬 통과(G3.7 atomic paper halt/rollback safety 포함), G2 build/widget/browser·자동 accessibility/reduced-motion 증거 확보 및 physical profile/screen-reader 증거 보강 중
-기준일: 2026-08-24
+상태: G0·G1·G3 로컬 통과(G3.8C3 account-global paper performance, G3.8D current-selection strategy-window performance, G3.8E versioned local paper performance policy·atomic automatic halt/rollback, G3.8F1 scheduled one-shot paper policy runner 구현·fresh local/mock 검증 완료), G2 build/widget/browser·자동 accessibility/reduced-motion 증거 확보 및 physical profile/screen-reader 증거 보강 중
+기준일: 2026-08-31
 
 ## 목표
 
@@ -1078,3 +1078,196 @@ G1.8 closes only exact append-only cash movement between two currencies. It does
 - RED/GREEN tests and mutations prove failed backup-candidate cleanup, the second replay leg, the distinct-currency DB guard and the Flutter type/leg binding. Full regression, race, smoke, vulnerability and resource-cleanup evidence is recorded in [`../gates/g1d-fx-exchange.md`](../gates/g1d-fx-exchange.md).
 
 Still open: FX rate series and base-currency valuation, FX correction, broker cash reconciliation, jurisdiction-specific tax classification, physical-device screen-reader evidence and every live-money path.
+
+## 2026-08-28 G1.9 continuation: replay-verified local ledger activity
+
+G1.9 closes the import-only History gap without adding a mutation surface, broker request, valuation, schema migration, index or dependency.
+
+- `GET /v1/ledger/activities` runs the existing deterministic snapshot replay and a canonical full-event proof inside one read transaction before returning any row. Revision/count/sequence drift, invalid timestamp/decimal/type shape, bad cash correction or economic replay failure returns only the generic 500 and never a partial page.
+- Results are newest-first by `(occurred_at, sequence)`. The 1..100 limit uses `limit+1`; the opaque keyset cursor binds the first page's ledger revision, last event tuple and last event-record time so later backdated imports neither duplicate nor insert rows into the continuation.
+- The closed DTO includes exact signed amount, applicable trade fields, both FX legs and correction boolean. It omits account, event, source, instrument, receipt, correction-target and sequence identifiers and labels broker freshness unverified.
+- Flutter strictly validates the fixed nullable shape and event-specific sign/field rules. `최근 거래` preserves the CSV import as the first decision, uses vertical 320px/200% rows with combined semantics, labels the source as local/not current broker state, and retains the last normal page when refresh fails.
+- The UI intentionally consumes only the first page and says `최근 50건만 표시합니다` when a cursor exists. Full browsing, filters, details, export and mutation wait for an actual user need; the HTTP cursor contract is already available without another schema change.
+- The current single-process profile keeps the cursor encryption key in memory, so a restart invalidates outstanding cursors. A shared secret-manager key is required before claiming restart-stable or multi-replica pagination.
+
+Still open: full history browsing/search/export, source-level drill-down, FX rate series and base-currency valuation, trade/split/FX correction, broker cash/fill reconciliation, physical-device screen-reader evidence and every live-money path.
+
+## 2026-08-28 G1.10 continuation: append-only direct FX observations
+
+G1.10 closes the first durable prerequisite for valuation without changing portfolio math. A stored observation has one explicit direction: `rate` is quote-currency units per one base-currency unit. It is never inferred from an `FX_EXCHANGE` event and no inverse, cross, interpolation or fallback row is created.
+
+- Migration v10 adds a `STRICT`, insert-only `fx_observations` series with core-generated opaque ID, source observation identity, distinct uppercase currencies, positive canonical decimal, canonical UTC observed/fetched/recorded times and a canonical row hash. Exact source replay is idempotent; changed payloads and same-source pair/time conflicts fail closed.
+- `GET /v1/market-data/fx/latest` requires source, exact base/quote direction and an explicit as-of cutoff. Both observed and fetched time must be at or before the cutoff. It returns no account/source-private ID or converted portfolio amount and always labels the current local source `sample=true`, `state=stale`.
+- Backup v6/schema v10 adds the FX series digest/count to the verification receipt. Legacy v5/schema-v8 and schema-v9 artifacts are hash-checked in place, copied to an owned temporary directory, migrated through v10, verified with an empty FX proof, and removed without mutating their source.
+- `PortfolioSnapshot.valuation_status` stays `unavailable`; Flutter, broker/provider ingestion, scheduler, price observations, valuation, PnL and performance are unchanged.
+
+Still open: a versioned as-of/freshness policy, cash-only base-currency valuation, security-price observations and holding valuation, base-currency cost/PnL, TWR/XIRR, provider ingestion, correction, broker cash reconciliation, UI and every live-money path.
+
+## 2026-08-28 G1.11 continuation: replay-verified direct-FX cash valuation
+
+G1.11 adds a separate read-only `GET /v1/portfolio/cash-valuation` instead of changing the authoritative portfolio snapshot. `direct_fx_cash_v1` proves the current ledger and the complete FX series in one read transaction, then values only cash. Identity and zero balances need no rate; every other currency requires the exact stored `cash currency -> requested base currency` direction.
+
+Eligibility is explicit and no-lookahead: `observed_at <= fetched_at <= recorded_at <= valuation_as_of`, with a 24-hour observation-age boundary inclusive. The calculation uses exact rational multiplication/addition and canonical decimal output. It does not inverse, cross, interpolate, infer from `FX_EXCHANGE`, or round for display. A missing or over-age pair suppresses the whole aggregate total while preserving native cash lines and sanitized issues. Local fixture results remain machine-labelled `sample/stale`.
+
+Independent review found that the first GREEN implementation replayed cash but did not call the full ledger metadata/canonical-event proof. A regression test demonstrated that `ledger_meta.revision=99` with one event was incorrectly certified. The final implementation reuses `proveLedgerEvents` in the same transaction and checks its revision/recorded timestamp against the snapshot, so that corruption now returns a generic 500.
+
+Still open: provider FX ingestion/source priority/market-calendar policy, security prices, holding and base-currency PnL/performance valuation, historical ledger valuation, display rounding, Flutter UI, broker cash reconciliation and every live-money path.
+
+## 2026-08-28 G1.12 continuation: durable security price observations
+
+G1.12 closes the next durable prerequisite for holding valuation without changing portfolio math or adding another public surface. A local-fixture observation binds source identity, instrument ID, symbol, venue, currency, positive canonical price, explicit `unspecified` adjustment and canonical UTC observed/fetched/recorded times. Exact replay is idempotent; conflicting identity or instrument/time slot fails closed.
+
+The internal as-of helper filters on exact identity and requires all three timestamps at or before the cutoff, using parsed time comparison rather than lexical timestamp ordering. Schema v11 adds a `STRICT`, insert-only series and canonical row hash. Backup v7 proves digest/count; v6/schema-v10 artifacts are hash-checked, copied, migrated and verified without modifying their source. Restore also pins the full table DDL, latest index and triggers, including for an empty series.
+
+Independent review initially found that an empty candidate could weaken a CHECK constraint and still pass. The final TDD regression weakens `price_adjustment`, proves rejection and received GO on re-review.
+
+Still open: holding/cost/PnL/performance valuation, provider price/FX ingestion, source priority and market-calendar freshness, public API/UI, correction and broker reconciliation. `PortfolioSnapshot.valuation_status` remains `unavailable`.
+
+## 2026-08-28 G1.13 continuation: internal native-currency holding valuation
+
+G1.13 adds `native_holding_valuation_v1` as a package-internal read model instead of changing the public portfolio snapshot. One SQLite read-only transaction replays the current FIFO holdings, proves the append-only ledger revision and recorded time, and validates the complete security-price series before calculating anything.
+
+Price identity stays conservative because holdings do not yet carry a venue. An observation must match the internal instrument ID, symbol, currency and `unspecified` adjustment, and every as-of observation for that identity must resolve to exactly one venue. Eligibility requires `observed_at <= fetched_at <= recorded_at <= valuation_as_of`; the 24-hour age boundary is inclusive. Missing, ambiguous, stale or future knowledge preserves the native holding line but suppresses every aggregate total.
+
+Complete results expose exact native-currency cost basis, market value, unrealized PnL and deterministic per-currency totals with local-fixture sample/stale provenance. The model does not translate historical cost with a current FX rate, infer a venue by symbol, use OHLCV close or broker evaluation amount, add a public route/OpenAPI/Flutter UI, or change `PortfolioSnapshot.valuation_status` from `unavailable`. Schema v11 and backup v7 already preserve all required inputs, so no migration or backup bump was added.
+
+At the G1.13 checkpoint, the ledger rejected a partial FIFO allocation whose exact rational cost had no finite decimal representation and rolled the whole apply back. G1.14 supersedes that historical runtime boundary with `fifo_exact_else_half_even_residual_8_v1` while preserving every previously accepted exact allocation. The full holding read model still locks same-venue newest-price selection and separately excludes future observed, fetched and recorded timestamps.
+
+Public promotion audit found a narrow explicit-as-of GET contract feasible, but Flutter cannot safely manufacture that cutoff from a mobile device clock and no runtime path currently records prices outside tests. Decision: do not add a dead API/UI surface yet. Build the Kiwoom-first credential-free quote-to-durable-price contract, then promote the endpoint with a server-trusted cutoff and retained sample/stale UI state.
+
+Still open: public/base-currency whole-portfolio and performance valuation, historical FX cost semantics, display/currency rounding, jurisdictional tax-basis policy, durable instrument/listing ownership, provider ingestion/source priority/calendar freshness, Flutter UI, broker reconciliation and every live-money path.
+
+## 2026-08-29 G1.14 continuation: versioned recurring FIFO allocation
+
+G1.14 closes the prior recurring-rational rejection without changing any ledger that could already commit. For each canonical SELL event and FIFO lot, `fifo_exact_else_half_even_residual_8_v1` consumes a fully closed lot's remaining cost exactly. A partial lot keeps an exact finite proportional allocation unchanged; only a recurring result is rounded half-even at the larger of eight decimal places and the current finite lot-cost scale. The exact residual remains on the open lot and the final close consumes it, so lifetime allocated cost equals BUY cost.
+
+This policy is deliberately event-order dependent: two separate SELL events may temporarily allocate one last decimal differently from one combined SELL, while final lot closure conserves total cost. Existing exact allocation `1/2048` remains `0.00048828125`; tiny recurring, repeated `1/3`, split and multi-lot cases are executable regressions. Snapshot/OpenAPI/Flutter pin the exact policy string, and restore normalizes only a missing legacy golden policy to v1. Any future v2 must add a durable selector and schema/backup migration before replay behavior changes.
+
+The policy is analytical, not a tax filing rule. The [IRS FIFO description](https://www.irs.gov/pub/irs-pdf/p550.pdf) supports oldest-lot ordering for unidentified US shares, while the rounding rule is an Omni Folio reproducibility decision informed by the [General Decimal Arithmetic Specification](https://speleotrove.com/decimal/decarith.pdf). Go's [`math/big.Rat`](https://pkg.go.dev/math/big) remains the exact arithmetic substrate; custom integer half-even quantization is used because `Rat.FloatString` specifies half-away-from-zero.
+
+TDD checkpoints are RED `5a1ac93` and GREEN `d9fac4a`. Full `make check`, `make smoke`, Go race, `govulncheck` and 78.1% Go statement coverage pass. Independent review found and blocked an always-quantize draft because it changed previously exact ledgers; the corrected exact-if-finite diff received arithmetic and compatibility GO, with documentation as the only remaining blocker closed by this leaf.
+
+## 2026-08-28 G4Q continuation: credential-free Kiwoom latest trade
+
+The next prerequisite stops before persistence. Kiwoom's official `ka10001` current-price sample carries `cur_prc` but no provider event time; the official `ka10079` one-tick sample carries both `cur_prc` and `cntr_tm`. G4Q therefore adds only an internal `LatestTrade` normalization contract on the existing OAuth/read transport.
+
+- The request is fixed to KRX six-digit symbol, `tic_scope=1` and `upd_stkpc_tp=0` on `/api/dostk/chart`.
+- The first newest tick becomes exact positive price plus separate provider-observed and locally fetched UTC times. Every returned first-page row must be valid and non-increasing; different prices sharing the provider's second-level timestamp and provider time after fetch time fail closed.
+- No provider message, account identifier or token enters the result. No credential, external request, dependency, route, Flutter surface, scheduler or database mutation was added.
+
+Persistence is deliberately deferred. The official sample does not establish a collision-safe event ID, timezone or price-adjustment provenance, while the current security-price series accepts only explicit `local_fixture`/`unspecified` identities. Inventing those fields would make replay and holding valuation look stronger than the evidence.
+
+TDD checkpoints are RED `f00230e`, GREEN `ea86544`, ambiguity regression RED `cb1acb3` and fix `cf5c15c`. The pinned primary source and executable checks are recorded in [`../gates/g4q-kiwoom-latest-trade.md`](../gates/g4q-kiwoom-latest-trade.md).
+
+## 2026-08-28 G4R continuation: credential-free Kiwoom realtime price frame
+
+G4R fixes the smallest consumer-safe part of official realtime `0B` before selecting a WebSocket library. One pure registration builder emits the official single-symbol `REG` shape; one stdlib JSON parser accepts only `REAL` frames and returns internal price updates.
+
+- FID `10` becomes an exact positive price. FID `20` becomes only a naive `HH:mm:ss` provider clock; a separately injected canonical UTC receive time is not relabeled as provider observation time.
+- Same-frame equal symbol/clock/price rows dedupe, while different prices sharing that second fail closed. Every entry must validate before any result is returned.
+- External frames are capped at 1 MiB before decode and 100 entries before normalization. Numeric JSON prices, mixed event types and trailing JSON fail closed.
+- The official sample lists FID `9081` as exchange classification but does not pin values. The DTO therefore omits exchange instead of claiming KRX from a bare item.
+
+No WebSocket dependency, connection, LOGIN/PING, reconnect/resubscribe/backpressure, credential, durable identity, persistence, scheduler, route or Flutter consumer was added. RED/GREEN commits are `2e80583`/`35116ea`; review boundary regression/fix commits are `dac201e`/`4da510f`. Evidence is in [`../gates/g4r-kiwoom-realtime-price.md`](../gates/g4r-kiwoom-realtime-price.md).
+
+## 2026-08-30 G4S continuation: durable Kiwoom latest-trade observation
+
+G4S stores the existing credential-free `KiwoomLatestTrade` DTO in the append-only security-price series without treating Kiwoom's second-level tick time as a unique trade-tape event ID. The durable source is `kiwoom_mock` or `kiwoom_production`; the source observation ID is a SHA-256 observation slot over `ka10079`, source, internal instrument ID, `XKRX`, six-digit KRX symbol, `KRW`, `price_adjustment=unspecified` and provider observed second.
+
+The first valid row fixes the slot price and first fetched time. Re-fetching the same slot with the same price is an idempotent no-op even when `fetched_at` changes; a different price in the same provider second fails closed. Direct internal writes also reject tampered IDs and non-KRX/KRW Kiwoom identities, so a caller cannot smuggle AAPL/XNAS/USD under the Kiwoom namespace.
+
+Schema v12 rebuilds only `security_price_observations` to admit the two Kiwoom source namespaces and preserve strict insert-only storage, source identity uniqueness, slot uniqueness, canonical row hash and latest index. Backup format stays v7 but declares schema v12. A v7/schema-v11 backup remains accepted only after its original DB hash is checked, copied to an owned temporary candidate, migrated to v12 and verified without mutating the source artifact.
+
+Still open: credentialed observation of official timezone/freshness/duplicate behavior, server-trusted cutoff, source priority and calendar policy. Existing holding valuation and public portfolio snapshot still read only `local_fixture`; no route, Flutter UI, scheduler, realtime ingestion, order decision or live authority was added. Evidence is in [`../gates/g4s-kiwoom-durable-price-observation.md`](../gates/g4s-kiwoom-durable-price-observation.md).
+
+## 2026-08-30 G4T continuation: one-shot Kiwoom latest-trade capture
+
+G4T closes only the missing internal seam between G4Q normalization and G4S persistence. One service method validates the concrete client and six-digit KRX symbol before network access, derives `instrument_<lowercase symbol>` with the same helper as ledger import, calls the existing `LatestTrade` read once, then delegates the returned DTO to the existing append-only writer. Direct Kiwoom writes reject any alternate instrument ID, preventing the prior `instrument_005930` versus `krx_005930` split.
+
+The capture layer adds no retry. An identical later fetch returns the first durable observation; provider failure or a same-provider-second different-price conflict returns no observation and leaves the complete price series and recovery proof unchanged. Existing read transport behavior, environment-to-source mapping, schema v12, backup v7 and the `local_fixture`-only valuation boundary are reused without modification.
+
+No durable listing registry, runtime caller, scheduler, worker, route, OpenAPI/Flutter surface, credential, external request, freshness/source-priority/calendar policy, strategy input, order authority or live-money path was added. Symbol changes, multi-venue listings and identifier corrections remain explicit prerequisites for a future owner-declared registry. Evidence is in [`../gates/g4t-kiwoom-one-shot-price-capture.md`](../gates/g4t-kiwoom-one-shot-price-capture.md).
+
+## 2026-08-30 G4U continuation: owner-declared instrument listing ownership
+
+G4U replaces G4T's symbol-derived write authority with a local owner-declared current listing registry. Schema v13 adds an insert-only `DECLARE`/`REVOKE` event log keyed by `(venue,symbol,currency)`, with tuple-local predecessor checks, canonical row hashes, legal-transition replay and explicit revoke-before-correction. The declaration is local authority only; it is not provider verification or historical listing truth.
+
+Backup v8 binds the listing replay hash, total event count and active count to both source and restored candidate. Legacy v8-v12 artifacts are hash-checked, copied, migrated and verified without modifying the source. Migration 013 creates an empty registry and never rewrites price rows or infers a declaration from `instrument_<symbol>` or existing Kiwoom observations.
+
+G4T now resolves `XKRX/symbol/KRW` before calling the provider, so missing, revoked or corrupt ownership causes zero network calls. G4S and direct Kiwoom writes re-resolve inside the insert transaction and require the exact declared instrument. Existing v12 Kiwoom observations remain structurally replayable and exact replays remain no-ops, but they cannot create a new price or listing authority.
+
+Still open: authenticated declaration workflow, provider security-master evidence, effective dating, timezone/freshness/calendar/source-priority policy, runtime scheduling, valuation promotion, strategy/order use and all live-money paths. Evidence is in [`../gates/g4u-kiwoom-listing-ownership.md`](../gates/g4u-kiwoom-listing-ownership.md).
+
+## 2026-08-30 G3.8A continuation: append-only paper operational evaluation
+
+G3.8A adds only replay-derived operational completeness evidence for the exact current paper strategy selection and account. Go first proves the full append-only order and strategy registries, then classifies terminal samples, active orders, and unresolved submit/cancel actions as `INSUFFICIENT/no_terminal_sample`, `PASS/operationally_complete`, or `DEGRADED/unresolved_action`. Callers cannot supply metrics, decisions, or thresholds.
+
+Schema v14 stores canonical evaluation JSON and hashes in a STRICT insert-only log. Each strategy selection also seals the current global evaluation sequence. Recovery requires every evaluation sequence to be contiguous, after its selection's open boundary, and no later than the next selection's close boundary. This causal discriminator prevents a superseded strategy evaluation from being certified even when its timestamp equals the next selection time.
+
+Backup v9 binds the evaluation count and rows into strategy-registry recovery. Legacy v8/schema-v13 artifacts are hash-checked, copied, migrated, and verified without source mutation. Backfilled sequence zero preserves the legacy selection hash representation; nonzero boundaries are included in new proofs. A regression fixture contains real legacy strategy evidence and a selection rather than relying on an empty registry.
+
+This gate does not calculate investment performance and does not mutate strategy or execution authority. SELL/down-rebalance, cash accounting, fees, taxes, slippage, latency, durable price marks, an equity curve, and versioned return/drawdown thresholds remain prerequisites for automatic degradation halt or rollback. Evidence is in [`../gates/g3h-paper-operational-evaluation.md`](../gates/g3h-paper-operational-evaluation.md).
+
+## 2026-08-30 G3.8B continuation: Go-trusted strategy execution policy
+
+G3.8B closes a trust-boundary gap before paper accounting. Python already emitted and validated an exact execution object, but Go registration and recovery previously accepted any `execution` value when a producer recomputed the enclosing result hash. The shared Go evidence decoder now independently requires canonical decimal strings, positive starting cash, non-negative fee/tax/slippage, whole-bar delay of at least one, participation in `(0,1]`, and the fixed close-signal/next-eligible-open fill semantics.
+
+The public strategy-improvement result schema now declares the same exact execution object. Valid artifacts and hashes are unchanged; SQLite remains schema v14 and backup v9 because no durable representation changed. This gate deliberately adds no typed runtime loader or execution-policy hash until paper accounting consumes one, and no paper order, SELL, capital allocation, cost application, equity/PnL, scheduler, authority mutation, broker call, UI, credential, or live path. Evidence is in [`../gates/g3i-strategy-execution-policy.md`](../gates/g3i-strategy-execution-policy.md).
+
+## 2026-08-30 G3.8C1 continuation: immutable account-global paper accounting session
+
+G3.8C1 records one immutable starting-capital authority per paper account before any future cash, cost, SELL, equity, or performance calculation. The session derives starting cash and the complete execution-policy JSON/hash only from the exact initially selected immutable research artifact. A later strategy selection does not reset that account's initial capital because its paper orders and future positions remain account-global.
+
+Schema v15 adds the insert-only session registry and backup v10 adds an independent digest/count. Recovery pins the exact table, uniqueness, state guard, and no-update/no-delete triggers. v9/schema-v14 inputs are hash-checked, copied, migrated, and verified with the empty session proof; their legacy paper orders remain replayable but uncapitalized and are never backfilled. The selected-policy loader and dedicated recovery proof fail closed on either strategy or order corruption. Independent reviews found two Important gaps: standalone recovery omitted order proof, and SQLite's starting-cash predicate disagreed with the shared positive canonical-decimal contract at `0.01`/`1.0`. Both were reproduced by focused RED regressions, fixed, and returned GO on re-review.
+
+Fresh local evidence at the 2026-08-30 C1 checkpoint was `make check`, `make smoke`, `go test -race -count=1 ./...`, `govulncheck ./...`, and `git diff --check`, all exit 0. At that checkpoint no runner fill or accounting existed; G3.8C2 below supersedes that runtime boundary without changing this historical C1 evidence. Evidence is in [`../gates/g3j-paper-accounting-session.md`](../gates/g3j-paper-accounting-session.md).
+
+## 2026-08-31 G3.8C2 continuation: ex-post paper fills and capital-safe accounting
+
+G3.8C2 supersedes G3.6's historical BUY-only ask fixture for capitalized paper orders with immutable `paper-signal.v3` and closed `paper_fixture` bars. The signal transaction persists a global observation sequence cutoff, requires the signal bar to be latest in its series at that cutoff, and allows only later bars. The exact `delay_bars`-th later bar is first eligible; execution uses its open and final volume only after `source_available_at`, so modeled `occurred_at=open_at` is explicitly ex-post and not opening-auction or live broker evidence.
+
+The account-global session and current strategy must have the same execution-policy SHA. Signed target delta creates BUY or SELL, target zero requests full reduction, and a different target fails while one account/symbol order remains active. KRX quantity is a canonical whole share capped at `4611686018427387903`; capacity is floored participation after prior account/symbol/bar consumption. Each non-zero fill applies the exact fixed KRW fee, SELL-only notional tax, and adverse slippage from the eligible open.
+
+`order_events.FILL_RECORDED` remains the sole durable fill journal. Complete replay from session starting cash derives cash, FIFO quantities/cost, fees, taxes, slippage, realized PnL, and capitalized fill count while preventing overdraft and oversell. Local admission and every fill require the current execution lease event and exact fencing token. Paper-specific authorization does not weaken synthetic K2C, call Kiwoom, write the imported general ledger, or create mutable cash/lot tables.
+
+Schema v17 and backup v11 bind sessions, bars, cutoffs, authorizations, capitalized fills, and canonical replay-derived account state. Backup v10/schema v15 and older supported inputs migrate through owned copies without capitalizing legacy v1/v2 orders. Application/shared fill writers are closed; direct raw SQLite is outside that writer-authority boundary, and recovery/restore activation independently recalculates and rejects forged arithmetic.
+
+Task 1-4 independent reviews closed all scoped findings. Fresh `make check`, `make smoke`, full Go race, `govulncheck`, final documentation diff, and scoped owned-resource cleanup passed on 2026-08-31 KST; exact local/mock evidence is in [`../gates/g3k-paper-fill-accounting.md`](../gates/g3k-paper-fill-accounting.md). At this C2 checkpoint, immutable valuation cutoffs, marks, equity, returns, and drawdown were still open; G3.8C3 below supersedes that historical boundary.
+
+After C2 stabilization, a behavior-preserving R1 refactor moved the single canonical decimal/FIFO implementation into an infrastructure-free exact shared kernel and moved pure paper fill/account replay rules into `internal/paperdomain`. SQLite queries, transactions, lease/fencing, provenance validation, journal hashes, recovery, schema, backup, and public/UI contracts remain outside that domain package. Direct malformed fills now fail atomically without changing account state; at that R1 checkpoint G3.8C3 performance evidence was not yet claimed.
+
+## 2026-08-31 G3.8C3 continuation: immutable account-global paper performance evidence
+
+G3.8C3 adds one append-only account-global performance series without copying the accounting algorithm. Each event captures transaction-current order and market cutoffs, exact current strategy-selection provenance including `no_strategy`, and complete same-`as_of` `paper_fixture` KRX/KRW daily-close marks for every open position. Cash-only points still require an eligible cutoff-bounded close anchor, while missing, ambiguous, arbitrary, or future marks fail with zero writes.
+
+Bounded replay uses only capitalized v3 fills at or below the event cutoff whose bound ex-post fill bar closes by `as_of`. It derives exact cash, open cost, market value, realized/unrealized/total PnL and equity, then records scale-8 half-even period/cumulative returns and drawdown from unrounded rational values. Strategy selection and rollback never reset the session baseline, account state, predecessor, peak, or max drawdown.
+
+Schema v18 and backup v12 independently reconstruct every cutoff, mark, value, predecessor, canonical JSON, and hash. Backup v11/schema v17 remains the historical C2 input: its source is verified first, then an owned copy migrates to an empty C3 log without synthesizing performance history. Fresh focused/full race, `make check`, `make smoke`, `govulncheck ./...`, `git diff --check`, independent review, and owned-resource cleanup evidence is in [`../gates/g3l-paper-performance-evidence.md`](../gates/g3l-paper-performance-evidence.md).
+
+Still open: versioned performance thresholds, scheduler, automatic halt/rollback provenance, public API/UI, broker-backed evaluation, credentials/live execution, deployment, promotion authority, and any profitability claim.
+
+## 2026-08-31 G3.8D continuation: current-selection strategy-window performance evidence
+
+G3.8D adds one internal append-only series derived only from fully recovered G3.8C3 points that belong to the current strategy selection and account-global paper session. The first eligible point is a zero-return baseline; later points recompute exact peak, period/cumulative return, drawdown, and max drawdown from that selection window. Selection change starts a new window and `no_strategy`, stale selection, or stale latest point writes nothing.
+
+Schema v19 and backup v13 pin the table, uniqueness, five source foreign keys, insert-only/state guards, digest, event count, and accumulated sample count. Backup v12/schema v18 is verified at source, copied, migrated to an empty D log, and never mutated or backfilled. Focused/full/race and independent implementation review passed locally; final check, smoke, cleanup, and documentation evidence is in [`../gates/g3m-paper-strategy-performance.md`](../gates/g3m-paper-strategy-performance.md).
+
+## 2026-08-31 G3.8E continuation: versioned paper performance safety policy
+
+G3.8E consumes only the fully recovered latest G3.8D row for the exact current non-`no_strategy` selection. The dependency-free `paper-strategy-performance-safety.v1` policy records `INSUFFICIENT` below two same-selection samples, otherwise prioritizes `max_drawdown >= 0.1`, then `cumulative_return <= -0.05`, and records `HOLD` inside those local paper bounds. These constants are conservative local defaults, not empirical optima, advice, live thresholds, or a profitability claim.
+
+One immediate SQLite transaction records the policy row first, deterministically halts every authority armed at the captured global cutoff in lexical account order, and appends one exact-source one-pop strategy rollback. Full non-recursive recovery verifies canonical JSON/hash, three cutoffs, latest-at-cutoff evidence, one-clock provenance, fencing, forward/reverse action coverage, deterministic IDs, retries, concurrency, and corruption before commit or cached retry.
+
+Schema v20 and backup v14 pin the append-only policy journal, rebuilt authority/selection links, canonical v19 FK baseline, pre/post migration journal/FK/trigger proofs, restore objects, and policy digest/count/action receipt. Backup v13/schema v19 is verified unchanged, copied to an owned temporary candidate, and migrated only there to an empty policy log. Focused/full/race, `make check`, `make smoke`, `govulncheck`, independent clean review, success/failure/SIGINT/SIGTERM/stale-owner cleanup, and zero final inventory evidence is in [`../gates/g3n-paper-performance-policy.md`](../gates/g3n-paper-performance-policy.md).
+
+Still open: scheduler, alerting, API/UI, broker-backed evaluation, credential/live execution, deployment, shadow/live promotion authority, and any profitability claim.
+
+## 2026-08-31 G3.8F1 continuation: scheduled one-shot paper policy runner
+
+G3.8F1 adds `runDuePaperPerformancePolicy` and `omni-core paper-run-due -db <path> -account <kiwoom_account_...>`. The runner chooses only the latest available local `paper_fixture` KRX/KRW/1d/Asia-Seoul `price_adjustment=unspecified` close whose source availability, fetch time, and recorded time are not after the runner clock. It then closes the existing C3 account performance, D strategy-window performance, and E safety policy chain.
+
+This checkpoint deliberately adds no scheduler table or daemon. Duplicate local runs and crash retries are handled by the already durable unique keys for performance, strategy-performance, and policy events. A completed chain is returned on retry only after paper performance policy root recovery passes, even if the prior policy action already rolled the selection back to `no_strategy`; an incomplete mark set or no current strategy fails closed without writing a new performance row.
+
+Evidence: `go test -count=1 -run '^TestG38FScheduled' .` was RED on the missing runner, `go test -count=1 -run '^TestG38FPaperRunDueCLI$' .` was RED on the missing CLI command, `go test -count=1 -run '^TestG38FScheduledPaperRunRetryRejectsPrerequisiteCorruption$' .` was RED on cached retry hiding prerequisite corruption, and `go test -count=1 -run '^TestG38F' .`, `go test -race -count=1 -run '^TestG38F' .`, `make check`, `make smoke`, `make clean-test-resources`, and final owned-resource inventory passed after implementation. Details are in [`../gates/g3o-scheduled-paper-runner.md`](../gates/g3o-scheduled-paper-runner.md).
+
+Still open: G3.8F2 DB-leased/fenced always-on runner with heartbeat/TTL, stale-owner recovery, lease-loss fail-closed behavior, success/failure/SIGINT/SIGTERM cleanup proof, alerting, public API/UI, broker-backed evaluation, credential/live execution, CronJob packaging, deployment, shadow/live promotion authority, official market calendar/freshness proof, and any profitability claim.

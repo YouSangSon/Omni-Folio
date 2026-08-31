@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -10,6 +12,98 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestG38BRegistryRejectsUnsafeExecutionContract(t *testing.T) {
+	valid := strategyArtifact(t, nil)
+	tests := []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{"missing field", func(v map[string]any) { delete(v, "fee") }},
+		{"extra field", func(v map[string]any) { v["commission_currency"] = "KRW" }},
+		{"zero starting cash", func(v map[string]any) { v["starting_cash"] = "0" }},
+		{"negative fee", func(v map[string]any) { v["fee"] = "-1" }},
+		{"negative tax", func(v map[string]any) { v["tax"] = "-0.001" }},
+		{"excess tax", func(v map[string]any) { v["tax"] = "1.0001" }},
+		{"negative slippage", func(v map[string]any) { v["slippage_bps"] = "-1" }},
+		{"excess slippage", func(v map[string]any) { v["slippage_bps"] = "10000" }},
+		{"zero delay", func(v map[string]any) { v["delay_bars"] = "0" }},
+		{"fractional delay", func(v map[string]any) { v["delay_bars"] = "1.5" }},
+		{"zero participation", func(v map[string]any) { v["max_participation"] = "0" }},
+		{"excess participation", func(v map[string]any) { v["max_participation"] = "1.1" }},
+		{"noncanonical money", func(v map[string]any) { v["starting_cash"] = "01" }},
+		{"negative zero fee", func(v map[string]any) { v["fee"] = "-0" }},
+		{"numeric money", func(v map[string]any) { v["starting_cash"] = json.Number("10000") }},
+		{"wrong signal price", func(v map[string]any) { v["signal_price"] = "same_bar_close" }},
+		{"wrong fill price", func(v map[string]any) { v["fill_price"] = "same_bar_close" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			svc, _ := testService(t, nil, nil)
+			artifact := rehashedStrategyArtifact(t, valid, func(result map[string]any) {
+				test.mutate(result["execution"].(map[string]any))
+			})
+			if _, err := svc.registerStrategyEvidence(context.Background(), artifact); err == nil {
+				t.Fatal("unsafe execution contract was admitted")
+			}
+			var count int
+			if err := svc.db.QueryRow(`SELECT COUNT(*) FROM strategy_research_evidence`).Scan(&count); err != nil || count != 0 {
+				t.Fatalf("rejected execution contract left evidence: count=%d err=%v", count, err)
+			}
+		})
+	}
+}
+
+func TestG38C1LoadsOnlyCurrentSelectedExecutionPolicy(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	ctx := context.Background()
+	evidence, err := svc.registerStrategyEvidence(ctx, strategyArtifact(t, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, err := svc.selectPaperCandidate(ctx, evidence.ResultSHA256, noStrategySelectionEvent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, err := loadCurrentStrategyExecutionPolicy(ctx, svc.db, evidence.ResultSHA256, selected.CurrentEventID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if policy.StartingCash != "10000" || policy.Fee != "1" || policy.Tax != "0.001" || policy.SlippageBPS != "10" ||
+		policy.DelayBars != 1 || policy.MaxParticipation != "0.5" || policy.SignalPrice != "bar_close" ||
+		policy.FillPrice != "next_eligible_bar_open" || policy.SHA256 != "84dab9f69764b1d9c880d45b2e1b440db5b6f0b9cb48ae7c3850ad831d382b23" {
+		t.Fatalf("execution policy=%+v", policy)
+	}
+	if _, err := svc.rollbackPaperCandidate(ctx, selected.CurrentEventID, selected.CurrentEventID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadCurrentStrategyExecutionPolicy(ctx, svc.db, evidence.ResultSHA256, selected.CurrentEventID); err == nil {
+		t.Fatal("superseded selection loaded an execution policy")
+	}
+}
+
+func rehashedStrategyArtifact(t testing.TB, artifact []byte, mutate func(map[string]any)) []byte {
+	t.Helper()
+	var result map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(artifact))
+	decoder.UseNumber()
+	if err := decoder.Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	mutate(result)
+	delete(result, "result_sha256")
+	body, err := strategyCanonicalJSON(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256(body)
+	result["result_sha256"] = hex.EncodeToString(hash[:])
+	canonical, err := strategyCanonicalJSON(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return canonical
+}
 
 func TestG3RegistryRegistersPythonEvidenceAndSelectsFailClosed(t *testing.T) {
 	svc, _ := testService(t, nil, nil)
@@ -185,7 +279,7 @@ func TestG3RegistryBackupRestoresSelectionProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v5" || manifest.SchemaVersion != "omni-folio.sqlite.v9" ||
+	if manifest.FormatVersion != "omni-folio-backup.v14" || manifest.SchemaVersion != "omni-folio.sqlite.v20" ||
 		manifest.StrategyRegistrySHA256 == "" || manifest.StrategyEvidenceCount != 1 || manifest.StrategySelectionEventCount != 1 ||
 		manifest.SelectedStrategyResultSHA256 != evidence.ResultSHA256 {
 		t.Fatalf("backup omitted strategy registry proof: %+v", manifest)
@@ -289,7 +383,10 @@ func strategyArtifact(t *testing.T, mutate func(map[string]any)) []byte {
 		"--bars", filepath.Join(root, "contracts", "fixtures", "strategy-market-bars.csv"),
 		"--config", configPath,
 	)
-	command.Env = append(os.Environ(), "PYTHONPATH="+filepath.Join(root, "services", "research"))
+	command.Env = append(os.Environ(),
+		"PYTHONDONTWRITEBYTECODE=1",
+		"PYTHONPATH="+filepath.Join(root, "services", "research"),
+	)
 	artifact, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("generate Python strategy artifact: %v\n%s", err, artifact)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import tempfile
 import unittest
 from datetime import date, timedelta
@@ -94,6 +95,14 @@ class ImprovementTest(unittest.TestCase):
         self.assertEqual(result_schema["properties"]["schema_version"]["const"], first["schema_version"])
         self.assertFalse(result_schema["additionalProperties"])
         self.assertIn("execution", result_schema["required"])
+        execution_schema = result_schema["properties"]["execution"]
+        self.assertFalse(execution_schema["additionalProperties"])
+        self.assertEqual(
+            set(execution_schema["required"]),
+            {"starting_cash", "fee", "tax", "slippage_bps", "delay_bars", "max_participation", "signal_price", "fill_price"},
+        )
+        self.assertEqual(execution_schema["properties"]["signal_price"]["const"], "bar_close")
+        self.assertEqual(execution_schema["properties"]["fill_price"]["const"], "next_eligible_bar_open")
         self.assertFalse(result_schema["properties"]["manifest"]["additionalProperties"])
         self.assertFalse(result_schema["properties"]["promotion"]["additionalProperties"])
         self.assertEqual(
@@ -176,6 +185,44 @@ class ImprovementTest(unittest.TestCase):
             no_trade_gate["promotion"] = {**no_trade_gate["promotion"], "minimum_validation_trade_count": 0}  # type: ignore[index]
             with self.assertRaisesRegex(ValueError, "at least 1"):
                 run_experiment(bars, no_trade_gate)
+
+    def test_execution_costs_reject_negative_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            bars = self.write_bars(Path(temporary))
+            for field in ("fee", "tax", "slippage_bps"):
+                with self.subTest(field=field):
+                    config = self.config()
+                    config["execution"] = {**config["execution"], field: "-0"}  # type: ignore[index]
+                    with self.assertRaisesRegex(ValueError, "canonical decimal string"):
+                        run_experiment(bars, config)
+
+    def test_execution_rejects_tax_above_one_and_full_slippage(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            bars = self.write_bars(Path(temporary))
+            for field, value in (("tax", "1.0001"), ("slippage_bps", "10000")):
+                with self.subTest(field=field):
+                    config = self.config()
+                    config["execution"] = {**config["execution"], field: value}  # type: ignore[index]
+                    with self.assertRaisesRegex(ValueError, "out of range"):
+                        run_experiment(bars, config)
+
+    def test_result_schema_execution_ranges_match_runtime(self) -> None:
+        schema = json.loads((ROOT / "contracts" / "strategy-improvement-result.schema.json").read_text(encoding="utf-8"))
+        execution = schema["properties"]["execution"]["properties"]
+        cases = {
+            "starting_cash": (["1", "0.01"], ["0", "-1", "01", "1.0"]),
+            "fee": (["0", "1", "0.01"], ["-0", "-1", "01", "1.0"]),
+            "tax": (["0", "0.001", "1"], ["-0", "-0.1", "00", "1.0001"]),
+            "slippage_bps": (["0", "10", "0.5", "9999.999"], ["-0", "-1", "10.0", "10000"]),
+            "delay_bars": (["1", "10"], ["0", "-1", "1.5", "01"]),
+            "max_participation": (["1", "0.5", "0.001"], ["0", "-0", "-1", "1.1", "2"]),
+        }
+        for field, (accepted, rejected) in cases.items():
+            pattern = schema["$defs"][execution[field]["$ref"].rsplit("/", 1)[1]]["pattern"]
+            for value in accepted:
+                self.assertIsNotNone(re.fullmatch(pattern, value), f"{field} rejected {value}")
+            for value in rejected:
+                self.assertIsNone(re.fullmatch(pattern, value), f"{field} admitted {value}")
 
     def test_cli_writes_canonical_result_and_only_accepts_local_inputs(self) -> None:
         self.assertEqual({action.dest for action in parser()._actions if action.dest != "help"}, ALLOWED_ARGUMENTS)

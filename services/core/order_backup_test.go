@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -9,6 +10,269 @@ import (
 	"testing"
 	"time"
 )
+
+func TestG38DBackupV14StrategyPerformanceProof(t *testing.T) {
+	svc, asOf := g38c3CashPerformanceFixture(t)
+	event, err := svc.evaluatePaperPerformance(context.Background(), k2aAccountRef, asOf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	strategyEvent, err := svc.evaluatePaperStrategyPerformance(context.Background(), k2aAccountRef,
+		event.StrategySelectionEventID, event.PerformanceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := provePaperPerformanceRecovery(context.Background(), svc.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden := writeCurrentSnapshot(t, svc.db)
+	strategyProof, err := provePaperStrategyPerformanceRecovery(context.Background(), svc.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backup := filepath.Join(t.TempDir(), "paper-strategy-performance-v14.db")
+	manifestPath := backup + ".manifest.json"
+	manifest, err := createBackup(svc.db, backup, golden, manifestPath, svc.now, svc.id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.FormatVersion != "omni-folio-backup.v14" || manifest.SchemaVersion != "omni-folio.sqlite.v20" ||
+		manifest.PaperPerformanceStateSHA256 != proof.SHA256 || manifest.PaperPerformanceEventCount != 1 ||
+		manifest.PaperPerformanceMarkCount != event.MarkCount || manifest.VerificationReceipt.PaperPerformanceCheck != "ok" ||
+		manifest.VerificationReceipt.CandidatePaperPerformanceStateSHA256 != proof.SHA256 ||
+		manifest.PaperStrategyPerformanceStateSHA256 != strategyProof.SHA256 || manifest.PaperStrategyPerformanceEventCount != 1 ||
+		manifest.PaperStrategyPerformanceSampleCount != strategyEvent.SampleCount ||
+		manifest.VerificationReceipt.PaperStrategyPerformanceCheck != "ok" ||
+		manifest.VerificationReceipt.CandidatePaperStrategyPerformanceStateSHA256 != strategyProof.SHA256 {
+		t.Fatalf("v14 manifest omitted strategy performance proof: %+v", manifest)
+	}
+	if err := verifyManifest(backup, golden, manifestPath); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{
+		"paper_performance_state_sha256", "paper_performance_event_count", "paper_performance_mark_count",
+		"paper_strategy_performance_state_sha256", "paper_strategy_performance_event_count", "paper_strategy_performance_sample_count",
+	} {
+		tampered := readJSONMap(t, manifestPath)
+		delete(tampered, field)
+		path := filepath.Join(t.TempDir(), "missing-"+field+".json")
+		writeJSONFile(t, path, tampered)
+		if err := verifyManifest(backup, golden, path); err == nil {
+			t.Fatalf("v14 manifest without %s was accepted", field)
+		}
+	}
+	for _, field := range []string{
+		"candidate_paper_performance_state_sha256", "paper_performance_check",
+		"candidate_paper_strategy_performance_state_sha256", "paper_strategy_performance_check",
+	} {
+		tampered := readJSONMap(t, manifestPath)
+		delete(tampered["verification_receipt"].(map[string]any), field)
+		path := filepath.Join(t.TempDir(), "missing-"+field+".json")
+		writeJSONFile(t, path, tampered)
+		if err := verifyManifest(backup, golden, path); err == nil {
+			t.Fatalf("v14 receipt without %s was accepted", field)
+		}
+	}
+	for name, mutate := range map[string]func(map[string]any){
+		"digest":      func(value map[string]any) { value["paper_performance_state_sha256"] = strings.Repeat("0", 64) },
+		"event count": func(value map[string]any) { value["paper_performance_event_count"] = float64(2) },
+		"mark count":  func(value map[string]any) { value["paper_performance_mark_count"] = float64(2) },
+		"status": func(value map[string]any) {
+			value["verification_receipt"].(map[string]any)["paper_performance_check"] = "failed"
+		},
+		"strategy digest":       func(value map[string]any) { value["paper_strategy_performance_state_sha256"] = strings.Repeat("0", 64) },
+		"strategy event count":  func(value map[string]any) { value["paper_strategy_performance_event_count"] = float64(2) },
+		"strategy sample count": func(value map[string]any) { value["paper_strategy_performance_sample_count"] = float64(2) },
+		"strategy status": func(value map[string]any) {
+			value["verification_receipt"].(map[string]any)["paper_strategy_performance_check"] = "failed"
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tampered := readJSONMap(t, manifestPath)
+			mutate(tampered)
+			path := filepath.Join(t.TempDir(), "forged.json")
+			writeJSONFile(t, path, tampered)
+			if err := verifyManifest(backup, golden, path); err == nil {
+				t.Fatal("forged performance proof was eligible for activation")
+			}
+		})
+	}
+}
+
+func TestG38C3LegacyV11OwnedCopyMigration(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := testService(t, nil, nil)
+	golden := writeCurrentSnapshot(t, svc.db)
+	currentBackup := filepath.Join(t.TempDir(), "paper-performance-current.db")
+	currentManifestPath := currentBackup + ".manifest.json"
+	if _, err := createBackup(svc.db, currentBackup, golden, currentManifestPath, svc.now, svc.id); err != nil {
+		t.Fatal(err)
+	}
+	downgradePaperPerformanceForTest(t, svc.db)
+	legacyBackup := filepath.Join(t.TempDir(), "paper-performance-v11.db")
+	if _, err := svc.db.Exec(`VACUUM INTO '` + strings.ReplaceAll(legacyBackup, "'", "''") + `'`); err != nil {
+		t.Fatal(err)
+	}
+	legacy := readJSONMap(t, currentManifestPath)
+	legacy["format_version"], legacy["schema_version"] = "omni-folio-backup.v11", "omni-folio.sqlite.v17"
+	delete(legacy, "paper_performance_state_sha256")
+	delete(legacy, "paper_performance_event_count")
+	delete(legacy, "paper_performance_mark_count")
+	delete(legacy, "paper_strategy_performance_state_sha256")
+	delete(legacy, "paper_strategy_performance_event_count")
+	delete(legacy, "paper_strategy_performance_sample_count")
+	receipt := legacy["verification_receipt"].(map[string]any)
+	delete(receipt, "candidate_paper_performance_state_sha256")
+	delete(receipt, "paper_performance_check")
+	delete(receipt, "candidate_paper_strategy_performance_state_sha256")
+	delete(receipt, "paper_strategy_performance_check")
+	sha, size, err := hashFile(legacyBackup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy["db_sha256"], legacy["size_bytes"], receipt["candidate_db_sha256"] = sha, size, sha
+	legacyManifestPath := filepath.Join(t.TempDir(), "paper-performance-v11.manifest.json")
+	writeJSONFile(t, legacyManifestPath, legacy)
+	manifestSHA, manifestSize, err := hashFile(legacyManifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeSHA, beforeSize, err := hashFile(legacyBackup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyManifest(legacyBackup, golden, legacyManifestPath); err != nil {
+		t.Fatal(err)
+	}
+	afterSHA, afterSize, err := hashFile(legacyBackup)
+	afterManifestSHA, afterManifestSize, manifestErr := hashFile(legacyManifestPath)
+	if err != nil || manifestErr != nil || beforeSHA != afterSHA || beforeSize != afterSize ||
+		manifestSHA != afterManifestSHA || manifestSize != afterManifestSize {
+		t.Fatalf("v11 source artifacts changed: db=(%s,%d)->(%s,%d) manifest=(%s,%d)->(%s,%d) errors=(%v,%v)",
+			beforeSHA, beforeSize, afterSHA, afterSize, manifestSHA, manifestSize, afterManifestSHA, afterManifestSize, err, manifestErr)
+	}
+	owned := filepath.Join(t.TempDir(), "paper-performance-v11-owned.db")
+	if err := copyFile(legacyBackup, owned); err != nil {
+		t.Fatal(err)
+	}
+	db, err := openExistingDB(owned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(db); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	proof, proofErr := provePaperPerformanceRecovery(ctx, db)
+	closeErr := db.Close()
+	if proofErr != nil || closeErr != nil || proof.Events != 0 || proof.Marks != 0 ||
+		proof.SHA256 != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" {
+		t.Fatalf("v11 owned-copy performance proof=%+v errors=(%v,%v)", proof, proofErr, closeErr)
+	}
+}
+
+func TestG38DBackupLegacyV12OwnedCopyMigration(t *testing.T) {
+	ctx := context.Background()
+	svc, asOf := g38c3CashPerformanceFixture(t)
+	if _, err := svc.evaluatePaperPerformance(ctx, k2aAccountRef, asOf); err != nil {
+		t.Fatal(err)
+	}
+	performanceProof, err := provePaperPerformanceRecovery(ctx, svc.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden := writeCurrentSnapshot(t, svc.db)
+	currentBackup := filepath.Join(t.TempDir(), "paper-strategy-performance-current.db")
+	currentManifestPath := currentBackup + ".manifest.json"
+	if _, err := createBackup(svc.db, currentBackup, golden, currentManifestPath, svc.now, svc.id); err != nil {
+		t.Fatal(err)
+	}
+
+	downgradePaperStrategyPerformanceForTest(t, svc.db)
+	legacyBackup := filepath.Join(t.TempDir(), "paper-strategy-performance-v12.db")
+	if _, err := svc.db.Exec(`VACUUM INTO '` + strings.ReplaceAll(legacyBackup, "'", "''") + `'`); err != nil {
+		t.Fatal(err)
+	}
+	legacy := readJSONMap(t, currentManifestPath)
+	legacy["format_version"], legacy["schema_version"] = "omni-folio-backup.v12", "omni-folio.sqlite.v18"
+	delete(legacy, "paper_strategy_performance_state_sha256")
+	delete(legacy, "paper_strategy_performance_event_count")
+	delete(legacy, "paper_strategy_performance_sample_count")
+	receipt := legacy["verification_receipt"].(map[string]any)
+	delete(receipt, "candidate_paper_strategy_performance_state_sha256")
+	delete(receipt, "paper_strategy_performance_check")
+	sha, size, err := hashFile(legacyBackup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy["db_sha256"], legacy["size_bytes"], receipt["candidate_db_sha256"] = sha, size, sha
+	legacyManifestPath := filepath.Join(t.TempDir(), "paper-strategy-performance-v12.manifest.json")
+	writeJSONFile(t, legacyManifestPath, legacy)
+	beforeSHA, beforeSize, err := hashFile(legacyBackup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyManifest(legacyBackup, golden, legacyManifestPath); err != nil {
+		t.Fatal(err)
+	}
+	afterSHA, afterSize, err := hashFile(legacyBackup)
+	if err != nil || beforeSHA != afterSHA || beforeSize != afterSize {
+		t.Fatalf("v12 source changed during owned-copy migration: before=(%s,%d) after=(%s,%d) err=%v", beforeSHA, beforeSize, afterSHA, afterSize, err)
+	}
+	owned := filepath.Join(t.TempDir(), "paper-strategy-performance-v12-owned.db")
+	if err := copyFile(legacyBackup, owned); err != nil {
+		t.Fatal(err)
+	}
+	db, err := openExistingDB(owned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(db); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	ownedPerformance, performanceErr := provePaperPerformanceRecovery(ctx, db)
+	ownedStrategy, strategyErr := provePaperStrategyPerformanceRecovery(ctx, db)
+	closeErr := db.Close()
+	if performanceErr != nil || strategyErr != nil || closeErr != nil || ownedPerformance != performanceProof ||
+		ownedStrategy.Events != 0 || ownedStrategy.Samples != 0 ||
+		ownedStrategy.SHA256 != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" {
+		t.Fatalf("v12 owned-copy proofs performance=%+v strategy=%+v errors=(%v,%v,%v)", ownedPerformance, ownedStrategy, performanceErr, strategyErr, closeErr)
+	}
+}
+
+func downgradePaperPerformanceForTest(t testing.TB, db *sql.DB) {
+	t.Helper()
+	downgradePaperStrategyPerformanceForTest(t, db)
+	if _, err := db.Exec(`DROP TRIGGER paper_performance_events_state_guard;
+		DROP TRIGGER paper_performance_events_no_update;
+		DROP TRIGGER paper_performance_events_no_delete;
+		DROP INDEX paper_performance_events_account_idx;
+		DROP TABLE paper_performance_events;
+		DELETE FROM schema_migrations WHERE version=18`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func downgradePaperStrategyPerformanceForTest(t testing.TB, db *sql.DB) {
+	t.Helper()
+	var currentVersion int
+	if err := db.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&currentVersion); err != nil {
+		t.Fatal(err)
+	}
+	if currentVersion >= 20 {
+		downgradePaperPerformancePolicyForTest(t, db)
+	}
+	if _, err := db.Exec(`DROP TRIGGER IF EXISTS paper_strategy_performance_events_state_guard;
+		DROP TRIGGER IF EXISTS paper_strategy_performance_events_no_update;
+		DROP TRIGGER IF EXISTS paper_strategy_performance_events_no_delete;
+		DROP INDEX IF EXISTS paper_strategy_performance_events_window_idx;
+		DROP TABLE IF EXISTS paper_strategy_performance_events;
+		DELETE FROM schema_migrations WHERE version=19`); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestK2ABackupProvesOrderRecoveryState(t *testing.T) {
 	svc, _ := testService(t, nil, nil)
@@ -24,7 +288,7 @@ func TestK2ABackupProvesOrderRecoveryState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v5" || manifest.SchemaVersion != "omni-folio.sqlite.v9" {
+	if manifest.FormatVersion != "omni-folio-backup.v14" || manifest.SchemaVersion != "omni-folio.sqlite.v20" {
 		t.Fatalf("backup did not declare the order-aware schema: %+v", manifest)
 	}
 	if manifest.OrderStateSHA256 == "" || manifest.OrderCount != 1 || manifest.OrderEventCount != 3 ||
@@ -227,6 +491,260 @@ func TestK2ABackupRejectsCorruptOrderRows(t *testing.T) {
 			t.Fatal("non-replayable order event sequence was certified")
 		}
 	})
+}
+
+func TestG38C1PaperAccountingBackupProofAndV9OwnedCopyMigration(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := testService(t, nil, nil)
+	evidence, selected := selectedPaperStrategy(t, svc)
+	if _, err := svc.openPaperAccountingSession(ctx, k2aAccountRef, evidence.ResultSHA256, selected.CurrentEventID); err != nil {
+		t.Fatal(err)
+	}
+	golden := writeCurrentSnapshot(t, svc.db)
+	backup := filepath.Join(t.TempDir(), "paper-accounting-v10.db")
+	manifestPath := backup + ".manifest.json"
+	manifest, err := createBackup(svc.db, backup, golden, manifestPath, svc.now, svc.id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.FormatVersion != "omni-folio-backup.v14" || manifest.SchemaVersion != "omni-folio.sqlite.v20" ||
+		manifest.PaperAccountingSessionCount != 1 || manifest.PaperAccountingStateSHA256 == "" ||
+		manifest.VerificationReceipt.CandidatePaperAccountingStateSHA256 != manifest.PaperAccountingStateSHA256 {
+		t.Fatalf("backup omitted paper accounting proof: %+v", manifest)
+	}
+	if err := verifyManifest(backup, golden, manifestPath); err != nil {
+		t.Fatal(err)
+	}
+	for _, remove := range []string{"paper_accounting_state_sha256", "paper_accounting_session_count"} {
+		tampered := readJSONMap(t, manifestPath)
+		delete(tampered, remove)
+		path := filepath.Join(t.TempDir(), "missing-"+remove+".manifest.json")
+		writeJSONFile(t, path, tampered)
+		if err := verifyManifest(backup, golden, path); err == nil {
+			t.Fatalf("current manifest without %s was accepted", remove)
+		}
+	}
+	tamperedReceipt := readJSONMap(t, manifestPath)
+	delete(tamperedReceipt["verification_receipt"].(map[string]any), "candidate_paper_accounting_state_sha256")
+	missingReceiptPath := filepath.Join(t.TempDir(), "missing-paper-accounting-receipt.manifest.json")
+	writeJSONFile(t, missingReceiptPath, tamperedReceipt)
+	if err := verifyManifest(backup, golden, missingReceiptPath); err == nil {
+		t.Fatal("current manifest without candidate paper accounting digest was accepted")
+	}
+
+	legacySvc, _ := testService(t, nil, nil)
+	legacyEvidence, legacySelection := selectedPaperStrategy(t, legacySvc)
+	legacySignal := paperEvaluationSignal(legacyEvidence.ResultSHA256, legacySelection.CurrentEventID, "paper-accounting-v9-order")
+	downgradePaperAuthorizationForTest(t, legacySvc.db)
+	if _, err := legacySvc.recordOrderIntent(ctx, paperOrderIntent(k2aAccountRef, legacySignal, "1", "1000")); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(legacySvc.db); err != nil {
+		t.Fatal(err)
+	}
+	legacyOrderProof, err := proveOrderRecovery(ctx, legacySvc.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyGolden := writeCurrentSnapshot(t, legacySvc.db)
+	currentBackup := filepath.Join(t.TempDir(), "paper-accounting-current-before-downgrade.db")
+	currentManifestPath := currentBackup + ".manifest.json"
+	if _, err := createBackup(legacySvc.db, currentBackup, legacyGolden, currentManifestPath, legacySvc.now, legacySvc.id); err != nil {
+		t.Fatal(err)
+	}
+	downgradePaperMarketSignalsForTest(t, legacySvc.db)
+	downgradePaperAccountingForTest(t, legacySvc.db)
+	var legacyVersion, legacySessionTable int
+	if err := legacySvc.db.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&legacyVersion); err != nil || legacyVersion != 14 {
+		t.Fatalf("legacy source version=%d, want 14: %v", legacyVersion, err)
+	}
+	if err := legacySvc.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='paper_accounting_sessions'`).Scan(&legacySessionTable); err != nil || legacySessionTable != 0 {
+		t.Fatalf("legacy v9 source retained sessions table: exists=%d err=%v", legacySessionTable, err)
+	}
+	legacyBackup := filepath.Join(t.TempDir(), "paper-accounting-v9.db")
+	if _, err := legacySvc.db.Exec(`VACUUM INTO '` + strings.ReplaceAll(legacyBackup, "'", "''") + `'`); err != nil {
+		t.Fatal(err)
+	}
+	legacyManifest := readJSONMap(t, currentManifestPath)
+	legacyManifest["format_version"] = "omni-folio-backup.v9"
+	legacyManifest["schema_version"] = "omni-folio.sqlite.v14"
+	delete(legacyManifest, "paper_accounting_state_sha256")
+	delete(legacyManifest, "paper_accounting_session_count")
+	delete(legacyManifest, "paper_market_bar_observation_count")
+	delete(legacyManifest, "paper_signal_event_count")
+	delete(legacyManifest, "paper_execution_authorization_count")
+	delete(legacyManifest, "paper_capitalized_fill_count")
+	delete(legacyManifest["verification_receipt"].(map[string]any), "candidate_paper_accounting_state_sha256")
+	legacySHA, legacySize, err := hashFile(legacyBackup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyManifest["db_sha256"] = legacySHA
+	legacyManifest["size_bytes"] = legacySize
+	legacyManifest["verification_receipt"].(map[string]any)["candidate_db_sha256"] = legacySHA
+	legacyManifestPath := filepath.Join(t.TempDir(), "paper-accounting-v9.manifest.json")
+	writeJSONFile(t, legacyManifestPath, legacyManifest)
+	beforeSHA, beforeSize, err := hashFile(legacyBackup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyManifest(legacyBackup, legacyGolden, legacyManifestPath); err != nil {
+		t.Fatal(err)
+	}
+	afterSHA, afterSize, err := hashFile(legacyBackup)
+	if err != nil || beforeSHA != afterSHA || beforeSize != afterSize {
+		t.Fatalf("v9 source changed during owned-copy migration: before=(%s,%d) after=(%s,%d) err=%v", beforeSHA, beforeSize, afterSHA, afterSize, err)
+	}
+	ownedCopy := filepath.Join(t.TempDir(), "paper-accounting-v9-owned-copy.db")
+	if err := copyFile(legacyBackup, ownedCopy); err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := openExistingDB(ownedCopy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(candidate); err != nil {
+		_ = candidate.Close()
+		t.Fatal(err)
+	}
+	ownedOrderProof, orderErr := proveOrderRecovery(ctx, candidate)
+	ownedPaperProof, paperErr := provePaperAccountingRecovery(ctx, candidate)
+	closeErr := candidate.Close()
+	if orderErr != nil || paperErr != nil || closeErr != nil || ownedOrderProof != legacyOrderProof ||
+		ownedPaperProof.Sessions != 0 || ownedPaperProof.MarketBars != 0 || ownedPaperProof.Signals != 0 {
+		t.Fatalf("v9 owned copy proof order=%+v paper=%+v errors=(%v,%v,%v)", ownedOrderProof, ownedPaperProof, orderErr, paperErr, closeErr)
+	}
+}
+
+func TestG38C2PaperMarketBackupV11AndV10OwnedCopyMigration(t *testing.T) {
+	ctx := context.Background()
+	svc, signal, _ := g38c2PaperSignalFixture(t, true)
+	if _, err := recordG38C2PaperSignalForTest(svc, k2aAccountRef, signal); err != nil {
+		t.Fatal(err)
+	}
+	golden := writeCurrentSnapshot(t, svc.db)
+	backup := filepath.Join(t.TempDir(), "paper-market-v11.db")
+	manifestPath := backup + ".manifest.json"
+	manifest, err := createBackup(svc.db, backup, golden, manifestPath, svc.now, svc.id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.FormatVersion != "omni-folio-backup.v14" || manifest.SchemaVersion != "omni-folio.sqlite.v20" ||
+		manifest.PaperAccountingSessionCount != 1 || manifest.PaperMarketBarObservationCount != 1 || manifest.PaperSignalEventCount != 1 ||
+		manifest.PaperExecutionAuthorizationCount != 0 || manifest.PaperCapitalizedFillCount != 0 ||
+		manifest.PaperAccountingStateSHA256 == "" || manifest.VerificationReceipt.CandidatePaperAccountingStateSHA256 != manifest.PaperAccountingStateSHA256 {
+		t.Fatalf("v11 manifest omitted paper market proof: %+v", manifest)
+	}
+	if err := verifyManifest(backup, golden, manifestPath); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{
+		"paper_market_bar_observation_count", "paper_signal_event_count",
+		"paper_execution_authorization_count", "paper_capitalized_fill_count",
+	} {
+		tampered := readJSONMap(t, manifestPath)
+		delete(tampered, field)
+		path := filepath.Join(t.TempDir(), "missing-"+field+".manifest.json")
+		writeJSONFile(t, path, tampered)
+		if err := verifyManifest(backup, golden, path); err == nil {
+			t.Fatalf("v11 manifest without %s was accepted", field)
+		}
+	}
+
+	legacySvc, _ := testService(t, nil, nil)
+	legacyEvidence, legacySelection := selectedPaperStrategy(t, legacySvc)
+	if _, err := legacySvc.openPaperAccountingSession(ctx, k2aAccountRef, legacyEvidence.ResultSHA256, legacySelection.CurrentEventID); err != nil {
+		t.Fatal(err)
+	}
+	legacySignal := paperEvaluationSignal(legacyEvidence.ResultSHA256, legacySelection.CurrentEventID, "g38c2-v10-legacy-order")
+	downgradePaperAuthorizationForTest(t, legacySvc.db)
+	insertG38C2LegacyPaperOrder(t, legacySvc, legacySignal)
+	if err := migrate(legacySvc.db); err != nil {
+		t.Fatal(err)
+	}
+	legacyOrderProof, err := proveOrderRecovery(ctx, legacySvc.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyPaperProof, err := proveLegacyPaperAccountingRecovery(ctx, legacySvc.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyGolden := writeCurrentSnapshot(t, legacySvc.db)
+	currentBackup := filepath.Join(t.TempDir(), "paper-market-before-v10-downgrade.db")
+	currentManifestPath := currentBackup + ".manifest.json"
+	if _, err := createBackup(legacySvc.db, currentBackup, legacyGolden, currentManifestPath, legacySvc.now, legacySvc.id); err != nil {
+		t.Fatal(err)
+	}
+	downgradePaperMarketSignalsForTest(t, legacySvc.db)
+	legacyBackup := filepath.Join(t.TempDir(), "paper-market-v10.db")
+	if _, err := legacySvc.db.Exec(`VACUUM INTO '` + strings.ReplaceAll(legacyBackup, "'", "''") + `'`); err != nil {
+		t.Fatal(err)
+	}
+	legacyManifest := readJSONMap(t, currentManifestPath)
+	legacyManifest["format_version"] = "omni-folio-backup.v10"
+	legacyManifest["schema_version"] = "omni-folio.sqlite.v15"
+	legacyManifest["paper_accounting_state_sha256"] = legacyPaperProof.SHA256
+	legacyManifest["paper_accounting_session_count"] = legacyPaperProof.Sessions
+	delete(legacyManifest, "paper_market_bar_observation_count")
+	delete(legacyManifest, "paper_signal_event_count")
+	delete(legacyManifest, "paper_execution_authorization_count")
+	delete(legacyManifest, "paper_capitalized_fill_count")
+	legacyManifest["verification_receipt"].(map[string]any)["candidate_paper_accounting_state_sha256"] = legacyPaperProof.SHA256
+	legacySHA, legacySize, err := hashFile(legacyBackup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyManifest["db_sha256"], legacyManifest["size_bytes"] = legacySHA, legacySize
+	legacyManifest["verification_receipt"].(map[string]any)["candidate_db_sha256"] = legacySHA
+	legacyManifestPath := filepath.Join(t.TempDir(), "paper-market-v10.manifest.json")
+	writeJSONFile(t, legacyManifestPath, legacyManifest)
+	beforeSHA, beforeSize, err := hashFile(legacyBackup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyManifest(legacyBackup, legacyGolden, legacyManifestPath); err != nil {
+		t.Fatal(err)
+	}
+	afterSHA, afterSize, err := hashFile(legacyBackup)
+	if err != nil || beforeSHA != afterSHA || beforeSize != afterSize {
+		t.Fatalf("v10 source changed during owned-copy migration: before=(%s,%d) after=(%s,%d) err=%v", beforeSHA, beforeSize, afterSHA, afterSize, err)
+	}
+	ownedCopy := filepath.Join(t.TempDir(), "paper-market-v10-owned.db")
+	if err := copyFile(legacyBackup, ownedCopy); err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := openExistingDB(ownedCopy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(candidate); err != nil {
+		_ = candidate.Close()
+		t.Fatal(err)
+	}
+	ownedOrders, orderErr := proveOrderRecovery(ctx, candidate)
+	ownedPaper, paperErr := provePaperAccountingRecovery(ctx, candidate)
+	closeErr := candidate.Close()
+	if orderErr != nil || paperErr != nil || closeErr != nil || ownedOrders != legacyOrderProof || ownedPaper.Sessions != 1 ||
+		ownedPaper.MarketBars != 0 || ownedPaper.Signals != 0 || ownedPaper.Authorizations != 0 || ownedPaper.CapitalizedFills != 0 {
+		t.Fatalf("v10 owned proof orders=%+v paper=%+v errors=(%v,%v,%v)", ownedOrders, ownedPaper, orderErr, paperErr, closeErr)
+	}
+}
+
+func downgradePaperMarketSignalsForTest(t testing.TB, db *sql.DB) {
+	t.Helper()
+	downgradePaperAuthorizationForTest(t, db)
+	if _, err := db.Exec(`DROP TRIGGER order_idempotency_legacy_paper_signal_guard;
+		DROP TRIGGER paper_signal_events_no_update;
+		DROP TRIGGER paper_signal_events_no_delete;
+		DROP TRIGGER paper_signal_events_state_guard;
+		DROP TABLE paper_signal_events;
+		DROP TRIGGER paper_market_bar_observations_no_update;
+		DROP TRIGGER paper_market_bar_observations_no_delete;
+		DROP TABLE paper_market_bar_observations;
+		DELETE FROM schema_migrations WHERE version=16`); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func writeCurrentSnapshot(t *testing.T, db queryer) string {

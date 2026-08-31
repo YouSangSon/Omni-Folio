@@ -571,7 +571,7 @@ func kiwoomReadPath(apiID string) string {
 	switch apiID {
 	case "ka00001", "kt00018", "ka10075", "kt00009":
 		return kiwoomAccountPath
-	case "ka10080", "ka10081":
+	case "ka10079", "ka10080", "ka10081":
 		return kiwoomChartPath
 	default:
 		return ""

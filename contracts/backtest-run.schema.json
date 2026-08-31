@@ -30,6 +30,14 @@
       "type": "string",
       "minLength": 1
     },
+    "tax_decimal": {
+      "type": "string",
+      "pattern": "^(?:0|1|0\\.[0-9]*[1-9])$"
+    },
+    "slippage_bps_decimal": {
+      "type": "string",
+      "pattern": "^(?:0|0\\.[0-9]*[1-9]|[1-9][0-9]{0,3}(?:\\.[0-9]*[1-9])?)$"
+    },
     "decimal": {
       "type": "string",
       "pattern": "^(?:0|-?(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$",
@@ -125,11 +133,11 @@
           "description": "Flat fee charged per fill."
         },
         "tax": {
-          "$ref": "#/$defs/decimal",
+          "$ref": "#/$defs/tax_decimal",
           "description": "Fraction of SELL notional charged as tax."
         },
         "slippage_bps": {
-          "$ref": "#/$defs/decimal",
+          "$ref": "#/$defs/slippage_bps_decimal",
           "description": "One-sided adverse slippage from the eligible bar open."
         },
         "delay_bars": {

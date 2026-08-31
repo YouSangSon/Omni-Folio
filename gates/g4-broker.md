@@ -8,15 +8,17 @@
 4. K2B0 internal synthetic reconciliation for executions of already-bound provider orders.
 5. K2B1 internal synthetic `kt00009` dated execution scan without reconciliation authority.
 6. G4H credential-free complete snapshot persistence and ledger quantity diff.
-7. G4I/K2C internal synthetic execution authority, fixed BUY policy, lease/fencing and backup v5 proof.
+7. G4I/K2C internal synthetic execution authority, fixed BUY policy, lease/fencing and current backup proof.
 8. G4J/K2B2 credential-free Kiwoom mock LIMIT submit transport.
 9. G4K sanitized stored position-reconciliation HTTP/Flutter read view.
 10. G4L verified local order-lifecycle HTTP/Flutter read view.
 11. G4M stored-reconciliation Overview trust summary.
 12. G4N local order pending-action and Overview warning contract.
 13. G4O local daily chart display-range selection.
-14. K2B credentialed mock observation, query transport and lookup recovery.
-15. Toss Securities read-only adapter using the same canonical contracts.
+14. G4Q credential-free Kiwoom latest-trade normalization.
+15. G4R credential-free Kiwoom `0B` realtime-price frame contract.
+16. K2B credentialed mock observation, query transport and lookup recovery.
+17. Toss Securities read-only adapter using the same canonical contracts.
 
 ## Pass when
 
@@ -33,7 +35,9 @@
 - G4M proves only a shared Overview summary of the stored G4K result; it adds no broker refresh, identifier or mutation.
 - G4N proves only a required sanitized pending-action field plus a shared Overview warning for unresolved local submit/cancel actions. Empty history is not a broker-safety claim, and no broker refresh or order mutation is added.
 - G4O proves only client-side `30/90/365일/전체` filtering over one already loaded daily series. Chart and exact table share the subset, while source/provenance stay unchanged; it is not an interval, broker-range, completeness or freshness claim.
-- K2C proves only credential-free internal execution authority: default-off kill switch, process owner, 30-second SQLite lease/fencing, fixed BUY limits, immutable reservation, DB bypass rejection and backup v5 recovery. It is not production risk and does not send broker orders.
+- G4Q proves only credential-free `ka10079` first-page normalization with provider time, exact price and fail-closed row ordering/same-second ambiguity/future-time checks. It adds no durable identity, adjustment claim, persistence, current-price authority or public consumer.
+- G4R proves only credential-free `0B` registration/bounded REAL-frame normalization with naive provider clock and local receive time kept separate. It omits unproven venue and adds no WebSocket transport, reconnect state, durable identity, persistence, freshness authority or public consumer.
+- K2C proves only credential-free internal execution authority: default-off kill switch, process owner, 30-second SQLite lease/fencing, fixed BUY limits, immutable reservation, DB bypass rejection and current backup recovery. It is not production risk and does not send broker orders.
 - K2B2 proves only the official mock `kt10000` LIMIT BUY request shape on an in-memory transport, with token preflight, durable dispatch-before-write, no write retry, opaque ACK and conservative unknown/reject outcomes. It uses no real credential or external broker request.
 - K2B must prove credentialed mock submit/query, broker-coupled runner fencing, public order flow, and broker/ledger reconciliation.
 - Real-money submit remains disabled. Toss order work does not start until a safe test path is documented because a separate official sandbox has not been confirmed.
@@ -43,15 +47,17 @@
 - G4A passes synthetic Kiwoom K0 transport/normalization tests only; no credential or broker request has been made.
 - G4B has a provider-neutral local-fixture OHLCV API and Flutter asset-detail chart with explicit sample provenance, exact decimal strings, price/volume, non-color candle cues, state handling, screen-reader summary, and a lazy exact-data table. Automated checks and two metadata-complete Android-emulator profile runs pass after optimization.
 - G4D carries the existing price-adjustment basis through HTTP, OpenAPI, and Flutter. The local fixture is pinned to `unspecified`; `provider_adjusted` is parsed and displayed conservatively for future provider responses but is not wired to the public route.
-- G4E/K2A passes the internal-only Kiwoom synthetic `LIMIT`/`KRW`/`KRX` state log, durable unknown-submit block, risk-reducing cancel, replay/idempotency conflicts and the order portion of current schema v9/backup v5 recovery checks. No credential or broker request was used and no public route/UI was added.
+- G4E/K2A passes the internal-only Kiwoom synthetic `LIMIT`/`KRW`/`KRX` state log, durable unknown-submit block, risk-reducing cancel, replay/idempotency conflicts and the order portion of current schema v10/backup v6 recovery checks. No credential or broker request was used and no public route/UI was added.
 - G4F/K2B0 passes the internal-only known-order execution reconciler: complete observations append in one transaction, conflicts rollback, incomplete/not-found preserve state, and unknown submits remain `UNCORRELATED`. No credential, broker request, public route/UI or ledger mutation was added.
 - G4G/K2B1 passes the internal-only synthetic dated execution scan: fixed KRX stock/fills-only request, strict provider order/fill normalization, date/account/environment-scoped non-joinable aliases, no partial result after later-page failure, naive execution clock and `ExecutionsComplete=false`. No credential, broker request, persistence, K2B0 mapping or public route/UI was added.
-- G4H passes credential-free complete snapshot validation, atomic raw snapshot plus ledger-revision reconciliation idempotency, quantity diff, last-known-good retention, insert-only ledger/broker rows and current backup v5 broker-state recovery. No credential, actual broker request, scheduler, authoritative freshness, public route/UI or auto-correction was added.
-- G4I/K2C passes internal default-off execution authority, process owner, lease/fencing, fixed credential-free BUY limits, atomic reservation-bound approval/dispatch and backup v5 recovery. It adds no broker transmission, credential, public route/UI or production/live authority.
+- G4H passes credential-free complete snapshot validation, atomic raw snapshot plus ledger-revision reconciliation idempotency, quantity diff, last-known-good retention, insert-only ledger/broker rows and current backup v6 broker-state recovery. No credential, actual broker request, scheduler, authoritative freshness, public route/UI or auto-correction was added.
+- G4I/K2C passes internal default-off execution authority, process owner, lease/fencing, fixed credential-free BUY limits, atomic reservation-bound approval/dispatch and backup v6 recovery. It adds no broker transmission, credential, public route/UI or production/live authority.
 - G4J/K2B2 passes the credential-free Kiwoom mock LIMIT BUY submit contract. Synthetic transport proves the exact request, one-shot write, raw identifier/message/token redaction, definitive rejection and unresolved network/auth outcomes without enabling a route, runner or live authority.
 - G4K passes a sanitized `GET /v1/broker-reconciliation/latest` contract and Flutter Connections read view. Missing evidence is empty/404, corrupt or orphaned newest evidence fails with a generic 500, and exact decimal strings plus text semantics show stored position differences without refreshing a broker.
 - G4L passes a sanitized `GET /v1/orders` contract and Flutter Connections read view. Empty history is `orders=[]`; corrupt hash, metadata, replay or timestamp fails with a generic 500; retained known-good UI and 200% text semantics forbid resubmission after `SUBMIT_UNKNOWN`.
 - G4M passes the shared stored-reconciliation Overview summary and existing Connections details route without a duplicate read or current-state claim.
 - G4N passes required `pending_action=SUBMIT|CANCEL|none`, preserves unresolved cancel after a full fill, and shares one retained local-order read across Overview and Connections. Tests cover non-blocking loading, no false empty-history safety claim, retained refresh failure and 200% text semantics without mutation controls.
 - G4O passes inclusive last-received-bar-relative range filtering with one selected subset for chart semantics and the exact OHLCV table. A 375px·200% test covers selected/button semantics and labeled tap targets without another API or dependency.
+- G4Q passes synthetic `ka10079` request/response normalization on the existing closed read transport. Provider messages remain private and malformed, unordered, same-second price-ambiguous, future or empty evidence cannot become a quote.
+- G4R passes a synthetic single-symbol registration and strict 1 MiB/100-entry `REAL` frame parser using only stdlib JSON. Invalid frame entries, numeric JSON prices, duplicate-clock price ambiguity and trailing payloads fail closed without partial output; unknown exchange FID values never become venue claims.
 - G4 remains open: real Kiwoom candle/realtime behavior, scheduled credentialed persistence, full broker/ledger reconciliation, physical-device profile, manual VoiceOver/TalkBack, K2B credentialed observation/unknown correlation/public mutation UI/broker-coupled risk, and every live-order gate are unproven.

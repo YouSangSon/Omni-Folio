@@ -1,9 +1,201 @@
 package main
 
 import (
+	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestG38C3RestoreRejectsPaperPerformanceSchemaOrProtectionDrift(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, *sql.DB)
+	}{
+		{"missing table", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER paper_strategy_performance_events_state_guard;
+				DROP TRIGGER paper_strategy_performance_events_no_update;
+				DROP TRIGGER paper_strategy_performance_events_no_delete;
+				DROP INDEX paper_strategy_performance_events_window_idx;
+				DROP TABLE paper_strategy_performance_events;
+				DROP TRIGGER paper_performance_events_state_guard;
+				DROP TRIGGER paper_performance_events_no_update;
+				DROP TRIGGER paper_performance_events_no_delete;
+				DROP INDEX paper_performance_events_account_idx;
+				DROP TABLE paper_performance_events`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"table drift", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`ALTER TABLE paper_performance_events ADD COLUMN untrusted TEXT`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"missing performance identity uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_performance_events", []string{"performance_id"})
+		}},
+		{"missing performance key uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_performance_events", []string{"policy_version", "account_ref", "paper_accounting_session_id", "as_of"})
+		}},
+		{"missing session foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_performance_events",
+				"paper_accounting_session_id TEXT NOT NULL REFERENCES paper_accounting_sessions(session_id)",
+				"paper_accounting_session_id TEXT NOT NULL")
+		}},
+		{"missing selection foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_performance_events",
+				"strategy_selection_event_id TEXT NOT NULL REFERENCES strategy_selection_events(event_id)",
+				"strategy_selection_event_id TEXT NOT NULL")
+		}},
+		{"missing account index", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP INDEX paper_performance_events_account_idx`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, trigger := range []string{"paper_performance_events_state_guard", "paper_performance_events_no_update", "paper_performance_events_no_delete"} {
+		trigger := trigger
+		tests = append(tests, struct {
+			name   string
+			mutate func(*testing.T, *sql.DB)
+		}{"missing " + trigger, func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER ` + trigger); err != nil {
+				t.Fatal(err)
+			}
+		}})
+	}
+	tests = append(tests, struct {
+		name   string
+		mutate func(*testing.T, *sql.DB)
+	}{"altered state guard", func(t *testing.T, db *sql.DB) {
+		if _, err := db.Exec(`DROP TRIGGER paper_performance_events_state_guard;
+			CREATE TRIGGER paper_performance_events_state_guard BEFORE INSERT ON paper_performance_events BEGIN SELECT 1; END`); err != nil {
+			t.Fatal(err)
+		}
+	}})
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			svc, _ := testService(t, nil, nil)
+			golden := writeCurrentSnapshot(t, svc.db)
+			path := filepath.Join(t.TempDir(), "paper-performance-schema.db")
+			if _, err := createBackup(svc.db, path, golden, path+".manifest.json", svc.now, svc.id); err != nil {
+				t.Fatal(err)
+			}
+			candidate, err := openExistingDB(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(t, candidate)
+			if err := candidate.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := verifyRestore(path, golden); err == nil {
+				t.Fatal("restore accepted paper performance schema drift")
+			}
+		})
+	}
+}
+
+func TestG38DRestoreRejectsPaperStrategyPerformanceSchemaOrProtectionDrift(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, *sql.DB)
+	}{
+		{"missing table", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER paper_strategy_performance_events_state_guard;
+				DROP TRIGGER paper_strategy_performance_events_no_update;
+				DROP TRIGGER paper_strategy_performance_events_no_delete;
+				DROP INDEX paper_strategy_performance_events_window_idx;
+				DROP TABLE paper_strategy_performance_events`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"table drift", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`ALTER TABLE paper_strategy_performance_events ADD COLUMN untrusted TEXT`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"missing identity uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_strategy_performance_events", []string{"strategy_performance_id"})
+		}},
+		{"missing idempotency uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_strategy_performance_events", []string{"policy_version", "account_ref", "strategy_selection_event_id", "latest_performance_id"})
+		}},
+		{"missing session foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_strategy_performance_events",
+				"paper_accounting_session_id TEXT NOT NULL REFERENCES paper_accounting_sessions(session_id)",
+				"paper_accounting_session_id TEXT NOT NULL")
+		}},
+		{"missing selection foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_strategy_performance_events",
+				"strategy_selection_event_id TEXT NOT NULL REFERENCES strategy_selection_events(event_id)",
+				"strategy_selection_event_id TEXT NOT NULL")
+		}},
+		{"missing strategy-result foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_strategy_performance_events",
+				"selected_strategy_result_ref TEXT NOT NULL REFERENCES strategy_research_evidence(result_sha256)",
+				"selected_strategy_result_ref TEXT NOT NULL")
+		}},
+		{"missing baseline foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_strategy_performance_events",
+				"baseline_performance_id TEXT NOT NULL REFERENCES paper_performance_events(performance_id)",
+				"baseline_performance_id TEXT NOT NULL")
+		}},
+		{"missing latest foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_strategy_performance_events",
+				"latest_performance_id TEXT NOT NULL REFERENCES paper_performance_events(performance_id)",
+				"latest_performance_id TEXT NOT NULL")
+		}},
+		{"missing window index", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP INDEX paper_strategy_performance_events_window_idx`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, trigger := range []string{"paper_strategy_performance_events_state_guard", "paper_strategy_performance_events_no_update", "paper_strategy_performance_events_no_delete"} {
+		trigger := trigger
+		tests = append(tests, struct {
+			name   string
+			mutate func(*testing.T, *sql.DB)
+		}{"missing " + trigger, func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER ` + trigger); err != nil {
+				t.Fatal(err)
+			}
+		}})
+	}
+	tests = append(tests, struct {
+		name   string
+		mutate func(*testing.T, *sql.DB)
+	}{"altered state guard", func(t *testing.T, db *sql.DB) {
+		if _, err := db.Exec(`DROP TRIGGER paper_strategy_performance_events_state_guard;
+			CREATE TRIGGER paper_strategy_performance_events_state_guard BEFORE INSERT ON paper_strategy_performance_events BEGIN SELECT 1; END`); err != nil {
+			t.Fatal(err)
+		}
+	}})
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			svc, _ := testService(t, nil, nil)
+			golden := writeCurrentSnapshot(t, svc.db)
+			path := filepath.Join(t.TempDir(), "paper-strategy-performance-schema.db")
+			if _, err := createBackup(svc.db, path, golden, path+".manifest.json", svc.now, svc.id); err != nil {
+				t.Fatal(err)
+			}
+			candidate, err := openExistingDB(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(t, candidate)
+			if err := candidate.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := verifyRestore(path, golden); err == nil {
+				t.Fatal("restore accepted paper strategy performance schema drift")
+			}
+		})
+	}
+}
 
 func TestK2ARestoreRejectsOrderTablesWithoutDurabilityConstraints(t *testing.T) {
 	path, golden := weakOrderRestoreCandidate(t, `
@@ -44,6 +236,400 @@ CREATE TABLE order_events (
 ) STRICT;`)
 	if err := verifyRestore(path, golden); err == nil {
 		t.Fatal("restore accepted an event sequence primary key that is not a rowid alias")
+	}
+}
+
+func TestG38C1RestoreRejectsPaperAccountingSchemaOrProtectionDrift(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, *sql.DB)
+	}{
+		{
+			name: "missing table",
+			mutate: func(t *testing.T, db *sql.DB) {
+				t.Helper()
+				if _, err := db.Exec(`DROP TRIGGER paper_accounting_sessions_no_update;
+					DROP TRIGGER paper_accounting_sessions_no_delete;
+					DROP TRIGGER paper_accounting_sessions_state_guard;
+					DROP TABLE paper_accounting_sessions`); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "altered table",
+			mutate: func(t *testing.T, db *sql.DB) {
+				t.Helper()
+				if _, err := db.Exec(`ALTER TABLE paper_accounting_sessions ADD COLUMN untrusted TEXT`); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "missing account uniqueness",
+			mutate: func(t *testing.T, db *sql.DB) {
+				t.Helper()
+				rebuildPaperAccountingWithoutAccountUnique(t, db)
+			},
+		},
+		{
+			name: "missing state guard",
+			mutate: func(t *testing.T, db *sql.DB) {
+				t.Helper()
+				if _, err := db.Exec(`DROP TRIGGER paper_accounting_sessions_state_guard`); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "altered state guard",
+			mutate: func(t *testing.T, db *sql.DB) {
+				t.Helper()
+				if _, err := db.Exec(`DROP TRIGGER paper_accounting_sessions_state_guard;
+					CREATE TRIGGER paper_accounting_sessions_state_guard
+					BEFORE INSERT ON paper_accounting_sessions
+					BEGIN
+						SELECT 1;
+					END`); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "missing update guard",
+			mutate: func(t *testing.T, db *sql.DB) {
+				t.Helper()
+				if _, err := db.Exec(`DROP TRIGGER paper_accounting_sessions_no_update`); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "missing delete guard",
+			mutate: func(t *testing.T, db *sql.DB) {
+				t.Helper()
+				if _, err := db.Exec(`DROP TRIGGER paper_accounting_sessions_no_delete`); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			svc, _ := testService(t, nil, nil)
+			golden := writeCurrentSnapshot(t, svc.db)
+			candidatePath := filepath.Join(t.TempDir(), "paper-accounting-schema.db")
+			if _, err := createBackup(svc.db, candidatePath, golden, candidatePath+".manifest.json", svc.now, svc.id); err != nil {
+				t.Fatal(err)
+			}
+			candidate, err := openExistingDB(candidatePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(t, candidate)
+			if err := candidate.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := verifyRestore(candidatePath, golden); err == nil {
+				t.Fatal("restore accepted paper accounting schema drift")
+			}
+		})
+	}
+}
+
+func rebuildPaperAccountingWithoutAccountUnique(t testing.TB, db *sql.DB) {
+	t.Helper()
+	migration, err := migrationFiles.ReadFile("migrations/015_paper_accounting_sessions.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(migration)
+	const tablePrefix = "CREATE TABLE paper_accounting_sessions"
+	tableStart := strings.Index(source, tablePrefix)
+	triggerStart := strings.Index(source, "CREATE TRIGGER paper_accounting_sessions_no_update")
+	if tableStart < 0 || triggerStart <= tableStart {
+		t.Fatal("paper accounting migration does not contain the expected table and triggers")
+	}
+	weakTable := strings.TrimSuffix(strings.TrimSpace(source[tableStart:triggerStart]), ";")
+	weakTable = strings.Replace(weakTable, "account_ref TEXT NOT NULL UNIQUE", "account_ref TEXT NOT NULL", 1)
+	if _, err := db.Exec(`DROP TRIGGER paper_accounting_sessions_no_update;
+		DROP TRIGGER paper_accounting_sessions_no_delete;
+		DROP TRIGGER paper_accounting_sessions_state_guard;
+		DROP TABLE paper_accounting_sessions`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(weakTable + ";\n" + source[triggerStart:]); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestG38C2RestoreRejectsPaperAuthorizationSchemaOrProtectionDrift(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, *sql.DB)
+	}{
+		{"authorization table drift", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`ALTER TABLE paper_execution_authorizations ADD COLUMN untrusted TEXT`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"missing authorization identity uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_execution_authorizations", []string{"authorization_id"})
+		}},
+		{"missing authorization order uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_execution_authorizations", []string{"order_id"})
+		}},
+		{"missing authorization risk uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_execution_authorizations", []string{"risk_event_id"})
+		}},
+		{"missing authorization dispatch uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_execution_authorizations", []string{"dispatch_event_id"})
+		}},
+		{"missing authorization order foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_execution_authorizations", "order_id TEXT NOT NULL UNIQUE REFERENCES order_idempotency(order_id)", "order_id TEXT NOT NULL UNIQUE")
+		}},
+		{"missing authorization session foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_execution_authorizations", "paper_accounting_session_id TEXT NOT NULL REFERENCES paper_accounting_sessions(session_id)", "paper_accounting_session_id TEXT NOT NULL")
+		}},
+		{"missing authorization authority foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_execution_authorizations", "authority_event_id TEXT NOT NULL REFERENCES execution_authority_events(event_id)", "authority_event_id TEXT NOT NULL")
+		}},
+		{"missing event authorization foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "order_events", "paper_authorization_id TEXT REFERENCES paper_execution_authorizations(authorization_id)", "paper_authorization_id TEXT")
+		}},
+	}
+	for _, trigger := range []string{
+		"paper_execution_authorizations_state_guard",
+		"paper_signal_events_capitalized_quantity_guard",
+		"order_idempotency_legacy_paper_signal_guard",
+		"order_idempotency_capitalized_paper_guard",
+		"order_events_risk_reservation_guard",
+		"order_events_dispatch_reservation_guard",
+		"order_events_non_authority_reservation_guard",
+		"order_events_capitalized_paper_fill_guard",
+		"paper_execution_authorizations_no_update",
+		"paper_execution_authorizations_no_delete",
+	} {
+		trigger := trigger
+		tests = append(tests, struct {
+			name   string
+			mutate func(*testing.T, *sql.DB)
+		}{"missing " + trigger, func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER ` + trigger); err != nil {
+				t.Fatal(err)
+			}
+		}})
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			svc, _ := testService(t, nil, nil)
+			golden := writeCurrentSnapshot(t, svc.db)
+			candidatePath := filepath.Join(t.TempDir(), "paper-authorization-schema.db")
+			if _, err := createBackup(svc.db, candidatePath, golden, candidatePath+".manifest.json", svc.now, svc.id); err != nil {
+				t.Fatal(err)
+			}
+			candidate, err := openExistingDB(candidatePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(t, candidate)
+			if err := candidate.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := verifyRestore(candidatePath, golden); err == nil {
+				t.Fatal("restore accepted paper authorization schema drift")
+			}
+		})
+	}
+}
+
+func TestG38C2RestoreRejectsPaperMarketSchemaOrProtectionDrift(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, *sql.DB)
+	}{
+		{"missing bar table", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER paper_signal_events_no_update; DROP TRIGGER paper_signal_events_no_delete;
+				DROP TRIGGER paper_signal_events_state_guard; DROP TABLE paper_signal_events;
+				DROP TRIGGER paper_market_bar_observations_no_update; DROP TRIGGER paper_market_bar_observations_no_delete;
+				DROP TABLE paper_market_bar_observations`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"missing signal table", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER paper_signal_events_no_update; DROP TRIGGER paper_signal_events_no_delete;
+				DROP TRIGGER paper_signal_events_state_guard; DROP TABLE paper_signal_events`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"bar table drift", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`ALTER TABLE paper_market_bar_observations ADD COLUMN untrusted TEXT`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"signal table drift", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`ALTER TABLE paper_signal_events ADD COLUMN untrusted TEXT`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"missing bar identity uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_market_bar_observations", []string{"observation_id"})
+		}},
+		{"missing bar source uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_market_bar_observations", []string{"source", "source_observation_id"})
+		}},
+		{"missing bar series uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_market_bar_observations", []string{"source", "symbol", "venue", "interval", "timezone", "price_adjustment", "open_at"})
+		}},
+		{"missing signal account uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_signal_events", []string{"account_ref", "signal_id"})
+		}},
+		{"missing signal identity uniqueness", func(t *testing.T, db *sql.DB) {
+			removeSQLiteIndexForTest(t, db, "paper_signal_events", []string{"event_id"})
+		}},
+		{"missing signal session foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_signal_events", "paper_accounting_session_id TEXT NOT NULL REFERENCES paper_accounting_sessions(session_id)", "paper_accounting_session_id TEXT NOT NULL")
+		}},
+		{"missing signal result foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_signal_events", "strategy_result_sha256 TEXT NOT NULL REFERENCES strategy_research_evidence(result_sha256)", "strategy_result_sha256 TEXT NOT NULL")
+		}},
+		{"missing signal selection foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_signal_events", "strategy_selection_event_id TEXT NOT NULL REFERENCES strategy_selection_events(event_id)", "strategy_selection_event_id TEXT NOT NULL")
+		}},
+		{"missing signal bar foreign key", func(t *testing.T, db *sql.DB) {
+			driftSQLiteTableSQLForTest(t, db, "paper_signal_events", "signal_bar_observation_id TEXT NOT NULL REFERENCES paper_market_bar_observations(observation_id)", "signal_bar_observation_id TEXT NOT NULL")
+		}},
+		{"missing signal state guard", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER paper_signal_events_state_guard`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"altered signal state guard", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER paper_signal_events_state_guard;
+				CREATE TRIGGER paper_signal_events_state_guard BEFORE INSERT ON paper_signal_events BEGIN SELECT 1; END`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"missing reverse legacy guard", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER order_idempotency_legacy_paper_signal_guard`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"altered reverse legacy guard", func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER order_idempotency_legacy_paper_signal_guard;
+				CREATE TRIGGER order_idempotency_legacy_paper_signal_guard BEFORE INSERT ON order_idempotency BEGIN SELECT 1; END`); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, triggerName := range []string{
+		"paper_market_bar_observations_no_update", "paper_market_bar_observations_no_delete",
+		"paper_signal_events_no_update", "paper_signal_events_no_delete",
+	} {
+		triggerName := triggerName
+		tests = append(tests, struct {
+			name   string
+			mutate func(*testing.T, *sql.DB)
+		}{"missing " + triggerName, func(t *testing.T, db *sql.DB) {
+			if _, err := db.Exec(`DROP TRIGGER ` + triggerName); err != nil {
+				t.Fatal(err)
+			}
+		}})
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			svc, _ := testService(t, nil, nil)
+			golden := writeCurrentSnapshot(t, svc.db)
+			path := filepath.Join(t.TempDir(), "paper-market-schema.db")
+			if _, err := createBackup(svc.db, path, golden, path+".manifest.json", svc.now, svc.id); err != nil {
+				t.Fatal(err)
+			}
+			candidate, err := openExistingDB(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(t, candidate)
+			if err := candidate.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := verifyRestore(path, golden); err == nil {
+				t.Fatal("restore accepted paper market schema drift")
+			}
+		})
+	}
+}
+
+func removeSQLiteIndexForTest(t testing.TB, db *sql.DB, table string, columns []string) {
+	t.Helper()
+	rows, err := db.Query(`SELECT name FROM pragma_index_list(?) WHERE "unique"=1`, table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var indexes []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		indexes = append(indexes, name)
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var target string
+	for _, name := range indexes {
+		columnRows, err := db.Query(`SELECT name FROM pragma_index_info(?) ORDER BY seqno`, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var actual []string
+		for columnRows.Next() {
+			var column string
+			if err := columnRows.Scan(&column); err != nil {
+				columnRows.Close()
+				t.Fatal(err)
+			}
+			actual = append(actual, column)
+		}
+		if err := columnRows.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Join(actual, "\x00") == strings.Join(columns, "\x00") {
+			target = name
+		}
+	}
+	if target == "" {
+		t.Fatalf("unique index not found for %s(%s)", table, strings.Join(columns, ","))
+	}
+	if _, err := db.Exec(`PRAGMA writable_schema=ON`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`DELETE FROM sqlite_master WHERE type='index' AND name=?`, target); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`PRAGMA writable_schema=OFF`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func driftSQLiteTableSQLForTest(t testing.TB, db *sql.DB, table, old, replacement string) {
+	t.Helper()
+	var definition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&definition); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(definition, old) {
+		t.Fatalf("%s definition lacks drift target", table)
+	}
+	if _, err := db.Exec(`PRAGMA writable_schema=ON`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE sqlite_master SET sql=? WHERE type='table' AND name=?`, strings.Replace(definition, old, replacement, 1), table); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`PRAGMA writable_schema=OFF`); err != nil {
+		t.Fatal(err)
 	}
 }
 

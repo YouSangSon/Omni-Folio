@@ -12,6 +12,9 @@ Thumbs.db
 !.env.example
 secrets/
 credentials/
+/api-key/
+/.superpowers/
+/.unlazy/
 *.key
 *.pem
 *.p12

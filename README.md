@@ -10,10 +10,10 @@
 | Gate | 상태 | 증거 |
 |---|---|---|
 | G0 아키텍처·계약 | 통과 | versioned OpenAPI/JSON Schema, runtime ADR, root commands |
-| G1 로컬 원장 | 통과 | CSV preview → atomic apply → exact cash/trade/dividend/tax/split/FX replay → append-only cash void → snapshot/receipt → schema v9/backup v5와 v8 migration restore proof |
+| G1 로컬 원장 | 통과 | CSV preview → atomic apply → exact cash/trade/dividend/tax/split/FX replay → versioned FIFO residual allocation → append-only cash void → direct FX·security price observation → owner-declared instrument listing → snapshot/receipt → schema v20/backup v14와 supported legacy owned-copy migration/restore proof |
 | G2 Flutter client | 부분 통과 | iOS·Android·web release build와 자동 parser/widget 테스트 통과; chart 포함 Android emulator build/raster p95 2회 통과, physical-device·수동 screen-reader 및 test-instrumentation 격리 증거 남음 |
-| G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, append-only candidate registry, exact selection-bound order authority, credential-free paper execution, atomic halt/rollback safety |
-| G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot, G4I/K2C 내부 합성 authority, G4J/K2B2 credential-free mock 지정가 submit, G4K 저장된 보유수량 대조 read view, G4L 검증된 로컬 주문 lifecycle read view, G4M 홈 저장 대조 신뢰 요약, G4N pending-action 안전 경고, G4O local daily chart 표시 범위, G4P 첫 실행 import 복구 경로 통과. 실제 키움 credentialed 시세·모의주문 관찰, freshness/scheduling, unknown-submit 조회 복구, 주문 mutation UI, production risk와 모든 live gate는 남는다. |
+| G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, append-only candidate registry, exact selection-bound order authority, atomic halt/rollback safety, G3.8C2 ex-post closed-bar BUY/SELL·paper accounting, G3.8C3 account-global 성과, G3.8D strategy-window evidence, G3.8E local safety action, G3.8F1 scheduled one-shot runner |
+| G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot, G4I/K2C 내부 합성 authority, G4J/K2B2 credential-free mock 지정가 submit, G4K 저장된 보유수량 대조 read view, G4L 검증된 로컬 주문 lifecycle read view, G4M 홈 저장 대조 신뢰 요약, G4N pending-action 안전 경고, G4O local daily chart 표시 범위, G4P 첫 실행 import 복구 경로, G4Q 최신 1틱 체결, G4R 0B 실시간 가격 frame, G4S durable 체결 관측, G4T one-shot capture, G4U owner-declared listing enforcement 통과. 실제 키움 credentialed 시세·모의주문 관찰, freshness/scheduling, valuation 승격, unknown-submit 조회 복구, 주문 mutation UI, production risk와 모든 live gate는 남는다. |
 
 세부 상태와 완료 조건은 [`PLAN.md`](PLAN.md)와 [`GATES.md`](GATES.md)에서 관리합니다.
 
@@ -57,7 +57,7 @@ make check
 make smoke
 ```
 
-`make check`는 성공·실패와 관계없이 검사 중 생성한 Flutter build/coverage, Python bytecode와 로컬 Go 바이너리를 정리합니다. `make smoke`는 임시 SQLite 파일에서 health, readiness, CSV preview, atomic apply, snapshot, local sample OHLCV를 확인하고 종료할 때 프로세스와 데이터를 제거합니다. 전체 Flutter/QA 캐시까지 비우려면 `make clean`을 사용합니다.
+`make test`, `make check`, `make smoke`는 실행별 temp root에 owner PID·command·start identity와 child PGID·start identity를 기록합니다. 성공·실패·SIGINT/SIGTERM에서는 trap이 프로세스 그룹과 temp/build/coverage/bytecode를 정리하고, SIGKILL처럼 trap을 건너뛴 경우에는 다음 실행이 동일 소유권 증거로 stale group과 root를 회수합니다. PID 재사용이나 동시 실행은 보존하며, group leader가 먼저 종료된 owned child도 회수합니다. 현재 테스트는 Podman/Kind 리소스를 만들지 않습니다. 이후 로컬 Kubernetes 검증은 실행별 session label과 기록한 resource ID로만 정리하며, 그 wrapper가 생기기 전에는 일반 cleanup이 다른 세션의 컨테이너나 cluster를 삭제하지 않습니다. 전체 Flutter/QA 캐시까지 비우려면 `make clean`을 사용합니다.
 
 ### 앱 실행
 
@@ -70,6 +70,7 @@ make run-core WEB_ORIGIN=http://localhost:8081
 두 번째 터미널:
 
 ```sh
+make seed-demo
 make run-client
 ```
 
@@ -77,12 +78,15 @@ make run-client
 - Flutter web: `http://localhost:8081`
 - local DB: `data/omni-folio.db`
 
+`make seed-demo`는 판단 가능한 첫 화면을 위해 기존 `golden-import.csv`를 실제 preview/apply API로 통과시켜 USD 현금, AAPL 보유 수량과 FIFO 원가, 실현 손익을 채웁니다. 별도 mock API나 우회 쓰기를 만들지 않으며, 이미 적용된 이벤트는 다시 넣지 않습니다. 개인 데이터를 바로 시작하려면 이 명령만 생략하세요. 실행 중인 앱에서는 상단 새로고침을 누르면 샘플 원장이 표시됩니다.
+
 `make run-core`는 `contracts/fixtures/market-bars.csv`를 명시적으로 전달하므로 AAPL 보유 항목에서 샘플 종목 차트를 확인할 수 있습니다. 화면과 API 모두 이를 `샘플 데이터 · 실시간 아님`으로 표시합니다. fixture 없이 fail-closed 동작을 확인하려면 `make run-core MARKET_FIXTURE=`를 사용합니다.
 
 다른 API 포트를 사용할 때는 core와 client를 함께 바꿉니다.
 
 ```sh
 make run-core CORE_ADDR=127.0.0.1:18080 WEB_ORIGIN=http://localhost:8081
+make seed-demo API_URL=http://127.0.0.1:18080
 make run-client API_URL=http://127.0.0.1:18080
 ```
 
@@ -123,6 +127,58 @@ curl -fsS 'http://127.0.0.1:8080/v1/market-data/candles?symbol=AAPL&interval=1d'
 
 응답은 canonical decimal string과 함께 `price_adjustment=unspecified`, `source=local_fixture`, `sample=true`, `state=stale`를 반환합니다. 보유 화면에서 AAPL을 열면 가격·거래량 chart, 마지막 수신 봉 기준 `30일/90일/365일/전체` 표시 범위, 가격 조정 기준, source/as-of, screen-reader summary와 선택 범위를 공유하는 정확한 OHLCV 표를 볼 수 있습니다. `unspecified`는 가격 조정 여부를 확인하지 못했다는 뜻입니다. 이 client-side 범위 선택은 새 시세 조회나 candle completeness를 뜻하지 않으며, fixture는 계약·UI 검증용일 뿐 현재 시세나 투자 판단 자료가 아닙니다.
 
+### Direct FX observation foundation
+
+G1.10은 `1 base_currency = rate quote_currency` 방향의 환율 관측값을 schema v10 `STRICT`/insert-only series에 보존합니다. source observation identity, exact decimal rate, observed/fetched/recorded UTC 시각과 canonical row hash를 검증하며 같은 source·pair·observed-at 충돌을 거절합니다. `GET /v1/market-data/fx/latest`는 explicit `as_of` 이전에 관측되고 수신된 exact 방향만 반환하고 `sample=true`, `state=stale`를 유지합니다. 반대 방향을 자동 역산하거나 `FX_EXCHANGE` cash leg를 환율로 사용하지 않습니다.
+
+현재 writer는 Go 내부 테스트 경계뿐이며 provider ingestion·public mutation·scheduler·Flutter 평가 화면은 없습니다. 따라서 이 route는 저장 계약을 검증하는 기반이지 사용 가능한 현재 환율 feed가 아닙니다. `PortfolioSnapshot.valuation_status`도 계속 `unavailable`입니다.
+
+### Direct-FX cash valuation
+
+G1.11의 `GET /v1/portfolio/cash-valuation`은 replay-verified 현재 원장 cash를 요청한 기준통화로만 평가합니다. canonical UTC `as_of`와 `base_currency`를 필수로 받고, 같은 읽기 transaction에서 원장 event와 FX series 전체를 검증합니다. 동일 통화와 0 잔액 외에는 `cash currency -> base currency` 방향의 직접 관측만 사용하며, 관측 시각부터 24시간 경계를 포함합니다. inverse·cross·interpolation·`FX_EXCHANGE` 추론과 표시용 반올림은 사용하지 않습니다.
+
+누락되거나 24시간보다 오래된 pair가 하나라도 있으면 native cash line과 문제만 반환하고 aggregate total은 숨깁니다. local fixture를 사용한 완전한 결과도 `sample=true`, `status=stale_sample`입니다. 이 API는 현금 전용이며 보유자산·손익·성과·현재 시세를 평가하지 않고 Flutter 화면에도 연결하지 않았습니다. `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다.
+
+```sh
+curl -fsS 'http://127.0.0.1:8080/v1/portfolio/cash-valuation?base_currency=KRW&as_of=2026-01-11T14:00:00Z'
+```
+
+### Durable security price observation foundation
+
+G1.12는 보유자산 평가에 앞서 local fixture 종목 가격을 schema v11에서 도입한 `STRICT`/insert-only series에 보존합니다. source identity, instrument ID, symbol, venue, currency, positive canonical price, `price_adjustment=unspecified`, observed/fetched/recorded UTC 시각과 canonical row hash를 검증합니다. 내부 exact-as-of 조회는 모든 identity 차원을 고정하고 세 시각이 cutoff 이하인 관측만 선택합니다.
+
+G4U checkpoint의 backup v8은 가격 series digest/count를 검증하며 legacy artifact를 원본을 바꾸지 않는 owned copy에서 schema v13으로 migration했습니다. 현재 schema v20/backup v14도 그 가격 proof를 보존합니다. 빈 restore 후보는 embedded migration과 동일한 table DDL·latest index·insert-only trigger를 요구합니다. public API, Flutter 화면, provider 요청, scheduler 또는 broker-backed 보유·손익·성과 평가는 추가하지 않았고 `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다.
+
+### Internal native-currency holding valuation
+
+G1.13의 `native_holding_valuation_v1`은 같은 read-only transaction에서 현재 ledger snapshot과 append-only event proof, 전체 security-price series를 다시 검증합니다. 보유자산의 internal instrument ID·symbol·currency에 연결되는 as-of venue가 정확히 하나일 때만 24시간 이내 local fixture 가격으로 원통화 시장가와 미실현손익을 계산합니다. 여러 venue, 누락, stale 또는 미래 observed/fetched/recorded 값은 해당 line에 sanitized issue를 남기고 모든 통화별 aggregate를 숨깁니다.
+
+이 모델은 Go package 내부 검증 경계입니다. 현재환율로 역사적 원가를 환산하지 않고 public route, Flutter 평가 화면, provider ingestion, whole-portfolio total 또는 live/current authority를 만들지 않습니다. `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다. G1.14부터 snapshot/OpenAPI는 `fifo_exact_else_half_even_residual_8_v1`을 명시합니다. 기존 유한 decimal FIFO 배분은 exact 유지하고 반복소수만 half-even 양자화하며, 잔여 원가는 열린 lot에 남아 최종 청산 때 모두 소비됩니다. 이 분석용 정책은 세무 원가 규칙을 대신하지 않습니다.
+
+### Credential-free Kiwoom latest trade
+
+G4Q는 공식 `ka10079` 1틱 응답을 기존 Kiwoom OAuth/read transport의 합성 in-memory 응답으로 검증합니다. KRX 6자리 symbol, exact 가격 magnitude, provider `cntr_tm`과 별도 fetch 시각만 canonical 내부 DTO로 반환하며 잘못된 row, 시간 역행, 같은 초의 서로 다른 가격과 로컬 수신 시각보다 미래인 체결은 전체 거절합니다.
+
+G4Q 자체는 실제 credential·외부 요청·public API·DB writer를 추가하지 않습니다. 공식 응답에 durable event ID와 명시적 timezone/price-adjustment 근거가 없으므로 G4S는 다음 단계에서 trade ID가 아니라 보수적인 관측 슬롯으로만 저장합니다.
+
+### Credential-free Kiwoom durable latest-trade observation
+
+G4S는 G4Q의 `KiwoomLatestTrade` DTO를 Go 내부 writer로만 schema v12에서 확장한 가격 series에 저장합니다. source는 `kiwoom_mock` 또는 `kiwoom_production`으로 분리하고, identity는 provider trade ID가 아니라 `ka10079`·환경·내부 instrument ID·`XKRX`·6자리 symbol·`KRW`·`unspecified`·provider observed second를 묶은 관측 슬롯입니다. 같은 슬롯의 같은 가격은 반복 fetch여도 no-op이고, 같은 초의 다른 가격·tampered ID·비 KRX/KRW identity는 거절합니다.
+
+이 저장값은 아직 valuation authority가 아닙니다. 기존 holding valuation과 public snapshot은 계속 `local_fixture`만 읽고, scheduler·route·Flutter 화면·실제 credential·주문 판단은 추가하지 않았습니다.
+
+### Owner-declared instrument listing ownership
+
+G4U는 schema v13의 append-only `DECLARE`/`REVOKE` 원장으로 `(venue,symbol,currency)`와 내부 instrument ID의 현재 관계를 소유자가 명시하게 합니다. 키움 one-shot capture는 active listing이 없거나 철회·손상됐으면 token 요청 전 중단하고, 신규 가격 writer는 insert transaction 안에서 같은 관계를 다시 확인합니다. 기존 v12 가격은 보존하지만 종목 코드 관례나 과거 가격에서 소유권을 만들지 않습니다.
+
+Backup v8은 listing 전체 hash와 event/active count를 원본·복원 후보에서 비교합니다. 이 원장은 provider 검증, historical effective dating, freshness, valuation·strategy·order authority가 아니며 외부 등록 API/UI도 아직 없습니다.
+
+### Credential-free Kiwoom realtime price
+
+G4R는 공식 WebSocket `0B`의 단일 KRX-format symbol 등록 packet과 `REAL` JSON frame만 stdlib로 검증합니다. signed 현재가는 exact magnitude로, 필드 `20`은 날짜 없는 `provider_clock`, 로컬 수신 시각은 별도 `received_at`으로 보존합니다. 같은 frame의 동일 symbol/clock/price는 한 번만 반환하고 같은 clock의 다른 가격은 모호성 오류로 전체 거절합니다. 외부 입력은 1 MiB와 100 entries로 제한합니다.
+
+WebSocket 연결, LOGIN/PING, 재연결·재구독, backpressure, credential, persistence, public API/UI는 아직 없습니다. 공식 FID `9081`의 값 의미도 실제 관찰 전에는 해석하지 않아 DTO가 venue를 주장하지 않습니다. 따라서 이 내부 DTO는 live/current/freshness나 durable 체결·가격 관측 근거가 아닙니다.
+
 ### Internal synthetic order recovery, execution authority, reconciliation, and mock submit
 
 K2A/K2B0는 Go 내부에서 Kiwoom `LIMIT`/`KRW`/`KRX` intent와 append-only lifecycle, `SUBMIT_UNKNOWN` 중복 방지, cancel/fill replay와 이미 알려진 주문번호의 원자적 체결 조정을 검증합니다. K2B1은 명시 날짜의 synthetic `kt00009` 체결 row를 non-joinable scan으로 보존합니다. K2C는 기본 차단 kill switch, 프로세스별 lease/fencing, `005930`·`000660` BUY의 10주·주문 100만 원·계좌 활성 예약 100만 원 한도를 검증합니다. K2B2는 합성 credential과 in-memory transport로 공식 `kt10000` mock 지정가 요청을 재현하며 token preflight, durable dispatch-before-write, write 무재시도, opaque ACK와 unknown/reject 분기를 검증합니다. 외부 broker 호출, public 주문 API/UI와 live 권한은 없습니다.
@@ -143,7 +199,7 @@ cd services/core
 go test -run '^TestG4H' -count=1 ./...
 ```
 
-현재 schema v9/backup v5는 ledger event, cash-void/FX guard, raw broker snapshot, revisioned broker reconciliation, execution-authority event, risk reservation, strategy registry와 synthetic/paper 주문을 insert-only로 보호하고 각각의 digest/count와 replay 가능한 canonical record를 restore 후보에서 검증합니다. schema v8 backup은 원본을 수정하지 않는 임시 copy를 v9로 migration해 같은 restore proof를 적용합니다. G4H 자체는 credential, broker request, scheduling, 공식 freshness/timezone, 현금·평가금액 reconciliation, public API/UI 또는 live readiness를 증명하지 않습니다.
+G4U checkpoint의 schema v13/backup v8은 ledger event, cash-void/FX guard, direct FX observation, security price observation, instrument listing, raw broker snapshot, revisioned broker reconciliation, execution-authority event, risk reservation, strategy registry와 당시 synthetic/paper 주문을 insert-only로 보호했습니다. 현재 schema v20/backup v14는 그 proof와 G3.8C2 paper accounting, G3.8C3 account-global performance, G3.8D strategy-window evidence, G3.8E paper safety policy/action recovery를 함께 보존합니다. G4H 자체는 credential, broker request, scheduling, 공식 freshness/timezone, 현금·평가금액 reconciliation, public API/UI 또는 live readiness를 증명하지 않습니다.
 
 ### Stored broker reconciliation read view
 
@@ -174,7 +230,7 @@ make run-improvement
 
 전략 개선 runner는 유한한 long-only SMA 후보를 expanding walk-forward로 평가하고 final holdout을 한 번만 엽니다. 결과는 `paper_candidate` 또는 `no_promotion`만 만들 수 있으며 credential·주문·live 승격 권한을 얻지 못합니다.
 
-Go core는 이 로컬 결과를 현재 schema v9 SQLite의 insert-only registry에 등록합니다. `no_promotion`도 거절 evidence로 보존되지만 선택할 수 없습니다. `paper_candidate` 선택은 현재 champion과 직접 비교하는 로직이 아직 없으므로 명시적 CLI와 optimistic concurrency를 요구하며, rollback은 직전 선택이나 `no_strategy`로만 새 이벤트를 append합니다.
+Go core는 이 로컬 결과를 schema v13에서 도입되어 현재 schema v20에도 보존된 insert-only registry에 등록합니다. `no_promotion`도 거절 evidence로 보존되지만 선택할 수 없습니다. `paper_candidate` 선택은 현재 champion과 직접 비교하는 로직이 아직 없으므로 명시적 CLI와 optimistic concurrency를 요구하며, rollback은 직전 선택이나 `no_strategy`로만 새 이벤트를 append합니다.
 
 ```sh
 candidate_file="$(mktemp)"
@@ -191,16 +247,26 @@ rm -f "$candidate_file"
 
 등록 결과의 `result_sha256`를 선택할 때는 `strategy-select -result-sha256 ... -expected-current-event ...`를 사용합니다. 최초 expected event는 `no_event`이고 이후에는 `strategy-status` 또는 직전 출력의 `current_event_id`입니다. 되돌리기는 `strategy-rollback`에 현재 event ID를 `-expected-current-event`와 `-source-event` 둘 다로 전달합니다. 이 수동 rollback은 모든 활성 execution authority를 같은 transaction에서 halt/fence한 뒤 선택 이력을 append하며, 어느 한 기록이라도 실패하면 전체를 되돌립니다. 선택 상태만으로 주문 권한이 생기지는 않습니다.
 
-### Credential-free paper execution foundation
+### Credential-free paper accounting and performance evidence
 
-G3.6은 선택된 전략과 입력 data hash·생성/만료 시각·종목·목표 수량을 `paper-signal.v2`에 고정합니다. 전략은 계좌·방향·주문 수량·가격을 정하지 않습니다. Go가 같은 paper 계좌·종목의 체결과 미완결 BUY를 목표에서 원자적으로 차감해 양수 delta만 K2C와 공통 주문 상태 머신으로 보내고, local fixture ask를 부분/완전 체결로 재생합니다. G3.7은 신규 intent 기록·K2C 승인·durable dispatch를 현재 process의 만료 전 lease와 exact fencing token 검증과 같은 transaction으로 묶습니다. 동시·반복 목표는 중복 주문하지 않고 backup/restore 뒤에도 상태가 보존되며, paper 주문은 Kiwoom transport로 전송되지 않습니다.
+G3.8C2는 `paper-signal.v3`의 transaction-owned sequence cutoff 뒤 exact eligible closed bar를 사용합니다. 체결 가격은 later-known final volume을 가진 bar의 open을 ex-post 모델링하므로 opening-auction이나 live broker 체결 증거가 아닙니다. Account-global session과 현재 policy SHA가 같아야 하며, signed target delta가 BUY/SELL을 만들고 target zero는 전량 축소를 요청합니다. Account/symbol당 active order는 하나뿐입니다.
+
+KRX 수량은 최대 `4611686018427387903`의 whole share이고 capacity는 `floor(volume * max_participation)`입니다. 각 non-zero fill에 fixed KRW fee, SELL-only tax와 adverse slippage를 exact 적용합니다. Sole `order_events.FILL_RECORDED` journal replay가 cash, FIFO lot/cost, fee, tax, slippage와 realized PnL을 파생하며 overdraft·oversell을 차단합니다. Admission과 fill은 current lease/fence를 요구하고 Kiwoom transport나 general ledger에 쓰지 않습니다. 이 C2 checkpoint의 database/backup contract는 schema v17/backup v11이었고 현재 C3 계약이 이를 승계합니다.
 
 ```sh
 cd services/core
-go test -run '^TestG3PaperRunner' -count=1 ./...
+go test -run '^TestG38C2Paper' -count=1 ./...
 ```
 
-이 기반은 내부 함수와 fixture 검증까지만 제공합니다. 목표 감소 SELL/down-rebalance, 자동 scheduler, quote stream, 수수료·세금·slippage, 외부 보유·현금과 다중 전략 자금 배분, paper 성능·저하 감지, public API/UI와 shadow/live 승격은 아직 없습니다.
+G3.8C3는 transaction-current order/market cutoff와 모든 열린 포지션의 complete same-`as_of` `paper_fixture` 일봉 종가를 고정합니다. Cash-only point도 같은 cutoff 아래의 종가 anchor를 요구하며, sole fill journal replay에서 account-global cash·open cost·market value·realized/unrealized/total PnL·equity와 scale-8 half-even return/drawdown을 계산합니다.
+
+G3.8D는 current selection 이후 같은 selection ID와 strategy result에 묶인 C3 point만 사용합니다. 첫 point는 zero-return baseline이고 이후 point는 그 구간의 peak·return·drawdown을 exact하게 재계산합니다. 당시 schema v19/backup v13은 이 append-only strategy-window series를 독립 복구하며, v12/schema v18은 원본을 바꾸지 않는 owned copy에서 empty D log로 migration합니다.
+
+G3.8E는 recovered latest same-selection G3.8D row만 소비하는 `paper-strategy-performance-safety.v1`을 추가합니다. 표본 2개 미만은 `INSUFFICIENT`, max drawdown 0.1 이상은 우선 `HALT_AND_ROLLBACK`, 그 외 cumulative return -0.05 이하는 `HALT_AND_ROLLBACK`, 나머지는 `HOLD`입니다. action은 captured armed account를 lexical order로 deterministic fencing halt하고 exact current selection을 one-pop rollback하는 한 transaction이며, schema v20/backup v14와 v13 owned-copy proof가 전체 provenance를 검증합니다. 이 내부 경계는 scheduler, public API/UI, broker call, promotion, deployment, live authority나 수익성 주장이 아닙니다. 검증 근거는 [`gates/g3n-paper-performance-policy.md`](gates/g3n-paper-performance-policy.md)에 있습니다.
+
+G3.8F1은 외부 timer, launchd, systemd timer 또는 Kubernetes CronJob이 호출할 수 있는 local one-shot CLI를 추가합니다. `omni-core paper-run-due -db <path> -account <kiwoom_account_...>`는 최신 available local fixture close를 골라 G3.8C3 account performance, G3.8D strategy-window performance, G3.8E safety policy를 순서대로 닫습니다. 같은 close의 완료 chain은 retry와 두 owner 동시 실행에서도 root recovery 검증 뒤 같은 durable 결과로 수렴합니다. 세부 근거는 [`gates/g3o-scheduled-paper-runner.md`](gates/g3o-scheduled-paper-runner.md)에 있습니다.
+
+이 증거는 local ex-post fixture 결과입니다. G3.8E 정책은 같은 전략 구간 point가 최소 2개일 때만 action을 판단합니다. G3.8F1은 daemon, public API/UI, broker-backed 평가, credential/live 실행, deployment, alerting, shadow/live promotion과 수익성 주장을 추가하지 않습니다. 항상 켜진 G3.8F2 runner는 별도 DB lease/fencing, heartbeat/TTL, stale-owner 회수와 success/failure/SIGINT/SIGTERM cleanup proof가 필요합니다.
 
 ## 주요 명령
 

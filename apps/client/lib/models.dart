@@ -190,18 +190,31 @@ class Holding {
 class PortfolioSnapshot {
   const PortfolioSnapshot({
     required this.ledgerRevision,
+    required this.costBasisPolicy,
     required this.recordedAt,
     required this.cash,
     required this.holdings,
     required this.realizedPnl,
+    this.eventCount = 0,
+    this.receiptCount = 0,
   });
   factory PortfolioSnapshot.fromJson(Json json) {
     if (_bool(json, 'live_enabled') ||
         _text(json, 'valuation_status') != 'unavailable') {
       throw const FormatException('Live valuation is not supported');
     }
+    if (_text(json, 'cost_basis_policy') !=
+        'fifo_exact_else_half_even_residual_8_v1') {
+      throw const FormatException('Unsupported cost basis policy');
+    }
+    final provenance = json['provenance'];
+    if (provenance is! Json) {
+      throw const FormatException('Missing provenance');
+    }
+    _requireExactKeys(provenance, {'event_ids', 'receipt_ids'});
     return PortfolioSnapshot(
       ledgerRevision: _text(json, 'ledger_revision'),
+      costBasisPolicy: _text(json, 'cost_basis_policy'),
       recordedAt: DateTime.parse(_text(json, 'recorded_at')),
       cash: _moneyList(json, 'cash'),
       holdings: _jsonList(
@@ -209,18 +222,276 @@ class PortfolioSnapshot {
         'holdings',
       ).map(Holding.fromJson).toList(growable: false),
       realizedPnl: _moneyList(json, 'realized_pnl'),
+      eventCount: _nonEmptyStringCount(provenance, 'event_ids'),
+      receiptCount: _nonEmptyStringCount(provenance, 'receipt_ids'),
     );
   }
 
   final String ledgerRevision;
+  final String costBasisPolicy;
   final DateTime recordedAt;
   final List<Money> cash;
   final List<Holding> holdings;
   final List<Money> realizedPnl;
+  final int eventCount;
+  final int receiptCount;
 }
 
 List<Money> _moneyList(Json value, String key) =>
     _jsonList(value, key).map(Money.fromJson).toList(growable: false);
+
+int _nonEmptyStringCount(Json value, String key) {
+  final result = value[key];
+  if (result is! List<dynamic> ||
+      result.any((item) => item is! String || item.isEmpty)) {
+    throw const FormatException('Invalid provenance IDs');
+  }
+  return result.length;
+}
+
+String _currency(Json value, String key) {
+  final result = _text(value, key);
+  if (!RegExp(r'^[A-Z]{3}$').hasMatch(result)) {
+    throw const FormatException('Invalid currency');
+  }
+  return result;
+}
+
+String _utcText(Json value, String key) {
+  final result = _rfc3339Text(value[key]);
+  if (!RegExp(
+    r'^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{0,8}[1-9])?Z$',
+  ).hasMatch(result)) {
+    throw const FormatException('Timestamp must be canonical UTC');
+  }
+  final parsed = DateTime.parse(result);
+  final match = RegExp(
+    r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})',
+  ).firstMatch(result)!;
+  final parts = [
+    parsed.year,
+    parsed.month,
+    parsed.day,
+    parsed.hour,
+    parsed.minute,
+    parsed.second,
+  ];
+  for (var index = 0; index < parts.length; index += 1) {
+    if (parts[index] != int.parse(match.group(index + 1)!)) {
+      throw const FormatException('Invalid UTC timestamp');
+    }
+  }
+  return result;
+}
+
+String? _nullableText(Json value, String key) {
+  final result = value[key];
+  if (result == null) return null;
+  if (result is! String || result.isEmpty) {
+    throw const FormatException('Invalid nullable text');
+  }
+  return result;
+}
+
+String? _nullableDecimal(Json value, String key) {
+  if (value[key] == null) return null;
+  return _decimal(value, key);
+}
+
+class LedgerActivityPage {
+  const LedgerActivityPage({
+    required this.source,
+    required this.brokerFreshness,
+    required this.ledgerRevision,
+    required this.recordedAt,
+    required this.events,
+    required this.nextCursor,
+  });
+
+  factory LedgerActivityPage.fromJson(Json json) {
+    _requireExactKeys(json, const {
+      'source',
+      'broker_freshness',
+      'ledger_revision',
+      'recorded_at',
+      'events',
+      'next_cursor',
+    });
+    final source = _text(json, 'source');
+    final freshness = _text(json, 'broker_freshness');
+    final ledgerRevision = _text(json, 'ledger_revision');
+    final nextCursor = _nullableText(json, 'next_cursor');
+    if (source != 'local_ledger' ||
+        freshness != 'unverified' ||
+        !RegExp(r'^rev_[0-9]{10}$').hasMatch(ledgerRevision)) {
+      throw const FormatException('Invalid ledger activity metadata');
+    }
+    final events = _jsonList(
+      json,
+      'events',
+    ).map(LedgerActivity.fromJson).toList(growable: false);
+    if (events.length > 100) {
+      throw const FormatException('Too many ledger activities');
+    }
+    for (var index = 1; index < events.length; index += 1) {
+      if (DateTime.parse(
+        events[index].occurredAt,
+      ).isAfter(DateTime.parse(events[index - 1].occurredAt))) {
+        throw const FormatException('Ledger activities must be newest first');
+      }
+    }
+    return LedgerActivityPage(
+      source: source,
+      brokerFreshness: freshness,
+      ledgerRevision: ledgerRevision,
+      recordedAt: _utcText(json, 'recorded_at'),
+      events: events,
+      nextCursor: nextCursor,
+    );
+  }
+
+  final String source;
+  final String brokerFreshness;
+  final String ledgerRevision;
+  final String recordedAt;
+  final List<LedgerActivity> events;
+  final String? nextCursor;
+}
+
+class LedgerActivity {
+  const LedgerActivity({
+    required this.type,
+    required this.occurredAt,
+    required this.recordedAt,
+    required this.symbol,
+    required this.quantity,
+    required this.price,
+    required this.fee,
+    required this.currency,
+    required this.amount,
+    required this.counterCurrency,
+    required this.counterAmount,
+    required this.isCorrection,
+  });
+
+  factory LedgerActivity.fromJson(Json json) {
+    _requireExactKeys(json, const {
+      'type',
+      'occurred_at',
+      'recorded_at',
+      'symbol',
+      'quantity',
+      'price',
+      'fee',
+      'currency',
+      'amount',
+      'counter_currency',
+      'counter_amount',
+      'is_correction',
+    });
+    final type = _text(json, 'type');
+    final symbol = _nullableText(json, 'symbol');
+    final quantity = _nullableDecimal(json, 'quantity');
+    final price = _nullableDecimal(json, 'price');
+    final fee = _nullableDecimal(json, 'fee');
+    final currency = _currency(json, 'currency');
+    final amount = _decimal(json, 'amount');
+    final counterCurrency = _nullableText(json, 'counter_currency');
+    final counterAmount = _nullableDecimal(json, 'counter_amount');
+    final isCorrection = _bool(json, 'is_correction');
+    final noTrade =
+        symbol == null && quantity == null && price == null && fee == null;
+    final noCounter = counterCurrency == null && counterAmount == null;
+    final positive = !amount.startsWith('-') && amount != '0';
+    final negative = amount.startsWith('-');
+    final trade = const {'BUY', 'SELL'}.contains(type);
+    var valid = isCorrection == (type == 'CASH_VOID');
+    if (trade) {
+      valid =
+          valid &&
+          symbol != null &&
+          quantity != null &&
+          quantity != '0' &&
+          !quantity.startsWith('-') &&
+          price != null &&
+          price != '0' &&
+          !price.startsWith('-') &&
+          fee != null &&
+          !fee.startsWith('-') &&
+          noCounter &&
+          ((type == 'BUY' && negative) || (type == 'SELL' && positive));
+    } else if (type == 'DIVIDEND') {
+      valid =
+          valid &&
+          symbol != null &&
+          quantity == null &&
+          price == null &&
+          fee == null &&
+          noCounter &&
+          positive;
+    } else if (type == 'SPLIT') {
+      valid =
+          valid &&
+          symbol != null &&
+          quantity != null &&
+          quantity != '0' &&
+          !quantity.startsWith('-') &&
+          price == null &&
+          fee == null &&
+          noCounter &&
+          amount == '0';
+    } else if (type == 'DEPOSIT') {
+      valid = valid && noTrade && noCounter && positive;
+    } else if (const {'WITHDRAWAL', 'FEE', 'TAX'}.contains(type)) {
+      valid = valid && noTrade && noCounter && negative;
+    } else if (type == 'CASH_VOID') {
+      valid = valid && noTrade && noCounter && amount != '0';
+    } else if (type == 'FX_EXCHANGE') {
+      valid =
+          valid &&
+          noTrade &&
+          negative &&
+          counterCurrency != null &&
+          RegExp(r'^[A-Z]{3}$').hasMatch(counterCurrency) &&
+          counterCurrency != currency &&
+          counterAmount != null &&
+          counterAmount != '0' &&
+          !counterAmount.startsWith('-');
+    } else {
+      valid = false;
+    }
+    if (!valid) {
+      throw const FormatException('Invalid ledger activity');
+    }
+    return LedgerActivity(
+      type: type,
+      occurredAt: _utcText(json, 'occurred_at'),
+      recordedAt: _utcText(json, 'recorded_at'),
+      symbol: symbol,
+      quantity: quantity,
+      price: price,
+      fee: fee,
+      currency: currency,
+      amount: amount,
+      counterCurrency: counterCurrency,
+      counterAmount: counterAmount,
+      isCorrection: isCorrection,
+    );
+  }
+
+  final String type;
+  final String occurredAt;
+  final String recordedAt;
+  final String? symbol;
+  final String? quantity;
+  final String? price;
+  final String? fee;
+  final String currency;
+  final String amount;
+  final String? counterCurrency;
+  final String? counterAmount;
+  final bool isCorrection;
+}
 
 class ImportPreview {
   const ImportPreview({

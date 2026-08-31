@@ -56,6 +56,19 @@ func TestGoldenVerticalSliceAndBackupRestore(t *testing.T) {
 	if err := verifyManifest(backup, fixturePath("golden-snapshot.json"), backup+".manifest.json"); err != nil {
 		t.Fatal(err)
 	}
+	legacyGolden := bytes.Replace(
+		fixture(t, "golden-snapshot.json"),
+		[]byte("  \"cost_basis_policy\": \"fifo_exact_else_half_even_residual_8_v1\",\n"),
+		nil,
+		1,
+	)
+	legacyGoldenPath := filepath.Join(t.TempDir(), "legacy-golden-without-cost-policy.json")
+	if err := os.WriteFile(legacyGoldenPath, legacyGolden, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verifyRestoreProof(backup, legacyGoldenPath); err != nil {
+		t.Fatal("compatible legacy golden was rejected:", err)
+	}
 	if err := verifyManifest(backup, fixturePath("golden-snapshot.json"), fixturePath("invalid-backup-manifest.json")); err == nil {
 		t.Fatal("rejected backup manifest was accepted")
 	}
@@ -150,9 +163,8 @@ func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 	properties := schema["properties"].(map[string]any)
-	wantSchemas := map[string]bool{"omni-folio.sqlite.v8": true, "omni-folio.sqlite.v9": true}
-	if properties["format_version"].(map[string]any)["const"] != "omni-folio-backup.v5" ||
-		!reflect.DeepEqual(jsonStringSet(properties["schema_version"].(map[string]any)["enum"]), wantSchemas) {
+	if properties["format_version"].(map[string]any)["const"] != "omni-folio-backup.v14" ||
+		properties["schema_version"].(map[string]any)["const"] != "omni-folio.sqlite.v20" {
 		t.Fatal("backup contract version drifted from the runtime")
 	}
 
@@ -171,6 +183,22 @@ func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
 		!reflect.DeepEqual(jsonKeySet(golden), jsonStringSet(schema["required"])) {
 		t.Fatal("backup manifest schema, runtime fields, and golden fixture disagree")
 	}
+	const emptyV17PaperAccountingSHA = "3f58392aeaba6ee1d2d26e4703bfa83de5334ebededb22cdbb09ab1211f3583d"
+	svc, _ := testService(t, nil, nil)
+	emptyProof, err := provePaperAccountingRecovery(context.Background(), svc.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if emptyProof.SHA256 != emptyV17PaperAccountingSHA ||
+		golden["paper_accounting_state_sha256"] != emptyV17PaperAccountingSHA {
+		t.Fatalf("golden manifest does not encode the empty v17 paper accounting proof: runtime=%s golden=%v", emptyProof.SHA256, golden["paper_accounting_state_sha256"])
+	}
+	if properties["paper_execution_authorization_count"].(map[string]any)["minimum"] != float64(0) {
+		t.Fatal("schema v17 authorization count is not non-negative")
+	}
+	if properties["paper_capitalized_fill_count"].(map[string]any)["minimum"] != float64(0) {
+		t.Fatal("schema v17 capitalized fill count is not non-negative")
+	}
 
 	receiptSchema := schema["$defs"].(map[string]any)["verification_receipt"].(map[string]any)
 	var runtimeReceipt map[string]any
@@ -185,6 +213,17 @@ func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
 	if !reflect.DeepEqual(jsonKeySet(runtimeReceipt), jsonStringSet(receiptSchema["required"])) ||
 		!reflect.DeepEqual(jsonKeySet(goldenReceipt), jsonStringSet(receiptSchema["required"])) {
 		t.Fatal("verification receipt schema, runtime fields, and golden fixture disagree")
+	}
+	if goldenReceipt["candidate_paper_accounting_state_sha256"] != emptyV17PaperAccountingSHA {
+		t.Fatal("golden receipt candidate does not encode the empty v16 paper accounting proof")
+	}
+	const emptyPaperPerformanceSHA = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	performanceProof, err := provePaperPerformanceRecovery(context.Background(), svc.db)
+	if err != nil || performanceProof.SHA256 != emptyPaperPerformanceSHA || performanceProof.Events != 0 || performanceProof.Marks != 0 ||
+		golden["paper_performance_state_sha256"] != emptyPaperPerformanceSHA ||
+		goldenReceipt["candidate_paper_performance_state_sha256"] != emptyPaperPerformanceSHA ||
+		goldenReceipt["paper_performance_check"] != "ok" {
+		t.Fatalf("golden manifest does not encode empty performance proof: runtime=%+v err=%v", performanceProof, err)
 	}
 
 	var invalid map[string]any
@@ -321,6 +360,114 @@ func TestFIFOAllocatesBuyAndSellFeesExactly(t *testing.T) {
 		!reflect.DeepEqual(snapshot.Holdings, []Holding{{"instrument_aapl", "AAPL", "1", "21", "USD"}}) ||
 		!reflect.DeepEqual(snapshot.RealizedPnL, []Money{{"USD", "62"}}) {
 		t.Fatalf("unexpected FIFO snapshot: %+v", snapshot)
+	}
+}
+
+func TestRecurringFIFOAllocationUsesVersionedResidualPolicy(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	applyTestCSV(t, svc, "recurring-fifo-first", testCSV(
+		"b1,account-main,BUY,2026-01-02T00:00:00Z,AAPL,3,0.3,0.1,USD,-1",
+		"s1,account-main,SELL,2026-01-03T00:00:00Z,AAPL,1,1,0,USD,1",
+	))
+	assertRecurringFIFOSnapshot(t, svc, []Holding{{"instrument_aapl", "AAPL", "2", "0.66666667", "USD"}}, "0.66666667")
+
+	applyTestCSV(t, svc, "recurring-fifo-second", testCSV(
+		"s2,account-main,SELL,2026-01-04T00:00:00Z,AAPL,1,1,0,USD,1",
+	))
+	assertRecurringFIFOSnapshot(t, svc, []Holding{{"instrument_aapl", "AAPL", "1", "0.333333335", "USD"}}, "1.333333335")
+
+	applyTestCSV(t, svc, "recurring-fifo-final", testCSV(
+		"s3,account-main,SELL,2026-01-05T00:00:00Z,AAPL,1,1,0,USD,1",
+	))
+	assertRecurringFIFOSnapshot(t, svc, []Holding{}, "2")
+}
+
+func assertRecurringFIFOSnapshot(t *testing.T, svc *Service, holdings []Holding, realized string) {
+	t.Helper()
+	snapshot, err := snapshotFrom(context.Background(), svc.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"cost_basis_policy":"fifo_exact_else_half_even_residual_8_v1"`) ||
+		!reflect.DeepEqual(snapshot.Holdings, holdings) ||
+		!reflect.DeepEqual(snapshot.RealizedPnL, []Money{{"USD", realized}}) {
+		t.Fatalf("recurring FIFO policy drifted: %s", encoded)
+	}
+}
+
+func TestFIFOQuantizationUsesHalfEvenAndCannotExceedTinyLotCost(t *testing.T) {
+	for _, test := range []struct {
+		value, want string
+	}{
+		{"1.234567845", "1.23456784"},
+		{"1.234567855", "1.23456786"},
+		{"-1.234567845", "-1.23456784"},
+	} {
+		value, err := parseDecimal(test.value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := formatDecimal(quantizeHalfEven(value, 8)); err != nil || got != test.want {
+			t.Fatalf("half-even %s: got=%q err=%v want=%q", test.value, got, err, test.want)
+		}
+	}
+
+	cost, _ := parseDecimal("0.000000006")
+	take, _ := parseDecimal("6")
+	quantity, _ := parseDecimal("7")
+	allocation, err := fifoCostAllocation(cost, take, quantity)
+	formatted, formatErr := formatDecimal(allocation)
+	if err != nil || formatErr != nil || formatted != "0.000000005" || allocation.Sign() < 0 || allocation.Cmp(cost) > 0 {
+		t.Fatalf("tiny partial lot over-allocated: allocation=%v cost=%v err=%v", allocation, cost, err)
+	}
+
+	exactCost, _ := parseDecimal("1")
+	exactTake, _ := parseDecimal("1")
+	exactQuantity, _ := parseDecimal("2048")
+	exactAllocation, err := fifoCostAllocation(exactCost, exactTake, exactQuantity)
+	exactFormatted, formatErr := formatDecimal(exactAllocation)
+	if err != nil || formatErr != nil || exactFormatted != "0.00048828125" {
+		t.Fatalf("previously exact FIFO allocation changed: allocation=%v err=%v", exactAllocation, err)
+	}
+}
+
+func TestFIFOResidualConservesCostAcrossSplitAndMultipleLots(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	applyTestCSV(t, svc, "fifo-split-multi-lot", testCSV(
+		"b1,account-main,BUY,2026-01-01T00:00:00Z,AAPL,3,0.3,0.1,USD,-1",
+		"b2,account-main,BUY,2026-01-02T00:00:00Z,AAPL,7,0.1,0.3,USD,-1",
+		"split,account-main,SPLIT,2026-01-03T00:00:00Z,AAPL,2,,,USD,0",
+		"s1,account-main,SELL,2026-01-04T00:00:00Z,AAPL,8,1,0,USD,8",
+		"s2,account-main,SELL,2026-01-05T00:00:00Z,AAPL,12,1,0,USD,12",
+	))
+	snapshot, err := snapshotFrom(context.Background(), svc.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Holdings) != 0 || !reflect.DeepEqual(snapshot.RealizedPnL, []Money{{"USD", "18"}}) {
+		t.Fatalf("split/multi-lot cost was not conserved: %+v", snapshot)
+	}
+}
+
+func TestOpenAPIPinsAnalyticalFIFOAllocationPolicy(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "contracts", "openapi.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := document["components"].(map[string]any)["schemas"].(map[string]any)["PortfolioSnapshot"].(map[string]any)
+	policy := snapshot["properties"].(map[string]any)["cost_basis_policy"].(map[string]any)
+	required := snapshot["required"].([]any)
+	if !containsJSONText(required, "cost_basis_policy") || policy["const"] != fifoCostBasisPolicy ||
+		!strings.Contains(policy["description"].(string), "not a jurisdictional tax-basis claim") {
+		t.Fatal("PortfolioSnapshot does not pin the analytical FIFO policy")
 	}
 }
 
@@ -490,7 +637,7 @@ func TestHealthAndReadinessAreSeparate(t *testing.T) {
 	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(1, ?)`, "2026-01-10T15:00:00Z"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(10, ?)`, "2026-01-10T15:01:00Z"); err != nil {
+	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(21, ?)`, "2026-01-10T15:01:00Z"); err != nil {
 		t.Fatal(err)
 	}
 	if w := request("/readyz"); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), `"code":"not_ready"`) {

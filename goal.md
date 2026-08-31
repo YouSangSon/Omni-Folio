@@ -30,6 +30,7 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 - 금액·수량 계산은 부동소수점이 아닌 Decimal을 사용한다.
 - import와 주문 요청은 멱등성을 보장하고, 정정은 원본 삭제보다 append-only correction을 우선한다.
 - 환전 원장 event는 실제로 매도한 통화·금액과 매수한 통화·금액을 하나의 atomic record로 보존한다. 두 금액에서 환율을 역산해 현재 시세나 평가환율로 승격하지 않으며, 수수료가 있으면 별도 `FEE` event로 기록한다.
+- 평가용 환율은 방향이 명시된 direct observation으로 별도 보존한다. `rate`는 기준 통화 1단위당 상대 통화 단위이며 source·source observation ID·observed/fetched/recorded 시각과 canonical hash를 포함한다. 역환율·교차환율·보간·오래된 값 대체는 버전된 별도 정책과 골든 검증 없이는 만들지 않는다.
 - 클라이언트는 asdf로 stable 버전을 고정한 Flutter 하나로 iOS·Android·app-centric web을 제공한다. 공개 리서치·문서형 콘텐츠나 SEO 요구가 실제로 생길 때만 Next.js를 별도 web surface로 추가하며 Flutter 제품 화면을 중복 구현하지 않는다. 이전 React/PWA 우선 권장은 **superseded**다.
 - Flutter UX는 영웅문을 복제하지 않는다. 토스증권에서 참고한 쉬운 용어, 한 화면 한 결정, 점진적 상세 공개, 국내·미국의 일관된 흐름, 읽기 쉬운 차트, 명확한 주문 확인과 접근성을 Omni Folio 고유 디자인으로 구현한다.
 - Go 모듈러 모놀리스가 ledger, order, risk, broker credential과 broker submit authority를 소유한다. Python은 research/backtest와 재현 가능한 산출물만 담당하며 broker credential, 운영 DB 쓰기, order-submit 권한을 갖지 않는다.
@@ -37,16 +38,20 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 - 배포 가능한 Go 모듈러 모놀리스와 SQLite single-writer local로 시작한다. 로컬과 단일 노드 클라우드는 같은 OCI image를 사용하고 설정·secret·영속 저장소만 실행 프로필으로 바꾼다. 측정된 필요가 생기기 전에는 microservice, Redis, message broker, 동적 plugin SDK를 추가하지 않는다.
 - 신뢰할 수 있는 프레임워크·라이브러리는 회피하지 않는다. 직접 구현보다 정확성·성능·유지보수성이 나을 때 채택하되 공식 저장소의 활성도, license, 보안 이력, release 고정·lockfile, 공급망 검사와 Omni Folio 골든 fixture 교차검증을 통과해야 한다.
 - 새 의존성은 기능별로 하나의 주 구현만 선택한다. 백테스트·차트·Decimal처럼 핵심 결과를 만드는 라이브러리는 입력 snapshot과 버전을 manifest에 남기고 reference fixture와 결과가 어긋나면 승격을 차단한다.
-- 테스트가 만든 프로세스, 임시 DB, 컨테이너, Pod, volume, network와 생성물은 성공·실패·중단 경로 모두에서 소유 범위 안에서 회수한다. Podman/Kind/Testcontainers는 프로젝트·세션 label 또는 명시적 ID로만 정리하고 전역 prune으로 다른 작업의 리소스를 삭제하지 않는다.
+- 테스트가 만든 프로세스, listener, 임시 DB·디렉터리, bytecode/coverage/build 산출물, 컨테이너, Pod, volume, network와 Kind cluster는 성공·실패·SIGINT/SIGTERM 중단 경로 모두에서 소유 범위 안에서 회수한다. 각 test/check/smoke 실행은 고유 session ID·명시적 temp root·PID/PGID와 process start identity를 가지고 `t.Cleanup`·`defer`·shell `trap`으로 종료하며, 다음 실행은 죽은 owner가 남긴 명시적 Omni-Folio 자원만 선제 회수한다. 종료 후 pre/post inventory에서 owned 잔여물이 하나라도 있으면 테스트를 실패로 처리한다. 새 테스트·스모크·로컬 Kubernetes 검증은 이 cleanup contract에 묶인 wrapper나 같은 수준의 cleanup proof 없이는 완료로 보지 않는다. 현재 테스트는 Podman/Kind 자원을 만들지 않는다. 이를 도입할 때는 생성 직후 session temp root에 exact container/volume/network ID와 Kind cluster name을 기록하고 project·owner·session label을 함께 검증한 뒤 그 실행이 기록한 자원만 회수한다. 공용 label이나 이름 prefix만으로 다른 동시 실행의 자원을 삭제하거나 전역 prune·넓은 경로 삭제를 하지 않는다. SIGKILL·host crash처럼 trap이 실행될 수 없는 경우에도 다음 실행의 stale-owner 회수가 동일한 소유권 증거와 기록된 resource ID로 복구해야 한다.
 - 실전 주문은 절대 자동 활성화하지 않는다. 모의투자 검증, 체결-원장 reconciliation, 실패 복구, 사용자 명시 승인 전에는 비활성 상태로 유지한다.
 - 자동매매는 `Universe → Signal/Alpha → PortfolioTarget → RiskAdjustedTarget → OrderIntent → Execution` 단계로 분리한다. 전략은 브로커 주문을 직접 만들거나 전송하지 않는다.
 - 백테스트 결과를 실전 기대수익으로 표시하지 않는다. 슬리피지, 수수료, 세금, 체결 지연, 데이터 지연, survivorship/lookahead bias를 검증 항목으로 둔다.
 - sample·synthetic·fixture 시장 데이터는 API의 machine-readable provenance와 화면의 명시적 문구로 실시간이 아님을 표시한다. 이를 live/current 데이터와 조용히 혼합하거나 실제 broker·market-data 증거로 계산하지 않는다.
+- 시장 데이터와 주문의 `(venue,symbol,currency) -> instrument` 관계는 종목 코드 관례나 과거 가격에서 추론하지 않는다. owner-declared append-only listing 원장을 네트워크 전과 신규 저장 transaction에서 검증하고, provider 확인·historical effective dating·valuation/order authority는 별도 gate로 둔다.
 - 모든 OHLCV 응답은 `price_adjustment`를 포함한다. `unspecified`는 조정 여부 미확인, `provider_adjusted`는 공급자에게 조정 가격을 요청했다는 뜻으로만 사용하며 기업행사 반영 정확성·freshness·실시간성을 대신 증명하지 않는다.
 - 자동 개선은 versioned 전략과 선언된 유한 파라미터 공간만 탐색한다. 실행 중인 전략 소스의 자기 수정, `eval`/동적 코드 실행, LLM이 만든 코드를 검증 없이 실행하는 방식은 사용하지 않는다.
 - 각 실험은 불변 데이터 snapshot과 비용·지연 모델에서 시계열 순서를 보존한 train/validation/test 및 walk-forward 평가를 수행하고, 전략·파라미터·데이터·엔진·평가정책 버전과 산출물 hash를 남긴다.
 - 후보 선택은 단일 최고 수익률이 아니라 비용 후 수익, 최대 낙폭, 거래 수, turnover/capacity, 구간·시장 국면별 안정성, 기존 champion 대비 개선을 함께 본다. 반복 탐색으로 test set에 과적합하지 않도록 실험 예산과 최종 holdout을 분리한다.
 - champion/challenger 승격은 `research_candidate → paper_candidate → paper → shadow`까지만 자동화할 수 있다. 데이터 오류, 성능 저하, paper/backtest 괴리, 위험 한도 위반이 생기면 자동 중지하고 직전 champion으로 롤백한다.
+- paper 주문의 완료·진행·결과 미확정 상태를 기록하는 운영 평가는 투자 성과와 분리한다. 자동 중지·롤백은 SELL, 현금, 수수료, 세금, slippage, 지연, durable price mark와 equity curve에서 결정적으로 계산한 versioned 성과 evidence가 준비된 뒤에만 운영 평가를 소비할 수 있다.
+- local paper 성과 안전정책 `paper-strategy-performance-safety.v1`은 현재 selection에 귀속된 복구 검증 G3.8D 표본만 소비한다. 같은 selection 표본이 2개 미만이면 `INSUFFICIENT`, `max_drawdown >= 0.1`이면 우선 `HALT_AND_ROLLBACK`, 그 외 `cumulative_return <= -0.05`이면 `HALT_AND_ROLLBACK`, 나머지는 `HOLD`를 append-only로 기록한다. 자동 action은 현재 armed authority 전체의 결정적 halt와 정확한 one-pop strategy rollback을 하나의 transaction에서 수행하고 full replay, cutoff·action provenance, schema/backup/legacy migration proof를 통과해야 한다. 이 값은 실증된 최적값·수익 보장·투자 권유·live threshold가 아니며 scheduler, broker submit, promotion, public API/UI 또는 live authority를 만들지 않는다.
+- scheduled paper evaluation/action은 먼저 G3.8F1 local one-shot runner로 시작한다. `paper-run-due`는 최신 available local fixture close만 `as_of`로 삼아 C3 account performance, D strategy-window performance, E safety policy를 순서대로 닫고, 같은 close의 완료 chain도 root recovery 검증 뒤 retry·두 owner 동시 실행에서 같은 durable 결과로 반환해야 한다. 이 단계는 external scheduler가 호출할 수 있는 entrypoint일 뿐 daemon, broker runner, credential, alerting, shadow/live promotion 또는 수익성 주장이 아니다. G3.8F2 always-on runner는 별도 DB lease/fencing, heartbeat/TTL, lease 상실 fail-closed, stale-owner 회수와 success/failure/SIGINT/SIGTERM cleanup proof를 통과해야 한다.
 - canary 또는 live로의 승격과 실제 자금 확대는 자동화하지 않는다. 별도 owner 승인, broker별 promotion evidence, reconciliation, healthy kill switch와 매 주문 risk gate를 요구한다.
 - live 전략은 paper trading에서 일정 기간 검증한 동일한 전략 정의와 동일한 주문 상태 머신만 사용한다. paper/live 환경, API key, 계좌, feature flag를 물리적으로 분리한다.
 - 자동매매 hot path는 p50/p95/p99 지연, 시장 데이터 freshness, queue depth, provider latency, 주문 접수/체결 지연, 실패·재시도 횟수를 측정한다.
@@ -61,6 +66,17 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 ## 확장 가능한 아키텍처 기준
 
 확장성은 처음부터 분산 시스템을 만드는 것이 아니라, 새 공급자를 추가할 때 검증된 코어를 수정하지 않는 것으로 정의한다.
+
+### TDD + DDD + Clean Architecture 운영 원칙
+
+- 기능은 실패하는 도메인 예제부터 시작해 `RED → 최소 GREEN → 리팩터링 → 회귀·race·복원 검증 → 독립 리뷰` 순서로 완성한다. 금액, 주문 권한, 체결, 원장, migration 변경은 실패 증거 없이 구현부터 추가하지 않는다.
+- bounded context는 `instrument/listing`, `ledger/portfolio`, `market data`, `order/execution`, `strategy/portfolio construction`, `risk/automation`, `broker integration`으로 구분한다. 서로의 저장 테이블이나 공급자 DTO를 직접 읽지 않고 versioned command, event, query contract로 협력한다.
+- 의존성 방향은 `domain → Go stdlib와 검증된 순수 shared kernel만`, `application/use case → domain과 port`, `adapter/infrastructure → port 구현`, `delivery/UI → versioned application contract`로 고정한다. shared kernel은 exact decimal·FIFO primitive처럼 둘 이상의 실제 domain 규칙이 이미 재사용하고 infrastructure를 전혀 참조하지 않을 때만 만들며 production import allowlist로 고정한다. 도메인 규칙은 다른 bounded-context application, Flutter, HTTP, SQLite, broker SDK, 환경변수와 credential을 참조하지 않는다.
+- exact 금액·수량 계산, 주문 상태 전이, 목표 수량, 위험 한도, FIFO와 회계 불변식은 가능한 한 순수하고 결정적인 domain 함수로 둔다. transaction, lease/fencing, durable append, retry와 외부 호출 순서는 application use case가 조정하고 SQLite·Kiwoom·Toss 구현은 adapter가 담당한다.
+- 테스트 피라미드는 domain 예제/속성 테스트, application use-case 테스트, port 공통 contract test, adapter 통합·migration/restore 테스트, 소수의 Flutter/API E2E로 구성한다. broker adapter는 같은 contract suite를 통과해야 하며 in-memory fake만 통과한 결과를 운영 증거로 승격하지 않는다.
+- 현재 시작점은 배포 가능한 modular monolith다. 패키지와 프로세스는 실제 응집도·변경 빈도·성능·장애 격리 증거가 생길 때 경계별로 분리하되, DB transaction을 분산시키거나 network hop을 늘리는 microservice 분리는 측정과 운영 근거 없이는 하지 않는다.
+- 인터페이스는 실제 교체 지점과 테스트 seam에만 둔다. 한 구현만 있는 내부 함수에 repository/service/factory 계층을 기계적으로 추가하거나 DDD 이름을 붙인 빈 wrapper를 만들지 않는다.
+- 도메인 동작 변경과 대규모 패키지 이동을 한 커밋에 섞지 않는다. characterization/contract test로 현재 동작을 고정한 뒤 의존성 역전과 물리적 모듈 분리를 별도 리팩터링 커밋으로 수행하고, API·DB·backup 호환성을 각각 증명한다.
 
 ```text
 Flutter client (iOS / Android / app-centric web)
@@ -111,6 +127,9 @@ Market data adapters
 - 공급자별 인증, rate limit, pagination, symbol mapping, 재시도는 해당 adapter 내부에 둔다.
 - 주문 상태 머신과 거래 원장을 분리하고 체결 이벤트를 통해 reconciliation한다.
 - 전략 정의는 브로커 SDK, credential, 주문 API에 접근하지 않고 `Signal`만 만든다. 포트폴리오 구성기가 여러 전략의 신호와 자금 배분을 `PortfolioTarget`으로 합치고, 공통 risk/execution pipeline만 주문을 만든다.
+- Python 연구 산출물의 수수료·세금·slippage·지연·참여율·신호/체결 시점 계약은 hash 일치만으로 신뢰하지 않는다. Go가 exact field, canonical decimal과 허용 범위를 독립 검증한 산출물만 registry·복구·paper 실행 입력으로 인정한다.
+- Capitalized paper 체결은 account-global session과 동일한 execution policy, transaction-owned market sequence cutoff, cutoff 뒤 exact eligible closed bar, current lease/fence를 함께 요구한다. Later-known final volume과 bar open을 쓰는 `paper_bar_open_v1`은 ex-post simulation이며 opening-auction이나 broker/live 체결 증거가 아니다.
+- KRX paper target은 whole share로 제한하고 account/symbol당 active order를 하나만 허용한다. Fixed per-fill fee, SELL-only tax와 adverse slippage를 적용한 sole `FILL_RECORDED` journal에서 cash·FIFO lot·실현손익을 replay하며, general ledger나 mutable balance/lot projection을 두 번째 권한으로 만들지 않는다.
 - 실행 모드는 `backtest`, `paper`, `shadow`, `live-disabled`, `live-enabled`로 구분하며 UI·로그·credential·계좌를 섞지 않는다.
 - 위험 제어는 전략이 우회할 수 없는 공통 레이어에 둔다: 종목/시장 허용 목록, 가격 collar, 1회 주문 수량·금액, 총/순 익스포저, 포지션·미체결 주문, 일일 손실, 주문 속도, 거래 시간, stale data, clock drift, provider/reconciliation 장애.
 - kill switch는 전략 프로세스와 독립적으로 동작하고 기본적으로 신규 주문을 차단하며, 필요하면 미체결 취소와 위험 축소 주문만 허용한다.
@@ -186,7 +205,9 @@ Market data adapters
 - champion registry: 후보·평가정책·데이터 snapshot·산출물 hash·승격/거절 이유를 append-only로 보존하고 paper 성능 저하 시 직전 champion으로 롤백
 - 자동 승격 상한: research candidate에서 paper/shadow까지. canary/live 승격과 자금 확대는 owner 승인 없이 수행하지 않음
 - paper automation: 전략 신호를 포트폴리오 목표와 risk-adjusted target으로 변환한 뒤 공통 주문 pipeline이 paper order만 실행
-- owner-managed always-on host에서 DB lease/fencing으로 단일 runner만 활성화하고 중복 scheduler·중복 주문을 검증
+- G3.8C1은 계좌별 최초 선택 연구 산출물에서만 starting capital과 execution policy를 파생해 불변으로 보존한다. 이후 전략 변경은 이를 초기화하지 않으며, 이는 현금·체결·성과·자동 권한을 만들지 않는 선행 증거다.
+- G3.8C3는 transaction-current order/market cutoff 아래의 account-global paper accounting과 완전한 `paper_fixture` daily-close mark로 cash·equity·return·drawdown을 exact하게 복구한다. G3.8D는 current non-`no_strategy` selection에 귀속되는 strategy-window performance evidence만 별도 append-only로 보존해 선택 전 account movement를 현재 전략 성과로 오인하지 않게 한다. 현재 schema v20/backup v14는 C3/D proof와 G3.8E의 versioned local paper policy·atomic halt/rollback provenance를 함께 검증하며, 이는 수익성, UI, broker truth, deployment 또는 live readiness를 뜻하지 않는다.
+- owner-managed always-on host에서 DB lease/fencing으로 단일 runner만 활성화하고 중복 scheduler·중복 주문을 검증. G3.8F1 one-shot paper policy runner는 C3/D/E idempotent journal로 local duplicate run만 수렴시키며, 항상 켜진 G3.8F2 daemon·broker-coupled runner lease는 별도 gate로 남긴다.
 - kill switch: 수동 중지, 일일 손실, 연속 실패, stale data, reconciliation mismatch, provider 장애
 - Strategy Lab, Backtest Report, Automation Monitor, Risk/Latency 화면: 전략 버전·모드·자금 배분·위험 한도·최근 신호/주문/체결·freshness·kill switch 표시
 - buy-and-hold, 단순 리밸런싱, 이동평균 교차는 엔진 검증 fixture로만 제공하고 수익 보장이나 투자 추천으로 표시하지 않음
@@ -224,6 +245,9 @@ Market data adapters
 - 주문·체결 이벤트는 과부하와 재시작 상황에서도 유실되지 않는 테스트가 있다.
 - submit timeout·ack 전후 crash·runner lease 상실·두 runner 동시 기동에서도 중복 주문이 발생하지 않고 신규 주문은 fail-closed한다.
 - 두 번째 샘플 전략은 manifest, 전략 모듈, fixture 추가만으로 등록되고 공통 주문·리스크·원장 코드는 변경되지 않는다.
+- 핵심 domain 테스트는 SQLite, HTTP server, Flutter, broker SDK 없이 실행되며 exact 회계·주문 상태·위험 불변식을 결정적으로 검증한다.
+- application use case는 fake port로 오류·timeout·retry·lease 상실을 검증하고, 실제 SQLite와 broker adapter는 동일 contract suite 및 migration/restore 통합 테스트를 별도로 통과한다.
+- 새 broker나 market-data provider는 adapter와 capability/contract test 추가만으로 연결되며 domain/application에 공급자 DTO·TR code·credential 분기가 유입되지 않는다.
 - 실전 자동매매는 기본 비활성이고, paper/live parity와 사용자 승인 없이는 어떤 경로에서도 주문을 낼 수 없다.
 - API 키 redaction 테스트와 핵심 원장·주문 테스트가 통과한다.
 - read-only, paper, live 실행 profile과 secret binding을 분리한다. provider가 scope를 제공하면 최소 권한을 강제하고, 제공하지 않으면 허용 API·route·process authority를 고정해 fail-closed한다.
@@ -231,6 +255,7 @@ Market data adapters
 - 두 번째 브로커는 새 adapter와 공통 contract test 추가만으로 연결할 수 있고 원장·성과·차트·주문 코어의 공급자별 분기가 늘어나지 않는다.
 - 지원 화면 크기와 키보드·접근성 검증이 통과한다.
 - 동일 image의 local/cloud smoke test, health/readiness, migration, 암호화 backup/restore, 주문 차단형 rollback rehearsal이 통과한다.
+- `make test`, `make check`, `make smoke`를 성공·의도적 실패·SIGINT/SIGTERM으로 각각 종료한 뒤 owned 프로세스/listener/temp/coverage/build 자원이 남지 않으며, SIGKILL로 trap을 건너뛴 stale owner·child process group fixture는 다음 실행의 scoped preflight가 회수하고 unrelated 자원은 보존한다. 현재 containerless suite는 Podman/Kind 생성이 0임을 확인하고, 이를 사용하는 테스트가 생기면 session registry에 기록된 exact ID의 성공·실패·중단·stale-owner 회수까지 같은 matrix에 포함한다. cleanup 또는 inventory 자체가 실패하면 해당 검증은 실패다.
 - README에 로컬 실행, 단일 노드 cloud 배포, 데이터 백업/복원, API 연결, 모의주문 사용법, 실전 주문 활성화 위험과 절차가 기록된다.
 
 각 단계에서 먼저 현재 코드를 조사하고 가장 작은 수직 슬라이스를 구현한 뒤 테스트로 증명하라. 부분 구현을 전체 완료로 보고하지 말고, 로컬 검증·모의투자 검증·실전 주문 준비·실제 운영 증거를 구분해서 보고하라.

@@ -21,7 +21,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: omni-core <migrate|serve|backup|verify-restore|strategy-register|strategy-status|strategy-select|strategy-rollback>")
+		return fmt.Errorf("usage: omni-core <migrate|serve|backup|verify-restore|strategy-register|strategy-status|strategy-select|strategy-rollback|paper-run-due>")
 	}
 	switch args[0] {
 	case "migrate":
@@ -53,7 +53,7 @@ func run(args []string) error {
 			return err
 		}
 		defer db.Close()
-		if err := requireSchema(db); err != nil {
+		if err := requireServerStartupRecovery(db); err != nil {
 			return err
 		}
 		svc := newService(db, time.Now, randomID)
@@ -204,6 +204,29 @@ func run(args []string) error {
 			return err
 		}
 		return json.NewEncoder(os.Stdout).Encode(state)
+	case "paper-run-due":
+		fs := flag.NewFlagSet("paper-run-due", flag.ContinueOnError)
+		dbPath := fs.String("db", "omni-folio.db", "SQLite database path")
+		accountRef := fs.String("account", "", "paper account reference")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *accountRef == "" || fs.NArg() != 0 {
+			return errors.New("paper-run-due requires -account and no positional arguments")
+		}
+		db, err := openExistingDB(*dbPath)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		if err := requireSchema(db); err != nil {
+			return err
+		}
+		result, err := newService(db, time.Now, randomID).runDuePaperPerformancePolicy(context.Background(), *accountRef)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}

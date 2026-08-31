@@ -65,6 +65,84 @@ func TestKiwoomCandlesPaginatesNormalizesAndDeduplicates(t *testing.T) {
 	}
 }
 
+func TestKiwoomLatestTradeUsesProviderTimeAndExistingReadTransport(t *testing.T) {
+	script := &kiwoomScript{t: t, steps: []func(*http.Request) *http.Response{
+		func(*http.Request) *http.Response {
+			return kiwoomResponse(http.StatusOK, nil, syntheticTokenJSON("token"))
+		},
+		func(request *http.Request) *http.Response {
+			assertKiwoomRequest(t, request, kiwoomChartPath, "ka10079")
+			assertNoKiwoomCursor(t, request)
+			var body map[string]string
+			decodeKiwoomRequest(t, request, &body)
+			want := map[string]string{"stk_cd": "005930", "tic_scope": "1", "upd_stkpc_tp": "0"}
+			if !reflect.DeepEqual(body, want) {
+				t.Fatalf("tick request=%#v want=%#v", body, want)
+			}
+			return kiwoomResponse(http.StatusOK, map[string]string{"api-id": "ka10079", "cont-yn": "Y", "next-key": "older"}, `{
+				"stk_cd":"005930","stk_tic_chart_qry":[
+					{"cur_prc":"-001,250.00","trde_qty":"5","cntr_tm":"20260824103000","open_pric":"1200","high_pric":"1300","low_pric":"1150"},
+					{"cur_prc":"1240","trde_qty":"2","cntr_tm":"20260824102959","open_pric":"1200","high_pric":"1300","low_pric":"1150"}
+				],"return_code":0,"return_msg":"never expose quote message"
+			}`)
+		},
+	}}
+	client := newSyntheticKiwoomClient(t, KiwoomProduction, script)
+	client.now = func() time.Time { return time.Date(2026, 8, 24, 1, 30, 1, 0, time.UTC) }
+
+	quote, err := client.LatestTrade(context.Background(), "005930")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &KiwoomLatestTrade{
+		Source: "kiwoom", Environment: KiwoomProduction, Exchange: KiwoomKRX,
+		Symbol: "005930", Currency: "KRW", Price: "1250",
+		ObservedAt: "2026-08-24T01:30:00Z", FetchedAt: "2026-08-24T01:30:01Z",
+	}
+	if script.calls != 2 || !reflect.DeepEqual(quote, want) {
+		t.Fatalf("calls=%d quote=%#v want=%#v", script.calls, quote, want)
+	}
+}
+
+func TestKiwoomLatestTradeFailsClosed(t *testing.T) {
+	valid := `{"cur_prc":"10","trde_qty":"1","cntr_tm":"20260824103000","open_pric":"9","high_pric":"11","low_pric":"8"}`
+	for _, test := range []struct {
+		name string
+		body string
+		kind string
+	}{
+		{"missing result", `{"stk_cd":"005930","stk_tic_chart_qry":[]}`, "invalid_response"},
+		{"symbol mismatch", tradeBody("000660", valid), "symbol_mismatch"},
+		{"invalid trade", tradeBody("005930", `{"cur_prc":"0","trde_qty":"1","cntr_tm":"20260824103000","open_pric":"9","high_pric":"11","low_pric":"8"}`), "invalid_trade"},
+		{"provider order", tradeBody("005930", valid+`,{"cur_prc":"10","trde_qty":"1","cntr_tm":"20260824103001","open_pric":"9","high_pric":"11","low_pric":"8"}`), "invalid_trade_order"},
+		{"ambiguous same-second price", tradeBody("005930", valid+`,{"cur_prc":"9","trde_qty":"1","cntr_tm":"20260824103000","open_pric":"9","high_pric":"11","low_pric":"8"}`), "ambiguous_trade_time"},
+		{"future trade", tradeBody("005930", `{"cur_prc":"10","trde_qty":"1","cntr_tm":"20300101090001","open_pric":"9","high_pric":"11","low_pric":"8"}`), "future_trade"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			quote, err := onePageLatestTradeClient(t, test.body).LatestTrade(context.Background(), "005930")
+			if quote != nil {
+				t.Fatalf("unsafe response returned quote: %#v", quote)
+			}
+			assertKiwoomErrorKind(t, err, test.kind)
+		})
+	}
+
+	quote, err := onePageLatestTradeClient(t, tradeBody("005930", "")).LatestTrade(context.Background(), "005930")
+	if quote != nil || !errors.Is(err, errMarketDataNotFound) {
+		t.Fatalf("empty result quote=%#v err=%v", quote, err)
+	}
+
+	client := newSyntheticKiwoomClient(t, KiwoomMock, kiwoomRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		t.Fatal("invalid latest-trade request reached the network")
+		return nil, nil
+	}))
+	quote, err = client.LatestTrade(context.Background(), "A005930")
+	if quote != nil {
+		t.Fatalf("invalid symbol returned quote: %#v", quote)
+	}
+	assertKiwoomErrorKind(t, err, "invalid_symbol")
+}
+
 func TestKiwoomCandlesMapsOfficialMinuteIntervals(t *testing.T) {
 	for _, interval := range []string{"1m", "3m", "5m", "10m", "15m", "30m", "45m", "60m"} {
 		t.Run(interval, func(t *testing.T) {
@@ -215,6 +293,23 @@ func TestKiwoomCandlesChecksOverlapPageAfterReachingCap(t *testing.T) {
 
 func candleDailyBody(rows string) string {
 	return fmt.Sprintf(`{"stk_cd":"005930","stk_dt_pole_chart_qry":[%s],"return_code":0}`, rows)
+}
+
+func tradeBody(stockCode, rows string) string {
+	return fmt.Sprintf(`{"stk_cd":"%s","stk_tic_chart_qry":[%s],"return_code":0}`, stockCode, rows)
+}
+
+func onePageLatestTradeClient(t *testing.T, body string) *KiwoomClient {
+	t.Helper()
+	return newSyntheticKiwoomClient(t, KiwoomProduction, &kiwoomScript{t: t, steps: []func(*http.Request) *http.Response{
+		func(*http.Request) *http.Response {
+			return kiwoomResponse(http.StatusOK, nil, syntheticTokenJSON("token"))
+		},
+		func(request *http.Request) *http.Response {
+			assertKiwoomRequest(t, request, kiwoomChartPath, "ka10079")
+			return kiwoomResponse(http.StatusOK, map[string]string{"api-id": "ka10079"}, body)
+		},
+	}})
 }
 
 func onePageCandleClient(t *testing.T, body string) *KiwoomClient {
