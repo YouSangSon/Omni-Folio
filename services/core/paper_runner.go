@@ -241,8 +241,17 @@ func (s *Service) runPaperOrder(ctx context.Context, orderID string, fencingToke
 }
 
 func (s *Service) runPaperOrderWithClaim(ctx context.Context, orderID string, fencingToken int64, claim *paperRunnerClaim) (*OrderState, error) {
+	return s.runPaperOrderThroughCloseWithClaim(ctx, orderID, fencingToken, claim, "")
+}
+
+// A recovery frontier only narrows eligible fills; it never changes the real
+// authority clock, immutable fill model, or transaction-owned evidence cutoff.
+func (s *Service) runPaperOrderThroughCloseWithClaim(ctx context.Context, orderID string, fencingToken int64, claim *paperRunnerClaim, throughClose string) (*OrderState, error) {
 	if s == nil || s.db == nil || s.now == nil || !safeOrderID(orderID) || fencingToken <= 0 {
 		return nil, errors.New("paper fill runner is not configured")
+	}
+	if throughClose != "" && !canonicalPaperTimes(throughClose) {
+		return nil, errors.New("paper fill recovery close is invalid")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -315,7 +324,7 @@ func (s *Service) runPaperOrderWithClaim(ctx context.Context, orderID string, fe
 	var bar *PaperMarketBarObservation
 	var calculated paperdomain.Fill
 	for _, candidate := range candidates {
-		if usedBars[candidate.ObservationID] {
+		if usedBars[candidate.ObservationID] || (throughClose != "" && candidate.CloseAt > throughClose) {
 			continue
 		}
 		consumed, err := paperConsumedBarCapacity(ctx, tx, intent.AccountRef, intent.Symbol, candidate.ObservationID)

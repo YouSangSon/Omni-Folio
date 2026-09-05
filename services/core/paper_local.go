@@ -111,7 +111,8 @@ func (r *localPaperRun) step(ctx context.Context, proposalRaw, barsRaw, research
 	if slow < 2 || snapshot.Bars <= slow {
 		return nil, errors.New("paper snapshot lacks the complete strategy warmup window")
 	}
-	if _, _, err := s.processPaperProposal(ctx, account, selection, proposalRaw, snapshot.SignalBarObservationID, 0, false, r.claim); err != nil {
+	committed, _, err := s.processPaperProposal(ctx, account, selection, proposalRaw, snapshot.SignalBarObservationID, 0, false, r.claim)
+	if err != nil {
 		return nil, err
 	}
 	// Preparation can age the global claim before execution acquires its own
@@ -132,39 +133,57 @@ func (r *localPaperRun) step(ctx context.Context, proposalRaw, barsRaw, research
 	if err != nil {
 		return nil, err
 	}
-	for _, id := range ids {
-		state, err := s.loadOrderState(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		// Each committed fill consumes a distinct bar and increases the finite
-		// order quantity. No progress ends catch-up; every write rechecks leases.
-		// ponytail: replay per fill is quadratic in history; batch only after
-		// profiling, preserving per-fill accounting and authority validation.
-		for state.Status == "OPEN" || state.Status == "PARTIALLY_FILLED" {
-			if err := r.refresh(ctx); err != nil {
-				return nil, err
-			}
-			filled := state.FilledQuantity
-			state, err = s.runPaperOrderWithClaim(ctx, id, r.lease.FencingToken, r.claim)
-			if err != nil {
-				return nil, err
-			}
-			if state.FilledQuantity == filled {
-				break
-			}
-		}
-	}
-	if err := r.refresh(ctx); err != nil {
-		return nil, err
-	}
-	policy, err := s.runDuePaperPerformancePolicyWithClaim(ctx, account, r.claim)
+	closes, err := s.localPaperPolicyCloses(ctx, account, stringField(proposal, "data_as_of"), committed != nil)
 	if err != nil {
 		return nil, err
 	}
-	result := &LocalPaperStepResult{Mode: "paper_fixture_only", Snapshot: snapshot, Policy: policy}
-	if policy.Decision == "HALT_AND_ROLLBACK" {
-		return result, nil
+	result := &LocalPaperStepResult{Mode: "paper_fixture_only", Snapshot: snapshot}
+	for _, asOf := range closes {
+		if err := r.refresh(ctx); err != nil {
+			return nil, err
+		}
+		// A committed valuation is a durable phase boundary. On restart,
+		// complete its policy without adding fills behind that fixed cutoff.
+		_, valued, err := loadPaperPerformanceByKey(ctx, s.db, account, asOf)
+		if err != nil {
+			return nil, err
+		}
+		if !valued {
+			for _, id := range ids {
+				state, err := s.loadOrderState(ctx, id)
+				if err != nil {
+					return nil, err
+				}
+				// Every fill rechecks authority. Never fill a later close
+				// before this close's safety policy has committed.
+				// ponytail: full replay per fill/close grows with history;
+				// optimize only with measured, equivalent recovery proof.
+				for state.Status == "OPEN" || state.Status == "PARTIALLY_FILLED" {
+					if err := r.refresh(ctx); err != nil {
+						return nil, err
+					}
+					filled := state.FilledQuantity
+					state, err = s.runPaperOrderThroughCloseWithClaim(ctx, id, r.lease.FencingToken, r.claim, asOf)
+					if err != nil {
+						return nil, err
+					}
+					if state.FilledQuantity == filled {
+						break
+					}
+				}
+			}
+		}
+		if err := r.refresh(ctx); err != nil {
+			return nil, err
+		}
+		// Even a cached policy must pass the current-selection C3 guard.
+		result.Policy, err = s.runPaperPerformancePolicyAtCloseWithClaim(ctx, account, asOf, r.claim)
+		if err != nil {
+			return nil, err
+		}
+		if result.Policy.Decision == "HALT_AND_ROLLBACK" {
+			return result, nil
+		}
 	}
 	if err := r.refresh(ctx); err != nil {
 		return nil, err
@@ -175,6 +194,84 @@ func (r *localPaperRun) step(ctx context.Context, proposalRaw, barsRaw, research
 	}
 	result.Order = order
 	return result, nil
+}
+
+// Start at the latest immutable valuation, including an unfinished policy.
+// First use anchors at the proposal close; strategy warmup is not a trading
+// history. Already committed valuations are never backfilled or rewritten.
+func (s *Service) localPaperPolicyCloses(ctx context.Context, account, latest string, committed bool) ([]string, error) {
+	latest, ok := canonicalPaperTime(latest)
+	if !ok {
+		return nil, errors.New("local paper policy close is invalid")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if _, err := provePaperRunnerLeaseRecovery(ctx, tx); err != nil {
+		return nil, err
+	}
+	if committed {
+		// Replaying an already committed signal may recover its pending order
+		// against later stored bars, but final admission remains that same
+		// immutable decision. A fresh proposal never gains this permission.
+		latest, err = latestAvailablePaperClose(ctx, tx, s.now())
+		if err != nil {
+			return nil, err
+		}
+	}
+	var previous string
+	var points int
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(as_of),?),COUNT(*) FROM paper_performance_events WHERE account_ref=?`, latest, account).Scan(&previous, &points); err != nil {
+		return nil, err
+	}
+	_, selection, _, err := currentPaperPerformanceSelection(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	var selectedAt string
+	if err := tx.QueryRowContext(ctx, `SELECT recorded_at FROM strategy_selection_events WHERE event_id=?`, selection).Scan(&selectedAt); err != nil {
+		return nil, err
+	}
+	selectedAt, ok = canonicalPaperTime(selectedAt)
+	if !ok {
+		return nil, errors.New("local paper selection time is invalid")
+	}
+	_, complete, err := loadScheduledPaperRunResult(ctx, tx, account, previous)
+	if err != nil {
+		return nil, err
+	}
+	includePrevious := !complete || previous == latest
+	// New C3 rows must fall inside the current selection's D window. Keep an
+	// existing frontier for retry/selection validation, never invent one before
+	// selection and strand an immutable point which D cannot consume.
+	now := s.now().UTC().Format(canonicalPaperTimeLayout)
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT close_at FROM paper_market_bar_observations
+		WHERE source='paper_fixture' AND venue='KRX' AND currency='KRW' AND interval='1d'
+		AND timezone='Asia/Seoul' AND price_adjustment='unspecified' AND (close_at>? OR (close_at=? AND ?)) AND close_at<=?
+		AND (close_at>=? OR (close_at=? AND ?))
+		AND source_available_at<=? AND fetched_at<=? AND recorded_at<=? ORDER BY close_at`, previous, previous, includePrevious, latest,
+		selectedAt, previous, points > 0 && includePrevious, now, now, now)
+	if err != nil {
+		return nil, err
+	}
+	var closes []string
+	for rows.Next() {
+		var asOf string
+		if err := rows.Scan(&asOf); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		closes = append(closes, asOf)
+	}
+	if err := closeRows(rows); err != nil {
+		return nil, err
+	}
+	if len(closes) == 0 || closes[len(closes)-1] != latest {
+		return nil, errors.New("local paper policy snapshot regressed or has no available close")
+	}
+	return closes, nil
 }
 
 func (s *Service) openLocalPaperOrderIDs(ctx context.Context, account string) ([]string, error) {
