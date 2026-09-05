@@ -18,7 +18,7 @@ from pathlib import Path
 
 from omni_research.engine import canonical_hash
 from omni_research.improve import run_experiment
-from omni_research.signal_cli import generate_proposal, main
+from omni_research.signal_cli import generate_paper_input_bundle, generate_proposal, generate_proposal_from_bytes, main
 
 ROOT = Path(__file__).parents[3]
 
@@ -157,19 +157,93 @@ class SignalProposalTest(unittest.TestCase):
             self.assertEqual(stderr.getvalue(), '')
             self.assertEqual({p.name for p in directory.iterdir()}, {'latest.csv', 'research.csv', 'artifact.json'})
 
-    def inputs(self, directory: Path, closes: tuple[str, ...] = ("3", "2", "1", "4")) -> tuple[Path, Path, dict]:
+    def test_cli_bundle_round_trips_exact_crlf_bytes_from_captured_reads(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            bars, research, artifact = self.inputs(directory, line_ending=b'\r\n')
+            artifact_path = directory / 'artifact.json'
+            artifact_path.write_text(json.dumps(artifact))
+            captured_bars, captured_research = bars.read_bytes(), research.read_bytes()
+            original_read = __import__('omni_research.signal_cli', fromlist=['read_signal_input']).read_signal_input
+
+            def read_then_mutate(path: Path) -> bytes:
+                raw = original_read(path)
+                if path == bars:
+                    bars.write_bytes(b'MUTATED')
+                    research.write_bytes(b'MUTATED')
+                return raw
+
+            stdout, stderr = io.StringIO(), io.StringIO()
+            args = ['--bars', str(bars), '--research-bars', str(research), '--artifact', str(artifact_path), '--bundle']
+            with patch('omni_research.signal_cli.read_signal_input', side_effect=read_then_mutate), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                self.assertEqual(main(args), 0)
+            proposal = generate_proposal_from_bytes(captured_bars, captured_research, artifact)
+            self.assertEqual(json.loads(stdout.getvalue()), generate_paper_input_bundle(proposal, captured_bars, captured_research))
+            bundle = json.loads(stdout.getvalue())
+            self.assertEqual(bundle['bars_csv'].encode('utf-8'), captured_bars)
+            self.assertEqual(bundle['research_csv'].encode('utf-8'), captured_research)
+            self.assertEqual(bundle['proposal']['input_sha256'], hashlib.sha256(captured_bars).hexdigest())
+            self.assertEqual(stderr.getvalue(), '')
+
+    def test_bundle_watch_deduplicates_on_proposal(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            bars, research, artifact = self.inputs(directory)
+            artifact_path = directory / 'artifact.json'
+            artifact_path.write_text(json.dumps(artifact))
+            ticks = 0
+
+            def wait(_: float) -> None:
+                nonlocal ticks
+                ticks += 1
+                if ticks == 2:
+                    raise KeyboardInterrupt
+
+            stdout, stderr = io.StringIO(), io.StringIO()
+            args = ['--bars', str(bars), '--research-bars', str(research), '--artifact', str(artifact_path), '--bundle', '--watch']
+            with patch('time.sleep', side_effect=wait), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                self.assertEqual(main(args), 130)
+            self.assertEqual(len(stdout.getvalue().splitlines()), 1)
+            self.assertEqual(stderr.getvalue(), '')
+
+    def test_bundle_schema_agrees_with_producer_and_aggregate_cap(self) -> None:
+        schema = json.loads((ROOT / 'contracts/paper-input-bundle.schema.json').read_text())
+        with tempfile.TemporaryDirectory() as temporary:
+            bars, research, artifact = self.inputs(Path(temporary))
+            proposal = generate_proposal(bars, research, artifact)
+            bundle = generate_paper_input_bundle(proposal, bars.read_bytes(), research.read_bytes())
+            self.assertIs(schema['additionalProperties'], False)
+            self.assertEqual(set(schema['required']), set(bundle))
+            self.assertEqual(set(schema['properties']), set(bundle))
+            self.assertEqual(schema['properties']['proposal']['$ref'], 'paper-signal-proposal.schema.json')
+            self.assertEqual(schema['properties']['bars_csv']['maxLength'], 1_048_576)
+            self.assertEqual(schema['properties']['research_csv']['maxLength'], 1_048_576)
+            with self.assertRaisesRegex(ValueError, 'bundle exceeds 4 MiB'):
+                generate_paper_input_bundle(proposal, b'"' * 1_048_576, b'"' * 1_048_576)
+            empty = {**bundle, 'bars_csv': '', 'research_csv': ''}
+            overhead = len(json.dumps(empty, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8'))
+            remaining = 4 * 1_048_576 - 1 - overhead - 2 * 1_048_576
+            bars_bytes = b'"' * 1_048_576
+            research_bytes = b'"' * (remaining // 2) + b'x' * (remaining % 2)
+            boundary = generate_paper_input_bundle(proposal, bars_bytes, research_bytes)
+            encoded = json.dumps(boundary, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+            self.assertEqual(len(encoded) + 1, 4 * 1_048_576)
+            with self.assertRaisesRegex(ValueError, 'bundle exceeds 4 MiB'):
+                generate_paper_input_bundle(proposal, bars_bytes, research_bytes + b'x')
+
+    def inputs(self, directory: Path, closes: tuple[str, ...] = ("3", "2", "1", "4"), line_ending: bytes = b'\n') -> tuple[Path, Path, dict]:
         research = directory / "research.csv"
-        research.write_bytes((ROOT / "contracts/fixtures/strategy-market-bars.csv").read_bytes().replace(b",SMA,", b",005930,"))
+        research.write_bytes((ROOT / "contracts/fixtures/strategy-market-bars.csv").read_bytes().replace(b",SMA,", b",005930,").replace(b'\n', line_ending))
         config = json.loads((ROOT / "contracts/fixtures/strategy-improvement-config.json").read_text())
         config["strategy"]["fast_windows"] = [2]
         config["strategy"]["slow_windows"] = [3]
         artifact = run_experiment(research, config)
         self.assertEqual(artifact["promotion"]["target"], "paper_candidate")
         bars = directory / "latest.csv"
-        bars.write_text("bar_at,symbol,open,high,low,close,volume\n" + "".join(
+        bars.write_bytes(("bar_at,symbol,open,high,low,close,volume\n" + "".join(
             f"2026-05-{index + 1:02d}T00:00:00Z,005930,{price},{price},{price},{price},100\n"
             for index, price in enumerate(closes)
-        ))
+        )).replace('\n', line_ending.decode()).encode())
         return bars, research, artifact
 
     def test_proposal_binds_actual_inputs_without_order_authority(self) -> None:

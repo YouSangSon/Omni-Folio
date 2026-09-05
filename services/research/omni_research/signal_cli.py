@@ -35,7 +35,7 @@ def read_signal_input(path: Path) -> bytes:
         return raw
 
 
-def generate_proposal(bars_path: Path, research_bars_path: Path, artifact: dict[str, Any]) -> dict[str, Any]:
+def generate_proposal_from_bytes(raw_bars: bytes, research_bytes: bytes, artifact: dict[str, Any]) -> dict[str, Any]:
     # This validates the calculation inputs, not the complete research proof.
     # Self-hashes and claimed promotion gates remain untrusted until Go admission.
     if not isinstance(artifact, dict) or set(artifact) != ARTIFACT_FIELDS:
@@ -68,13 +68,11 @@ def generate_proposal(bars_path: Path, research_bars_path: Path, artifact: dict[
         raise ValueError("paper quantity must be positive whole shares")
     decimal_input(quantity, "quantity")
 
-    # Read each snapshot once: the hash and parsed bars must refer to the same bytes.
-    research_bytes = read_signal_input(research_bars_path)
+    # Hash and parsed bars must refer to the same immutable byte snapshots.
     research_sha = hashlib.sha256(research_bytes).hexdigest()
     if artifact["input_sha256"] != research_sha or manifest["data"]["input_sha256"] != research_sha:
         raise ValueError("research data hash mismatch")
     research_bars = parse_bars(research_bytes)
-    raw_bars = read_signal_input(bars_path)
     bars = parse_bars(raw_bars)
     if len(bars) <= slow or not re.fullmatch(r"[0-9]{6}", bars[-1].symbol) or bars[-1].symbol != research_bars[-1].symbol:
         raise ValueError("paper signal requires matching KRX symbols and sufficient history")
@@ -92,6 +90,35 @@ def generate_proposal(bars_path: Path, research_bars_path: Path, artifact: dict[
         "target_quantity": quantity if signal == "golden_cross" else "0" if signal == "death_cross" else None,
     }
     return {**proposal, "proposal_sha256": canonical_hash(proposal)}
+
+
+def generate_proposal(bars_path: Path, research_bars_path: Path, artifact: dict[str, Any]) -> dict[str, Any]:
+    # Keep the path API for callers while binding calculation to single reads.
+    research_bytes = read_signal_input(research_bars_path)
+    raw_bars = read_signal_input(bars_path)
+    return generate_proposal_from_bytes(raw_bars, research_bytes, artifact)
+
+
+def _json(value: dict[str, Any]) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def generate_paper_input_bundle(proposal: dict[str, Any], raw_bars: bytes, research_bytes: bytes) -> dict[str, Any]:
+    if len(raw_bars) > 1_048_576 or len(research_bytes) > 1_048_576:
+        raise ValueError("bundle CSV input exceeds 1 MiB")
+    try:
+        bars_csv = raw_bars.decode("utf-8")
+        research_csv = research_bytes.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("bundle CSV must be UTF-8") from error
+    bundle = {
+        "schema_version": "paper-input-bundle.v1", "mode": "paper_bundle_only", "proposal": proposal,
+        "bars_csv": bars_csv, "research_csv": research_csv,
+    }
+    # JSON escaping can expand valid one-MiB snapshots beyond the Go ingress cap.
+    if len(_json(bundle).encode("utf-8")) + 1 > 4 * 1_048_576:
+        raise ValueError("bundle exceeds 4 MiB")
+    return bundle
 
 
 def _object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -113,6 +140,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--research-bars", required=True, type=Path)
     parser.add_argument("--artifact", required=True, type=Path)
     parser.add_argument("--watch", action="store_true", help="emit changed latest-close proposals as NDJSON; no execution authority")
+    parser.add_argument("--bundle", action="store_true", help="emit a proposal with its exact validated CSV snapshots")
     args = parser.parse_args(argv)
     try:
         raw = read_signal_input(args.artifact)
@@ -123,11 +151,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         while True:
             if previous is not None and read_signal_input(args.artifact) != raw:
                 raise ValueError("watch research artifact changed")
-            proposal = generate_proposal(args.bars, args.research_bars, artifact)
+            research_bytes = read_signal_input(args.research_bars)
+            raw_bars = read_signal_input(args.bars)
+            proposal = generate_proposal_from_bytes(raw_bars, research_bytes, artifact)
             if proposal != previous:
                 if previous is not None and proposal["data_as_of"] <= previous["data_as_of"]:
                     raise ValueError("watch requires a new close, not rewritten history")
-                print(json.dumps(proposal, ensure_ascii=False, sort_keys=True, separators=(",", ":")), flush=True)
+                output = generate_paper_input_bundle(proposal, raw_bars, research_bytes) if args.bundle else proposal
+                print(_json(output), flush=True)
                 previous = proposal
             if not args.watch:
                 return 0

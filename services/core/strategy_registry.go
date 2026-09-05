@@ -93,6 +93,10 @@ func sameStrategyRegistryProof(left, right strategyRegistryRecoveryProof) bool {
 }
 
 func readStrategyArtifact(path string) ([]byte, error) {
+	return readBoundedRegularFile(path, maxBodyBytes)
+}
+
+func readBoundedRegularFile(path string, limit int64) ([]byte, error) {
 	// Open first without waiting for a FIFO writer, then validate the actual
 	// descriptor. A path-only Stat check would race a regular-file replacement.
 	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
@@ -107,12 +111,12 @@ func readStrategyArtifact(path string) ([]byte, error) {
 	if !info.Mode().IsRegular() {
 		return nil, errors.New("strategy evidence path must be a regular file")
 	}
-	artifact, err := io.ReadAll(io.LimitReader(file, maxBodyBytes+1))
+	artifact, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(artifact) > maxBodyBytes {
-		return nil, errors.New("strategy evidence exceeds the 1 MiB limit")
+	if int64(len(artifact)) > limit {
+		return nil, errors.New("input exceeds the byte limit")
 	}
 	return artifact, nil
 }

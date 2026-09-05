@@ -38,6 +38,8 @@ func TestLocalPaperExecutableRejectsFIFO(t *testing.T) {
 		{"execute_bars", []string{"paper-execute", "-bars", fifo, "-proposal", regular, "-research-bars", regular}},
 		{"execute_proposal", []string{"paper-execute", "-bars", regular, "-proposal", fifo, "-research-bars", regular}},
 		{"execute_research", []string{"paper-execute", "-bars", regular, "-proposal", regular, "-research-bars", fifo}},
+		{"execute_bundle", []string{"paper-execute", "-bundle", fifo}},
+		{"execute_bundle_symlink", []string{"paper-execute", "-bundle", link}},
 		{"register", []string{"strategy-register", "-artifact", fifo}},
 	} {
 		t.Run(test.name, func(t *testing.T) {

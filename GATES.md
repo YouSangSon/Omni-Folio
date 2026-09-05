@@ -107,4 +107,6 @@ G6 PostgreSQL and Kubernetes promotion
 
 - G3.8G2C는 `signal_cli --watch`로 같은 연구 후보의 새 마지막 봉 제안을 자동 생성한다. 생성·프레이밍만 담당하며 durable 전달·Go 접수·주문 실행은 아직 연결하지 않는다. 반복 입력과 입출력/프로세스 실패, 전체 `make check`·소유 자원 정리를 로컬 통과했다. [gate](gates/g3t-paper-proposal-watch.md)
 
+- G3.8G2D는 Python 제안과 정확한 두 CSV byte를 단일 bundle로 전달하고 기존 Go 수동 실행 검증을 재사용한다. 원본 경로 교체·재시도·hash mismatch·잘못된 JSON/Unicode·크기/FIFO 경계와 전체 `make check`가 로컬 통과했다. 스트림 소비·지속 실행 lease는 아직 미완료이며 G3.8G2 전체 완료가 아니다. [gate](gates/g3u-paper-input-bundle.md)
+
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.

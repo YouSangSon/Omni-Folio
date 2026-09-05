@@ -70,6 +70,7 @@
   - [x] G3.8G2A stored-series 독립 SMA 판정·Go receipt deadline과 proposal→v3 signal→OPEN paper order의 단일 transaction admission ([gate](gates/g3r-paper-proposal-admission.md))
   - [x] G3.8G2B 명시적 초기화·CSV/연구 원본 검증·fill→policy→signal 수동 CLI와 FIFO 거절·누락 봉 부분체결·정책중지 재시작 검증. 실제 실행 파일의 SIGINT/SIGTERM 종료, SIGKILL 후 즉시 재시작 차단·실제 TTL 만료 후 중복 없는 복구 및 소유 자원 정리까지 로컬 통과; 상시 실행을 뜻하지 않음 ([gate](gates/g3s-local-paper-workflow.md), [사용법](docs/local-paper-workflow.md))
   - [x] G3.8G2C 기존 Python 생성기의 `--watch` NDJSON 제안 스트림; 반복 입력·역행/재작성·입출력 실패·OS signal과 전체 check 로컬 검증. 정확한 CSV byte 전달과 durable Go 소비·지속 실행 lease는 별도 후속이며 자동 rearm하지 않음 ([gate](gates/g3t-paper-proposal-watch.md))
+  - [x] G3.8G2D Python `--bundle`의 정확한 CSV byte 전달과 Go 수동 `paper-execute -bundle` 연결; 경로 교체·중복 재시도·잘못된 입력·FIFO·전체 check 로컬 통과. 지속 소비·lease 갱신·상시 실행은 별도 후속 ([gate](gates/g3u-paper-input-bundle.md))
 - [ ] strategy/risk/paper runner와 자동 paper/shadow promotion evidence
 
 ## Later, only after gates

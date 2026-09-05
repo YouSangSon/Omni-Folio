@@ -59,11 +59,27 @@ go run . paper-execute -db /absolute/path/paper.db \
 go run . paper-import-bars -db /absolute/path/paper.db -bars /absolute/path/latest.csv
 ```
 
+## 원본 byte를 함께 전달하기
+
+원본 파일이 전달 후 바뀔 수 있다면 Python 명령에 `--bundle`을 추가하고, 성공 종료한 **한 번의 출력**을 사용합니다. 예시는 저장소 루트 기준입니다.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research \
+  python3 -m omni_research.signal_cli \
+  --bars latest.csv --research-bars research.csv --artifact artifact.json \
+  --bundle > paper-input.json && \
+  (cd services/core && go run . paper-execute -db /absolute/path/paper.db \
+    -account account_local_paper -expected-current-event "$PAPER_SELECTION_EVENT" \
+    -bundle /absolute/path/paper-input.json -arm-paper)
+```
+
+`/absolute/path/paper-input.json`은 앞에서 저장한 파일의 실제 절대 경로로 바꿉니다. `-bundle`은 `-bars`, `-research-bars`, `-proposal`과 함께 사용할 수 없습니다. 두 CSV는 각각 1 MiB, JSON 파일 전체는 4 MiB 이하입니다. 원본 UTF-8·줄바꿈을 보존하고 기존 Go 검증을 그대로 거칩니다. 파일 자체가 실행 승인이나 전달 완료 증거는 아닙니다. 출력 파일은 사용자가 보관하며 실패한 생성 결과로 실행하지 않습니다. [bundle gate](../gates/g3u-paper-input-bundle.md)
+
 ## 자동 제안 생성만 관찰하기
 
 앞의 Python `signal_cli` 명령에 `--watch`를 추가하면 현재 유효한 제안을 한 줄 출력한 뒤, 각 검사 완료 1초 후 CSV를 다시 읽습니다. 동일 입력은 다시 출력하지 않습니다. 입력 파일은 각 1 MiB 이하의 일반 파일이어야 하며 작성자는 완성된 파일로 원자 교체해야 합니다. 실행 중 연구 artifact 변경, 연구 CSV hash 불일치, 같은/과거 마지막 봉의 byte 변경 또는 잘못된 입력은 오류로 종료합니다.
 
-출력은 단일 JSON 파일이 아니라 NDJSON 스트림입니다. 이를 `proposal.json`에 계속 덮어쓰거나 현재 `paper-execute`에 pipe로 연결하지 마세요. 이 생성기는 파일·DB·주문을 만들지 않으며, 재시작 시 같은 제안이 재출력되거나 검사 사이 중간 snapshot이 누락될 수 있습니다. 원본 byte를 보존한 전달과 durable 소비를 연결하기 전까지 자동매매 실행 경로가 아닙니다. [생성 전용 gate](../gates/g3t-paper-proposal-watch.md)
+출력은 단일 JSON 파일이 아니라 NDJSON 스트림입니다. `--watch --bundle`은 각 줄에 원본 CSV도 담지만, 이를 `proposal.json`에 계속 덮어쓰거나 현재 `paper-execute`에 pipe로 연결하지 마세요. 이 생성기는 파일·DB·주문을 만들지 않으며, 재시작 시 같은 제안이 재출력되거나 검사 사이 중간 snapshot이 누락될 수 있습니다. durable 소비와 지속 실행 lease를 연결하기 전까지 자동매매 실행 경로가 아닙니다. [생성 전용 gate](../gates/g3t-paper-proposal-watch.md)
 
 ## 실패와 재시도
 

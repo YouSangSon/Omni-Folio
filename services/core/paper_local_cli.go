@@ -12,7 +12,7 @@ import (
 func runLocalPaperCommand(ctx context.Context, args []string, output io.Writer) error {
 	fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	dbPath := fs.String("db", "omni-folio.db", "existing migrated SQLite database")
-	var account, selection, result, barsPath, proposalPath, researchPath string
+	var account, selection, result, barsPath, proposalPath, researchPath, bundlePath string
 	var arm bool
 	if args[0] != "paper-import-bars" {
 		fs.StringVar(&account, "account", "", "isolated paper account alias")
@@ -24,6 +24,7 @@ func runLocalPaperCommand(ctx context.Context, args []string, output io.Writer) 
 		fs.StringVar(&barsPath, "bars", "", "explicit-time paper fixture CSV")
 	}
 	if args[0] == "paper-execute" {
+		fs.StringVar(&bundlePath, "bundle", "", "paper input bundle JSON; exclusive with separate input files")
 		fs.StringVar(&proposalPath, "proposal", "", "offline paper proposal JSON")
 		fs.StringVar(&researchPath, "research-bars", "", "original research CSV bound to the registered result")
 		fs.BoolVar(&arm, "arm-paper", false, "explicitly arm this one-shot paper run; halt on exit")
@@ -32,12 +33,24 @@ func runLocalPaperCommand(ctx context.Context, args []string, output io.Writer) 
 		return err
 	}
 	if fs.NArg() != 0 || (args[0] != "paper-import-bars" && (account == "" || selection == "")) ||
-		(args[0] == "paper-init" && result == "") || (args[0] != "paper-init" && barsPath == "") ||
-		(args[0] == "paper-execute" && (proposalPath == "" || researchPath == "" || !arm)) {
+		(args[0] == "paper-init" && result == "") || (args[0] == "paper-import-bars" && barsPath == "") ||
+		(args[0] == "paper-execute" && (!arm ||
+			(bundlePath == "" && (barsPath == "" || proposalPath == "" || researchPath == "")) ||
+			(bundlePath != "" && (barsPath != "" || proposalPath != "" || researchPath != "")))) {
 		return errors.New("local paper command requires all explicit inputs; paper-execute also requires -arm-paper")
 	}
 	var bars, proposal, research []byte
 	var err error
+	if bundlePath != "" {
+		raw, readErr := readBoundedRegularFile(bundlePath, maxPaperBundleBytes)
+		if readErr != nil {
+			return errors.New("local paper bundle is unreadable or exceeds 4 MiB")
+		}
+		proposal, bars, research, err = decodePaperInputBundle(raw)
+		if err != nil {
+			return err
+		}
+	}
 	if barsPath != "" {
 		bars, err = readStrategyArtifact(barsPath)
 		if err != nil {
