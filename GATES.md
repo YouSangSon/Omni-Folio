@@ -115,4 +115,6 @@ G6 PostgreSQL and Kubernetes promotion
 
 - G3.8G2G는 실제 Python watch→Go pipe에서 연속 CSV 갱신·체결·정책 halt·양방향 종료·명시적 재연결과 별도 context 복구를 검증했다. 취소된 DB 읽기를 일반 무결성 오류로 바꾸던 분기에서 취소 identity를 보존하며, focused race와 최종 전체 check·소유 자원 정리가 통과했다. 짧은 로컬 연결 증거이며 장기 운영·소스 완결성·broker/live 준비가 아니다. [gate](gates/g3x-paper-pipeline.md)
 
+- G3.8G2H는 실제 갱신 1,000회에서 이력 구간별 갱신/전체 정책 복구 지연을 로컬 측정했다. 갱신 p95는 첫 구간 10.64ms에서 마지막 구간 28.39ms로 증가했다. 논리 시간 가속·warm cache·고정 주문 이력의 진단이며 상시 운영 보증이나 최적화 결과가 아니다. 기존 검증을 유지하고 원인별 프로파일링을 다음 성능 단계로 둔다. [gate](gates/g3y-paper-history-profile.md)
+
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.

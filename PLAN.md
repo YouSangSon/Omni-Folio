@@ -74,6 +74,7 @@
   - [x] G3.8G2E 현재 owner의 execution/global lease 원자 갱신과 수동 단계 연결; 최초 TTL 이후 실제 체결·동시 갱신·rollback·backup/restore·전체 check 및 최종 targeted race 로컬 통과. 지속 입력 소비·idle heartbeat와 장기 처리량 검증은 별도 후속 ([gate](gates/g3v-paper-execution-heartbeat.md))
   - [x] G3.8G2F pipe NDJSON 연속 소비와 idle 원자 갱신, 최초 1회 arm 및 reader/생산자 종료 연결; 실제 signal·30초 이후 갱신·외부 halt·재연결 재시도와 전체 check 로컬 통과. 장기 운영 부하·소스 누락 방지·durable 전달은 별도 후속 ([gate](gates/g3w-paper-input-stream.md))
   - [x] G3.8G2G 실제 Python watch→Go pipe에서 새 CSV·체결·정책 halt와 양쪽 프로세스 종료·명시적 재연결, 별도 context 복구를 검증하고 취소 원인 redaction 오류를 교정. focused race·전체 check 로컬 통과; 장기 부하·소스 완결성은 미검증 ([gate](gates/g3x-paper-pipeline.md))
+  - [x] G3.8G2H 실제 1,000회 갱신 이력의 구간별 갱신/복구 p50·p95·p99와 런타임 기준값을 보존. 논리 lease clock과 실제 작업 시간을 구분하며 장기 운영·성능 개선으로 주장하지 않음 ([gate](gates/g3y-paper-history-profile.md))
 - [ ] strategy/risk/paper runner와 자동 paper/shadow promotion evidence
 
 ## Later, only after gates
