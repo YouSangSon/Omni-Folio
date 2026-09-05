@@ -127,6 +127,7 @@ Market data adapters
 - 공급자별 인증, rate limit, pagination, symbol mapping, 재시도는 해당 adapter 내부에 둔다.
 - 주문 상태 머신과 거래 원장을 분리하고 체결 이벤트를 통해 reconciliation한다.
 - 전략 정의는 브로커 SDK, credential, 주문 API에 접근하지 않고 `Signal`만 만든다. 포트폴리오 구성기가 여러 전략의 신호와 자금 배분을 `PortfolioTarget`으로 합치고, 공통 risk/execution pipeline만 주문을 만든다.
+- 오프라인 신호 제안은 연구 artifact·파라미터·실제로 읽은 입력 snapshot hash를 보존하고 연구 표본 이후 데이터만 대상으로 한다. 신호 없음과 목표 수량 0을 구분한다. hash 일치는 승인·신선도·시장 데이터 완결성 증거가 아니며 Go가 현재 선택·session·closed-bar cutoff·lease/fencing·위험 한도를 독립 검증하기 전에는 실행할 수 없다. 성과 평가 scheduler만 있는 상태를 자동매매 완성으로 보고하지 않는다.
 - Python 연구 산출물의 수수료·세금·slippage·지연·참여율·신호/체결 시점 계약은 hash 일치만으로 신뢰하지 않는다. Go가 exact field, canonical decimal과 허용 범위를 독립 검증한 산출물만 registry·복구·paper 실행 입력으로 인정한다.
 - Capitalized paper 체결은 account-global session과 동일한 execution policy, transaction-owned market sequence cutoff, cutoff 뒤 exact eligible closed bar, current lease/fence를 함께 요구한다. Later-known final volume과 bar open을 쓰는 `paper_bar_open_v1`은 ex-post simulation이며 opening-auction이나 broker/live 체결 증거가 아니다.
 - KRX paper target은 whole share로 제한하고 account/symbol당 active order를 하나만 허용한다. Fixed per-fill fee, SELL-only tax와 adverse slippage를 적용한 sole `FILL_RECORDED` journal에서 cash·FIFO lot·실현손익을 replay하며, general ledger나 mutable balance/lot projection을 두 번째 권한으로 만들지 않는다.

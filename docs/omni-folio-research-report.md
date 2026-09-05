@@ -302,3 +302,13 @@ Python research/backtest
 - 30개 이상의 후보를 선별하고, 이 보고서에는 구현 결정에 직접 영향을 주는 20여 개의 1차 출처를 포함했다.
 - GitHub REST API로 핵심 저장소의 archived 여부, 라이선스, 최근 push를 2026-08-23에 재확인했다.
 - Exa 무료 MCP 한도에 일부 질의가 걸려, 해당 영역은 일반 웹 검색과 공식 문서 직접 읽기로 보완했다.
+
+## 2026-09-05 paper 신호/실행 경계 추가 조사
+
+이번 범위는 엔진 전체 재선정이 아니라 기존 SMA에서 offline 목표 수량을 생성하는 작은 연결이다. 다음 공식 문서 세 편을 직접 읽었으며 라이브러리 실행 POC나 수익률 비교 실험을 했다는 의미는 아니다.
+
+- QuantConnect는 alpha의 Insight, 포트폴리오의 목표 수량, 위험 조정, 실행을 별도 책임으로 나눈다. Omni-Folio도 Python 목표 제안에 계좌·주문 권한을 넣지 않고 Go의 기존 실행 경계로 전달하는 방향을 따른다. [Algorithm Framework Overview](https://www.quantconnect.com/docs/v2/writing-algorithms/algorithm-framework/overview)
+- NautilusTrader는 bar 내부 경로를 실제로 알 수 없으며 bar가 완성된 뒤 전략이 관측해야 한다고 설명한다. 같은 bar의 open을 이미 관측한 close 신호에 쓰면 lookahead가 된다. 프로젝트의 신호 이후 eligible bar 및 persisted sequence cutoff를 유지해야 하는 이유다. [Bar Execution](https://nautilustrader.io/docs/latest/concepts/backtesting/bar-execution/)
+- NautilusTrader의 시장 업데이트, resting order 매칭, 전략 callback, queued command 처리 순서는 같은 timestamp의 실행도 순서 계약이 필요함을 보여준다. 프로젝트에 적용한 판단은 완료 봉 수집 → 이전 eligible 주문 처리 → 새 신호 기록을 별도 검증하고, 단순 시간 비교만으로 재시작·중복 방지가 됐다고 보지 않는 것이다. [Execution Flow](https://nautilustrader.io/docs/latest/concepts/backtesting/execution-flow/)
+
+위 문서에서 얻은 설계 판단과 현재 코드의 실행 증거를 구분한다. LEAN/NautilusTrader를 실제 실행해 비교한 POC 증거는 이번 점검에서 찾지 못했다. 따라서 두 엔진이 부적합하다는 결론은 내리지 않는다. 우선 이미 존재하는 SMA 함수와 원장·주문 로직을 재사용하며, 외부 엔진 통합은 동일 데이터·비용·시점 계약의 재현 비교가 필요할 때 검토한다. 구현 범위와 남은 운영 연결은 [G3.8G1](../gates/g3q-paper-signal-proposals.md)에 둔다.

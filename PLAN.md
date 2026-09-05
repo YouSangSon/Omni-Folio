@@ -65,6 +65,8 @@
 - [x] G3.8F1 scheduled one-shot paper evaluation/action runner: `paper-run-due` CLI가 최신 available local fixture close를 C3/D/E로 닫고 retry·두 owner 동시 실행을 idempotent journal로 수렴시키며 완료 chain retry 전 paper 성과 정책 root recovery를 다시 증명
 - [x] G3.8F2 DB-leased/fenced always-on local scheduler: 현재 전역 strategy selection에 맞춘 단일 active runner, 10초 heartbeat/30초 TTL, exact stage fencing, stale-owner 회수와 success/failure/SIGINT/SIGTERM cleanup proof
 - [ ] G3.8F 이후 alerting, shadow promotion evidence, CronJob packaging과 broker/live authority는 별도 gate
+- [x] G3.8G1 기존 SMA 판정을 공유하는 offline paper target proposal CLI와 closed contract·입력 provenance 검증; 비신뢰 제안이며 연구 증명·주문 권한 아님 ([gate](gates/g3q-paper-signal-proposals.md))
+- [ ] G3.8G2 proposal의 Go 검증·선택 binding, session/bar ingress, 순차 fill→signal 실행과 process-owned paper authority·lease cleanup을 연결한 실제 local paper 실행
 - [ ] strategy/risk/paper runner와 자동 paper/shadow promotion evidence
 
 ## Later, only after gates

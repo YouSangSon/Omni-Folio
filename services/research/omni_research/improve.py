@@ -156,6 +156,20 @@ def average(closes: list[Decimal], end: int, window: int) -> Decimal:
     return sum(closes[end - window + 1 : end + 1], ZERO) / Decimal(window)
 
 
+def sma_crossover(closes: list[Decimal], end: int, parameters: Parameters) -> str:
+    if end < parameters.slow_window:
+        return "none"
+    previous_fast = average(closes, end - 1, parameters.fast_window)
+    previous_slow = average(closes, end - 1, parameters.slow_window)
+    current_fast = average(closes, end, parameters.fast_window)
+    current_slow = average(closes, end, parameters.slow_window)
+    if previous_fast <= previous_slow and current_fast > current_slow:
+        return "golden_cross"
+    if previous_fast >= previous_slow and current_fast < current_slow:
+        return "death_cross"
+    return "none"
+
+
 def simulate_fold(
     bars: list[Bar],
     config: ExperimentConfig,
@@ -234,15 +248,10 @@ def simulate_fold(
             if index == evaluation_start and position == ZERO:
                 schedule("BUY", config.quantity, index)
             continue
-        if index < parameters.slow_window:
-            continue
-        previous_fast = average(closes, index - 1, parameters.fast_window)
-        previous_slow = average(closes, index - 1, parameters.slow_window)
-        current_fast = average(closes, index, parameters.fast_window)
-        current_slow = average(closes, index, parameters.slow_window)
-        if position == ZERO and previous_fast <= previous_slow and current_fast > current_slow:
+        crossover = sma_crossover(closes, index, parameters)
+        if position == ZERO and crossover == "golden_cross":
             schedule("BUY", config.quantity, index)
-        elif position > ZERO and previous_fast >= previous_slow and current_fast < current_slow:
+        elif position > ZERO and crossover == "death_cross":
             schedule("SELL", position, index)
 
     if any(order.remaining != ZERO for order in orders) or position != ZERO:

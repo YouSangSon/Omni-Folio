@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import json
 from dataclasses import dataclass
 from datetime import datetime
@@ -80,11 +81,17 @@ def timestamp(value: str, field: str) -> datetime:
 
 
 def load_bars(path: Path) -> list[Bar]:
-    with path.open("r", encoding="utf-8", newline="") as source:
+    return parse_bars(path.read_bytes())
+
+
+def parse_bars(data: bytes) -> list[Bar]:
+    with io.StringIO(data.decode("utf-8"), newline="") as source:
         rows = csv.DictReader(source)
         required = {"bar_at", "symbol", "open", "high", "low", "close", "volume"}
         if rows.fieldnames is None or not required.issubset(rows.fieldnames):
             raise ValueError("bars CSV requires bar_at,symbol,open,high,low,close,volume columns")
+        if len(set(rows.fieldnames)) != len(rows.fieldnames):
+            raise ValueError("bars CSV column names must be unique")
         bars = [
             Bar(
                 at=row["bar_at"],

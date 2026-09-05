@@ -99,5 +99,6 @@ G6 PostgreSQL and Kubernetes promotion
 - local 검증, broker sandbox, live readiness, 실제 운영 증거를 따로 보고한다.
 - G1.15는 기존 native holding 계산을 sanitized GET과 독립 Flutter 상세에 연결한다. 같은 원장 revision의 수량·원가·가격·평가, exact nanosecond 24시간 경계, 통화별 합계와 sample/stale 경계, empty/partial/retained-error 화면 및 내부 ID 비노출을 로컬 검증한다. 2026-09-05 `make check`는 Go 전체, Flutter 74개, Python 17개, JSON 계약 15개와 scoped cleanup을 통과했다. 전체 계좌 평가, broker-backed freshness, 물리기기·수동 screen-reader 검증 또는 배포 증거는 아니다. 세부 근거는 [`gates/g1k-holding-valuation-view.md`](gates/g1k-holding-valuation-view.md)에 둔다.
 - external deploy, credential, live 주문, push는 명시 승인 없이는 실행하지 않는다.
+- G3.8G1은 기존 SMA 판정을 공유한 offline 목표 제안과 입력 hash·종목·연구 이후 시점 경계만 증명한다. 2026-09-05 `make check`의 Go 전체·Flutter 전체·Python 25개·JSON 16개 구문 검사·owned cleanup self-test가 통과했다. JSON schema 필드/분기는 별도 회귀 검사이며 완전한 JSON Schema validator 실행은 아니다. 재해시 가능한 비신뢰 입력은 Go registry·선택 검증을 대체하지 않는다. 신호 admission·session/bar ingress·paper 체결 운영 연결은 G3.8G2에 남아 있다. [세부 gate](gates/g3q-paper-signal-proposals.md)
 
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.
