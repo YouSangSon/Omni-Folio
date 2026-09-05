@@ -319,8 +319,12 @@ func openExistingDB(path string) (*sql.DB, error) {
 }
 
 func requireSchema(db *sql.DB) error {
+	return requireSchemaContext(context.Background(), db)
+}
+
+func requireSchemaContext(ctx context.Context, q orderQuerier) error {
 	var first, latest, count int
-	if err := db.QueryRow(`SELECT COALESCE(MIN(version), 0), COALESCE(MAX(version), 0), COUNT(*) FROM schema_migrations`).Scan(&first, &latest, &count); err != nil {
+	if err := q.QueryRowContext(ctx, `SELECT COALESCE(MIN(version), 0), COALESCE(MAX(version), 0), COUNT(*) FROM schema_migrations`).Scan(&first, &latest, &count); err != nil {
 		return fmt.Errorf("database is not migrated; run migrate first: %w", err)
 	}
 	if first != 1 || latest != latestSchema || count != latestSchema {

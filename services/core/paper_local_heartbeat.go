@@ -36,12 +36,18 @@ func (s *Service) heartbeatLocalPaperExecution(ctx context.Context, claim *paper
 	if err := requireIsolatedPaperAccount(ctx, tx, claim.AccountRef); err != nil {
 		return nil, nil, err
 	}
-	current, err := s.requireCurrentSyntheticExecutionLease(ctx, tx, claim.AccountRef, fence, now)
+	// The complete history was verified above in this same transaction, with
+	// no intervening writes. Read only its indexed head; independent callers
+	// still require loadExecutionAuthoritySnapshot's full replay.
+	var currentID string
+	if err := tx.QueryRowContext(ctx, `SELECT event_id FROM execution_authority_events WHERE account_ref=? ORDER BY sequence DESC LIMIT 1`, claim.AccountRef).Scan(&currentID); err != nil {
+		return nil, nil, err
+	}
+	previous, err := loadExecutionAuthorityRecordByID(ctx, tx, currentID)
 	if err != nil {
 		return nil, nil, err
 	}
-	previous, err := loadExecutionAuthorityRecordByID(ctx, tx, current.EventID)
-	if err != nil {
+	if err := s.validateOwnedExecutionLease(*authorityState(previous), fence, now); err != nil {
 		return nil, nil, err
 	}
 	recordedAt, _ := canonicalUTCTime(previous.RecordedAt)

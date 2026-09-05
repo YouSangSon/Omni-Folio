@@ -305,6 +305,11 @@ func rejectIncompletePaperRunForExpiredClaim(ctx context.Context, q orderQuerier
 }
 
 func provePaperRunnerLeaseRecovery(ctx context.Context, q orderQuerier) (paperRunnerLeaseRecoveryProof, error) {
+	// Policy recovery has legacy early returns. Require current migration
+	// history before treating it as the complete runner prerequisite proof.
+	if err := requireSchemaContext(ctx, q); err != nil {
+		return paperRunnerLeaseRecoveryProof{}, err
+	}
 	if _, err := provePaperPerformancePolicyRecovery(ctx, q); err != nil {
 		return paperRunnerLeaseRecoveryProof{}, err
 	}

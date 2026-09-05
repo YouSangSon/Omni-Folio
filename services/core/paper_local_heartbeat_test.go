@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -264,5 +265,116 @@ func TestLocalPaperHeartbeatConcurrentSameTokenHasOneWinner(t *testing.T) {
 	}
 	if err := svc.releasePaperRunnerLease(ctx, winner.claim); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLocalPaperHeartbeatRejectsCorruptHistoricalAuthority(t *testing.T) {
+	for _, kind := range []string{"hash", "transition", "schema_downgrade"} {
+		t.Run(kind, func(t *testing.T) {
+			svc, signal, _ := paperProposalFixture(t)
+			ctx := context.Background()
+			now := mustTime("2026-01-10T07:00:00Z")
+			svc.now = func() time.Time { return now }
+			claim, err := svc.acquirePaperRunnerLease(ctx, k2aAccountRef)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lease, err := svc.startLocalPaperExecutionWithClaim(ctx, k2aAccountRef, signal.StrategySelectionEventID, claim)
+			if err != nil {
+				t.Fatal(err)
+			}
+			now = now.Add(10 * time.Second)
+			latest, err := loadExecutionAuthoritySnapshot(ctx, svc.db, k2aAccountRef)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var firstID, raw, hash, trigger string
+			var fence int64
+			if err := svc.db.QueryRow(`SELECT event_id,record_json,record_sha256,fencing_token FROM execution_authority_events WHERE account_ref=? ORDER BY sequence LIMIT 1`, k2aAccountRef).Scan(&firstID, &raw, &hash, &fence); err != nil {
+				t.Fatal(err)
+			}
+			if err := svc.db.QueryRow(`SELECT sql FROM sqlite_master WHERE name='execution_authority_events_no_update'`).Scan(&trigger); err != nil {
+				t.Fatal(err)
+			}
+			// Restore the exact schema too: reject the bad history, not a missing trigger.
+			replace := func(raw, hash string, fence int64) {
+				t.Helper()
+				tx, err := svc.db.BeginTx(ctx, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer tx.Rollback()
+				if _, err := tx.Exec(`DROP TRIGGER execution_authority_events_no_update; UPDATE execution_authority_events SET record_json=?,record_sha256=?,fencing_token=? WHERE event_id=?`, raw, hash, fence, firstID); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := tx.Exec(trigger); err != nil {
+					t.Fatal(err)
+				}
+				if err := tx.Commit(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Cleanup(func() {
+				if kind == "schema_downgrade" {
+					if _, err := svc.db.Exec(`INSERT OR REPLACE INTO schema_migrations SELECT * FROM test_saved_migrations; DROP TABLE test_saved_migrations`); err != nil {
+						t.Fatal(err)
+					}
+				}
+				replace(raw, hash, fence)
+				if err := svc.haltOwnedSyntheticExecutionLease(ctx, k2aAccountRef, lease.FencingToken); err != nil {
+					t.Error(err)
+				}
+				if err := svc.releasePaperRunnerLease(ctx, claim); err != nil {
+					t.Error(err)
+				}
+			})
+			want := "execution authority recovery metadata or hash mismatch"
+			if kind != "transition" {
+				replace(raw, strings.Repeat("0", 64), fence)
+			} else {
+				var first executionAuthorityRecord
+				if err := json.Unmarshal([]byte(raw), &first); err != nil {
+					t.Fatal(err)
+				}
+				first.FencingToken = lease.FencingToken + 10
+				changed, changedHash, err := orderJSONHash(first)
+				if err != nil {
+					t.Fatal(err)
+				}
+				replace(string(changed), changedHash, first.FencingToken)
+				want = "execution authority history does not start with an explicit arm event"
+			}
+			if firstID == latest.EventID {
+				t.Fatal("test must corrupt an older event")
+			}
+			if _, err := loadExecutionAuthorityRecordByID(ctx, svc.db, latest.EventID); err != nil {
+				t.Fatalf("latest event must remain individually valid: %v", err)
+			}
+			if kind == "schema_downgrade" {
+				if _, err := svc.db.Exec(`CREATE TEMP TABLE test_saved_migrations AS SELECT * FROM schema_migrations WHERE version>=20; DELETE FROM schema_migrations WHERE version>=20`); err != nil {
+					t.Fatal(err)
+				}
+				want = "unsupported schema history"
+			}
+			before, err := loadPaperRunnerLease(ctx, svc.db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			nextClaim, nextLease, err := svc.heartbeatLocalPaperExecution(ctx, claim, lease.FencingToken)
+			if nextClaim != nil && nextLease != nil {
+				claim, lease = nextClaim, nextLease // Clean up even an unexpected successful mutation.
+			}
+			if err == nil || !strings.Contains(err.Error(), want) || nextClaim != nil || nextLease != nil {
+				t.Fatalf("historical corruption did not block renewal: %+v %+v %v", nextClaim, nextLease, err)
+			}
+			after, err := loadPaperRunnerLease(ctx, svc.db)
+			if err != nil || before.record != after.record {
+				t.Fatalf("failed renewal changed global claim: %v", err)
+			}
+			var count int
+			if err := svc.db.QueryRow(`SELECT COUNT(*) FROM execution_authority_events WHERE account_ref=?`, k2aAccountRef).Scan(&count); err != nil || count != latest.count {
+				t.Fatalf("failed renewal appended authority: %d %v", count, err)
+			}
+		})
 	}
 }

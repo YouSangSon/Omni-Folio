@@ -271,12 +271,19 @@ func (s *Service) requireCurrentSyntheticExecutionLease(ctx context.Context, q o
 	if err != nil {
 		return executionAuthoritySnapshot{}, err
 	}
+	if err := s.validateOwnedExecutionLease(authority.ExecutionAuthorityState, fencingToken, now); err != nil {
+		return executionAuthoritySnapshot{}, err
+	}
+	return authority, nil
+}
+
+func (s *Service) validateOwnedExecutionLease(authority ExecutionAuthorityState, fencingToken int64, now time.Time) error {
 	expires, expiryOK := canonicalUTCTime(authority.LeaseExpiresAt)
 	if !authority.Armed || authority.LeaseOwner != s.executionOwner || authority.FencingToken != fencingToken ||
 		!expiryOK || !now.Before(expires) {
-		return executionAuthoritySnapshot{}, errors.New("execution authority is halted, stale, expired, or owned by another process")
+		return errors.New("execution authority is halted, stale, expired, or owned by another process")
 	}
-	return authority, nil
+	return nil
 }
 
 func (s *Service) haltAllSyntheticExecutionTx(ctx context.Context, tx *sql.Tx, now time.Time) error {

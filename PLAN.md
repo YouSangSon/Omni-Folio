@@ -75,6 +75,8 @@
   - [x] G3.8G2F pipe NDJSON 연속 소비와 idle 원자 갱신, 최초 1회 arm 및 reader/생산자 종료 연결; 실제 signal·30초 이후 갱신·외부 halt·재연결 재시도와 전체 check 로컬 통과. 장기 운영 부하·소스 누락 방지·durable 전달은 별도 후속 ([gate](gates/g3w-paper-input-stream.md))
   - [x] G3.8G2G 실제 Python watch→Go pipe에서 새 CSV·체결·정책 halt와 양쪽 프로세스 종료·명시적 재연결, 별도 context 복구를 검증하고 취소 원인 redaction 오류를 교정. focused race·전체 check 로컬 통과; 장기 부하·소스 완결성은 미검증 ([gate](gates/g3x-paper-pipeline.md))
   - [x] G3.8G2H 실제 1,000회 갱신 이력의 구간별 갱신/복구 p50·p95·p99와 런타임 기준값을 보존. 논리 lease clock과 실제 작업 시간을 구분하며 장기 운영·성능 개선으로 주장하지 않음 ([gate](gates/g3y-paper-history-profile.md))
+  - [x] G3.8G2I 같은 transaction의 전체 검증 뒤 중복 계좌 이력 읽기를 최신 레코드 조회로 축소하고 migration 조기 반환 우회를 공통 경계에서 차단. 과거 손상·표시 변조 RED/GREEN, focused race·전체 check 통과; 마지막 구간 갱신 p95 28.39→19.99ms의 로컬 비교이며 장기 운영은 미검증 ([gate](gates/g3z-paper-renewal-replay.md))
+  - [x] G3.8G2J 실제 Python→Go 연결을 122.029초 실행해 12개 입력의 durable 처리·13개 정책·11회 갱신과 종료 후 전체 복구·소유 리소스 반환을 검증. 120회 관찰에서 최소 lease 여유 12.005초이며 하루 운영·관찰 사이 무중단 보증은 아님 ([gate](gates/g3aa-paper-real-clock-soak.md))
 - [ ] strategy/risk/paper runner와 자동 paper/shadow promotion evidence
 
 ## Later, only after gates

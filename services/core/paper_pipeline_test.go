@@ -16,7 +16,7 @@ import (
 
 // Wire real file descriptors, not a Go copy goroutine or a shell that hides
 // either exit status. Parent copies close after Start so EOF/HUP are genuine.
-func startPaperPipeline(t *testing.T, bin, dbPath, selection, inputs string) (*localPaperChild, *localPaperChild) {
+func startPaperPipeline(t *testing.T, bin, dbPath, selection, inputs string, timeout time.Duration) (*localPaperChild, *localPaperChild) {
 	t.Helper()
 	reader, writer, err := os.Pipe()
 	if err != nil {
@@ -28,7 +28,7 @@ func startPaperPipeline(t *testing.T, bin, dbPath, selection, inputs string) (*l
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	t.Cleanup(cancel)
 	consumer := &localPaperChild{command: exec.CommandContext(ctx, bin, "paper-execute-stream", "-db", dbPath,
 		"-account", k2aAccountRef, "-expected-current-event", selection, "-arm-paper"), done: make(chan struct{})}
@@ -93,7 +93,7 @@ func TestPaperPipelineActualWatchAndExecution(t *testing.T) {
 			for name, raw := range map[string][]byte{"bars.csv": paperSnapshotCSV(rows...), "research.csv": research, "artifact.json": []byte(evidence.artifactJSON)} {
 				replacePaperPipelineInput(t, filepath.Join(inputs, name), raw)
 			}
-			producer, consumer := startPaperPipeline(t, bin, dbPath, selected.CurrentEventID, inputs)
+			producer, consumer := startPaperPipeline(t, bin, dbPath, selected.CurrentEventID, inputs, 45*time.Second)
 			waitPaperPipelineCounts(t, svc, producer, consumer, 1, 0)
 			rows = append(rows, localPaperRestartRow("2026-05-10", "100", "100", "100"))
 			replacePaperPipelineInput(t, barsPath, paperSnapshotCSV(rows...))
@@ -159,7 +159,7 @@ func TestPaperPipelineActualWatchAndExecution(t *testing.T) {
 			}
 			// New explicit invocation, same files: ordinary stop permits a
 			// duplicate-safe replay, whereas a policy rollback denies old scope.
-			retryProducer, retryConsumer := startPaperPipeline(t, bin, dbPath, selected.CurrentEventID, inputs)
+			retryProducer, retryConsumer := startPaperPipeline(t, bin, dbPath, selected.CurrentEventID, inputs, 45*time.Second)
 			if ending != "policy_halt" {
 				waitPaperStreamState(t, svc, retryConsumer, 10*time.Second, func(s executionAuthoritySnapshot) bool { return s.Armed && s.LeaseOwner != "" })
 				if err := retryProducer.command.Process.Signal(syscall.SIGTERM); err != nil {
