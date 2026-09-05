@@ -142,6 +142,7 @@ Market data adapters
 - 새 알고리즘은 versioned strategy manifest, 전략 모듈, contract/backtest fixture만 추가해 등록할 수 있어야 하며 주문·원장·브로커 코어에 전략별 분기를 추가하지 않는다.
 - 인터페이스는 `BrokerPort`와 `MarketDataPort`처럼 실제 교체 지점에만 만든다. 단일 구현 내부에는 불필요한 factory나 추상화를 만들지 않는다.
 - SQLite schema, backup format, API 계약에는 명시적인 migration/version 정책을 둬 데이터와 클라이언트를 깨지 않고 확장한다.
+- 평가 화면은 같은 읽기 transaction에서 검증한 원장 revision·수량·원가·가격 provenance를 하나의 결과로 소비한다. 별도 snapshot과 종목 코드로 합치거나 클라이언트 시계로 평가 authority를 만들지 않는다. 원통화별 합계는 서버가 제공할 때만 표시하고, 누락·모호·stale 가격이면 합계를 숨기며 sample 결과를 현재 계좌 총액이나 live 시세로 승격하지 않는다.
 - Java/Kotlin/JVM은 broker SDK 또는 팀·기존 JVM estate가 우세할 때만 Go의 대안으로 재평가한다. Rust는 profiling으로 Go CPU/GC tail bottleneck이 확인된 좁은 component에만 고려하며, Python-only runtime은 주문 authority를 분산하므로 채택하지 않는다.
 
 ## 실행 권한과 개선 원칙

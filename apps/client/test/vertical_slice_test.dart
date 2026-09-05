@@ -87,6 +87,10 @@ class FakeApi implements OmniApi {
   }
 
   @override
+  Future<HoldingValuation> holdingValuation() =>
+      throw UnsupportedError('Not used by this fixture.');
+
+  @override
   Future<MarketCandles> candles(String symbol) async {
     candleCalls += 1;
     if (fail) throw ApiException(failureMessage);

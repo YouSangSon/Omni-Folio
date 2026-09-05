@@ -149,11 +149,17 @@ G1.12는 보유자산 평가에 앞서 local fixture 종목 가격을 schema v11
 
 G4U checkpoint의 backup v8은 가격 series digest/count를 검증하며 legacy artifact를 원본을 바꾸지 않는 owned copy에서 schema v13으로 migration했습니다. 현재 schema v20/backup v14도 그 가격 proof를 보존합니다. 빈 restore 후보는 embedded migration과 동일한 table DDL·latest index·insert-only trigger를 요구합니다. public API, Flutter 화면, provider 요청, scheduler 또는 broker-backed 보유·손익·성과 평가는 추가하지 않았고 `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다.
 
-### Internal native-currency holding valuation
+### Stored-price native-currency holding valuation
 
 G1.13의 `native_holding_valuation_v1`은 같은 read-only transaction에서 현재 ledger snapshot과 append-only event proof, 전체 security-price series를 다시 검증합니다. 보유자산의 internal instrument ID·symbol·currency에 연결되는 as-of venue가 정확히 하나일 때만 24시간 이내 local fixture 가격으로 원통화 시장가와 미실현손익을 계산합니다. 여러 venue, 누락, stale 또는 미래 observed/fetched/recorded 값은 해당 line에 sanitized issue를 남기고 모든 통화별 aggregate를 숨깁니다.
 
-이 모델은 Go package 내부 검증 경계입니다. 현재환율로 역사적 원가를 환산하지 않고 public route, Flutter 평가 화면, provider ingestion, whole-portfolio total 또는 live/current authority를 만들지 않습니다. `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다. G1.14부터 snapshot/OpenAPI는 `fifo_exact_else_half_even_residual_8_v1`을 명시합니다. 기존 유한 decimal FIFO 배분은 exact 유지하고 반복소수만 half-even 양자화하며, 잔여 원가는 열린 lot에 남아 최종 청산 때 모두 소비됩니다. 이 분석용 정책은 세무 원가 규칙을 대신하지 않습니다.
+G1.15는 이 기존 모델을 `GET /v1/portfolio/holding-valuation`과 Flutter 보유자산의 `저장 가격으로 평가 보기` 상세에 연결합니다. 내부 instrument/observation ID는 응답에서 제외하며 수량·원가·원통화 평가액·미실현손익과 가격 provenance를 같은 원장 revision으로 표시합니다. `as_of` 생략 시 서버 UTC now를 쓰고 explicit cutoff는 canonical UTC만 받습니다. 조회 실패 시 이전 결과의 기준시점과 revision을 함께 보존하며 오류 상세는 노출하지 않습니다.
+
+```sh
+curl -fsS 'http://127.0.0.1:8080/v1/portfolio/holding-valuation'
+```
+
+저장 가격이 없거나 24시간보다 오래되면 합계는 숨겨집니다. `make seed-demo`는 거래 원장만 채우므로 가격 누락은 정상입니다. 모든 가격이 있어도 local sample/stale이며 통화를 합산하거나 현재환율로 역사적 원가를 환산하지 않습니다. provider ingestion, whole-portfolio total 또는 live/current authority는 추가하지 않았고 `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다. G1.14부터 snapshot/OpenAPI는 `fifo_exact_else_half_even_residual_8_v1`을 명시합니다. 기존 유한 decimal FIFO 배분은 exact 유지하고 반복소수만 half-even 양자화하며, 잔여 원가는 열린 lot에 남아 최종 청산 때 모두 소비됩니다. 이 분석용 정책은 세무 원가 규칙을 대신하지 않습니다.
 
 ### Credential-free Kiwoom latest trade
 

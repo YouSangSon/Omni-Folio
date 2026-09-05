@@ -258,5 +258,9 @@ class _ProfileApi implements OmniApi {
   Future<PortfolioSnapshot> snapshot() async => _snapshot;
 
   @override
+  Future<HoldingValuation> holdingValuation() =>
+      throw UnsupportedError('Not part of the G2 frame fixture.');
+
+  @override
   Future<ServiceStatus> status() async => _status;
 }
