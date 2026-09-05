@@ -4,12 +4,55 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+type cancelPaperAuthorizationRead struct {
+	orderQuerier
+	table  string
+	cancel context.CancelFunc
+}
+
+func (q cancelPaperAuthorizationRead) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	if strings.Contains(query, "FROM "+q.table) {
+		q.cancel()
+	}
+	return q.orderQuerier.QueryRowContext(ctx, query, args...)
+}
+
+func TestPaperAuthorizationReadCancellationPreservesCause(t *testing.T) {
+	svc, signal, _ := g38c2PaperSignalFixture(t, true)
+	signal.TargetQuantity = "10"
+	lease := mustK2CLease(t, svc, k2aAccountRef)
+	_, order, err := svc.admitPaperSignal(context.Background(), k2aAccountRef, signal, lease.FencingToken)
+	if err != nil || order == nil {
+		t.Fatalf("admit: %v", err)
+	}
+	authorization, found, err := loadPaperExecutionAuthorizationByOrder(context.Background(), svc.db, order.OrderID)
+	if err != nil || !found {
+		t.Fatalf("authorization: %v", err)
+	}
+	before := paperAdmissionCountsForTest(t, svc)
+	for _, table := range []string{"paper_accounting_sessions", "execution_authority_events"} {
+		t.Run(table, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			q := cancelPaperAuthorizationRead{orderQuerier: svc.db, table: table, cancel: cancel}
+			state, err := validatePaperExecutionAuthorization(ctx, q, authorization)
+			if ctx.Err() == nil || !errors.Is(err, context.Canceled) || state != nil {
+				t.Fatalf("cancellation became integrity error: state=%+v err=%v", state, err)
+			}
+		})
+	}
+	if _, err := provePaperPerformancePolicyRecovery(context.Background(), svc.db); err != nil || paperAdmissionCountsForTest(t, svc) != before {
+		t.Fatalf("read cancellation changed durable history: %v", err)
+	}
+}
 
 func TestG38C2PaperIntentBinding(t *testing.T) {
 	svc, signal, _ := g38c2PaperSignalFixture(t, true)

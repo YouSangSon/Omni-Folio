@@ -65,7 +65,9 @@ func (s *Service) runLocalPaperStream(ctx context.Context, account, selection st
 		cancel()
 		_ = input.Close() // Pollable Close interrupts a partial-frame read.
 		<-done
-		resultErr = errors.Join(resultErr, run.close())
+		// Keep invocation cancellation observable across older redacted read
+		// errors, without hiding either validation or independent cleanup errors.
+		resultErr = errors.Join(resultErr, ctx.Err(), run.close())
 	}()
 	ticker := time.NewTicker(paperRunnerLoopHeartbeatInterval)
 	defer ticker.Stop()

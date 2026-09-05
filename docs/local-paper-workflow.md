@@ -104,6 +104,8 @@ stdin은 취소 가능한 pipe만 허용합니다(일반 파일 redirect/TTY 거
 
 pipe는 durable queue/acknowledgement가 아닙니다. 재연결은 새 명시적 실행이며 이미 확정된 proposal은 기존 journal의 멱등성으로 중복 주문을 막습니다. 소스 snapshot 누락 방지·장기 운영 부하·브로커 연결은 별도 검증 대상입니다. [연속 소비 gate](../gates/g3w-paper-input-stream.md)
 
+양쪽 프로세스의 종료 상태를 확인합니다. 생산자가 입력 오류나 signal로 종료해도 소비자에게는 정상 EOF로 보일 수 있으므로 마지막 Go 명령의 exit code만 확인하지 않습니다. 반대로 정책 중지로 Go가 pipe를 닫으면 Python의 `output is closed` 오류는 예상된 종료일 수 있습니다. DB의 정책·rollback 기록으로 이유를 구분하고 자동 재활성화하지 않습니다. 실제 두 프로세스 연결 검증은 [pipeline gate](../gates/g3x-paper-pipeline.md)를 따릅니다.
+
 ## 실패와 재시도
 
 CSV 한 파일은 전부 저장되거나 전부 취소됩니다. 전체 실행의 CSV, 체결, 성과 정책, 새 주문은 서로 다른 durable 단계이므로 뒤 단계 오류가 앞 단계의 확정 기록을 지우지는 않습니다. 잘못된 제안은 사전 검증에서 arm/체결 전에 거절하지만 이미 검증된 CSV는 남을 수 있습니다.

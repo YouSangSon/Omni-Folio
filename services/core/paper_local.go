@@ -20,7 +20,7 @@ type LocalPaperStepResult struct {
 // it includes the caller's explicit arm. Each journaled phase is retryable.
 func (s *Service) executeLocalPaper(ctx context.Context, account, selection string, proposalRaw, barsRaw, researchRaw []byte) (result *LocalPaperStepResult, resultErr error) {
 	run := &localPaperRun{service: s, account: account, selection: selection}
-	defer func() { resultErr = errors.Join(resultErr, run.close()) }()
+	defer func() { resultErr = errors.Join(resultErr, ctx.Err(), run.close()) }()
 	return run.step(ctx, proposalRaw, barsRaw, researchRaw)
 }
 

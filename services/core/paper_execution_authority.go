@@ -214,13 +214,19 @@ func validatePaperExecutionAuthorization(ctx context.Context, q orderQuerier, au
 	if err != nil {
 		return nil, err
 	}
-	if _, _, err := validateCapitalizedPaperOrderBindings(ctx, q, intent); err != nil ||
-		authorization.AccountRef != intent.AccountRef || authorization.PaperAccountingSessionID != intent.PaperAccountingSessionID ||
+	if _, _, err := validateCapitalizedPaperOrderBindings(ctx, q, intent); err != nil {
+		// Retain cancellation identity without exposing a raw storage error.
+		return nil, errors.Join(errors.New("paper authorization does not match its order intent"), ctx.Err())
+	}
+	if authorization.AccountRef != intent.AccountRef || authorization.PaperAccountingSessionID != intent.PaperAccountingSessionID ||
 		authorization.ExecutionPolicySHA256 != intent.ExecutionPolicySHA256 || authorization.Side != intent.Side || authorization.Quantity != intent.Quantity {
 		return nil, errors.New("paper authorization does not match its order intent")
 	}
 	authority, err := loadExecutionAuthorityRecordByID(ctx, q, authorization.AuthorityEventID)
-	if err != nil || authority.AccountRef != authorization.AccountRef || authority.FencingToken != authorization.FencingToken {
+	if err != nil {
+		return nil, errors.Join(errors.New("paper authorization does not match its execution authority"), ctx.Err())
+	}
+	if authority.AccountRef != authorization.AccountRef || authority.FencingToken != authorization.FencingToken {
 		return nil, errors.New("paper authorization does not match its execution authority")
 	}
 	authorizedAt, authorizedOK := canonicalUTCTime(authorization.AuthorizedAt)

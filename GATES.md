@@ -113,4 +113,6 @@ G6 PostgreSQL and Kubernetes promotion
 
 - G3.8G2F는 pipe의 bounded LF bundle을 기존 실행 경로로 순차 소비하고 idle 구간에 두 lease를 함께 갱신한다. 실제 signal·최초 30초 이후 갱신·외부 halt·EOF 재연결 중복 방지와 전체 check가 로컬 통과했다. 단일 arm, 취소 가능한 reader의 close/join, 새 데이터 없는 Python 출력 단절 종료를 확인했다. 장기 부하·durable 전달·소스 누락 방지 및 전체 G3.8G2는 미완료다. [gate](gates/g3w-paper-input-stream.md)
 
+- G3.8G2G는 실제 Python watch→Go pipe에서 연속 CSV 갱신·체결·정책 halt·양방향 종료·명시적 재연결과 별도 context 복구를 검증했다. 취소된 DB 읽기를 일반 무결성 오류로 바꾸던 분기에서 취소 identity를 보존하며, focused race와 최종 전체 check·소유 자원 정리가 통과했다. 짧은 로컬 연결 증거이며 장기 운영·소스 완결성·broker/live 준비가 아니다. [gate](gates/g3x-paper-pipeline.md)
+
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.
