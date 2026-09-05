@@ -103,4 +103,6 @@ G6 PostgreSQL and Kubernetes promotion
 
 - G3.8G2A는 비신뢰 proposal을 저장 series에서 독립 검증하고 현재 선택·소유 lease 확인과 v3 signal/OPEN paper order 기록을 한 transaction으로 연결한다. `make check` 통과 후 재시도 수정은 focused race로 검증했다. 만료 후 기존 결과 재조회와 무주문 결정의 불변성도 확인했다. 운영 CLI·원본 CSV ingress·초기화·lease 종료는 G3.8G2B에 남아 있으며 G3.8G2 전체는 미완료다. [세부 gate](gates/g3r-paper-proposal-admission.md)
 
+- G3.8G2B는 수동 로컬 초기화·CSV/연구 원본 검증·fill→policy→signal 실행 경로와 소유권 보존 중지를 구현했다. 기존 성과 runner의 signal 검사로 새 CLI의 종료 검증을 대신하지 않는다. 신규 OS signal/stale-owner matrix 및 복합 partial-fill/정책중지 재시작을 포함한 전체 acceptance는 아직 열려 있다. [진행 gate](gates/g3s-local-paper-workflow.md), [사용법](docs/local-paper-workflow.md)
+
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.

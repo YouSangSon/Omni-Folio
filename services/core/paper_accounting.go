@@ -44,6 +44,10 @@ type paperAccountingCutoff struct {
 }
 
 func (s *Service) openPaperAccountingSession(ctx context.Context, accountRef, resultSHA256, selectionEventID string) (*PaperAccountingSession, error) {
+	return s.openPaperAccountingSessionChecked(ctx, accountRef, resultSHA256, selectionEventID, false)
+}
+
+func (s *Service) openPaperAccountingSessionChecked(ctx context.Context, accountRef, resultSHA256, selectionEventID string, isolated bool) (*PaperAccountingSession, error) {
 	if s == nil || s.db == nil || !orderAlias(accountRef, "account") ||
 		!strategySHA256Pattern.MatchString(resultSHA256) || !safeOrderID(selectionEventID) {
 		return nil, errors.New("paper accounting session identity is invalid")
@@ -58,6 +62,11 @@ func (s *Service) openPaperAccountingSession(ctx context.Context, accountRef, re
 	}
 	if _, err := replayStrategyRegistry(ctx, tx); err != nil {
 		return nil, fmt.Errorf("paper accounting strategy recovery: %w", err)
+	}
+	if isolated {
+		if err := requireIsolatedPaperAccount(ctx, tx, accountRef); err != nil {
+			return nil, err
+		}
 	}
 	existing, found, err := loadPaperAccountingSession(ctx, tx, accountRef)
 	if err != nil {

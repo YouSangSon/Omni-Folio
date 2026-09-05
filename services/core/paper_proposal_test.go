@@ -368,7 +368,11 @@ func TestPaperProposalPythonProducerToGoAdmission(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "research.csv"), []byte(strings.ReplaceAll(string(research), ",SMA,", ",005930,")), 0600); err != nil {
 		t.Fatal(err)
 	}
-	const csv = "bar_at,symbol,open,high,low,close,volume\n2026-05-01T06:30:00Z,005930,3,3,3,3,100\n2026-05-02T06:30:00Z,005930,2,2,2,2,100\n2026-05-03T06:30:00Z,005930,1,1,1,1,100\n2026-05-04T06:30:00Z,005930,4,4,4,4,100\n"
+	csv := "bar_at,symbol,venue,timezone,interval,open,high,low,close,volume,open_at,source_available_at,fetched_at\n"
+	for i, price := range []string{"3", "2", "1", "4"} {
+		day := fmt.Sprintf("2026-05-%02d", i+1)
+		csv += fmt.Sprintf("%sT06:30:00Z,005930,KRX,Asia/Seoul,1d,%s,%s,%s,%s,100,%sT00:00:00Z,%sT06:31:00Z,%sT06:32:00Z\n", day, price, price, price, price, day, day, day)
+	}
 	if err := os.WriteFile(filepath.Join(dir, "latest.csv"), []byte(csv), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +400,7 @@ print(json.dumps({'artifact':artifact,'proposal':proposal},ensure_ascii=False))`
 		t.Fatal(err)
 	}
 	svc, _ := testService(t, nil, nil)
-	svc.now = func() time.Time { return mustTime("2026-05-04T07:00:00Z") }
+	svc.now = func() time.Time { return mustTime("2026-05-01T07:00:00Z") }
 	ctx := context.Background()
 	evidence, err := svc.registerStrategyEvidence(ctx, produced.Artifact)
 	if err != nil {
@@ -409,21 +413,9 @@ print(json.dumps({'artifact':artifact,'proposal':proposal},ensure_ascii=False))`
 	if _, err := svc.openPaperAccountingSession(ctx, k2aAccountRef, evidence.ResultSHA256, selection.CurrentEventID); err != nil {
 		t.Fatal(err)
 	}
-	input := g38c2PaperMarketBar("python-proposal-20260504", "2026-05-04T00:00:00Z", "2026-05-04T06:30:00Z")
-	input.SourceAvailableAt, input.FetchedAt = "2026-05-04T06:31:00Z", "2026-05-04T06:32:00Z"
-	input.Open, input.High, input.Low, input.Close, input.Volume = "4", "4", "4", "4", "100"
-	hash := sha256.Sum256([]byte(csv))
-	input.InputDataSHA256 = hex.EncodeToString(hash[:])
-	for i, price := range []string{"3", "2", "1"} {
-		recordG38C2FillBar(t, svc, fmt.Sprintf("python-warmup-%d", i), price, "100", fmt.Sprintf("2026-05-%02d", i+1))
-	}
-	bar, err := svc.recordPaperMarketBar(ctx, input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lease := mustK2CLease(t, svc, k2aAccountRef)
-	event, order, err := svc.admitPaperProposal(ctx, k2aAccountRef, selection.CurrentEventID, produced.Proposal, bar.ObservationID, lease.FencingToken)
-	if err != nil || order == nil || order.Status != "OPEN" || order.Quantity != "10" || event.StrategyResultSHA256 != evidence.ResultSHA256 {
-		t.Fatalf("cross-language admission: %+v %v", order, err)
+	svc.now = func() time.Time { return mustTime("2026-05-04T07:00:00Z") }
+	result, err := svc.executeLocalPaper(ctx, k2aAccountRef, selection.CurrentEventID, produced.Proposal, []byte(csv), []byte(strings.ReplaceAll(string(research), ",SMA,", ",005930,")))
+	if err != nil || result == nil || result.Order == nil || result.Order.Status != "OPEN" || result.Order.Quantity != "10" {
+		t.Fatalf("cross-language local execution: %+v %v", result, err)
 	}
 }

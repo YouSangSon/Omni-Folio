@@ -237,6 +237,10 @@ func (s *Service) admitPaperSignalTx(ctx context.Context, tx *sql.Tx, accountRef
 }
 
 func (s *Service) runPaperOrder(ctx context.Context, orderID string, fencingToken int64) (*OrderState, error) {
+	return s.runPaperOrderWithClaim(ctx, orderID, fencingToken, nil)
+}
+
+func (s *Service) runPaperOrderWithClaim(ctx context.Context, orderID string, fencingToken int64, claim *paperRunnerClaim) (*OrderState, error) {
 	if s == nil || s.db == nil || s.now == nil || !safeOrderID(orderID) || fencingToken <= 0 {
 		return nil, errors.New("paper fill runner is not configured")
 	}
@@ -251,6 +255,11 @@ func (s *Service) runPaperOrder(ctx context.Context, orderID string, fencingToke
 	intent, err := loadOrderIntentFrom(ctx, tx, orderID)
 	if err != nil {
 		return nil, err
+	}
+	if claim != nil {
+		if err := validatePaperRunnerLeaseTx(ctx, tx, claim, intent.AccountRef, s.paperRunnerOwner, s.now()); err != nil {
+			return nil, err
+		}
 	}
 	session, signal, err := validateCapitalizedPaperOrderBindings(ctx, tx, intent)
 	if err != nil {

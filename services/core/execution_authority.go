@@ -108,6 +108,17 @@ func (s *Service) acquireSyntheticExecutionLease(ctx context.Context, accountRef
 		return nil, err
 	}
 	defer tx.Rollback()
+	state, err := s.acquireSyntheticExecutionLeaseTx(ctx, tx, accountRef)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return state, nil
+}
+
+func (s *Service) acquireSyntheticExecutionLeaseTx(ctx context.Context, tx *sql.Tx, accountRef string) (*ExecutionAuthorityState, error) {
 	if _, err := provePaperPerformancePolicyRecovery(ctx, tx); err != nil {
 		return nil, fmt.Errorf("execution authority policy recovery: %w", err)
 	}
@@ -138,9 +149,6 @@ func (s *Service) acquireSyntheticExecutionLease(ctx context.Context, accountRef
 		ReasonCode: "lease_acquired", RecordedAt: now.Format(time.RFC3339Nano),
 	}
 	if err := insertExecutionAuthorityRecord(ctx, tx, record); err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return authorityState(record), nil

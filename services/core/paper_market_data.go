@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
 	"strings"
 	"time"
 
@@ -106,6 +105,20 @@ func (s *Service) recordPaperMarketBar(ctx context.Context, input PaperMarketBar
 	if _, err := replayPaperMarketRecovery(ctx, tx); err != nil {
 		return nil, fmt.Errorf("paper market recovery: %w", err)
 	}
+	stored, err := recordPaperMarketBarTx(ctx, tx, bar)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return stored, nil
+}
+
+func recordPaperMarketBarTx(ctx context.Context, tx *sql.Tx, bar PaperMarketBarObservation) (*PaperMarketBarObservation, error) {
+	if tx == nil {
+		return nil, errors.New("paper market transaction is required")
+	}
 	existing, found, err := loadPaperMarketBarBySource(ctx, tx, bar.Source, bar.SourceObservationID)
 	if err != nil {
 		return nil, err
@@ -128,9 +141,6 @@ func (s *Service) recordPaperMarketBar(ctx context.Context, input PaperMarketBar
 		bar.Interval, bar.Timezone, bar.PriceAdjustment, bar.Open, bar.High, bar.Low, bar.Close, bar.Volume, bar.OpenAt, bar.CloseAt,
 		bar.SourceAvailableAt, bar.FetchedAt, recordSHA, string(recordJSON), bar.RecordedAt)
 	if err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return &bar, nil
@@ -354,20 +364,8 @@ func validatePaperMarketBar(bar PaperMarketBarObservation) error {
 		paperMarketBarObservationID(bar.Source, bar.SourceObservationID) != bar.ObservationID {
 		return errors.New("paper market bar identity or time contract is invalid")
 	}
-	prices := make([]*big.Rat, 4)
-	for index, raw := range []string{bar.Open, bar.High, bar.Low, bar.Close} {
-		value, err := parseDecimal(raw)
-		if err != nil || value.Sign() <= 0 {
-			return errors.New("paper market bar price is invalid")
-		}
-		prices[index] = value
-	}
-	volume, err := parseDecimal(bar.Volume)
-	if err != nil || volume.Sign() < 0 {
-		return errors.New("paper market bar volume is invalid")
-	}
-	if prices[1].Cmp(prices[0]) < 0 || prices[1].Cmp(prices[3]) < 0 || prices[2].Cmp(prices[0]) > 0 || prices[2].Cmp(prices[3]) > 0 {
-		return errors.New("paper market bar OHLC range is invalid")
+	if err := validateMarketDataValues(bar.Open, bar.High, bar.Low, bar.Close, bar.Volume); err != nil {
+		return fmt.Errorf("paper market bar %w", err)
 	}
 	return nil
 }

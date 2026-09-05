@@ -245,7 +245,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research python3 -m omni_research.
 
 stdout의 JSON은 비신뢰 로컬 입력에서 계산한 목표 수량 **제안**이며 주문을 실행하지 않습니다. 자체 hash와 입력의 promotion 표시는 연구 성과 증명이 아니므로 Go의 등록 결과·현재 선택 검증을 생략할 수 없습니다. `none`은 새 제안 없음, `death_cross`의 `"0"`은 청산 목표입니다. 현재 `paper-run-loop`도 성과 평가·안전 정책만 실행하며 신호 생성·시장 봉 입력·모의 체결의 운영 연결은 G3.8G2에 남아 있습니다.
 
-[G3.8G2A](gates/g3r-paper-proposal-admission.md)는 저장된 봉에서 제안을 독립 검증해 모의 주문으로 연결하는 내부 Go 함수까지 검증합니다. 이를 실행하는 사용자용 CLI, 최초 paper 초기화와 CSV 입력 경로는 아직 제공하지 않습니다. 실거래나 상시 자동매매가 가능한 상태를 뜻하지 않습니다.
+[수동 로컬 paper 사용법](docs/local-paper-workflow.md)의 `paper-init`, `paper-import-bars`, `paper-execute -arm-paper`로 초기화·원본 CSV 검증·모의 체결·성과 안전정책·새 제안 접수를 연결합니다. 실제 증권사와 연결하지 않는 fixture 실행이며 종료 시 자신의 실행 권한을 중지합니다. 신규 실행 파일의 OS signal/stale-owner matrix와 복합 재시작 검증은 [G3.8G2B](gates/g3s-local-paper-workflow.md)에 남아 있습니다. 상시 자동매매나 실거래 완성을 뜻하지 않습니다.
 
 전략 개선 runner는 유한한 long-only SMA 후보를 expanding walk-forward로 평가하고 final holdout을 한 번만 엽니다. 결과는 `paper_candidate` 또는 `no_promotion`만 만들 수 있으며 credential·주문·live 승격 권한을 얻지 못합니다.
 

@@ -15,7 +15,13 @@ import (
 // The proposal is an untrusted target, not a replacement research artifact.
 // This entry point never arms execution, creates a session, or invents a bar.
 func (s *Service) admitPaperProposal(ctx context.Context, accountRef, selectionEventID string, raw []byte, barID string, fencingToken int64) (*PaperSignalEvent, *OrderState, error) {
-	if s == nil || s.db == nil || s.now == nil || !orderAlias(accountRef, "account") || !safeOrderID(selectionEventID) || !safeOrderID(barID) || fencingToken <= 0 {
+	return s.processPaperProposal(ctx, accountRef, selectionEventID, raw, barID, fencingToken, true, nil)
+}
+
+// Read-only preflight grants no authority; admission repeats all checks in its
+// write transaction and additionally requires the current execution lease.
+func (s *Service) processPaperProposal(ctx context.Context, accountRef, selectionEventID string, raw []byte, barID string, fencingToken int64, admit bool, claim *paperRunnerClaim) (*PaperSignalEvent, *OrderState, error) {
+	if s == nil || s.db == nil || s.now == nil || !orderAlias(accountRef, "account") || !safeOrderID(selectionEventID) || !safeOrderID(barID) || (admit && fencingToken <= 0) {
 		return nil, nil, errors.New("paper proposal admission is not configured")
 	}
 	proposal, err := decodePaperProposal(raw)
@@ -27,6 +33,11 @@ func (s *Service) admitPaperProposal(ctx context.Context, accountRef, selectionE
 		return nil, nil, err
 	}
 	defer tx.Rollback()
+	if claim != nil {
+		if err := validatePaperRunnerLeaseTx(ctx, tx, claim, accountRef, s.paperRunnerOwner, s.now()); err != nil {
+			return nil, nil, err
+		}
+	}
 	if _, err := provePaperAccountingRecovery(ctx, tx); err != nil {
 		return nil, nil, err
 	}
@@ -71,8 +82,10 @@ func (s *Service) admitPaperProposal(ctx context.Context, accountRef, selectionE
 	if !found || session.ExecutionPolicySHA256 != policy.SHA256 {
 		return nil, nil, errors.New("paper proposal session does not match")
 	}
-	if _, err := s.requireCurrentSyntheticExecutionLease(ctx, tx, accountRef, fencingToken, s.now().UTC()); err != nil {
-		return nil, nil, err
+	if admit {
+		if _, err := s.requireCurrentSyntheticExecutionLease(ctx, tx, accountRef, fencingToken, s.now().UTC()); err != nil {
+			return nil, nil, err
+		}
 	}
 	bar, _, err := loadPaperMarketBarByID(ctx, tx, barID)
 	if err != nil {
@@ -101,6 +114,9 @@ func (s *Service) admitPaperProposal(ctx context.Context, accountRef, selectionE
 			return nil, nil, err
 		} else if !hasOrder {
 			// A committed no-delta decision must never acquire a new order later.
+			return existing, nil, nil
+		}
+		if !admit {
 			return existing, nil, nil
 		}
 		return s.admitPaperSignalTx(ctx, tx, accountRef, signal, fencingToken)
@@ -150,6 +166,9 @@ func (s *Service) admitPaperProposal(ctx context.Context, accountRef, selectionE
 	}
 	if err := validateCapitalizedPaperSignal(signal, s.now().UTC()); err != nil {
 		return nil, nil, err
+	}
+	if !admit {
+		return nil, nil, nil
 	}
 	event, state, err := s.admitPaperSignalTx(ctx, tx, accountRef, signal, fencingToken)
 	if err != nil {
