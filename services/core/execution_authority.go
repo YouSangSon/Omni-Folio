@@ -571,7 +571,18 @@ func validateExecutionAuthorityRecord(record executionAuthorityRecord, previous 
 		}
 		if previous.LeaseOwner != "" {
 			previousExpiry, ok := canonicalUTCTime(previous.LeaseExpiresAt)
-			if !ok || recordedAt.Before(previousExpiry) {
+			if !ok {
+				return errors.New("execution authority prior expiry is invalid")
+			}
+			if recordedAt.Before(previousExpiry) {
+				previousTime, timeOK := canonicalUTCTime(previous.RecordedAt)
+				nextExpiry, expiryOK := canonicalUTCTime(record.LeaseExpiresAt)
+				// Same-owner renewal advances the fence without rearming. An old
+				// token cannot use the extended interval; foreign takeover waits.
+				if record.LeaseOwner == previous.LeaseOwner && timeOK && expiryOK &&
+					!recordedAt.Before(previousTime) && nextExpiry.After(previousExpiry) {
+					break
+				}
 				return errors.New("execution authority replaced an unexpired lease")
 			}
 		}

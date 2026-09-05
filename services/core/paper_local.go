@@ -57,6 +57,13 @@ func (s *Service) executeLocalPaper(ctx context.Context, account, selection stri
 	if _, _, err := s.processPaperProposal(ctx, account, selection, proposalRaw, snapshot.SignalBarObservationID, 0, false, claim); err != nil {
 		return nil, err
 	}
+	// Preparation can age the global claim before execution acquires its own
+	// lease. Align their lifetimes, retaining the old tuple if renewal fails.
+	preparedClaim, err := s.heartbeatPaperRunnerLease(ctx, claim)
+	if err != nil {
+		return nil, err
+	}
+	claim = preparedClaim
 	lease, err := s.startLocalPaperExecutionWithClaim(ctx, account, selection, claim)
 	if err != nil {
 		return nil, err
@@ -66,6 +73,22 @@ func (s *Service) executeLocalPaper(ctx context.Context, account, selection stri
 		defer cancel()
 		resultErr = errors.Join(resultErr, s.haltOwnedSyntheticExecutionLease(cleanup, account, lease.FencingToken))
 	}()
+	refresh := func() error {
+		// Policy stages can refresh the global claim independently. Schedule
+		// against the execution expiry, never that mutable global heartbeat.
+		expires, ok := canonicalUTCTime(lease.LeaseExpiresAt)
+		if !ok {
+			return errors.New("local paper execution expiry is invalid")
+		}
+		if s.now().Before(expires.Add(-syntheticExecutionLeaseTTL + paperRunnerLoopHeartbeatInterval)) {
+			return nil
+		}
+		nextClaim, nextLease, err := s.heartbeatLocalPaperExecution(ctx, claim, lease.FencingToken)
+		if err == nil {
+			claim, lease = nextClaim, nextLease
+		}
+		return err
+	}
 	ids, err := s.openLocalPaperOrderIDs(ctx, account)
 	if err != nil {
 		return nil, err
@@ -80,6 +103,9 @@ func (s *Service) executeLocalPaper(ctx context.Context, account, selection stri
 		// ponytail: replay per fill is quadratic in history; batch only after
 		// profiling, preserving per-fill accounting and authority validation.
 		for state.Status == "OPEN" || state.Status == "PARTIALLY_FILLED" {
+			if err := refresh(); err != nil {
+				return nil, err
+			}
 			filled := state.FilledQuantity
 			state, err = s.runPaperOrderWithClaim(ctx, id, lease.FencingToken, claim)
 			if err != nil {
@@ -90,6 +116,9 @@ func (s *Service) executeLocalPaper(ctx context.Context, account, selection stri
 			}
 		}
 	}
+	if err := refresh(); err != nil {
+		return nil, err
+	}
 	policy, err := s.runDuePaperPerformancePolicyWithClaim(ctx, account, claim)
 	if err != nil {
 		return nil, err
@@ -97,6 +126,9 @@ func (s *Service) executeLocalPaper(ctx context.Context, account, selection stri
 	result = &LocalPaperStepResult{Mode: "paper_fixture_only", Snapshot: snapshot, Policy: policy}
 	if policy.Decision == "HALT_AND_ROLLBACK" {
 		return result, nil
+	}
+	if err := refresh(); err != nil {
+		return nil, err
 	}
 	_, order, err := s.processPaperProposal(ctx, account, selection, proposalRaw, snapshot.SignalBarObservationID, lease.FencingToken, true, claim)
 	if err != nil {

@@ -49,6 +49,8 @@ go run . paper-execute -db /absolute/path/paper.db \
 
 `-arm-paper`는 이 1회 실행의 명시적 활성화입니다. 스케줄러가 중지된 계좌를 재활성화하는 용도로 호출하면 안 됩니다. 기존 수량·현금은 유지하고, 정상/실패 종료에서 자신이 소유한 execution lease만 중지한 뒤 global runner lease를 반환합니다.
 
+입력 준비 후 global claim을 갱신하고, 실행 중에는 체결·성과·접수 단계 사이에서 execution lease 발급 후 10초가 지났으면 두 lease를 함께 갱신합니다. 중지·만료·소유권 상실 뒤에는 갱신하지 않습니다. 단계 하나가 TTL 30초를 넘으면 여전히 실패할 수 있으며 background heartbeat나 상시 소비 기능은 아닙니다. 갱신 이력이 생긴 DB/backup은 갱신을 지원하는 바이너리로 읽고 복구해야 합니다. 이전 바이너리는 같은 owner의 겹치는 lease 이력을 거절하므로 단순 바이너리 downgrade를 지원한다고 가정하지 않습니다. [갱신 계약과 검증](../gates/g3v-paper-execution-heartbeat.md)
+
 순서는 원본 연구 검증 → 신규 CSV 원자 저장 → 제안 사전 검증 → 명시적 arm/lease → 기존 eligible 주문 체결 → 성과 안전정책 → 새 제안 재검증/접수입니다. 정책이 `HALT_AND_ROLLBACK`이면 새 주문을 접수하지 않습니다. 출력의 `order`가 없을 수 있으며, 이는 오류가 아니라 `none`, 수량 차이 없음 또는 정책 중지일 수 있습니다. 성공 JSON의 mode는 `paper_fixture_only`입니다.
 
 기존 주문은 저장된 체결 가능 봉을 순서대로 소비하여 부분체결을 따라잡습니다. 주문 완료 또는 체결량 증가 없음에서 반복을 끝내고, 매 체결마다 현재 lease와 회계 불변식을 다시 확인합니다. 성과 안전정책은 기존 최신 close 평가를 사용합니다. 빠진 모든 과거 close의 정책 판단을 소급 재생하거나 상시 자동매매를 제공하는 경로는 아닙니다.

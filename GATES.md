@@ -109,4 +109,6 @@ G6 PostgreSQL and Kubernetes promotion
 
 - G3.8G2D는 Python 제안과 정확한 두 CSV byte를 단일 bundle로 전달하고 기존 Go 수동 실행 검증을 재사용한다. 원본 경로 교체·재시도·hash mismatch·잘못된 JSON/Unicode·크기/FIFO 경계와 전체 `make check`가 로컬 통과했다. 스트림 소비·지속 실행 lease는 아직 미완료이며 G3.8G2 전체 완료가 아니다. [gate](gates/g3u-paper-input-bundle.md)
 
+- G3.8G2E는 유효한 현재 owner의 execution/global lease를 원자 갱신하며 기존 수동 실행 단계에서 사용한다. 최초 TTL 이후 새 체결·이력 복구·동시 갱신·실패 rollback과 전체 check, 최종 코드의 targeted race/실제 중단 복구가 통과했다. 갱신은 재활성화가 아니며 continuous 소비·idle heartbeat·장기 처리량은 미완료다. [gate](gates/g3v-paper-execution-heartbeat.md)
+
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.
