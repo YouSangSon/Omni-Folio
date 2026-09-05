@@ -14,6 +14,9 @@
 
 ## Next
 
+- [x] G3.8H 브라우저 통합 확인: 실제 CLI로 저장한 정책을 Flutter release/Chrome에서 조회하고 375·768·1440 화면, 오류 후 원래 관찰 보존, 키보드 재조회·복귀와 owned cleanup 확인. 실행 불가 계좌 예제를 고치고 실제 초기화 명령 RED/GREEN·race 검증. baseline 비교·물리 screen reader·frame budget은 별도 ([gate](gates/g3ad-paper-monitor-browser.md)).
+- [ ] G2 cold-start offline 한글·플랫폼 아이콘 확인: 웹 release에서 외부 Korean fallback font 요청과 Cupertino 폰트 경고가 관찰됨. 로컬 CanvasKit만으로 offline 표시를 증명하지 말고 의존성·license·실제 오프라인 첫 실행과 iOS 아이콘 범위를 검증.
+
 - [x] 키움 K0 read-only transport/normalization 합성 계약
 - [x] provider-neutral local fixture OHLCV API와 Flutter 종목 상세 price/volume chart·정확한 표·샘플 provenance
 - [x] K1 키움 `ka10080`/`ka10081` 합성 candle 계약 검증: KRX 6자리 symbol, 지원 interval, signed price magnitude·exact decimal OHLCV, pagination normalization/dedupe/conflict/cap 확인

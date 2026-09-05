@@ -125,4 +125,6 @@ G6 PostgreSQL and Kubernetes promotion
 
 - G3.8H는 연결 화면에서 저장된 모의 정책 상태를 요청할 때만 조회한다. 전체 복구를 검증한 단일 DB 관찰에 미완료 정책·최근 결정·소유권 기록을 담으며 계좌 ID·금융 수치·실행 권한은 노출하지 않는다. 전체 check와 최종 focused race·Flutter 84·리뷰·owned cleanup이 통과했다. 물리 기기·브라우저 실렌더링·알림 전달·상시 운영 증거는 아니다. [gate](gates/g3ac-paper-monitor.md)
 
+- G3.8H 브라우저 후속은 실제 Go API에서 정책 없음·저장 정책·offline 보존·키보드 복귀와 375/768/1440 렌더링을 확인하고, 실행 불가 문서 alias를 실제 CLI 회귀 테스트로 교정했다. 소유 자원 정리 통과. visual baseline·physical profile·cold-start offline 한글 표시는 아직 증명하지 않았다. [gate](gates/g3ad-paper-monitor-browser.md)
+
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.

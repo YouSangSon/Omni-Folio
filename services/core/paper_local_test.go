@@ -14,6 +14,38 @@ import (
 	"time"
 )
 
+func TestLocalPaperWorkflowAccountExamplesCanInitialize(t *testing.T) {
+	_, dbPath, _, evidence, selected, _ := localPaperRestartFixture(t)
+	doc, err := os.ReadFile("../../docs/local-paper-workflow.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	accounts := map[string]bool{}
+	words := strings.Fields(string(doc))
+	for i, word := range words {
+		if word == "-account" && i+1 < len(words) {
+			accounts[words[i+1]] = true
+		}
+	}
+	if len(accounts) == 0 {
+		t.Fatal("workflow has no executable account example")
+	}
+	for account := range accounts {
+		var output bytes.Buffer
+		if err := runLocalPaperCommand(context.Background(), []string{
+			"paper-init", "-db", dbPath, "-account", account,
+			"-result-sha256", evidence.ResultSHA256,
+			"-expected-current-event", selected.CurrentEventID,
+		}, &output); err != nil {
+			t.Fatalf("documented account %q cannot initialize: %v", account, err)
+		}
+		var session PaperAccountingSession
+		if err := json.Unmarshal(output.Bytes(), &session); err != nil || session.AccountRef != account {
+			t.Fatal("documented initialization did not return its account session")
+		}
+	}
+}
+
 func TestLocalPaperStepImportsAdmitsFillsAndHalts(t *testing.T) {
 	svc, _ := testService(t, nil, nil)
 	svc.now = func() time.Time { return mustTime("2026-05-01T07:00:00Z") }

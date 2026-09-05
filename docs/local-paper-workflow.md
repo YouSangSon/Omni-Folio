@@ -10,12 +10,12 @@ Flutter 앱의 **연결 → 모의 자동매매 상태 보기**에서 같은 API
 
 ## 입력과 초기화
 
-먼저 기존 `migrate`, `strategy-register`, `strategy-select`로 DB와 현재 연구 후보를 준비합니다. 아래 명령은 저장소 루트에서 실행합니다. `PAPER_RESULT_SHA`와 `PAPER_SELECTION_EVENT`에는 해당 명령의 실제 출력값을 넣습니다. `account_local_paper`는 실제 계좌번호가 아닌 별도 로컬 alias입니다.
+먼저 기존 `migrate`, `strategy-register`, `strategy-select`로 DB와 현재 연구 후보를 준비합니다. 아래 명령은 저장소 루트에서 실행합니다. `PAPER_RESULT_SHA`와 `PAPER_SELECTION_EVENT`에는 해당 명령의 실제 출력값을 넣습니다. 예제의 `kiwoom_account_AAAAAAAAAAAAAAAAAAAAAAAA`는 **폐기 가능한 별도 paper DB에서만 쓰는 가상 alias**이며 실제 계좌번호나 증권사 연결이 아닙니다. 현재 공통 식별자 계약 때문에 로컬 paper도 `kiwoom_account_` 뒤에 영문·숫자·`_`·`-` 중 정확히 24자를 요구합니다. 실제 broker alias를 이 예제에 넣거나 기존 운영 계좌를 재사용하지 마세요.
 
 ```bash
 cd services/core
 go run . paper-init -db /absolute/path/paper.db \
-  -account account_local_paper -result-sha256 "$PAPER_RESULT_SHA" \
+  -account kiwoom_account_AAAAAAAAAAAAAAAAAAAAAAAA -result-sha256 "$PAPER_RESULT_SHA" \
   -expected-current-event "$PAPER_SELECTION_EVENT"
 ```
 
@@ -48,7 +48,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research \
 
 cd services/core
 go run . paper-execute -db /absolute/path/paper.db \
-  -account account_local_paper -expected-current-event "$PAPER_SELECTION_EVENT" \
+  -account kiwoom_account_AAAAAAAAAAAAAAAAAAAAAAAA -expected-current-event "$PAPER_SELECTION_EVENT" \
   -bars /absolute/path/latest.csv -research-bars /absolute/path/research.csv \
   -proposal /absolute/path/proposal.json -arm-paper
 ```
@@ -81,7 +81,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research \
   --bars latest.csv --research-bars research.csv --artifact artifact.json \
   --bundle > paper-input.json && \
   (cd services/core && go run . paper-execute -db /absolute/path/paper.db \
-    -account account_local_paper -expected-current-event "$PAPER_SELECTION_EVENT" \
+    -account kiwoom_account_AAAAAAAAAAAAAAAAAAAAAAAA -expected-current-event "$PAPER_SELECTION_EVENT" \
     -bundle /absolute/path/paper-input.json -arm-paper)
 ```
 
@@ -104,7 +104,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research \
   --bars latest.csv --research-bars research.csv --artifact artifact.json \
   --watch --bundle | \
   "$OMNI_CORE_BIN" paper-execute-stream -db /absolute/path/paper.db \
-    -account account_local_paper -expected-current-event "$PAPER_SELECTION_EVENT" \
+    -account kiwoom_account_AAAAAAAAAAAAAAAAAAAAAAAA -expected-current-event "$PAPER_SELECTION_EVENT" \
     -arm-paper
 ```
 
