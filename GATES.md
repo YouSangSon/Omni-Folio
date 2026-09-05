@@ -101,8 +101,8 @@ G6 PostgreSQL and Kubernetes promotion
 - external deploy, credential, live 주문, push는 명시 승인 없이는 실행하지 않는다.
 - G3.8G1은 기존 SMA 판정을 공유한 offline 목표 제안과 입력 hash·종목·연구 이후 시점 경계만 증명한다. 2026-09-05 `make check`의 Go 전체·Flutter 전체·Python 25개·JSON 16개 구문 검사·owned cleanup self-test가 통과했다. JSON schema 필드/분기는 별도 회귀 검사이며 완전한 JSON Schema validator 실행은 아니다. 재해시 가능한 비신뢰 입력은 Go registry·선택 검증을 대체하지 않는다. 신호 admission·session/bar ingress·paper 체결 운영 연결은 G3.8G2에 남아 있다. [세부 gate](gates/g3q-paper-signal-proposals.md)
 
-- G3.8G2A는 비신뢰 proposal을 저장 series에서 독립 검증하고 현재 선택·소유 lease 확인과 v3 signal/OPEN paper order 기록을 한 transaction으로 연결한다. `make check` 통과 후 재시도 수정은 focused race로 검증했다. 만료 후 기존 결과 재조회와 무주문 결정의 불변성도 확인했다. 운영 CLI·원본 CSV ingress·초기화·lease 종료는 G3.8G2B에 남아 있으며 G3.8G2 전체는 미완료다. [세부 gate](gates/g3r-paper-proposal-admission.md)
+- G3.8G2A는 비신뢰 proposal을 저장 series에서 독립 검증하고 현재 선택·소유 lease 확인과 v3 signal/OPEN paper order 기록을 한 transaction으로 연결한다. `make check` 통과 후 재시도 수정은 focused race로 검증했다. 만료 후 기존 결과 재조회와 무주문 결정의 불변성도 확인했다. 수동 CLI·원본 CSV ingress·초기화·lease 종료는 아래 G3.8G2B에서 검증하며, 지속 제안 생성·수집·실행을 포함한 G3.8G2 전체는 미완료다. [세부 gate](gates/g3r-paper-proposal-admission.md)
 
-- G3.8G2B는 수동 로컬 초기화·CSV/연구 원본 검증·fill→policy→signal 실행 경로와 소유권 보존 중지를 구현했다. FIFO 입력 대기와 누락 봉의 첫 부분체결에서 멈추던 결함을 수정하고 실제 실행 파일 입력 거절·복합 partial-fill/정책중지 재시작을 검증한다. 기존 성과 runner의 signal 검사로 새 CLI의 종료 검증을 대신하지 않으며 신규 OS signal/stale-owner matrix는 아직 열려 있다. [진행 gate](gates/g3s-local-paper-workflow.md), [사용법](docs/local-paper-workflow.md)
+- G3.8G2B는 수동 로컬 초기화·CSV/연구 원본 검증·fill→policy→signal 실행 경로와 소유권 보존 중지를 로컬 검증했다. FIFO 거절·누락 봉 부분체결·정책중지 재시작에 더해 실제 실행 파일의 SIGINT/SIGTERM, SIGKILL 후 실제 TTL 만료·중복 없는 복구를 확인했다. 리뷰 보강 후 `make check`와 소유 자원 정리가 통과했다. 상시 실행·증권사 연결·배포 증거가 아니며 전체 G3.8G2는 미완료다. [gate](gates/g3s-local-paper-workflow.md), [사용법](docs/local-paper-workflow.md)
 
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.

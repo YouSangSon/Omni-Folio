@@ -1,4 +1,4 @@
-# G3.8G2B Local Paper Workflow — in progress
+# G3.8G2B Local Paper Workflow — local acceptance passed
 
 ## Implemented boundary
 
@@ -16,6 +16,12 @@
 
 ## Evidence
 
+- `TestLocalPaperExecutableSignalRecovery` uses the shipped binary and an immutable precommitted proposal/order with ten later one-share fill bars. A separate read-only, deferred transaction observes the armed owner and retains the SHARED snapshot under asserted `journal_mode=delete`; this blocks the next write commit while an actual OS signal is delivered. Polling followed by SIGSTOP was rejected because the short command could finish before the stop; that failed test did not establish a product cancellation defect.
+- SIGINT/SIGTERM must exit 1 with context cancellation and no success JSON, revoke exactly the observed account owner and release the global claim. SIGKILL must be the actual process exit signal and leave the observed durable owner/fill prefix unchanged. An immediate restart must fail without changing that state; only after the actual persisted account/global TTL expires may a new process take over. No production hooks, clock changes, TTL rewrites, dependency or schema changes support this test.
+- Every explicit retry returns the same FILLED/10-share order, exactly ten fills and cash `8978.99`; admission counts remain unchanged and only fill events may be added. Account fences advance by the exact graceful/kill sequences, the global fence advances once, recovery proof succeeds, and every started child is waited/reaped within the owned root test wrapper. This proves process interruption/restart on the tested host, not power-loss durability, all instruction-level interruption points or Linux execution.
+- 2026-09-05 focused actual executable matrix passed: SIGINT, SIGTERM and SIGKILL with a 29.916-second persisted-expiry wait (Go core 61.412s), followed by Flutter 74, Python 25 and wrapper cleanup. Independent read-only review found no lifecycle blocker and requested stronger context-cancellation, exact-fence and fill-only-event assertions; final integrated verification follows those assertions.
+- 2026-09-05 final `make check` after those review corrections passed: Go core 128.308s and all internal packages, Flutter 74, Python 25, JSON 16, formatting/vet/analyze and owned-resource cleanup. `govulncheck ./...` reported no vulnerabilities. G3.8G2B's manual local workflow and actual process matrix are accepted; overall G3.8G2 remains open.
+- Final `GOFLAGS='-race -run=TestLocalPaperExecutableSignalRecovery -count=1 -v' make test` passed (Go core 54.237s), including all three OS signals, exact assertions, Flutter/Python and wrapper cleanup. Race instrumentation covers the Go test supervisor/fixtures; the helper intentionally builds the normal shipped executable with cleared GOFLAGS, not a race-instrumented production child. No Podman/Kind resources or persistent listeners were created.
 - RED: missing importer/local execution boundaries; mixed-mode CLI initialization incorrectly succeeded before the atomic isolation guard.
 - Follow-up RED: the real built executable blocked on FIFO input and required deadline-triggered process kill; a fresh service with five missed bars only filled 2 of 10 shares. The shared reader fix and catch-up loop address these independent root causes.
 - The first full follow-up check failed a 2-second executable-call bound. The process test now independently proves cold startup, then applies a 10-second liveness bound (not a latency SLA) to each FIFO case. A controlled mutation restoring only `os.Open` failed after 10 seconds despite a successful 240 ms startup; restoring the fix passes all six caller/symlink cases. Both intentional-failure runs used the owned root wrapper and reclaimed the killed child/temp root.
@@ -29,13 +35,15 @@
 - Final independent read-only integration review found no blocker for this local checkpoint. It did not execute tests or certify the remaining acceptance below.
 - 2026-09-05 final `make check` passed: Go all packages, Flutter 74 tests, Python 25 tests, JSON 16 syntax checks, formatting/vet/analyze and owned-resource cleanup self-tests. `go test -race -count=1 . -run 'Test(LocalPaper|PaperProposal|PaperSnapshotImport|ValidatePaperResearchInput|K2C)'` passed after the integrated research-input changes. `govulncheck ./...` reported no vulnerabilities. These do not prove the new executable's OS interruption matrix below.
 
-## Remaining acceptance
+## Acceptance boundary and remaining work
 
-- Prove this new executable's actual SIGINT/SIGTERM and SIGKILL/stale-owner process/resource matrix, not just the older policy runner's matrix or context wiring. Do not mark G3.8G2B or overall G3.8G2 complete before that evidence.
+- The actual new executable's SIGINT/SIGTERM and SIGKILL/stale-owner matrix is now covered above, separately from the older policy runner and root-wrapper lifecycle tests. G3.8G2B is a manual, credential-free local acceptance only; no external push, deployment, connected broker or autonomous rearm is certified.
 - Continuous proposal generation/ingestion and execution, calendar/provider truth, shadow/live parity, engine POCs, and profitability remain separate open requirements. Never schedule repeated `-arm-paper` calls as an automatic recovery policy.
 
 Research: [Go encoding/csv](https://pkg.go.dev/encoding/csv) documents field-count checks and newline normalization. Therefore the raw file digest is taken before parsing; semantically identical CRLF/LF input is not the same immutable snapshot. Existing SQLite immediate transaction/replay contracts are reused; no new parser dependency or execution engine is introduced. This is a focused source check, not a new engine benchmark.
 
 Follow-up research: [POSIX.1-2024 open](https://pubs.opengroup.org/onlinepubs/9799919799/functions/open.html) specifies that read-only FIFO open waits for a writer without `O_NONBLOCK`, and returns without that wait with it. The descriptor check remains after open to avoid trusting a path-only check that can race replacement. One focused Exa query and one primary-source fetch support this fix, not a general storage timeout guarantee.
+
+Signal research: [Go os/signal](https://pkg.go.dev/os/signal) distinguishes cancellable signal handling from uncatchable SIGKILL. [SQLite rollback-journal locking](https://www.sqlite.org/lockingv3.html) explains why a retained SHARED read lock prevents an EXCLUSIVE write commit. This test intentionally rejects WAL mode: in WAL, a reader is not the same write-commit barrier. Recheck that premise if the database journal mode changes.
 
 Operator instructions: [local paper workflow](../docs/local-paper-workflow.md).

@@ -65,6 +65,6 @@ CSV 한 파일은 전부 저장되거나 전부 취소됩니다. 전체 실행�
 
 동일 파일의 재시도는 기존 봉의 최초 hash/receipt를 유지합니다. 이미 접수한 제안은 원래 결과를 반환하며 주문을 추가하지 않습니다. 아직 접수하지 못한 제안이 30초를 넘으면 새 주문을 만들지 않습니다. 같은 마지막 봉의 파일 내용·공백·줄바꿈을 바꿔 만료를 연장할 수 없습니다. 다음 실제 새 fixture 봉을 기다리고 새 제안을 생성합니다.
 
-SIGINT/SIGTERM은 취소 context로 전달되며 cleanup은 별도의 제한 시간 context로 수행합니다. cleanup 오류는 성공으로 숨기지 않습니다. SIGKILL/host crash는 즉시 cleanup을 보장하지 못하며 lease TTL 이후 복구가 필요합니다. 다른 프로세스가 이미 takeover했다면 이전 소유자는 새 권한을 중지할 수 없습니다. 새 CLI 자체의 OS signal/kill 검증 matrix는 아직 [G3.8G2B gate](../gates/g3s-local-paper-workflow.md)에 남아 있습니다.
+SIGINT/SIGTERM은 취소 context로 전달되며 cleanup은 별도의 제한 시간 context로 수행합니다. cleanup 오류는 성공으로 숨기지 않습니다. SIGKILL/host crash는 즉시 cleanup을 보장하지 못하며 lease TTL 이후 복구가 필요합니다. 다른 프로세스가 이미 takeover했다면 이전 소유자는 새 권한을 중지할 수 없습니다. 실제 실행 파일의 SIGINT/SIGTERM 종료와 SIGKILL 후 즉시 재실행 차단·실제 TTL 만료 후 중복 없는 복구는 [G3.8G2B gate](../gates/g3s-local-paper-workflow.md)에서 검증합니다. 이 증거는 실행 중인 프로세스의 강제 종료이며 실제 정전이나 모든 중단 시점을 재현한 것은 아닙니다.
 
 원본 CSV·연구 artifact·proposal 파일은 사용자가 보관합니다. DB는 hash와 검증된 관측/실행 기록을 보관하지만 원본 파일 byte 전체를 backup에 포함하지 않습니다. 원본 입력 파일은 테스트 임시 리소스가 아니므로 명령이 삭제하지 않습니다.
