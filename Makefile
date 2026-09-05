@@ -3,6 +3,7 @@ SHELL := /bin/sh
 ROOT := $(CURDIR)
 GO ?= go
 GOFMT ?= gofmt
+CORE_TEST_PACKAGES ?= ./...
 FLUTTER ?= flutter
 DART ?= dart
 PYTHON ?= python3
@@ -70,7 +71,7 @@ test:
 	exit "$$child_status"
 
 test-body:
-	cd services/core && "$(GO)" test ./...
+	cd services/core && "$(GO)" test $(CORE_TEST_PACKAGES)
 	cd apps/client && "$(FLUTTER)" test
 	cd services/research && PYTHONDONTWRITEBYTECODE=1 "$(PYTHON)" -m unittest discover -s tests -v
 	$(MAKE) --no-print-directory test-resource-cleanup

@@ -117,4 +117,6 @@ G6 PostgreSQL and Kubernetes promotion
 
 - G3.8G2H는 실제 갱신 1,000회에서 이력 구간별 갱신/전체 정책 복구 지연을 로컬 측정했다. 갱신 p95는 첫 구간 10.64ms에서 마지막 구간 28.39ms로 증가했다. 논리 시간 가속·warm cache·고정 주문 이력의 진단이며 상시 운영 보증이나 최적화 결과가 아니다. 기존 검증을 유지하고 원인별 프로파일링을 다음 성능 단계로 둔다. [gate](gates/g3y-paper-history-profile.md)
 
+- G3.8G2I는 동일 transaction 안의 중복 authority 이력 읽기를 제거했다. 전체 복구·소유권·취소 검증은 유지하고, legacy 조기 반환을 전체 검증으로 오인하지 않도록 공통 runner proof에 migration 이력 검사를 추가했다. 과거 손상·migration 표시 변조와 focused race, 전체 check·정리가 통과했다. 마지막 구간 갱신 p95 28.39→19.99ms는 단일 로컬 비교이며 최대 지연·장기 운영 보증이 아니다. [gate](gates/g3z-paper-renewal-replay.md)
+
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.
