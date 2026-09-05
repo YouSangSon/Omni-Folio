@@ -119,4 +119,6 @@ G6 PostgreSQL and Kubernetes promotion
 
 - G3.8G2I는 동일 transaction 안의 중복 authority 이력 읽기를 제거했다. 전체 복구·소유권·취소 검증은 유지하고, legacy 조기 반환을 전체 검증으로 오인하지 않도록 공통 runner proof에 migration 이력 검사를 추가했다. 과거 손상·migration 표시 변조와 focused race, 전체 check·정리가 통과했다. 마지막 구간 갱신 p95 28.39→19.99ms는 단일 로컬 비교이며 최대 지연·장기 운영 보증이 아니다. [gate](gates/g3z-paper-renewal-replay.md)
 
+- G3.8G2J는 실제 clock의 Python→Go 지속 연결에서 122.029초·120회 관찰·12개 입력·13개 정책·11회 갱신을 검증했다. 최소 관찰 lease 여유는 12.005초이고 종료 후 전체 복구·권한 반환·소스 보존이 통과했다. 기존 종료/재연결 회귀도 통과했으며 하루 운영·시장 freshness·durable queue는 여전히 미검증이다. [gate](gates/g3aa-paper-real-clock-soak.md)
+
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.
