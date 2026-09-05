@@ -4,12 +4,14 @@ import 'dart:io';
 import 'dart:ui' show SemanticsAction;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:omni_folio_client/api.dart';
 import 'package:omni_folio_client/app.dart';
 import 'package:omni_folio_client/models.dart';
+import 'package:omni_folio_client/paper_monitor.dart';
 
 Json fixture(String name) {
   final body = File('../../contracts/fixtures/$name').readAsStringSync();
@@ -114,6 +116,10 @@ class FakeApi implements OmniApi {
     }
     return localOrdersCompleter?.future ?? orderLogValue;
   }
+
+  @override
+  Future<PaperMonitor> paperMonitor() =>
+      throw UnsupportedError('Loaded only from the monitor detail page.');
 
   @override
   Future<LedgerActivityPage> ledgerActivities() async {
@@ -310,6 +316,37 @@ Future<void> pumpUi(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('Korean typography resolves and font/icon assets are available', (
+    tester,
+  ) async {
+    expect(
+      (await rootBundle.load('assets/fonts/NotoSansKR.ttf')).lengthInBytes,
+      greaterThan(0),
+    );
+    expect(
+      (await rootBundle.load(
+        'packages/cupertino_icons/assets/CupertinoIcons.ttf',
+      )).lengthInBytes,
+      greaterThan(0),
+    );
+    expect(
+      await rootBundle.loadString('assets/fonts/OFL.txt'),
+      contains('SIL OPEN FONT LICENSE Version 1.1'),
+    );
+    await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+    await pumpUi(tester);
+    for (final label in ['현금 잔액', 'USD 778', '홈', '연결']) {
+      final paragraphs = find.descendant(
+        of: find.text(label),
+        matching: find.byType(RichText),
+      );
+      expect(paragraphs, findsWidgets);
+      for (final paragraph in tester.widgetList<RichText>(paragraphs)) {
+        expect(paragraph.text.style?.fontFamily, 'NotoSansKR', reason: label);
+      }
+    }
+  });
+
   test('golden preview and snapshot parse canonical decimal strings', () {
     final preview = ImportPreview.fromJson(fixture('golden-preview.json'));
     final snapshot = PortfolioSnapshot.fromJson(
@@ -1106,6 +1143,16 @@ void main() {
       await pumpUi(tester);
 
       final import = find.widgetWithText(ElevatedButton, '거래 내역 가져오기');
+      expect(
+        tester
+            .widget<RichText>(
+              find.descendant(of: import, matching: find.byType(RichText)),
+            )
+            .text
+            .style
+            ?.fontFamily,
+        'NotoSansKR',
+      );
       expect(import, findsOneWidget);
       expect(tester.getSize(import).height, greaterThanOrEqualTo(48));
       expect(find.semantics.byLabel('거래 내역 가져오기'), findsOneWidget);

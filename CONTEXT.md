@@ -83,6 +83,7 @@
 - G3.8A 평가는 caller metric을 받지 않고 검증된 주문 replay에서만 `INSUFFICIENT`, `PASS`, `DEGRADED`를 산출한다. `DEGRADED` 기록은 strategy selection이나 execution authority를 바꾸지 않으며, 자동 중단·rollback은 별도 성과·정책 gate 전에는 허용하지 않는다.
 - G3.8D strategy-window 성과는 caller metric을 받지 않고 복구 검증된 C3 rows에서만 파생한다. 첫 same-selection C3 point는 attribution anchor일 뿐 수익/손실 판단 표본이 아니며, schema v19/backup v13은 D digest/event/sample count를 검증하고 v12/schema v18은 원본을 바꾸지 않는 owned copy에서 empty D log로만 migration한다.
 - G3.8E policy는 caller metric·threshold·decision·reason·action ID를 받지 않는다. 표본 2개 미만은 `INSUFFICIENT`, drawdown 0.1 이상을 우선 action, 그 외 cumulative return -0.05 이하를 action으로 판정하며 이 값은 보수적 local paper default일 뿐 실증 최적값·투자 권유·수익 보장 또는 live threshold가 아니다.
+- G3.8H `paper-monitor.v1`은 하나의 복구 검증 transaction에서 저장된 운영 관찰만 공개한다. 최신 policy는 전체 계좌의 append 순서이며 현재 선택과 다를 수 있다. 미완료 C3/D/E chain 수는 주문 대기열이 아니고, global policy lease는 process 생존·execution lease·takeover 권한이 아니다. UI는 원본 관찰과 시각을 함께 보존하고 수동 조회만 한다.
 - 주문 timeout은 실패가 아니라 결과 미확정 상태다. 같은 식별자로 조회·reconcile하기 전 재주문하지 않는다.
 - offline 상태에서 주문을 큐에 넣지 않는다.
 - 삭제나 덮어쓰기 대신 correction/event append를 기본으로 한다.

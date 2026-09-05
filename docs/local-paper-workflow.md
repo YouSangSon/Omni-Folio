@@ -2,14 +2,20 @@
 
 이 문서는 **실제 증권사와 연결하지 않는 로컬 fixture 실행**을 다룹니다. 수동 1회 실행과 명시적으로 활성화한 pipe 연속 소비를 구분합니다. 키움 모의투자 API, 실거래, 상시 운영 준비 또는 수익성 검증을 뜻하지 않습니다. `paper-run-loop`는 여전히 성과 안전정책만 실행합니다.
 
+## 저장된 실행 상태 확인
+
+Flutter 앱의 **연결 → 모의 자동매매 상태 보기**에서 같은 API 서버 DB의 기록을 확인한다. 기존 서버가 실행 중이면 `curl http://127.0.0.1:8080/v1/paper/monitor`로도 조회할 수 있다. 기본 API 주소를 바꿨다면 해당 주소를 사용한다. 별도 CLI DB를 사용한 기록은 앱 서버가 그 DB를 열도록 설정해야 보인다.
+
+화면의 미완료 정책은 과거 선택까지 포함한 저장 단계 수이며 주문 대기열이 아니다. 마지막 정책의 HOLD는 과거 모의 판단일 뿐 현재 안전을 보장하지 않는다. 소유권 만료는 새 실행 허가가 아니며, 새로고침은 주문이나 heartbeat를 만들지 않는다. 오류가 나면 이전 관찰과 원래 시각을 함께 표시한다. 자동 polling과 알림 전달은 아직 제공하지 않는다.
+
 ## 입력과 초기화
 
-먼저 기존 `migrate`, `strategy-register`, `strategy-select`로 DB와 현재 연구 후보를 준비합니다. 아래 명령은 저장소 루트에서 실행합니다. `PAPER_RESULT_SHA`와 `PAPER_SELECTION_EVENT`에는 해당 명령의 실제 출력값을 넣습니다. `account_local_paper`는 실제 계좌번호가 아닌 별도 로컬 alias입니다.
+먼저 기존 `migrate`, `strategy-register`, `strategy-select`로 DB와 현재 연구 후보를 준비합니다. 아래 명령은 저장소 루트에서 실행합니다. `PAPER_RESULT_SHA`와 `PAPER_SELECTION_EVENT`에는 해당 명령의 실제 출력값을 넣습니다. 예제의 `kiwoom_account_AAAAAAAAAAAAAAAAAAAAAAAA`는 **폐기 가능한 별도 paper DB에서만 쓰는 가상 alias**이며 실제 계좌번호나 증권사 연결이 아닙니다. 현재 공통 식별자 계약 때문에 로컬 paper도 `kiwoom_account_` 뒤에 영문·숫자·`_`·`-` 중 정확히 24자를 요구합니다. 실제 broker alias를 이 예제에 넣거나 기존 운영 계좌를 재사용하지 마세요.
 
 ```bash
 cd services/core
 go run . paper-init -db /absolute/path/paper.db \
-  -account account_local_paper -result-sha256 "$PAPER_RESULT_SHA" \
+  -account kiwoom_account_AAAAAAAAAAAAAAAAAAAAAAAA -result-sha256 "$PAPER_RESULT_SHA" \
   -expected-current-event "$PAPER_SELECTION_EVENT"
 ```
 
@@ -42,7 +48,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research \
 
 cd services/core
 go run . paper-execute -db /absolute/path/paper.db \
-  -account account_local_paper -expected-current-event "$PAPER_SELECTION_EVENT" \
+  -account kiwoom_account_AAAAAAAAAAAAAAAAAAAAAAAA -expected-current-event "$PAPER_SELECTION_EVENT" \
   -bars /absolute/path/latest.csv -research-bars /absolute/path/research.csv \
   -proposal /absolute/path/proposal.json -arm-paper
 ```
@@ -53,7 +59,11 @@ go run . paper-execute -db /absolute/path/paper.db \
 
 순서는 원본 연구 검증 → 신규 CSV 원자 저장 → 제안 사전 검증 → 명시적 arm/lease → 기존 eligible 주문 체결 → 성과 안전정책 → 새 제안 재검증/접수입니다. 정책이 `HALT_AND_ROLLBACK`이면 새 주문을 접수하지 않습니다. 출력의 `order`가 없을 수 있으며, 이는 오류가 아니라 `none`, 수량 차이 없음 또는 정책 중지일 수 있습니다. 성공 JSON의 mode는 `paper_fixture_only`입니다.
 
-기존 주문은 저장된 체결 가능 봉을 순서대로 소비하여 부분체결을 따라잡습니다. 주문 완료 또는 체결량 증가 없음에서 반복을 끝내고, 매 체결마다 현재 lease와 회계 불변식을 다시 확인합니다. 성과 안전정책은 기존 최신 close 평가를 사용합니다. 빠진 모든 과거 close의 정책 판단을 소급 재생하거나 상시 자동매매를 제공하는 경로는 아닙니다.
+기존 주문은 마지막 저장 성과부터 제안의 마지막 봉까지 **봉마다 체결 → 성과 → 안전정책** 순서로 따라잡습니다. 각 봉의 체결량 증가가 없으면 그 봉의 체결 반복을 끝내지만 정책은 평가합니다. 중간 손실이 `HALT_AND_ROLLBACK`을 만들면 뒤 봉의 체결과 새 제안 접수를 중지합니다. 성과가 이미 저장됐는데 정책 단계가 실패했다면, 재시작 시 그 성과를 재작성하거나 체결을 추가하지 않고 미완료 정책부터 닫습니다. 매 체결은 실제 서버 시각의 lease와 회계 불변식을 다시 확인합니다.
+
+첫 실행은 마지막 제안 봉만 성과 anchor로 삼고 이전 입력은 전략 warmup으로 유지합니다. 이미 저장된 최신 성과보다 앞선 과거 누락은 append-only 원칙상 소급 삽입하지 않습니다. 입력에 없던 시장 봉을 복원하거나 중간 신호를 새 주문으로 소급 생성하지 않으며, 기존 `paper-run-due`/`paper-run-loop` 성과 전용 명령은 여전히 최신 close만 처리합니다. 따라서 수동 import·체결·성과 명령을 따로 조합한 것을 이 봉별 자동 실행 경로와 동일하게 취급하지 않습니다. [봉별 복구 gate](../gates/g3ab-paper-chronological-recovery.md)
+
+이미 접수된 동일 signal을 검증한 재시도만, 기존 주문 복구를 위해 서버에 저장된 최신 available close까지 봉별로 따라잡을 수 있습니다. 마지막에는 원래 결정만 반환하며 새 주문 결정을 만들지 않습니다. 신규 제안은 이 예외 없이 자신의 마지막 봉까지만 처리합니다. 같은 close의 완료 성과도 현재 selection 검사를 거치며 다른 전략의 cached 정책을 현재 전략의 승인으로 재사용하지 않습니다. 새 성과는 현재 전략 선택의 기록 시각 이후 봉에만 만듭니다. 성과 저장과 정책 완료 사이에 선택이 바뀌면 기존 성과를 새 선택에 재귀속하지 않고 안전하게 거절합니다.
 
 검증만을 위한 별도 데이터 가져오기는 다음과 같습니다. 주문·session·권한은 생성하지 않습니다. 신규 제안 만료는 최초 저장 receipt +30초이므로 실행 직전 장시간 따로 가져와 두지 않습니다.
 
@@ -71,7 +81,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research \
   --bars latest.csv --research-bars research.csv --artifact artifact.json \
   --bundle > paper-input.json && \
   (cd services/core && go run . paper-execute -db /absolute/path/paper.db \
-    -account account_local_paper -expected-current-event "$PAPER_SELECTION_EVENT" \
+    -account kiwoom_account_AAAAAAAAAAAAAAAAAAAAAAAA -expected-current-event "$PAPER_SELECTION_EVENT" \
     -bundle /absolute/path/paper-input.json -arm-paper)
 ```
 
@@ -94,7 +104,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research \
   --bars latest.csv --research-bars research.csv --artifact artifact.json \
   --watch --bundle | \
   "$OMNI_CORE_BIN" paper-execute-stream -db /absolute/path/paper.db \
-    -account account_local_paper -expected-current-event "$PAPER_SELECTION_EVENT" \
+    -account kiwoom_account_AAAAAAAAAAAAAAAAAAAAAAAA -expected-current-event "$PAPER_SELECTION_EVENT" \
     -arm-paper
 ```
 

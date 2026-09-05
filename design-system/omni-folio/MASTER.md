@@ -28,7 +28,7 @@ Status color never carries meaning alone: include sign, text, icon, and where re
 
 ## Type, spacing, and interaction
 
-- Font: Noto Sans KR when bundled/available; otherwise platform system sans-serif. No Caveat or Quicksand.
+- Font: bundled Noto Sans KR variable TTF, including explicit app-bar, navigation and button styles that replace theme defaults. Source/hash/license and payload tradeoff: [font provenance](../../apps/client/assets/fonts/README.md). Do not silently rely on external Korean fallback downloads; glyphs beyond the bundled font's coverage and true offline web-shell caching need separate evidence. No Caveat or Quicksand.
 - Numbers: use tabular figures for price, quantity, percentage, date/time, and all ledger columns.
 - Type scale: 12 metadata, 14 body, 16 control, 20 section, 28 portfolio value. Default body/control text is at least 16 logical px.
 - Spacing scale: 4, 8, 12, 16, 24, 32. Radius: 12 controls, 16 cards/sheets. Use surface contrast and only necessary borders before elevation; no decorative shadows.

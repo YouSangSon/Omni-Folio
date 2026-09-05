@@ -53,6 +53,8 @@ Holdings offers a separate `저장 가격으로 평가 보기` page. Consume qua
 
 ## Interaction and accessibility
 
+Connections offers a separate `모의 자동매매 상태 보기` page through the versioned `paper-monitor.v1` read contract. This narrowly promotes stored operational observations, not the financial or execution evidence excluded below. Show server observation time, session count, incomplete policy chains, global policy-runner lease and latest appended policy. Pending chains are not orders or a runnable queue; a recorded lease is not process liveness; expiry is not takeover permission. Historical HOLD never means current safety. Retain the whole previous observation and original time on refresh failure. Fetch on opening/manual refresh only; no polling, heartbeat, execution controls, private identifiers or client-clock authority. All explanatory warnings remain in screen-reader semantics.
+
 - Minimum 48×48 logical-pixel interactive targets, which also clears the 44pt iOS floor; default text/control size 16 logical px or larger.
 - All actions work with touch, pointer, keyboard, and screen reader. Hover is supplementary only.
 - Provide visible focus, logical traversal, semantic labels, chart summaries/table alternatives, 200% text support, and reduced-motion final states.

@@ -7,6 +7,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:omni_folio_client/api.dart';
 import 'package:omni_folio_client/app.dart';
 import 'package:omni_folio_client/models.dart';
+import 'package:omni_folio_client/paper_monitor.dart';
 
 const _frameBudgetMs = 16.67;
 const _flutterVersion = String.fromEnvironment('G2_FLUTTER_VERSION');
@@ -242,6 +243,10 @@ class _ProfileApi implements OmniApi {
 
   @override
   Future<LocalOrderLog> localOrders() async => const LocalOrderLog(orders: []);
+
+  @override
+  Future<PaperMonitor> paperMonitor() =>
+      throw UnsupportedError('Not part of the G2 frame fixture.');
 
   @override
   Future<LedgerActivityPage> ledgerActivities() async =>

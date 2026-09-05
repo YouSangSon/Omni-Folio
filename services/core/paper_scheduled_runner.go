@@ -124,6 +124,10 @@ func (s *Service) runDuePaperPerformancePolicyWithClaim(ctx context.Context, acc
 	if err != nil || completed != nil {
 		return completed, err
 	}
+	return s.runPaperPerformancePolicyAtCloseWithClaim(ctx, accountRef, asOf, claim)
+}
+
+func (s *Service) runPaperPerformancePolicyAtCloseWithClaim(ctx context.Context, accountRef, asOf string, claim *paperRunnerClaim) (*PaperScheduledRunResult, error) {
 	point, err := s.evaluatePaperPerformanceWithClaim(ctx, accountRef, asOf, claim)
 	if err != nil {
 		return nil, err

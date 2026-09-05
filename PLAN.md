@@ -14,6 +14,10 @@
 
 ## Next
 
+- [x] G3.8H 브라우저 통합 확인: 실제 CLI로 저장한 정책을 Flutter release/Chrome에서 조회하고 375·768·1440 화면, 오류 후 원래 관찰 보존, 키보드 재조회·복귀와 owned cleanup 확인. 실행 불가 계좌 예제를 고치고 실제 초기화 명령 RED/GREEN·race 검증. baseline 비교·물리 screen reader·frame budget은 별도 ([gate](gates/g3ad-paper-monitor-browser.md)).
+- [x] G2 로컬 한글 폰트 전달: upstream 고정 Noto Sans KR·OFL과 Cupertino 아이콘을 번들에 포함하고 기본/명시적 버튼 테마의 폰트 누락을 RED/GREEN으로 수정. 새 release 브라우저에서 loopback 외 요청을 차단하고 Home·Import·Connections·monitor 및 외부 요청 0건 검증 ([gate](gates/g2d-local-fonts.md)).
+- [ ] G2 폰트 후속: 약 9.9 MiB 번들의 초기 표시/전송 비용, 물리 iOS·Android glyph·profile과 웹 origin 자체가 없는 offline bootstrap은 별도 검증. 로컬 서버 접근만 허용한 브라우저 결과를 완전한 offline PWA로 승격하지 않음.
+
 - [x] 키움 K0 read-only transport/normalization 합성 계약
 - [x] provider-neutral local fixture OHLCV API와 Flutter 종목 상세 price/volume chart·정확한 표·샘플 provenance
 - [x] K1 키움 `ka10080`/`ka10081` 합성 candle 계약 검증: KRX 6자리 symbol, 지원 interval, signed price magnitude·exact decimal OHLCV, pagination normalization/dedupe/conflict/cap 확인
@@ -77,7 +81,9 @@
   - [x] G3.8G2H 실제 1,000회 갱신 이력의 구간별 갱신/복구 p50·p95·p99와 런타임 기준값을 보존. 논리 lease clock과 실제 작업 시간을 구분하며 장기 운영·성능 개선으로 주장하지 않음 ([gate](gates/g3y-paper-history-profile.md))
   - [x] G3.8G2I 같은 transaction의 전체 검증 뒤 중복 계좌 이력 읽기를 최신 레코드 조회로 축소하고 migration 조기 반환 우회를 공통 경계에서 차단. 과거 손상·표시 변조 RED/GREEN, focused race·전체 check 통과; 마지막 구간 갱신 p95 28.39→19.99ms의 로컬 비교이며 장기 운영은 미검증 ([gate](gates/g3z-paper-renewal-replay.md))
   - [x] G3.8G2J 실제 Python→Go 연결을 122.029초 실행해 12개 입력의 durable 처리·13개 정책·11회 갱신과 종료 후 전체 복구·소유 리소스 반환을 검증. 120회 관찰에서 최소 lease 여유 12.005초이며 하루 운영·관찰 사이 무중단 보증은 아님 ([gate](gates/g3aa-paper-real-clock-soak.md))
+  - [x] G3.8G2K 누락 봉의 체결·성과·안전정책을 봉별로 연결해 중간 손실 이후 체결을 차단. RED/GREEN, D/E 재시작·selection 경계, 실제 signal 복구, opt-in soak 포함 전체 check·focused race·소유 자원 정리와 리뷰 통과. 수동 성과 전용 명령의 조합·기존 과거 누락 소급 복구 및 전체 G3.8G2 완료는 아님 ([gate](gates/g3ab-paper-chronological-recovery.md))
 - [ ] strategy/risk/paper runner와 자동 paper/shadow promotion evidence
+- [x] G3.8H 로컬 모의 정책 상태 GET·Flutter 조회: 복구 검증된 소유권·미완료 chain·최근 정책만 표시하고 실행/갱신 권한은 만들지 않음. 전체 check, 최종 focused race, Flutter 84·analyze, 계약·보안 검사, 읽기 전용 리뷰와 owned cleanup 통과. 브라우저 실렌더링·물리 기기·알림·상시 운영 증거는 별도 ([gate](gates/g3ac-paper-monitor.md))
 
 ## Later, only after gates
 

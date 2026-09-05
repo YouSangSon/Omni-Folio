@@ -124,7 +124,14 @@ func TestLocalPaperExecutableSignalRecovery(t *testing.T) {
 			if after.Orders != before.Orders || after.Signals != before.Signals || after.Authorizations != before.Authorizations || after.Events != before.Events+after.Fills || after.Fills < observed.fills || after.Fills > 10 {
 				t.Fatal("interruption changed immutable admission or invalidated the fill prefix")
 			}
-			retry := startLocalPaperChild(t, bin, args)
+			// Normal catch-up now includes a safety evaluation at every close.
+			// Its work deadline is separate from the unchanged shutdown deadline.
+			retry := startLocalPaperChildWithTimeout(t, bin, args, time.Minute)
+			select {
+			case <-retry.done:
+			case <-time.After(time.Minute + 5*time.Second):
+				t.Fatal("owned paper recovery exceeded its work deadline")
+			}
 			retry.wait(t)
 			var result LocalPaperStepResult
 			if retry.err != nil || json.Unmarshal(retry.stdout.Bytes(), &result) != nil || result.Mode != "paper_fixture_only" || result.Order == nil || result.Order.OrderID != orderID || result.Order.Status != "FILLED" || result.Order.FilledQuantity != "10" {
@@ -137,6 +144,11 @@ func TestLocalPaperExecutableSignalRecovery(t *testing.T) {
 			if test.sig == syscall.SIGKILL {
 				wantFence = owned.FencingToken + 2 // expired lease takeover, halt
 			}
+			var acquisitions int64
+			if err := svc.db.QueryRow(`SELECT COUNT(*) FROM execution_authority_events WHERE account_ref=? AND fencing_token>? AND reason_code='lease_acquired'`, k2aAccountRef, owned.FencingToken).Scan(&acquisitions); err != nil || acquisitions < 1 {
+				t.Fatalf("restart has no verified lease acquisition: %d %v", acquisitions, err)
+			}
+			wantFence += acquisitions - 1 // Valid joint renewals during bounded catch-up.
 			if err != nil || leaseErr != nil || state.Armed || state.LeaseOwner != "" || row.record.OwnerID != "" || state.FencingToken != wantFence || row.record.FencingToken != observed.runner.record.FencingToken+1 || after.Orders != before.Orders || after.Signals != before.Signals || after.Authorizations != before.Authorizations || after.Events != before.Events+after.Fills || after.Fills != 10 {
 				t.Fatalf("restart did not clean owned authority or duplicated history: %+v errors=%v/%v", state, err, leaseErr)
 			}
@@ -160,7 +172,12 @@ type localPaperChild struct {
 
 func startLocalPaperChild(t *testing.T, bin string, args []string) *localPaperChild {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	return startLocalPaperChildWithTimeout(t, bin, args, 20*time.Second)
+}
+
+func startLocalPaperChildWithTimeout(t *testing.T, bin string, args []string, timeout time.Duration) *localPaperChild {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	child := &localPaperChild{command: exec.CommandContext(ctx, bin, args...), done: make(chan struct{})}
 	child.command.Stdout, child.command.Stderr = &child.stdout, &child.stderr
 	if err := child.command.Start(); err != nil {

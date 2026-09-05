@@ -121,4 +121,12 @@ G6 PostgreSQL and Kubernetes promotion
 
 - G3.8G2J는 실제 clock의 Python→Go 지속 연결에서 122.029초·120회 관찰·12개 입력·13개 정책·11회 갱신을 검증했다. 최소 관찰 lease 여유는 12.005초이고 종료 후 전체 복구·권한 반환·소스 보존이 통과했다. 기존 종료/재연결 회귀도 통과했으며 하루 운영·시장 freshness·durable queue는 여전히 미검증이다. [gate](gates/g3aa-paper-real-clock-soak.md)
 
+- G3.8G2K는 밀린 봉마다 체결→성과→정책을 완료해 중간 손실 이후 체결을 막고, 저장된 성과의 미완료 정책부터 재시작한다. 선택 이전 새 성과와 다른 선택의 cached 정책 재사용을 차단하며 기존 접수 signal의 주문 복구 계약은 유지했다. 실제 signal 복구·opt-in soak 포함 전체 check·focused race·리뷰·소유 자원 정리가 통과했다. 수동 성과 전용 명령의 조합과 기존 과거 누락 소급 삽입, 전체 G3.8G2 완료를 뜻하지 않는다. [gate](gates/g3ab-paper-chronological-recovery.md)
+
+- G3.8H는 연결 화면에서 저장된 모의 정책 상태를 요청할 때만 조회한다. 전체 복구를 검증한 단일 DB 관찰에 미완료 정책·최근 결정·소유권 기록을 담으며 계좌 ID·금융 수치·실행 권한은 노출하지 않는다. 전체 check와 최종 focused race·Flutter 84·리뷰·owned cleanup이 통과했다. 물리 기기·브라우저 실렌더링·알림 전달·상시 운영 증거는 아니다. [gate](gates/g3ac-paper-monitor.md)
+
+- G3.8H 브라우저 후속은 실제 Go API에서 정책 없음·저장 정책·offline 보존·키보드 복귀와 375/768/1440 렌더링을 확인하고, 실행 불가 문서 alias를 실제 CLI 회귀 테스트로 교정했다. 소유 자원 정리 통과. visual baseline·physical profile·cold-start offline 한글 표시는 아직 증명하지 않았다. [gate](gates/g3ad-paper-monitor-browser.md)
+
+- G2 로컬 폰트 전달은 고정 Noto/OFL·Cupertino 자산과 공통 버튼 폰트 수정으로 외부 한글 fallback 의존을 제거했다. Flutter 85·새 release 브라우저의 loopback-only 17 GET/외부 요청 0·owned cleanup 통과. 9.9 MiB payload, 물리 glyph/profile과 offline-origin bootstrap은 별도다. [gate](gates/g2d-local-fonts.md)
+
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.
