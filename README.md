@@ -245,6 +245,8 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research python3 -m omni_research.
 
 stdout의 JSON은 비신뢰 로컬 입력에서 계산한 목표 수량 **제안**이며 주문을 실행하지 않습니다. 자체 hash와 입력의 promotion 표시는 연구 성과 증명이 아니므로 Go의 등록 결과·현재 선택 검증을 생략할 수 없습니다. `none`은 새 제안 없음, `death_cross`의 `"0"`은 청산 목표입니다. 현재 `paper-run-loop`도 성과 평가·안전 정책만 실행하며 신호 생성·시장 봉 입력·모의 체결의 운영 연결은 G3.8G2에 남아 있습니다.
 
+[G3.8G2A](gates/g3r-paper-proposal-admission.md)는 저장된 봉에서 제안을 독립 검증해 모의 주문으로 연결하는 내부 Go 함수까지 검증합니다. 이를 실행하는 사용자용 CLI, 최초 paper 초기화와 CSV 입력 경로는 아직 제공하지 않습니다. 실거래나 상시 자동매매가 가능한 상태를 뜻하지 않습니다.
+
 전략 개선 runner는 유한한 long-only SMA 후보를 expanding walk-forward로 평가하고 final holdout을 한 번만 엽니다. 결과는 `paper_candidate` 또는 `no_promotion`만 만들 수 있으며 credential·주문·live 승격 권한을 얻지 못합니다.
 
 Go core는 이 로컬 결과를 schema v13에서 도입되어 현재 schema v20에도 보존된 insert-only registry에 등록합니다. `no_promotion`도 거절 evidence로 보존되지만 선택할 수 없습니다. `paper_candidate` 선택은 현재 champion과 직접 비교하는 로직이 아직 없으므로 명시적 CLI와 optimistic concurrency를 요구하며, rollback은 직전 선택이나 `no_strategy`로만 새 이벤트를 append합니다.

@@ -67,6 +67,8 @@
 - [ ] G3.8F 이후 alerting, shadow promotion evidence, CronJob packaging과 broker/live authority는 별도 gate
 - [x] G3.8G1 기존 SMA 판정을 공유하는 offline paper target proposal CLI와 closed contract·입력 provenance 검증; 비신뢰 제안이며 연구 증명·주문 권한 아님 ([gate](gates/g3q-paper-signal-proposals.md))
 - [ ] G3.8G2 proposal의 Go 검증·선택 binding, session/bar ingress, 순차 fill→signal 실행과 process-owned paper authority·lease cleanup을 연결한 실제 local paper 실행
+  - [x] G3.8G2A stored-series 독립 SMA 판정·Go receipt deadline과 proposal→v3 signal→OPEN paper order의 단일 transaction admission ([gate](gates/g3r-paper-proposal-admission.md))
+  - [ ] G3.8G2B 명시적 신규 paper 초기화, raw CSV↔stored series 검증·입력, 기존 주문 fill→새 신호 실행 CLI, execution lease의 소유권 보존 종료/재시작 경로
 - [ ] strategy/risk/paper runner와 자동 paper/shadow promotion evidence
 
 ## Later, only after gates
