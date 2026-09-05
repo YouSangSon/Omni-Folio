@@ -5,9 +5,15 @@ import contextlib
 import copy
 import io
 import json
+import os
 import re
+import selectors
+import signal
+import subprocess
+import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from omni_research.engine import canonical_hash
@@ -18,6 +24,139 @@ ROOT = Path(__file__).parents[3]
 
 
 class SignalProposalTest(unittest.TestCase):
+    def test_cli_closed_output_exits_without_shutdown_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            bars, research, artifact = self.inputs(directory)
+            artifact_path = directory / 'artifact.json'
+            artifact_path.write_text(json.dumps(artifact))
+            args = ['--bars', str(bars), '--research-bars', str(research), '--artifact', str(artifact_path), '--watch']
+            read_fd, write_fd = os.pipe()
+            os.close(read_fd)
+            try:
+                result = subprocess.run([sys.executable, '-B', '-m', 'omni_research.signal_cli', *args],
+                                        stdout=write_fd, stderr=subprocess.PIPE, text=True, timeout=3)
+            finally:
+                os.close(write_fd)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stderr, 'Paper signal proposal output is closed; producer stopped.\n')
+
+    def test_cli_rejects_nonregular_and_oversized_inputs_without_waiting(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            bars, research, artifact = self.inputs(directory)
+            artifact_path = directory / 'artifact.json'
+            artifact_path.write_text(json.dumps(artifact))
+            oversized = directory / 'oversized'
+            oversized.write_bytes(b' ' * 1_048_577)
+            large_field = directory / 'large-field'
+            large_field.write_bytes(b'x' * 262_144)
+            fifo = directory / 'fifo'
+            os.mkfifo(fifo)
+            link = directory / 'link'
+            link.symlink_to(fifo)
+            for flag in ('--bars', '--research-bars', '--artifact'):
+                for invalid in (directory, oversized, large_field, fifo, link):
+                    with self.subTest(flag=flag, kind=invalid.name):
+                        inputs = {'--bars': bars, '--research-bars': research, '--artifact': artifact_path}
+                        inputs[flag] = invalid
+                        args = [item for key, path in inputs.items() for item in (key, str(path))]
+                        result = subprocess.run([sys.executable, '-B', '-m', 'omni_research.signal_cli', *args, '--watch'],
+                                                capture_output=True, text=True, timeout=3)
+                        self.assertEqual(result.returncode, 1)
+                        self.assertEqual(result.stdout, '')
+                        self.assertEqual(result.stderr, 'Paper signal proposal input is invalid; no proposal was produced.\n')
+
+    def test_watch_real_signals_and_invalid_update_leave_no_owned_resources(self) -> None:
+        for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGKILL, None):
+            with self.subTest(signal=sig), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                bars, research, artifact = self.inputs(directory)
+                artifact_path = directory / 'artifact.json'
+                artifact_path.write_text(json.dumps(artifact))
+                args = ['--bars', str(bars), '--research-bars', str(research), '--artifact', str(artifact_path), '--watch']
+                before = {p.name: p.read_bytes() for p in directory.iterdir()}
+                child = subprocess.Popen([sys.executable, '-B', '-m', 'omni_research.signal_cli', *args],
+                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                try:
+                    with selectors.DefaultSelector() as ready:
+                        ready.register(child.stdout, selectors.EVENT_READ)
+                        self.assertTrue(ready.select(timeout=5), 'watcher did not flush its first proposal')
+                    self.assertEqual(json.loads(child.stdout.readline())['signal'], 'golden_cross')
+                    if sig is None:
+                        bars.write_text('DO_NOT_ECHO')
+                        before[bars.name] = bars.read_bytes()
+                    else:
+                        child.send_signal(sig)
+                    out, err = child.communicate(timeout=5)
+                    self.assertEqual(child.returncode, 1 if sig is None else 130 if sig == signal.SIGINT else -sig)
+                    self.assertEqual(out, '')
+                    self.assertEqual(err, 'Paper signal proposal input is invalid; no proposal was produced.\n' if sig is None else '')
+                finally:
+                    if child.poll() is None:
+                        child.kill()
+                    child.communicate(timeout=5)
+                self.assertEqual(before, {p.name: p.read_bytes() for p in directory.iterdir()})
+
+    def test_watch_rejects_rewritten_anchor_regression_and_changed_research(self) -> None:
+        for change in ('rewrite', 'regress', 'artifact', 'research', 'invalid'):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                bars, research, artifact = self.inputs(directory)
+                artifact_path = directory / 'artifact.json'
+                artifact_path.write_text(json.dumps(artifact))
+                args = ['--bars', str(bars), '--research-bars', str(research), '--artifact', str(artifact_path), '--watch']
+                ticks = 0
+
+                def wait(_: float) -> None:
+                    nonlocal ticks
+                    ticks += 1
+                    if ticks > 1:
+                        raise KeyboardInterrupt  # bound a regressed implementation
+                    if change == 'rewrite':
+                        bars.write_text(bars.read_text() + '\n')
+                    elif change == 'regress':
+                        bars.write_text(bars.read_text().replace('2026-05-04T00:00:00Z', '2026-05-03T12:00:00Z'))
+                    elif change == 'invalid':
+                        bars.write_text('DO_NOT_ECHO')
+                    else:
+                        path = artifact_path if change == 'artifact' else research
+                        path.write_bytes(path.read_bytes() + b'\n')
+
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with patch('time.sleep', side_effect=wait), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    self.assertEqual(main(args), 1)
+                self.assertEqual(len(stdout.getvalue().splitlines()), 1)
+                self.assertEqual(stderr.getvalue(), 'Paper signal proposal input is invalid; no proposal was produced.\n')
+
+    def test_watch_emits_only_changed_snapshot_and_stops_without_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            bars, research, artifact = self.inputs(directory)
+            artifact_path = directory / 'artifact.json'
+            artifact_path.write_text(json.dumps(artifact))
+            args = ['--bars', str(bars), '--research-bars', str(research), '--artifact', str(artifact_path), '--watch']
+            ticks = 0
+
+            def wait(_: float) -> None:
+                nonlocal ticks
+                ticks += 1
+                if ticks == 2:
+                    bars.write_text(bars.read_text() + '2026-05-05T00:00:00Z,005930,4,4,4,4,100\n')
+                if ticks == 3:
+                    raise KeyboardInterrupt
+
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with patch('time.sleep', side_effect=wait), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                self.assertEqual(main(args), 130)
+            proposals = [json.loads(line) for line in stdout.getvalue().splitlines()]
+            self.assertEqual([(p['data_as_of'], p['signal'], p['target_quantity']) for p in proposals], [
+                ('2026-05-04T00:00:00Z', 'golden_cross', '10'),
+                ('2026-05-05T00:00:00Z', 'none', None),
+            ])
+            self.assertEqual(stderr.getvalue(), '')
+            self.assertEqual({p.name for p in directory.iterdir()}, {'latest.csv', 'research.csv', 'artifact.json'})
+
     def inputs(self, directory: Path, closes: tuple[str, ...] = ("3", "2", "1", "4")) -> tuple[Path, Path, dict]:
         research = directory / "research.csv"
         research.write_bytes((ROOT / "contracts/fixtures/strategy-market-bars.csv").read_bytes().replace(b",SMA,", b",005930,"))
@@ -114,6 +253,7 @@ class SignalProposalTest(unittest.TestCase):
             raw = bars.read_text()
             mutations = (
                 raw.replace('005930', '000660'),
+                raw.replace('005930', '000660', 1),
                 '\n'.join(raw.splitlines()[:-1]) + '\n',
                 raw.replace('2026-05-', '2020-05-'),
                 raw.replace('00:00:00Z', '00:00:00+00:00'),

@@ -105,4 +105,6 @@ G6 PostgreSQL and Kubernetes promotion
 
 - G3.8G2B는 수동 로컬 초기화·CSV/연구 원본 검증·fill→policy→signal 실행 경로와 소유권 보존 중지를 로컬 검증했다. FIFO 거절·누락 봉 부분체결·정책중지 재시작에 더해 실제 실행 파일의 SIGINT/SIGTERM, SIGKILL 후 실제 TTL 만료·중복 없는 복구를 확인했다. 리뷰 보강 후 `make check`와 소유 자원 정리가 통과했다. 상시 실행·증권사 연결·배포 증거가 아니며 전체 G3.8G2는 미완료다. [gate](gates/g3s-local-paper-workflow.md), [사용법](docs/local-paper-workflow.md)
 
+- G3.8G2C는 `signal_cli --watch`로 같은 연구 후보의 새 마지막 봉 제안을 자동 생성한다. 생성·프레이밍만 담당하며 durable 전달·Go 접수·주문 실행은 아직 연결하지 않는다. 반복 입력과 입출력/프로세스 실패, 전체 `make check`·소유 자원 정리를 로컬 통과했다. [gate](gates/g3t-paper-proposal-watch.md)
+
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.

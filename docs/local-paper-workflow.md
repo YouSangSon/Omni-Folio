@@ -59,6 +59,12 @@ go run . paper-execute -db /absolute/path/paper.db \
 go run . paper-import-bars -db /absolute/path/paper.db -bars /absolute/path/latest.csv
 ```
 
+## 자동 제안 생성만 관찰하기
+
+앞의 Python `signal_cli` 명령에 `--watch`를 추가하면 현재 유효한 제안을 한 줄 출력한 뒤, 각 검사 완료 1초 후 CSV를 다시 읽습니다. 동일 입력은 다시 출력하지 않습니다. 입력 파일은 각 1 MiB 이하의 일반 파일이어야 하며 작성자는 완성된 파일로 원자 교체해야 합니다. 실행 중 연구 artifact 변경, 연구 CSV hash 불일치, 같은/과거 마지막 봉의 byte 변경 또는 잘못된 입력은 오류로 종료합니다.
+
+출력은 단일 JSON 파일이 아니라 NDJSON 스트림입니다. 이를 `proposal.json`에 계속 덮어쓰거나 현재 `paper-execute`에 pipe로 연결하지 마세요. 이 생성기는 파일·DB·주문을 만들지 않으며, 재시작 시 같은 제안이 재출력되거나 검사 사이 중간 snapshot이 누락될 수 있습니다. 원본 byte를 보존한 전달과 durable 소비를 연결하기 전까지 자동매매 실행 경로가 아닙니다. [생성 전용 gate](../gates/g3t-paper-proposal-watch.md)
+
 ## 실패와 재시도
 
 CSV 한 파일은 전부 저장되거나 전부 취소됩니다. 전체 실행의 CSV, 체결, 성과 정책, 새 주문은 서로 다른 durable 단계이므로 뒤 단계 오류가 앞 단계의 확정 기록을 지우지는 않습니다. 잘못된 제안은 사전 검증에서 arm/체결 전에 거절하지만 이미 검증된 CSV는 남을 수 있습니다.

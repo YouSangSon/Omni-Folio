@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
+import os
 import re
+import stat
 import sys
+import time
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -17,6 +21,18 @@ ARTIFACT_FIELDS = {
     "schema_version", "experiment_id", "input_sha256", "config_sha256", "manifest", "execution",
     "evaluation", "candidates", "challenger", "promotion", "disclaimer", "result_sha256",
 }
+
+
+def read_signal_input(path: Path) -> bytes:
+    # Check the opened descriptor, not a racy path precheck. The byte cap is
+    # not a general filesystem I/O deadline; O_NONBLOCK prevents FIFO waits.
+    with open(path, 'rb', opener=lambda name, flags: os.open(name, flags | os.O_NONBLOCK)) as source:
+        if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+            raise ValueError("signal input must be a regular file")
+        raw = source.read(1_048_577)
+        if len(raw) > 1_048_576:
+            raise ValueError("signal input exceeds 1 MiB")
+        return raw
 
 
 def generate_proposal(bars_path: Path, research_bars_path: Path, artifact: dict[str, Any]) -> dict[str, Any]:
@@ -53,12 +69,12 @@ def generate_proposal(bars_path: Path, research_bars_path: Path, artifact: dict[
     decimal_input(quantity, "quantity")
 
     # Read each snapshot once: the hash and parsed bars must refer to the same bytes.
-    research_bytes = research_bars_path.read_bytes()
+    research_bytes = read_signal_input(research_bars_path)
     research_sha = hashlib.sha256(research_bytes).hexdigest()
     if artifact["input_sha256"] != research_sha or manifest["data"]["input_sha256"] != research_sha:
         raise ValueError("research data hash mismatch")
     research_bars = parse_bars(research_bytes)
-    raw_bars = bars_path.read_bytes()
+    raw_bars = read_signal_input(bars_path)
     bars = parse_bars(raw_bars)
     if len(bars) <= slow or not re.fullmatch(r"[0-9]{6}", bars[-1].symbol) or bars[-1].symbol != research_bars[-1].symbol:
         raise ValueError("paper signal requires matching KRX symbols and sufficient history")
@@ -96,18 +112,38 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--bars", required=True, type=Path)
     parser.add_argument("--research-bars", required=True, type=Path)
     parser.add_argument("--artifact", required=True, type=Path)
+    parser.add_argument("--watch", action="store_true", help="emit changed latest-close proposals as NDJSON; no execution authority")
     args = parser.parse_args(argv)
     try:
-        raw = args.artifact.read_bytes()
-        if len(raw) > 1_048_576:
-            raise ValueError("artifact is too large")
+        raw = read_signal_input(args.artifact)
         artifact = json.loads(raw, object_pairs_hook=_object, parse_float=_invalid_number, parse_constant=_invalid_number)
-        proposal = generate_proposal(args.bars, args.research_bars, artifact)
-    except (OSError, ValueError, KeyError, TypeError, ArithmeticError, RecursionError):
+        previous = None
+        # ponytail: latest-snapshot polling can miss intermediate closes;
+        # durable exact-byte delivery belongs in the later Go ingestion path.
+        while True:
+            if previous is not None and read_signal_input(args.artifact) != raw:
+                raise ValueError("watch research artifact changed")
+            proposal = generate_proposal(args.bars, args.research_bars, artifact)
+            if proposal != previous:
+                if previous is not None and proposal["data_as_of"] <= previous["data_as_of"]:
+                    raise ValueError("watch requires a new close, not rewritten history")
+                print(json.dumps(proposal, ensure_ascii=False, sort_keys=True, separators=(",", ":")), flush=True)
+                previous = proposal
+            if not args.watch:
+                return 0
+            time.sleep(1)
+    except KeyboardInterrupt:
+        return 130
+    except BrokenPipeError:
+        # Python flushes stdout again at shutdown. Redirect only this broken
+        # output descriptor so termination cannot emit a second traceback.
+        with open(os.devnull, 'wb') as sink:
+            os.dup2(sink.fileno(), sys.stdout.fileno())
+        print("Paper signal proposal output is closed; producer stopped.", file=sys.stderr)
+        return 1
+    except (OSError, ValueError, KeyError, TypeError, ArithmeticError, RecursionError, csv.Error):
         print("Paper signal proposal input is invalid; no proposal was produced.", file=sys.stderr)
         return 1
-    print(json.dumps(proposal, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
-    return 0
 
 
 if __name__ == "__main__":
