@@ -247,7 +247,9 @@ stdout의 JSON은 비신뢰 로컬 입력에서 계산한 목표 수량 **제안
 
 [수동 로컬 paper 사용법](docs/local-paper-workflow.md)의 `paper-init`, `paper-import-bars`, `paper-execute -arm-paper`로 초기화·원본 CSV 검증·모의 체결·성과 안전정책·새 제안 접수를 연결합니다. 실제 증권사와 연결하지 않는 fixture 실행이며 종료 시 자신의 실행 권한을 중지합니다. 실제 OS signal/stale-owner와 복합 재시작 검증은 [G3.8G2B](gates/g3s-local-paper-workflow.md)에서 로컬 통과했습니다. 상시 자동매매나 실거래 완성을 뜻하지 않습니다.
 
-Python `--bundle`은 제안과 계산에 사용한 원본 CSV를 함께 출력합니다. Go `paper-execute -bundle FILE -arm-paper`로 한 번 전달하면 원본 경로를 다시 읽지 않고 기존 검증을 거칩니다. 개별 CSV 1 MiB·전체 JSON 4 MiB 제한이며, `--watch --bundle` 스트림의 지속 소비나 자동 재활성화 기능은 아닙니다. [정확한 byte 전달 gate](gates/g3u-paper-input-bundle.md)
+Python `--bundle`은 제안과 계산에 사용한 원본 CSV를 함께 출력합니다. Go `paper-execute -bundle FILE -arm-paper`로 한 번 전달하면 원본 경로를 다시 읽지 않고 기존 검증을 거칩니다. 개별 CSV 1 MiB·전체 JSON 4 MiB 제한입니다. [정확한 byte 전달 gate](gates/g3u-paper-input-bundle.md)
+
+`--watch --bundle`은 별도 `paper-execute-stream -arm-paper`의 stdin pipe로 연결할 수 있습니다. 이 명령은 한 번만 활성화하고 입력 사이에도 소유 임대를 갱신하며, 중지·EOF·오류에서 reader와 권한을 정리합니다. 자동 재활성화나 durable queue는 아니며 stdout 대신 DB 기록으로 실행을 확인합니다. [연속 fixture 사용법](docs/local-paper-workflow.md#명시적으로-연속-fixture-소비하기), [검증 gate](gates/g3w-paper-input-stream.md)
 
 전략 개선 runner는 유한한 long-only SMA 후보를 expanding walk-forward로 평가하고 final holdout을 한 번만 엽니다. 결과는 `paper_candidate` 또는 `no_promotion`만 만들 수 있으며 credential·주문·live 승격 권한을 얻지 못합니다.
 

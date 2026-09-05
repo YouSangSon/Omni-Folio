@@ -16,7 +16,7 @@ import (
 
 func main() {
 	args := os.Args[1:]
-	if len(args) > 0 && (args[0] == "paper-run-loop" || args[0] == "paper-execute" || args[0] == "paper-import-bars" || args[0] == "paper-init") {
+	if len(args) > 0 && (args[0] == "paper-run-loop" || args[0] == "paper-execute" || args[0] == "paper-execute-stream" || args[0] == "paper-import-bars" || args[0] == "paper-init") {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		if err := runContext(ctx, args); err != nil && !(args[0] == "paper-run-loop" && errors.Is(err, context.Canceled)) {
@@ -37,9 +37,11 @@ func run(args []string) error {
 
 func runContext(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: omni-core <migrate|serve|backup|verify-restore|strategy-register|strategy-status|strategy-select|strategy-rollback|paper-run-due|paper-run-loop|paper-init|paper-import-bars|paper-execute>")
+		return fmt.Errorf("usage: omni-core <migrate|serve|backup|verify-restore|strategy-register|strategy-status|strategy-select|strategy-rollback|paper-run-due|paper-run-loop|paper-init|paper-import-bars|paper-execute|paper-execute-stream>")
 	}
 	switch args[0] {
+	case "paper-execute-stream":
+		return runLocalPaperStreamCommand(ctx, args[1:], os.Stdin)
 	case "paper-init", "paper-import-bars", "paper-execute":
 		return runLocalPaperCommand(ctx, args, os.Stdout)
 	case "migrate":

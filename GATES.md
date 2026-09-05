@@ -111,4 +111,6 @@ G6 PostgreSQL and Kubernetes promotion
 
 - G3.8G2E는 유효한 현재 owner의 execution/global lease를 원자 갱신하며 기존 수동 실행 단계에서 사용한다. 최초 TTL 이후 새 체결·이력 복구·동시 갱신·실패 rollback과 전체 check, 최종 코드의 targeted race/실제 중단 복구가 통과했다. 갱신은 재활성화가 아니며 continuous 소비·idle heartbeat·장기 처리량은 미완료다. [gate](gates/g3v-paper-execution-heartbeat.md)
 
+- G3.8G2F는 pipe의 bounded LF bundle을 기존 실행 경로로 순차 소비하고 idle 구간에 두 lease를 함께 갱신한다. 실제 signal·최초 30초 이후 갱신·외부 halt·EOF 재연결 중복 방지와 전체 check가 로컬 통과했다. 단일 arm, 취소 가능한 reader의 close/join, 새 데이터 없는 Python 출력 단절 종료를 확인했다. 장기 부하·durable 전달·소스 누락 방지 및 전체 G3.8G2는 미완료다. [gate](gates/g3w-paper-input-stream.md)
+
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.

@@ -19,6 +19,57 @@ type LocalPaperStepResult struct {
 // Explicit one-shot fixture execution; never call this from a scheduler because
 // it includes the caller's explicit arm. Each journaled phase is retryable.
 func (s *Service) executeLocalPaper(ctx context.Context, account, selection string, proposalRaw, barsRaw, researchRaw []byte) (result *LocalPaperStepResult, resultErr error) {
+	run := &localPaperRun{service: s, account: account, selection: selection}
+	defer func() { resultErr = errors.Join(resultErr, run.close()) }()
+	return run.step(ctx, proposalRaw, barsRaw, researchRaw)
+}
+
+// A single invocation owns this state. Only the first validated step may arm;
+// both one-shot and stream consumers use the same preparation/execution path.
+type localPaperRun struct {
+	service            *Service
+	account, selection string
+	claim              *paperRunnerClaim
+	lease              *ExecutionAuthorityState
+}
+
+func (r *localPaperRun) close() error {
+	var err error
+	if r.lease != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), paperRunnerLoopReleaseTimeout)
+		err = r.service.haltOwnedSyntheticExecutionLease(ctx, r.account, r.lease.FencingToken)
+		cancel()
+	}
+	if r.claim != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), paperRunnerLoopReleaseTimeout)
+		err = errors.Join(err, r.service.releasePaperRunnerLease(ctx, r.claim))
+		cancel()
+	}
+	return err
+}
+
+func (r *localPaperRun) refresh(ctx context.Context) error {
+	if r.lease == nil {
+		return nil
+	}
+	// Policy stages can refresh the global claim independently. Schedule
+	// against the execution expiry, never that mutable global heartbeat.
+	expires, ok := canonicalUTCTime(r.lease.LeaseExpiresAt)
+	if !ok {
+		return errors.New("local paper execution expiry is invalid")
+	}
+	if r.service.now().Before(expires.Add(-syntheticExecutionLeaseTTL + paperRunnerLoopHeartbeatInterval)) {
+		return nil
+	}
+	claim, lease, err := r.service.heartbeatLocalPaperExecution(ctx, r.claim, r.lease.FencingToken)
+	if err == nil {
+		r.claim, r.lease = claim, lease
+	}
+	return err
+}
+
+func (r *localPaperRun) step(ctx context.Context, proposalRaw, barsRaw, researchRaw []byte) (*LocalPaperStepResult, error) {
+	s, account, selection := r.service, r.account, r.selection
 	proposal, err := decodePaperProposal(proposalRaw)
 	if err != nil {
 		return nil, err
@@ -27,21 +78,27 @@ func (s *Service) executeLocalPaper(ctx context.Context, account, selection stri
 	if hex.EncodeToString(hash[:]) != stringField(proposal, "input_sha256") {
 		return nil, errors.New("paper proposal CSV hash differs")
 	}
-	claim, err := s.acquirePaperRunnerLease(ctx, account)
-	if err != nil {
-		return nil, err
+	if r.claim == nil {
+		claim, err := s.acquirePaperRunnerLease(ctx, account)
+		if err != nil {
+			return nil, err
+		}
+		r.claim = claim
 	}
-	defer func() {
-		cleanup, cancel := context.WithTimeout(context.Background(), paperRunnerLoopReleaseTimeout)
-		defer cancel()
-		resultErr = errors.Join(resultErr, s.releasePaperRunnerLease(cleanup, claim))
-	}()
-	if selection != claim.StrategySelectionEventID || stringField(proposal, "strategy_result_sha256") != claim.SelectedResultSHA256 {
+	if r.lease != nil {
+		if err := r.refresh(ctx); err != nil {
+			return nil, err
+		}
+		if _, err := s.requireCurrentSyntheticExecutionLease(ctx, s.db, account, r.lease.FencingToken, s.now()); err != nil {
+			return nil, err
+		}
+	}
+	if selection != r.claim.StrategySelectionEventID || stringField(proposal, "strategy_result_sha256") != r.claim.SelectedResultSHA256 {
 		return nil, errors.New("local paper proposal selection changed")
 	}
 	var slow int
 	var researchSHA string
-	if err := s.db.QueryRowContext(ctx, `SELECT json_extract(artifact_json,'$.manifest.strategy.parameters.slow_window'),json_extract(artifact_json,'$.input_sha256') FROM strategy_research_evidence WHERE result_sha256=?`, claim.SelectedResultSHA256).Scan(&slow, &researchSHA); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT json_extract(artifact_json,'$.manifest.strategy.parameters.slow_window'),json_extract(artifact_json,'$.input_sha256') FROM strategy_research_evidence WHERE result_sha256=?`, r.claim.SelectedResultSHA256).Scan(&slow, &researchSHA); err != nil {
 		return nil, err
 	}
 	if err := validatePaperResearchInput(researchRaw, researchSHA, stringField(proposal, "symbol"), stringField(proposal, "data_as_of")); err != nil {
@@ -54,40 +111,22 @@ func (s *Service) executeLocalPaper(ctx context.Context, account, selection stri
 	if slow < 2 || snapshot.Bars <= slow {
 		return nil, errors.New("paper snapshot lacks the complete strategy warmup window")
 	}
-	if _, _, err := s.processPaperProposal(ctx, account, selection, proposalRaw, snapshot.SignalBarObservationID, 0, false, claim); err != nil {
+	if _, _, err := s.processPaperProposal(ctx, account, selection, proposalRaw, snapshot.SignalBarObservationID, 0, false, r.claim); err != nil {
 		return nil, err
 	}
 	// Preparation can age the global claim before execution acquires its own
 	// lease. Align their lifetimes, retaining the old tuple if renewal fails.
-	preparedClaim, err := s.heartbeatPaperRunnerLease(ctx, claim)
-	if err != nil {
-		return nil, err
-	}
-	claim = preparedClaim
-	lease, err := s.startLocalPaperExecutionWithClaim(ctx, account, selection, claim)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		cleanup, cancel := context.WithTimeout(context.Background(), paperRunnerLoopReleaseTimeout)
-		defer cancel()
-		resultErr = errors.Join(resultErr, s.haltOwnedSyntheticExecutionLease(cleanup, account, lease.FencingToken))
-	}()
-	refresh := func() error {
-		// Policy stages can refresh the global claim independently. Schedule
-		// against the execution expiry, never that mutable global heartbeat.
-		expires, ok := canonicalUTCTime(lease.LeaseExpiresAt)
-		if !ok {
-			return errors.New("local paper execution expiry is invalid")
+	if r.lease == nil {
+		preparedClaim, err := s.heartbeatPaperRunnerLease(ctx, r.claim)
+		if err != nil {
+			return nil, err
 		}
-		if s.now().Before(expires.Add(-syntheticExecutionLeaseTTL + paperRunnerLoopHeartbeatInterval)) {
-			return nil
+		r.claim = preparedClaim
+		lease, err := s.startLocalPaperExecutionWithClaim(ctx, account, selection, r.claim)
+		if err != nil {
+			return nil, err
 		}
-		nextClaim, nextLease, err := s.heartbeatLocalPaperExecution(ctx, claim, lease.FencingToken)
-		if err == nil {
-			claim, lease = nextClaim, nextLease
-		}
-		return err
+		r.lease = lease
 	}
 	ids, err := s.openLocalPaperOrderIDs(ctx, account)
 	if err != nil {
@@ -103,11 +142,11 @@ func (s *Service) executeLocalPaper(ctx context.Context, account, selection stri
 		// ponytail: replay per fill is quadratic in history; batch only after
 		// profiling, preserving per-fill accounting and authority validation.
 		for state.Status == "OPEN" || state.Status == "PARTIALLY_FILLED" {
-			if err := refresh(); err != nil {
+			if err := r.refresh(ctx); err != nil {
 				return nil, err
 			}
 			filled := state.FilledQuantity
-			state, err = s.runPaperOrderWithClaim(ctx, id, lease.FencingToken, claim)
+			state, err = s.runPaperOrderWithClaim(ctx, id, r.lease.FencingToken, r.claim)
 			if err != nil {
 				return nil, err
 			}
@@ -116,21 +155,21 @@ func (s *Service) executeLocalPaper(ctx context.Context, account, selection stri
 			}
 		}
 	}
-	if err := refresh(); err != nil {
+	if err := r.refresh(ctx); err != nil {
 		return nil, err
 	}
-	policy, err := s.runDuePaperPerformancePolicyWithClaim(ctx, account, claim)
+	policy, err := s.runDuePaperPerformancePolicyWithClaim(ctx, account, r.claim)
 	if err != nil {
 		return nil, err
 	}
-	result = &LocalPaperStepResult{Mode: "paper_fixture_only", Snapshot: snapshot, Policy: policy}
+	result := &LocalPaperStepResult{Mode: "paper_fixture_only", Snapshot: snapshot, Policy: policy}
 	if policy.Decision == "HALT_AND_ROLLBACK" {
 		return result, nil
 	}
-	if err := refresh(); err != nil {
+	if err := r.refresh(ctx); err != nil {
 		return nil, err
 	}
-	_, order, err := s.processPaperProposal(ctx, account, selection, proposalRaw, snapshot.SignalBarObservationID, lease.FencingToken, true, claim)
+	_, order, err := s.processPaperProposal(ctx, account, selection, proposalRaw, snapshot.SignalBarObservationID, r.lease.FencingToken, true, r.claim)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,6 @@
 # Local paper workflow
 
-이 명령은 **실제 증권사와 연결하지 않는 수동 1회 fixture 실행**입니다. 자동매매 daemon, 키움 모의투자 API, 실거래 또는 수익성 검증을 뜻하지 않습니다. `paper-run-loop`는 여전히 성과 안전정책만 실행합니다.
+이 문서는 **실제 증권사와 연결하지 않는 로컬 fixture 실행**을 다룹니다. 수동 1회 실행과 명시적으로 활성화한 pipe 연속 소비를 구분합니다. 키움 모의투자 API, 실거래, 상시 운영 준비 또는 수익성 검증을 뜻하지 않습니다. `paper-run-loop`는 여전히 성과 안전정책만 실행합니다.
 
 ## 입력과 초기화
 
@@ -81,7 +81,28 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research \
 
 앞의 Python `signal_cli` 명령에 `--watch`를 추가하면 현재 유효한 제안을 한 줄 출력한 뒤, 각 검사 완료 1초 후 CSV를 다시 읽습니다. 동일 입력은 다시 출력하지 않습니다. 입력 파일은 각 1 MiB 이하의 일반 파일이어야 하며 작성자는 완성된 파일로 원자 교체해야 합니다. 실행 중 연구 artifact 변경, 연구 CSV hash 불일치, 같은/과거 마지막 봉의 byte 변경 또는 잘못된 입력은 오류로 종료합니다.
 
-출력은 단일 JSON 파일이 아니라 NDJSON 스트림입니다. `--watch --bundle`은 각 줄에 원본 CSV도 담지만, 이를 `proposal.json`에 계속 덮어쓰거나 현재 `paper-execute`에 pipe로 연결하지 마세요. 이 생성기는 파일·DB·주문을 만들지 않으며, 재시작 시 같은 제안이 재출력되거나 검사 사이 중간 snapshot이 누락될 수 있습니다. durable 소비와 지속 실행 lease를 연결하기 전까지 자동매매 실행 경로가 아닙니다. [생성 전용 gate](../gates/g3t-paper-proposal-watch.md)
+출력은 단일 JSON 파일이 아니라 NDJSON 스트림입니다. `--watch --bundle`은 각 줄에 원본 CSV도 담습니다. 이를 `proposal.json`에 계속 덮어쓰거나 1회용 `paper-execute`에 pipe로 연결하지 마세요. 생성기는 파일·DB·주문을 만들지 않으며, 재시작 시 같은 제안이 재출력되거나 검사 사이 중간 snapshot이 누락될 수 있습니다. [생성 전용 gate](../gates/g3t-paper-proposal-watch.md)
+
+## 명시적으로 연속 fixture 소비하기
+
+아래는 저장소 루트 기준 macOS/Linux pipe 경로입니다. 위 초기화·입력 조건을 먼저 만족해야 합니다. `OMNI_CORE_BIN`은 미리 빌드한 실행 파일의 절대 경로로 지정합니다. `go run` wrapper가 아니라 실제 바이너리를 실행해야 해당 PID에 보낸 signal의 종료 동작이 명확합니다.
+
+```bash
+set -o pipefail
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research \
+  python3 -m omni_research.signal_cli \
+  --bars latest.csv --research-bars research.csv --artifact artifact.json \
+  --watch --bundle | \
+  "$OMNI_CORE_BIN" paper-execute-stream -db /absolute/path/paper.db \
+    -account account_local_paper -expected-current-event "$PAPER_SELECTION_EVENT" \
+    -arm-paper
+```
+
+`-arm-paper`는 **이 프로세스 한 번의 실행**만 승인합니다. 첫 완전한 유효 bundle을 검증한 뒤 한 번만 arm하고 기존 fill→policy→signal 경로를 순서대로 실행합니다. 입력이 없을 때도 10초 간격으로 유효한 execution/global lease를 함께 갱신합니다. DB 단계와 heartbeat는 동시에 실행하지 않으며 단계 하나가 TTL을 넘으면 실패합니다. 중지·정책 rollback·소유권 상실·만료 후 재활성화나 자동 재시작을 하지 않습니다.
+
+stdin은 취소 가능한 pipe만 허용합니다(일반 파일 redirect/TTY 거절). 각 UTF-8 JSON bundle은 마지막 LF를 포함해 4 MiB 이하이며, 중간 오류·크기 초과·LF 없는 마지막 조각은 실행하지 않고 종료합니다. 앞서 확정된 프레임의 DB 기록은 남습니다. 완전한 프레임 뒤 EOF는 그 프레임 처리 후 정상 종료하며, 입력 reader를 닫고 join한 뒤 소유 권한을 정리합니다. 명령은 stdout을 쓰지 않으며 DB 기록이 실행 증거입니다. stdin 원본 descriptor도 닫아 생산자에게 단절을 전달합니다. Python watch는 새 데이터가 없어도 다음 polling 반복에서 단절을 감지해 redacted 오류로 종료합니다.
+
+pipe는 durable queue/acknowledgement가 아닙니다. 재연결은 새 명시적 실행이며 이미 확정된 proposal은 기존 journal의 멱등성으로 중복 주문을 막습니다. 소스 snapshot 누락 방지·장기 운영 부하·브로커 연결은 별도 검증 대상입니다. [연속 소비 gate](../gates/g3w-paper-input-stream.md)
 
 ## 실패와 재시도
 

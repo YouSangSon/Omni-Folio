@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import select
 import stat
 import sys
 import time
@@ -103,6 +104,19 @@ def _json(value: dict[str, Any]) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
+def _raise_if_stdout_pipe_closed() -> None:
+    try:
+        fd = sys.stdout.fileno()
+        if not stat.S_ISFIFO(os.fstat(fd).st_mode):
+            return
+    except (AttributeError, OSError, ValueError):
+        return
+    poller = select.poll()
+    poller.register(fd, select.POLLHUP | select.POLLERR)
+    if any(event & (select.POLLHUP | select.POLLERR) for _, event in poller.poll(0)):
+        raise BrokenPipeError
+
+
 def generate_paper_input_bundle(proposal: dict[str, Any], raw_bars: bytes, research_bytes: bytes) -> dict[str, Any]:
     if len(raw_bars) > 1_048_576 or len(research_bytes) > 1_048_576:
         raise ValueError("bundle CSV input exceeds 1 MiB")
@@ -149,6 +163,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         # ponytail: latest-snapshot polling can miss intermediate closes;
         # durable exact-byte delivery belongs in the later Go ingestion path.
         while True:
+            if args.watch:
+                _raise_if_stdout_pipe_closed()
             if previous is not None and read_signal_input(args.artifact) != raw:
                 raise ValueError("watch research artifact changed")
             research_bytes = read_signal_input(args.research_bars)

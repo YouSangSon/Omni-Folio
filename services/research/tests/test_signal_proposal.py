@@ -41,6 +41,36 @@ class SignalProposalTest(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertEqual(result.stderr, 'Paper signal proposal output is closed; producer stopped.\n')
 
+    def test_bundle_watch_stops_when_idle_output_reader_closes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            bars, research, artifact = self.inputs(directory)
+            artifact_path = directory / 'artifact.json'
+            artifact_path.write_text(json.dumps(artifact))
+            before = {p.name: p.read_bytes() for p in directory.iterdir()}
+            args = ['--bars', str(bars), '--research-bars', str(research), '--artifact', str(artifact_path), '--watch', '--bundle']
+            child = subprocess.Popen([sys.executable, '-B', '-m', 'omni_research.signal_cli', *args],
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            try:
+                self.assertIsNotNone(child.stdout)
+                with selectors.DefaultSelector() as ready:
+                    ready.register(child.stdout, selectors.EVENT_READ)
+                    self.assertTrue(ready.select(timeout=5), 'bundle watcher did not flush its first proposal')
+                self.assertEqual(json.loads(child.stdout.readline())['mode'], 'paper_bundle_only')
+                child.stdout.close()
+                self.assertEqual(child.wait(timeout=5), 1)
+                self.assertIsNotNone(child.stderr)
+                self.assertEqual(child.stderr.read(), 'Paper signal proposal output is closed; producer stopped.\n')
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                child.wait(timeout=5)
+                if child.stdout is not None and not child.stdout.closed:
+                    child.stdout.close()
+                if child.stderr is not None and not child.stderr.closed:
+                    child.stderr.close()
+            self.assertEqual(before, {p.name: p.read_bytes() for p in directory.iterdir()})
+
     def test_cli_rejects_nonregular_and_oversized_inputs_without_waiting(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
