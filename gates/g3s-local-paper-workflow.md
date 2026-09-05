@@ -11,10 +11,17 @@
 - Execution startup, fill, policy and proposal admission each validate the current global runner claim inside the relevant transaction. The global claim never substitutes for the account execution lease.
 - Clean termination revokes only the exact current execution owner/fence, including its expired lease, then releases the global claim. Revocation is not permission to execute; a newer owner is never halted. Halt and explicit arm/acquire reuse existing immutable events, so there is no schema/backup version change.
 - Mixed-mode accounts are rejected atomically at CLI initialization and explicit arm. Legacy internal session callers retain their existing behavior.
+- The shared input reader opens nonblocking before checking the actual descriptor's regular-file type. This rejects FIFO and FIFO symlink inputs without waiting for a writer; the byte cap alone never established that property. It is not a general filesystem I/O deadline.
+- Existing active orders drain unused eligible bars until terminal or unchanged filled quantity, retaining per-fill transactions and current lease checks. The finite order quantity and distinct bar consumption bound progress; no-progress returns instead of spinning. Per-fill replay remains quadratic in history and subject to the existing lease expiry; no new heartbeat or automatic rearm is introduced. Policy still evaluates the latest close, not every missed close.
 
 ## Evidence
 
 - RED: missing importer/local execution boundaries; mixed-mode CLI initialization incorrectly succeeded before the atomic isolation guard.
+- Follow-up RED: the real built executable blocked on FIFO input and required deadline-triggered process kill; a fresh service with five missed bars only filled 2 of 10 shares. The shared reader fix and catch-up loop address these independent root causes.
+- The first full follow-up check failed a 2-second executable-call bound. The process test now independently proves cold startup, then applies a 10-second liveness bound (not a latency SLA) to each FIFO case. A controlled mutation restoring only `os.Open` failed after 10 seconds despite a successful 240 ms startup; restoring the fix passes all six caller/symlink cases. Both intentional-failure runs used the owned root wrapper and reclaimed the killed child/temp root.
+- `TestLocalPaperRestartDrainsPartialFillsAcrossMissedBars` proves a fresh DB service consumes five 2-share fills into exactly 10 shares, 5 lots and cash `8983.99`, then another service replays without new bars/fills/orders or changed accounting. `TestLocalPaperNoCapacityReturnsWithoutProgress` keeps OPEN/0 with no busy retry. `TestLocalPaperPolicyHaltCreatesNoNewOrder` proves loss-triggered rollback to `no_strategy` and rejection of the old selection after reopening, without new admissions.
+- Focused workflow tests passed normally and with `-race`; independent read-only review found no introduced blocker, while retaining the 30-second lease/receipt limit and latest-close-only policy boundary.
+- 2026-09-05 follow-up final `make check` passed (Go core 131.738s, all internal packages, Flutter, Python 25, JSON 16, formatting/vet/analyze and owned cleanup). `govulncheck ./...` reported no vulnerabilities. The three workflow regressions also passed focused race testing (18.265s). No Podman/Kind resources or persistent servers were created by this change.
 - Snapshot tests exercise real later-insert failure rollback, exact and rolling replay, malformed/timing/size/header/gap/conflict rejection, original receipt preservation and byte-level hash identity.
 - Local workflow tests exercise actual OPEN admission → eligible filled BUY → `none` preservation, forged-direction rejection before prior fill, injected order failure with owned halt, explicit flag requirement, CLI initialization/import, and fresh-service CLI replay returning the original FILLED order.
 - Python `run_experiment`/`generate_proposal` now feed the same extended CSV bytes through the real Go importer and local execution chain, not hand-populated historical bars.
@@ -25,9 +32,10 @@
 ## Remaining acceptance
 
 - Prove this new executable's actual SIGINT/SIGTERM and SIGKILL/stale-owner process/resource matrix, not just the older policy runner's matrix or context wiring. Do not mark G3.8G2B or overall G3.8G2 complete before that evidence.
-- Add explicit workflow-level policy halt/no-new-order and partial-fill/restart convergence evidence across missed input intervals. Existing lower-level policy/fill tests are not a substitute for these combined paths.
 - Continuous proposal generation/ingestion and execution, calendar/provider truth, shadow/live parity, engine POCs, and profitability remain separate open requirements. Never schedule repeated `-arm-paper` calls as an automatic recovery policy.
 
 Research: [Go encoding/csv](https://pkg.go.dev/encoding/csv) documents field-count checks and newline normalization. Therefore the raw file digest is taken before parsing; semantically identical CRLF/LF input is not the same immutable snapshot. Existing SQLite immediate transaction/replay contracts are reused; no new parser dependency or execution engine is introduced. This is a focused source check, not a new engine benchmark.
+
+Follow-up research: [POSIX.1-2024 open](https://pubs.opengroup.org/onlinepubs/9799919799/functions/open.html) specifies that read-only FIFO open waits for a writer without `O_NONBLOCK`, and returns without that wait with it. The descriptor check remains after open to avoid trusting a path-only check that can race replacement. One focused Exa query and one primary-source fetch support this fix, not a general storage timeout guarantee.
 
 Operator instructions: [local paper workflow](../docs/local-paper-workflow.md).

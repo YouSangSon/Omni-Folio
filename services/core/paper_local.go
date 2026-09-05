@@ -71,8 +71,23 @@ func (s *Service) executeLocalPaper(ctx context.Context, account, selection stri
 		return nil, err
 	}
 	for _, id := range ids {
-		if _, err := s.runPaperOrderWithClaim(ctx, id, lease.FencingToken, claim); err != nil {
+		state, err := s.loadOrderState(ctx, id)
+		if err != nil {
 			return nil, err
+		}
+		// Each committed fill consumes a distinct bar and increases the finite
+		// order quantity. No progress ends catch-up; every write rechecks leases.
+		// ponytail: replay per fill is quadratic in history; batch only after
+		// profiling, preserving per-fill accounting and authority validation.
+		for state.Status == "OPEN" || state.Status == "PARTIALLY_FILLED" {
+			filled := state.FilledQuantity
+			state, err = s.runPaperOrderWithClaim(ctx, id, lease.FencingToken, claim)
+			if err != nil {
+				return nil, err
+			}
+			if state.FilledQuantity == filled {
+				break
+			}
 		}
 	}
 	policy, err := s.runDuePaperPerformancePolicyWithClaim(ctx, account, claim)

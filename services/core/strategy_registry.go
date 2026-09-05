@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"os"
 	"regexp"
+	"syscall"
 	"time"
 )
 
@@ -92,7 +93,9 @@ func sameStrategyRegistryProof(left, right strategyRegistryRecoveryProof) bool {
 }
 
 func readStrategyArtifact(path string) ([]byte, error) {
-	file, err := os.Open(path)
+	// Open first without waiting for a FIFO writer, then validate the actual
+	// descriptor. A path-only Stat check would race a regular-file replacement.
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
 	}
