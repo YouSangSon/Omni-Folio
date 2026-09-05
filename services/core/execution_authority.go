@@ -108,6 +108,17 @@ func (s *Service) acquireSyntheticExecutionLease(ctx context.Context, accountRef
 		return nil, err
 	}
 	defer tx.Rollback()
+	state, err := s.acquireSyntheticExecutionLeaseTx(ctx, tx, accountRef)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return state, nil
+}
+
+func (s *Service) acquireSyntheticExecutionLeaseTx(ctx context.Context, tx *sql.Tx, accountRef string) (*ExecutionAuthorityState, error) {
 	if _, err := provePaperPerformancePolicyRecovery(ctx, tx); err != nil {
 		return nil, fmt.Errorf("execution authority policy recovery: %w", err)
 	}
@@ -138,9 +149,6 @@ func (s *Service) acquireSyntheticExecutionLease(ctx context.Context, accountRef
 		ReasonCode: "lease_acquired", RecordedAt: now.Format(time.RFC3339Nano),
 	}
 	if err := insertExecutionAuthorityRecord(ctx, tx, record); err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return authorityState(record), nil
@@ -563,7 +571,18 @@ func validateExecutionAuthorityRecord(record executionAuthorityRecord, previous 
 		}
 		if previous.LeaseOwner != "" {
 			previousExpiry, ok := canonicalUTCTime(previous.LeaseExpiresAt)
-			if !ok || recordedAt.Before(previousExpiry) {
+			if !ok {
+				return errors.New("execution authority prior expiry is invalid")
+			}
+			if recordedAt.Before(previousExpiry) {
+				previousTime, timeOK := canonicalUTCTime(previous.RecordedAt)
+				nextExpiry, expiryOK := canonicalUTCTime(record.LeaseExpiresAt)
+				// Same-owner renewal advances the fence without rearming. An old
+				// token cannot use the extended interval; foreign takeover waits.
+				if record.LeaseOwner == previous.LeaseOwner && timeOK && expiryOK &&
+					!recordedAt.Before(previousTime) && nextExpiry.After(previousExpiry) {
+					break
+				}
 				return errors.New("execution authority replaced an unexpired lease")
 			}
 		}

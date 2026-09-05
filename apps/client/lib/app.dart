@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'holding_valuation_page.dart';
 import 'models.dart';
 
 class OmniFolioApp extends StatefulWidget {
@@ -501,18 +502,21 @@ class HoldingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final holdings = controller.snapshot?.holdings;
-    if (holdings == null) {
-      return const _Message(
-        icon: Icons.account_balance_wallet_outlined,
-        title: '보유 데이터 없음',
-        body: '홈에서 데이터를 새로고침하세요.',
-      );
-    }
-    if (holdings.isEmpty) {
-      return const _Message(
-        icon: Icons.inbox_outlined,
-        title: '보유 종목 없음',
-        body: '적용된 거래가 없거나 모두 매도되었습니다.',
+    if (holdings == null || holdings.isEmpty) {
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+        children: [
+          _header(context, holdings?.length),
+          const SizedBox(height: 16),
+          _SectionCard(
+            title: holdings == null ? '보유 데이터 없음' : '보유 종목 없음',
+            child: Text(
+              holdings == null
+                  ? '홈에서 데이터를 새로고침하세요.'
+                  : '적용된 거래가 없거나 모두 매도되었습니다.',
+            ),
+          ),
+        ],
       );
     }
     return ListView.separated(
@@ -521,20 +525,7 @@ class HoldingsPage extends StatelessWidget {
       separatorBuilder: (_, index) => SizedBox(height: index == 0 ? 16 : 8),
       itemBuilder: (context, index) {
         if (index == 0) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${holdings.length}종목',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '로컬 원장의 수량과 FIFO 원가 기준입니다.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          );
+          return _header(context, holdings.length);
         }
         final holding = holdings[index - 1];
         return Card(
@@ -552,6 +543,30 @@ class HoldingsPage extends StatelessWidget {
       },
     );
   }
+
+  Widget _header(BuildContext context, int? count) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        count == null ? '보유 자산' : '$count종목',
+        style: Theme.of(context).textTheme.headlineMedium,
+      ),
+      const SizedBox(height: 4),
+      Text(
+        '로컬 원장의 수량과 FIFO 원가 기준입니다.',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+      const SizedBox(height: 12),
+      OutlinedButton(
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => HoldingValuationPage(api: controller.api),
+          ),
+        ),
+        child: const Text('저장 가격으로 평가 보기', textAlign: TextAlign.center),
+      ),
+    ],
+  );
 }
 
 class _PortfolioHero extends StatelessWidget {

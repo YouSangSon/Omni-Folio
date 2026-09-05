@@ -49,6 +49,8 @@ On first run, `never_verified` with an empty snapshot is an empty state rather t
 
 For local product review, `make seed-demo` sends the existing golden CSV through the real import preview/apply API and is idempotent once those rows exist. It must not bypass the API, write the database directly, invent broker freshness, or turn unavailable valuation into a displayed estimate.
 
+Holdings offers a separate `저장 가격으로 평가 보기` page. Consume quantities, costs, values and price timestamps from one sanitized holding-valuation response; never join a separately fetched snapshot by symbol. Label it holdings-only, local sample/stale and not current account value. Show server-supplied native-currency totals only when complete; never add currencies or fill missing values with zero. Keep the previous complete response together on refresh failure, with its original valuation time/revision and a fixed redacted error. Support retry, empty/unavailable states, lazy lines, light/dark, 320px and 200% text without hiding provenance. Demo CSV does not seed prices, so missing-price results are legitimate.
+
 ## Interaction and accessibility
 
 - Minimum 48×48 logical-pixel interactive targets, which also clears the 44pt iOS floor; default text/control size 16 logical px or larger.

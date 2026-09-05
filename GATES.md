@@ -26,7 +26,8 @@ G1 ledger vertical slice
 ├─ G1.11 replay-verified direct-FX cash-only valuation
 ├─ G1.12 append-only security price observation + schema v11/backup v7 proof
 ├─ G1.13 replay-verified native-currency holding valuation
-└─ G1.14 versioned recurring FIFO cost allocation + residual conservation
+├─ G1.14 versioned recurring FIFO cost allocation + residual conservation
+└─ G1.15 sanitized stored-price holding valuation API and Flutter detail
    |
 G2 client vertical slice
 ├─ G2.1 Flutter iOS/Android/web build
@@ -96,6 +97,24 @@ G6 PostgreSQL and Kubernetes promotion
 - G3.8F1은 external scheduler가 호출할 수 있는 local one-shot CLI `paper-run-due`와 내부 `runDuePaperPerformancePolicy`를 추가한다. 최신 available local fixture close만 as_of로 쓰고 C3/D/E idempotent journal을 재사용해 retry와 두 owner 동시 실행이 같은 durable 결과로 수렴함을 검증하며, 완료 chain retry 전 paper 성과 정책 root recovery를 다시 증명한다. daemon, public API/UI, broker call, credential, deployment, shadow/live promotion 또는 수익성을 뜻하지 않는다. 세부 근거는 [`gates/g3o-scheduled-paper-runner.md`](gates/g3o-scheduled-paper-runner.md)에 둔다.
 - G3.8F2는 전역 current strategy selection과 exact account를 묶는 schema v21 singleton lease, 단조 증가 fencing token, 10초 heartbeat/30초 TTL, stale-owner 회수, C3/D/E transaction 내부 exact fence 재검증과 `paper-run-loop`의 success/failure/SIGINT/SIGTERM cleanup을 local에서 검증한다. 현재 selection 자체가 전역이므로 runner도 전역 직렬화하며, broker call·credential·public API/UI·deployment·shadow/live authority 또는 수익성을 뜻하지 않는다. 세부 근거는 [`gates/g3p-always-on-paper-runner.md`](gates/g3p-always-on-paper-runner.md)에 둔다.
 - local 검증, broker sandbox, live readiness, 실제 운영 증거를 따로 보고한다.
+- G1.15는 기존 native holding 계산을 sanitized GET과 독립 Flutter 상세에 연결한다. 같은 원장 revision의 수량·원가·가격·평가, exact nanosecond 24시간 경계, 통화별 합계와 sample/stale 경계, empty/partial/retained-error 화면 및 내부 ID 비노출을 로컬 검증한다. 2026-09-05 `make check`는 Go 전체, Flutter 74개, Python 17개, JSON 계약 15개와 scoped cleanup을 통과했다. 전체 계좌 평가, broker-backed freshness, 물리기기·수동 screen-reader 검증 또는 배포 증거는 아니다. 세부 근거는 [`gates/g1k-holding-valuation-view.md`](gates/g1k-holding-valuation-view.md)에 둔다.
 - external deploy, credential, live 주문, push는 명시 승인 없이는 실행하지 않는다.
+- G3.8G1은 기존 SMA 판정을 공유한 offline 목표 제안과 입력 hash·종목·연구 이후 시점 경계만 증명한다. 2026-09-05 `make check`의 Go 전체·Flutter 전체·Python 25개·JSON 16개 구문 검사·owned cleanup self-test가 통과했다. JSON schema 필드/분기는 별도 회귀 검사이며 완전한 JSON Schema validator 실행은 아니다. 재해시 가능한 비신뢰 입력은 Go registry·선택 검증을 대체하지 않는다. 신호 admission·session/bar ingress·paper 체결 운영 연결은 G3.8G2에 남아 있다. [세부 gate](gates/g3q-paper-signal-proposals.md)
+
+- G3.8G2A는 비신뢰 proposal을 저장 series에서 독립 검증하고 현재 선택·소유 lease 확인과 v3 signal/OPEN paper order 기록을 한 transaction으로 연결한다. `make check` 통과 후 재시도 수정은 focused race로 검증했다. 만료 후 기존 결과 재조회와 무주문 결정의 불변성도 확인했다. 수동 CLI·원본 CSV ingress·초기화·lease 종료는 아래 G3.8G2B에서 검증하며, 지속 제안 생성·수집·실행을 포함한 G3.8G2 전체는 미완료다. [세부 gate](gates/g3r-paper-proposal-admission.md)
+
+- G3.8G2B는 수동 로컬 초기화·CSV/연구 원본 검증·fill→policy→signal 실행 경로와 소유권 보존 중지를 로컬 검증했다. FIFO 거절·누락 봉 부분체결·정책중지 재시작에 더해 실제 실행 파일의 SIGINT/SIGTERM, SIGKILL 후 실제 TTL 만료·중복 없는 복구를 확인했다. 리뷰 보강 후 `make check`와 소유 자원 정리가 통과했다. 상시 실행·증권사 연결·배포 증거가 아니며 전체 G3.8G2는 미완료다. [gate](gates/g3s-local-paper-workflow.md), [사용법](docs/local-paper-workflow.md)
+
+- G3.8G2C는 `signal_cli --watch`로 같은 연구 후보의 새 마지막 봉 제안을 자동 생성한다. 생성·프레이밍만 담당하며 durable 전달·Go 접수·주문 실행은 아직 연결하지 않는다. 반복 입력과 입출력/프로세스 실패, 전체 `make check`·소유 자원 정리를 로컬 통과했다. [gate](gates/g3t-paper-proposal-watch.md)
+
+- G3.8G2D는 Python 제안과 정확한 두 CSV byte를 단일 bundle로 전달하고 기존 Go 수동 실행 검증을 재사용한다. 원본 경로 교체·재시도·hash mismatch·잘못된 JSON/Unicode·크기/FIFO 경계와 전체 `make check`가 로컬 통과했다. 스트림 소비·지속 실행 lease는 아직 미완료이며 G3.8G2 전체 완료가 아니다. [gate](gates/g3u-paper-input-bundle.md)
+
+- G3.8G2E는 유효한 현재 owner의 execution/global lease를 원자 갱신하며 기존 수동 실행 단계에서 사용한다. 최초 TTL 이후 새 체결·이력 복구·동시 갱신·실패 rollback과 전체 check, 최종 코드의 targeted race/실제 중단 복구가 통과했다. 갱신은 재활성화가 아니며 continuous 소비·idle heartbeat·장기 처리량은 미완료다. [gate](gates/g3v-paper-execution-heartbeat.md)
+
+- G3.8G2F는 pipe의 bounded LF bundle을 기존 실행 경로로 순차 소비하고 idle 구간에 두 lease를 함께 갱신한다. 실제 signal·최초 30초 이후 갱신·외부 halt·EOF 재연결 중복 방지와 전체 check가 로컬 통과했다. 단일 arm, 취소 가능한 reader의 close/join, 새 데이터 없는 Python 출력 단절 종료를 확인했다. 장기 부하·durable 전달·소스 누락 방지 및 전체 G3.8G2는 미완료다. [gate](gates/g3w-paper-input-stream.md)
+
+- G3.8G2G는 실제 Python watch→Go pipe에서 연속 CSV 갱신·체결·정책 halt·양방향 종료·명시적 재연결과 별도 context 복구를 검증했다. 취소된 DB 읽기를 일반 무결성 오류로 바꾸던 분기에서 취소 identity를 보존하며, focused race와 최종 전체 check·소유 자원 정리가 통과했다. 짧은 로컬 연결 증거이며 장기 운영·소스 완결성·broker/live 준비가 아니다. [gate](gates/g3x-paper-pipeline.md)
+
+- G3.8G2H는 실제 갱신 1,000회에서 이력 구간별 갱신/전체 정책 복구 지연을 로컬 측정했다. 갱신 p95는 첫 구간 10.64ms에서 마지막 구간 28.39ms로 증가했다. 논리 시간 가속·warm cache·고정 주문 이력의 진단이며 상시 운영 보증이나 최적화 결과가 아니다. 기존 검증을 유지하고 원인별 프로파일링을 다음 성능 단계로 둔다. [gate](gates/g3y-paper-history-profile.md)
 
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.

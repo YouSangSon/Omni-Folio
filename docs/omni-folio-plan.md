@@ -1279,3 +1279,9 @@ Stale owners can be replaced only after expiry. Manual selection/rollback reject
 Fresh evidence: focused G3.8F and race tests, full core and full core race, `make check`, `make smoke`, resource-cleanup self-tests, `govulncheck ./...`, and `git diff --check` passed. Details are in [`../gates/g3p-always-on-paper-runner.md`](../gates/g3p-always-on-paper-runner.md).
 
 Still open: alerting, public API/UI, broker-backed evaluation, credentials/live execution, deployment/CronJob packaging, broker-coupled per-order runner fencing, shadow/live promotion authority, official market calendar/freshness proof, and any profitability claim.
+
+## 2026-09-05 G1.15 continuation: stored-price holding valuation view
+
+G1.15 exposes the existing G1.13 calculation through a sanitized read-only GET and an independent Flutter page reachable from Holdings, including an empty snapshot. Quantity, cost, price provenance and values belong to one server-owned read; no second snapshot is joined by symbol. Internal instrument/observation IDs stay private. A missing, ambiguous or over-age price suppresses all native-currency totals; complete local fixture results stay sample/stale and whole-portfolio valuation stays unavailable. No schema/backup change or new dependency is needed.
+
+The client preserves a prior response with its original cutoff/revision on refresh failure, including empty results. Cross-runtime timestamp validation compares exact nanoseconds so Go's 24h+1ns stale result is not rounded into Dart's 24h accepted window. `make check` passes Go suites, Flutter 74 tests, Python 17, 15 JSON contracts and scoped cleanup. Focused holding race and vulnerability checks also pass; see [`../gates/g1k-holding-valuation-view.md`](../gates/g1k-holding-valuation-view.md) for evidence and boundaries. Broker-backed valuation/freshness, full-portfolio/performance views, actual browser/manual accessibility evidence and external deployment remain open.

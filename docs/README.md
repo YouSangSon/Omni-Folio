@@ -21,6 +21,7 @@
 | 로컬 프로젝트 재사용 | [`reuse-audit.md`](reuse-audit.md) | Parallax/Mimir/akasha에서 채택·보류·거절한 패턴과 provenance |
 | UI token | [`../design-system/omni-folio/MASTER.md`](../design-system/omni-folio/MASTER.md) | 색상, typography, state, responsive/accessibility 규칙 |
 | 보안 보고 | [`../SECURITY.md`](../SECURITY.md) | credential·취약점 보고와 사고 대응 |
+| 수동 모의 실행 | [`local-paper-workflow.md`](local-paper-workflow.md) | 원본 연구·신규 CSV, 명시적 1회 paper 실행과 재시도/종료 경계 |
 
 ## 실행 가능한 계약
 

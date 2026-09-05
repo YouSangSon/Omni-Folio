@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Offline paper input bundle; not execution authority",
+  "description": "Runtime ingress caps the complete UTF-8 JSON input at 4 MiB; the producer includes its trailing NDJSON newline in that cap. Decoded CSV UTF-8 bytes each have a separate 1 MiB cap.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "mode", "proposal", "bars_csv", "research_csv"],
+  "properties": {
+    "schema_version": {"const": "paper-input-bundle.v1"},
+    "mode": {"const": "paper_bundle_only"},
+    "proposal": {"$ref": "paper-signal-proposal.schema.json"},
+    "bars_csv": {"type": "string", "maxLength": 1048576, "description": "UTF-8 CSV; Python and Go additionally limit encoded input bytes to 1048576."},
+    "research_csv": {"type": "string", "maxLength": 1048576, "description": "UTF-8 CSV; Python and Go additionally limit encoded input bytes to 1048576."}
+  }
+}

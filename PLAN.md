@@ -44,6 +44,7 @@
 - [x] G1.12 durable security price observation: local fixture 종목 가격을 exact identity·canonical hash·세 시각과 함께 schema v11 insert-only series로 보존하고 internal as-of·backup v7 digest/count·legacy v10 owned-copy restore를 검증하며 whole-portfolio unavailable 경계를 유지
 - [x] G1.13 native-currency holding valuation: 같은 read transaction에서 원장과 전체 가격 series를 검증하고 unique as-of venue의 24시간 이내 local fixture만 사용해 원통화 시장가·미실현손익·통화별 합계를 exact 계산하며 누락·모호·stale이면 aggregate를 숨김
 - [x] G1.14 versioned FIFO cost allocation: 기존 유한 decimal 배분은 exact 보존하고 반복소수인 부분 lot만 `fifo_exact_else_half_even_residual_8_v1`로 half-even 양자화; 잔여 원가는 lot에 남겨 최종 청산 시 exact 소비하며 snapshot/OpenAPI/Flutter와 legacy golden restore 호환성을 검증
+- [x] G1.15 저장 가격 보유자산 평가 read view: internal ID를 제외한 GET API와 독립 Flutter 상세에서 같은 원장 revision의 수량·원가·원통화 평가·가격 provenance를 보여주고 sample/stale, 누락 시 합계 숨김, refresh 실패 시 알려진 정상 결과 보존을 검증 ([gate](gates/g1k-holding-valuation-view.md))
 - [ ] 원장 후속: public/base-currency whole-portfolio·performance valuation, historical FX와 표시/통화별 rounding 정책, provider FX/source priority·calendar 정책, Kiwoom price observation을 valuation authority로 승격할 서버 cutoff·freshness 정책, FX/거래·분할·기업행사 정정, 배당 재투자·국가별 세금 분류와 credentialed broker 체결/현금 reconciliation
 - [ ] 키움 live/mock credential 검증, official timezone/freshness와 REST tick/0B identity·order 관찰, WebSocket LOGIN/PING/reconnect/resubscribe/backpressure, credentialed scheduled known-good refresh, credentialed ledger reconciliation
 - [ ] 실제 키움 OHLCV를 local chart contract에 연결, 평균단가의 통화·반올림 계약과 실제 체결 timestamp read model을 먼저 정의한 뒤 marker를 추가하고 physical accessibility/performance budget을 증명
@@ -64,6 +65,16 @@
 - [x] G3.8F1 scheduled one-shot paper evaluation/action runner: `paper-run-due` CLI가 최신 available local fixture close를 C3/D/E로 닫고 retry·두 owner 동시 실행을 idempotent journal로 수렴시키며 완료 chain retry 전 paper 성과 정책 root recovery를 다시 증명
 - [x] G3.8F2 DB-leased/fenced always-on local scheduler: 현재 전역 strategy selection에 맞춘 단일 active runner, 10초 heartbeat/30초 TTL, exact stage fencing, stale-owner 회수와 success/failure/SIGINT/SIGTERM cleanup proof
 - [ ] G3.8F 이후 alerting, shadow promotion evidence, CronJob packaging과 broker/live authority는 별도 gate
+- [x] G3.8G1 기존 SMA 판정을 공유하는 offline paper target proposal CLI와 closed contract·입력 provenance 검증; 비신뢰 제안이며 연구 증명·주문 권한 아님 ([gate](gates/g3q-paper-signal-proposals.md))
+- [ ] G3.8G2 proposal의 Go 검증·선택 binding, session/bar ingress, 순차 fill→policy→signal 실행과 process-owned paper authority·lease cleanup 및 지속 제안 생성·수집·실행 연결; 로컬 하위 gate와 상시 운영·소스 전달 검증을 구분
+  - [x] G3.8G2A stored-series 독립 SMA 판정·Go receipt deadline과 proposal→v3 signal→OPEN paper order의 단일 transaction admission ([gate](gates/g3r-paper-proposal-admission.md))
+  - [x] G3.8G2B 명시적 초기화·CSV/연구 원본 검증·fill→policy→signal 수동 CLI와 FIFO 거절·누락 봉 부분체결·정책중지 재시작 검증. 실제 실행 파일의 SIGINT/SIGTERM 종료, SIGKILL 후 즉시 재시작 차단·실제 TTL 만료 후 중복 없는 복구 및 소유 자원 정리까지 로컬 통과; 상시 실행을 뜻하지 않음 ([gate](gates/g3s-local-paper-workflow.md), [사용법](docs/local-paper-workflow.md))
+  - [x] G3.8G2C 기존 Python 생성기의 `--watch` NDJSON 제안 스트림; 반복 입력·역행/재작성·입출력 실패·OS signal과 전체 check 로컬 검증. 정확한 CSV byte 전달과 durable Go 소비·지속 실행 lease는 별도 후속이며 자동 rearm하지 않음 ([gate](gates/g3t-paper-proposal-watch.md))
+  - [x] G3.8G2D Python `--bundle`의 정확한 CSV byte 전달과 Go 수동 `paper-execute -bundle` 연결; 경로 교체·중복 재시도·잘못된 입력·FIFO·전체 check 로컬 통과. 지속 소비·lease 갱신·상시 실행은 별도 후속 ([gate](gates/g3u-paper-input-bundle.md))
+  - [x] G3.8G2E 현재 owner의 execution/global lease 원자 갱신과 수동 단계 연결; 최초 TTL 이후 실제 체결·동시 갱신·rollback·backup/restore·전체 check 및 최종 targeted race 로컬 통과. 지속 입력 소비·idle heartbeat와 장기 처리량 검증은 별도 후속 ([gate](gates/g3v-paper-execution-heartbeat.md))
+  - [x] G3.8G2F pipe NDJSON 연속 소비와 idle 원자 갱신, 최초 1회 arm 및 reader/생산자 종료 연결; 실제 signal·30초 이후 갱신·외부 halt·재연결 재시도와 전체 check 로컬 통과. 장기 운영 부하·소스 누락 방지·durable 전달은 별도 후속 ([gate](gates/g3w-paper-input-stream.md))
+  - [x] G3.8G2G 실제 Python watch→Go pipe에서 새 CSV·체결·정책 halt와 양쪽 프로세스 종료·명시적 재연결, 별도 context 복구를 검증하고 취소 원인 redaction 오류를 교정. focused race·전체 check 로컬 통과; 장기 부하·소스 완결성은 미검증 ([gate](gates/g3x-paper-pipeline.md))
+  - [x] G3.8G2H 실제 1,000회 갱신 이력의 구간별 갱신/복구 p50·p95·p99와 런타임 기준값을 보존. 논리 lease clock과 실제 작업 시간을 구분하며 장기 운영·성능 개선으로 주장하지 않음 ([gate](gates/g3y-paper-history-profile.md))
 - [ ] strategy/risk/paper runner와 자동 paper/shadow promotion evidence
 
 ## Later, only after gates

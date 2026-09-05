@@ -55,6 +55,7 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 - canary 또는 live로의 승격과 실제 자금 확대는 자동화하지 않는다. 별도 owner 승인, broker별 promotion evidence, reconciliation, healthy kill switch와 매 주문 risk gate를 요구한다.
 - live 전략은 paper trading에서 일정 기간 검증한 동일한 전략 정의와 동일한 주문 상태 머신만 사용한다. paper/live 환경, API key, 계좌, feature flag를 물리적으로 분리한다.
 - 자동매매 hot path는 p50/p95/p99 지연, 시장 데이터 freshness, queue depth, provider latency, 주문 접수/체결 지연, 실패·재시도 횟수를 측정한다.
+- 갱신/복구 성능 측정은 이력 크기·표본 수·런타임·cache 상태와 실제 경과 시간을 남긴다. 논리 clock을 가속한 이력 측정은 실제 장기 운영 증거가 아니며, 성능 개선을 위해 소유권·fencing·전체 복구 검증을 생략하지 않는다.
 - Flutter 성능 증거는 profile mode, Flutter 버전, 기기·OS 또는 browser, viewport, fixture와 표본 수를 함께 기록하고 build/raster p95를 분리한다. emulator나 web 측정을 physical iOS/Android release 증거로 대체하지 않는다.
 - 주문 hot path는 `market data event → freshness check → strategy signal → pre-trade risk → idempotency key → broker submit → ack/execution ingest → ledger reconciliation → audit log`로 고정한다.
 - 전략 승격은 `paper → shadow live market data → 소액 canary → limited live` 순서로만 허용한다. shadow mode는 실시간 데이터와 실계좌 상태를 읽되 실제 주문 대신 의도 주문과 위험 판단만 기록한다.
@@ -127,6 +128,15 @@ Market data adapters
 - 공급자별 인증, rate limit, pagination, symbol mapping, 재시도는 해당 adapter 내부에 둔다.
 - 주문 상태 머신과 거래 원장을 분리하고 체결 이벤트를 통해 reconciliation한다.
 - 전략 정의는 브로커 SDK, credential, 주문 API에 접근하지 않고 `Signal`만 만든다. 포트폴리오 구성기가 여러 전략의 신호와 자금 배분을 `PortfolioTarget`으로 합치고, 공통 risk/execution pipeline만 주문을 만든다.
+- 오프라인 신호 제안은 연구 artifact·파라미터·실제로 읽은 입력 snapshot hash를 보존하고 연구 표본 이후 데이터만 대상으로 한다. 신호 없음과 목표 수량 0을 구분한다. hash 일치는 승인·신선도·시장 데이터 완결성 증거가 아니며 Go가 현재 선택·session·closed-bar cutoff·lease/fencing·위험 한도를 독립 검증하기 전에는 실행할 수 없다. 성과 평가 scheduler만 있는 상태를 자동매매 완성으로 보고하지 않는다.
+- 주문 admission은 재해시 가능한 제안의 방향을 그대로 신뢰하지 않는다. 동일한 저장 데이터와 등록 파라미터로 검증 가능한 결정만 소비하며, 독립 검산을 사용할 경우 reference 산술과의 동등성 범위를 명시하고 그 밖은 거절한다. 검증된 선택·receipt deadline·주문 기록은 같은 transaction에 묶고 호출자가 만료를 늘리거나 새 원금을 만드는 경로를 허용하지 않는다.
+- 로컬 paper 입력도 실제 연구 CSV hash·종목·연구 종료 이후 시점과 신규 snapshot 전체를 Go에서 확인한다. 여러 단계 실행은 사전 검증 실패가 기존 주문 체결로 이어지지 않게 하고, 이미 확정된 단계와 미실행 단계를 구분해 재시도한다. 명시적 1회 arm을 자동 스케줄러의 재활성화 수단으로 사용하지 않는다. 종료 시 현재 owner/fence가 같은 만료 lease를 중지하는 것은 허용하되 takeover한 다른 owner를 중지하지 않는다.
+- 입력 크기 제한만으로 파일 열기의 대기 시간을 제한했다고 간주하지 않는다. FIFO처럼 일반 파일이 아닌 입력은 작성자를 기다리지 않고 거절한다. 재시작 시 누락된 체결 가능 봉의 부분체결을 순서대로 따라잡되, 매 체결의 소유권·회계를 검증하고 체결량 증가가 없으면 반복을 종료한다. 체결 따라잡기는 누락 구간 전체의 성과 안전정책 재생을 대신하지 않는다.
+- 지속 제안 생성의 출력·flush를 영속 접수나 exactly-once 실행으로 간주하지 않는다. 소비자는 제안 hash와 정확히 같은 원본 CSV byte를 검증하고 재시작·중복·부분 전달을 durable 기록으로 처리해야 한다. latest snapshot polling의 중간 입력 누락 가능성과 공급자의 원자적 파일 교체 전제를 명시하며, 제안 스트림을 단일 파일 수동 실행 경로에 억지로 연결하지 않는다.
+- 원본 byte를 담은 전달 envelope는 실행 권한을 포함하지 않는다. Unicode·줄바꿈을 조용히 정규화하지 않고 decoded CSV와 전체 envelope에 각각 byte 상한을 적용한다. 수신 adapter는 기존 연구·선택·SMA·receipt·lease·risk 검증을 재사용하며, 별도 hash나 접수 상태를 추가해 두 번째 실행 정본을 만들지 않는다.
+- 장기 paper 실행의 갱신은 현재 owner/fence와 아직 유효한 execution/global lease를 한 transaction에서 확인하고 둘 다 확정된 뒤 토큰을 교체한다. 만료·중지·소유권 상실을 갱신으로 복구하거나 자동 arm하지 않는다. 성과 단계의 global heartbeat만으로 execution lease가 갱신됐다고 판단하지 않는다. append-only 갱신 이력의 증가 비용과 이전 바이너리의 replay 호환성도 검증·문서화한다.
+- 연속 paper 입력은 한 프로세스에서 최초 한 번만 명시적 arm하며 프레임 처리와 idle heartbeat를 직렬화한다. bounded LF 프레임·EOF 순서를 보존하고 취소 시 pipe read/channel send를 모두 해제하고 reader를 join한 뒤 최신 소유 토큰으로 정리한다. stdout 대기가 권한 반환을 막지 않게 하며 생산자는 새 입력 없이도 수신기 단절을 감지한다. pipe 전달을 durable 접수·exactly-once 또는 소스 누락 방지로 간주하지 않는다.
+- 생산자·소비자 개별 성공만으로 연속 실행을 증명하지 않는다. 실제 pipe와 입력 갱신에서 양쪽 exit status, 확정된 주문·체결·정책 기록과 재연결을 확인한다. 취소된 읽기를 데이터 훼손으로 단정하지 않으며, 오류 redaction 후에도 취소 원인을 보존하고 별도 context로 복구·소유 권한 정리를 검증한다.
 - Python 연구 산출물의 수수료·세금·slippage·지연·참여율·신호/체결 시점 계약은 hash 일치만으로 신뢰하지 않는다. Go가 exact field, canonical decimal과 허용 범위를 독립 검증한 산출물만 registry·복구·paper 실행 입력으로 인정한다.
 - Capitalized paper 체결은 account-global session과 동일한 execution policy, transaction-owned market sequence cutoff, cutoff 뒤 exact eligible closed bar, current lease/fence를 함께 요구한다. Later-known final volume과 bar open을 쓰는 `paper_bar_open_v1`은 ex-post simulation이며 opening-auction이나 broker/live 체결 증거가 아니다.
 - KRX paper target은 whole share로 제한하고 account/symbol당 active order를 하나만 허용한다. Fixed per-fill fee, SELL-only tax와 adverse slippage를 적용한 sole `FILL_RECORDED` journal에서 cash·FIFO lot·실현손익을 replay하며, general ledger나 mutable balance/lot projection을 두 번째 권한으로 만들지 않는다.
@@ -142,6 +152,7 @@ Market data adapters
 - 새 알고리즘은 versioned strategy manifest, 전략 모듈, contract/backtest fixture만 추가해 등록할 수 있어야 하며 주문·원장·브로커 코어에 전략별 분기를 추가하지 않는다.
 - 인터페이스는 `BrokerPort`와 `MarketDataPort`처럼 실제 교체 지점에만 만든다. 단일 구현 내부에는 불필요한 factory나 추상화를 만들지 않는다.
 - SQLite schema, backup format, API 계약에는 명시적인 migration/version 정책을 둬 데이터와 클라이언트를 깨지 않고 확장한다.
+- 평가 화면은 같은 읽기 transaction에서 검증한 원장 revision·수량·원가·가격 provenance를 하나의 결과로 소비한다. 별도 snapshot과 종목 코드로 합치거나 클라이언트 시계로 평가 authority를 만들지 않는다. 원통화별 합계는 서버가 제공할 때만 표시하고, 누락·모호·stale 가격이면 합계를 숨기며 sample 결과를 현재 계좌 총액이나 live 시세로 승격하지 않는다.
 - Java/Kotlin/JVM은 broker SDK 또는 팀·기존 JVM estate가 우세할 때만 Go의 대안으로 재평가한다. Rust는 profiling으로 Go CPU/GC tail bottleneck이 확인된 좁은 component에만 고려하며, Python-only runtime은 주문 authority를 분산하므로 채택하지 않는다.
 
 ## 실행 권한과 개선 원칙

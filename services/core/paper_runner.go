@@ -161,6 +161,17 @@ func (s *Service) admitPaperSignal(ctx context.Context, accountRef string, signa
 		return nil, nil, err
 	}
 	defer tx.Rollback()
+	event, state, err := s.admitPaperSignalTx(ctx, tx, accountRef, signal, fencingToken)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, nil, err
+	}
+	return event, state, nil
+}
+
+func (s *Service) admitPaperSignalTx(ctx context.Context, tx *sql.Tx, accountRef string, signal PaperSignal, fencingToken int64) (*PaperSignalEvent, *OrderState, error) {
 	event, err := s.recordPaperSignalEventTx(ctx, tx, accountRef, signal)
 	if err != nil {
 		return nil, nil, err
@@ -196,18 +207,12 @@ func (s *Service) admitPaperSignal(ctx context.Context, accountRef string, signa
 	}
 	if projection.active {
 		if projection.quantity.Cmp(target) == 0 {
-			if err := tx.Commit(); err != nil {
-				return nil, nil, err
-			}
 			return event, nil, nil
 		}
 		return nil, nil, errors.New("active paper order target cannot be replaced")
 	}
 	delta := new(big.Int).Sub(target, projection.quantity)
 	if delta.Sign() == 0 {
-		if err := tx.Commit(); err != nil {
-			return nil, nil, err
-		}
 		return event, nil, nil
 	}
 	side := "BUY"
@@ -228,13 +233,14 @@ func (s *Service) admitPaperSignal(ctx context.Context, accountRef string, signa
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, nil, err
-	}
 	return event, state, nil
 }
 
 func (s *Service) runPaperOrder(ctx context.Context, orderID string, fencingToken int64) (*OrderState, error) {
+	return s.runPaperOrderWithClaim(ctx, orderID, fencingToken, nil)
+}
+
+func (s *Service) runPaperOrderWithClaim(ctx context.Context, orderID string, fencingToken int64, claim *paperRunnerClaim) (*OrderState, error) {
 	if s == nil || s.db == nil || s.now == nil || !safeOrderID(orderID) || fencingToken <= 0 {
 		return nil, errors.New("paper fill runner is not configured")
 	}
@@ -249,6 +255,11 @@ func (s *Service) runPaperOrder(ctx context.Context, orderID string, fencingToke
 	intent, err := loadOrderIntentFrom(ctx, tx, orderID)
 	if err != nil {
 		return nil, err
+	}
+	if claim != nil {
+		if err := validatePaperRunnerLeaseTx(ctx, tx, claim, intent.AccountRef, s.paperRunnerOwner, s.now()); err != nil {
+			return nil, err
+		}
 	}
 	session, signal, err := validateCapitalizedPaperOrderBindings(ctx, tx, intent)
 	if err != nil {

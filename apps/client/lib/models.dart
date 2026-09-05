@@ -187,6 +187,401 @@ class Holding {
   final String currency;
 }
 
+class HoldingValuationIssue {
+  const HoldingValuationIssue({
+    required this.code,
+    required this.message,
+    required this.field,
+  });
+
+  factory HoldingValuationIssue.fromJson(Json json) {
+    final keys = json.keys.toSet();
+    if (keys.length < 2 ||
+        keys.length > 3 ||
+        !keys.containsAll(const {'code', 'message'}) ||
+        !keys.every(const {'code', 'message', 'field'}.contains)) {
+      throw const FormatException('Unexpected valuation issue fields');
+    }
+    return HoldingValuationIssue(
+      code: _text(json, 'code'),
+      message: _text(json, 'message'),
+      field: _nullableText(json, 'field'),
+    );
+  }
+
+  final String code;
+  final String message;
+  final String? field;
+}
+
+class HoldingValuationPrice {
+  const HoldingValuationPrice({
+    required this.source,
+    required this.venue,
+    required this.currency,
+    required this.price,
+    required this.priceAdjustment,
+    required this.observedAt,
+    required this.fetchedAt,
+    required this.recordedAt,
+    required this.sample,
+    required this.state,
+  });
+
+  factory HoldingValuationPrice.fromJson(Json json) {
+    _requireExactKeys(json, const {
+      'source',
+      'venue',
+      'currency',
+      'price',
+      'price_adjustment',
+      'observed_at',
+      'fetched_at',
+      'recorded_at',
+      'sample',
+      'state',
+    });
+    final price = _decimal(json, 'price');
+    final source = _text(json, 'source');
+    final priceAdjustment = _text(json, 'price_adjustment');
+    final sample = _bool(json, 'sample');
+    final state = _text(json, 'state');
+    if (price == '0' ||
+        price.startsWith('-') ||
+        source != 'local_fixture' ||
+        priceAdjustment != 'unspecified' ||
+        !sample ||
+        state != 'stale') {
+      throw const FormatException('Invalid holding price provenance');
+    }
+    return HoldingValuationPrice(
+      source: source,
+      venue: _text(json, 'venue'),
+      currency: _currency(json, 'currency'),
+      price: price,
+      priceAdjustment: priceAdjustment,
+      observedAt: _utcText(json, 'observed_at'),
+      fetchedAt: _utcText(json, 'fetched_at'),
+      recordedAt: _utcText(json, 'recorded_at'),
+      sample: sample,
+      state: state,
+    );
+  }
+
+  final String source;
+  final String venue;
+  final String currency;
+  final String price;
+  final String priceAdjustment;
+  final String observedAt;
+  final String fetchedAt;
+  final String recordedAt;
+  final bool sample;
+  final String state;
+}
+
+class HoldingValuationLine {
+  const HoldingValuationLine({
+    required this.symbol,
+    required this.quantity,
+    required this.costBasis,
+    required this.currency,
+    required this.status,
+    required this.price,
+    required this.marketValue,
+    required this.unrealizedPnl,
+    required this.issue,
+  });
+
+  factory HoldingValuationLine.fromJson(Json json) {
+    _requireExactKeys(json, const {
+      'symbol',
+      'quantity',
+      'cost_basis',
+      'currency',
+      'status',
+      'price',
+      'market_value',
+      'unrealized_pnl',
+      'issue',
+    });
+    final quantity = _decimal(json, 'quantity');
+    final costBasis = _decimal(json, 'cost_basis');
+    final status = _text(json, 'status');
+    final priceJson = json['price'];
+    final issueJson = json['issue'];
+    if (priceJson != null && priceJson is! Json ||
+        issueJson != null && issueJson is! Json) {
+      throw const FormatException('Invalid holding valuation object');
+    }
+    final price = priceJson is Json
+        ? HoldingValuationPrice.fromJson(priceJson)
+        : null;
+    final marketValue = _nullableDecimal(json, 'market_value');
+    final unrealizedPnl = _nullableDecimal(json, 'unrealized_pnl');
+    final issue = issueJson is Json
+        ? HoldingValuationIssue.fromJson(issueJson)
+        : null;
+    final valued = status == 'valued';
+    final stale = status == 'stale';
+    final expectedIssueCode = switch (status) {
+      'missing' => 'missing_security_price',
+      'ambiguous' => 'ambiguous_security_price_venue',
+      'stale' => 'stale_security_price',
+      _ => null,
+    };
+    if (!const {'valued', 'missing', 'ambiguous', 'stale'}.contains(status) ||
+        quantity == '0' ||
+        quantity.startsWith('-') ||
+        costBasis.startsWith('-') ||
+        (marketValue != null &&
+            (marketValue == '0' || marketValue.startsWith('-'))) ||
+        (valued !=
+            (price != null &&
+                marketValue != null &&
+                unrealizedPnl != null &&
+                issue == null)) ||
+        (!valued && (marketValue != null || unrealizedPnl != null)) ||
+        ((valued || stale) != (price != null)) ||
+        (!valued &&
+            (issue == null ||
+                issue.code != expectedIssueCode ||
+                issue.field != _text(json, 'symbol')))) {
+      throw const FormatException('Inconsistent holding valuation line');
+    }
+    return HoldingValuationLine(
+      symbol: _text(json, 'symbol'),
+      quantity: quantity,
+      costBasis: costBasis,
+      currency: _currency(json, 'currency'),
+      status: status,
+      price: price,
+      marketValue: marketValue,
+      unrealizedPnl: unrealizedPnl,
+      issue: issue,
+    );
+  }
+
+  final String symbol;
+  final String quantity;
+  final String costBasis;
+  final String currency;
+  final String status;
+  final HoldingValuationPrice? price;
+  final String? marketValue;
+  final String? unrealizedPnl;
+  final HoldingValuationIssue? issue;
+}
+
+class HoldingValuationTotal {
+  const HoldingValuationTotal({
+    required this.currency,
+    required this.costBasis,
+    required this.marketValue,
+    required this.unrealizedPnl,
+  });
+
+  factory HoldingValuationTotal.fromJson(Json json) {
+    _requireExactKeys(json, const {
+      'currency',
+      'cost_basis',
+      'market_value',
+      'unrealized_pnl',
+    });
+    final costBasis = _decimal(json, 'cost_basis');
+    final marketValue = _decimal(json, 'market_value');
+    if (costBasis.startsWith('-') ||
+        marketValue == '0' ||
+        marketValue.startsWith('-')) {
+      throw const FormatException('Invalid holding valuation total');
+    }
+    return HoldingValuationTotal(
+      currency: _currency(json, 'currency'),
+      costBasis: costBasis,
+      marketValue: marketValue,
+      unrealizedPnl: _decimal(json, 'unrealized_pnl'),
+    );
+  }
+
+  final String currency;
+  final String costBasis;
+  final String marketValue;
+  final String unrealizedPnl;
+}
+
+class HoldingValuation {
+  const HoldingValuation({
+    required this.valuationAsOf,
+    required this.ledgerRevision,
+    required this.ledgerAsOf,
+    required this.ledgerRecordedAt,
+    required this.status,
+    required this.sample,
+    required this.totals,
+    required this.lines,
+    required this.issues,
+    this.maxObservationAgeSeconds = 86400,
+  });
+
+  factory HoldingValuation.fromJson(Json json) {
+    _requireExactKeys(json, const {
+      'scope',
+      'policy_version',
+      'max_observation_age_seconds',
+      'valuation_as_of',
+      'ledger_revision',
+      'ledger_as_of',
+      'ledger_recorded_at',
+      'status',
+      'sample',
+      'totals',
+      'lines',
+      'issues',
+    });
+    final maxAge = _count(json, 'max_observation_age_seconds');
+    final status = _text(json, 'status');
+    final sample = _bool(json, 'sample');
+    final valuationAsOf = _utcText(json, 'valuation_as_of');
+    final ledgerAsOf = _utcText(json, 'ledger_as_of');
+    final ledgerRecordedAt = _utcText(json, 'ledger_recorded_at');
+    final totalsValue = json['totals'];
+    if (totalsValue != null && totalsValue is! List<dynamic>) {
+      throw const FormatException('Invalid holding valuation totals');
+    }
+    final totals = totalsValue == null
+        ? const <HoldingValuationTotal>[]
+        : _jsonList(
+            json,
+            'totals',
+          ).map(HoldingValuationTotal.fromJson).toList(growable: false);
+    final lines = _jsonList(
+      json,
+      'lines',
+    ).map(HoldingValuationLine.fromJson).toList(growable: false);
+    final issues = _jsonList(
+      json,
+      'issues',
+    ).map(HoldingValuationIssue.fromJson).toList(growable: false);
+    final valuationTime = _utcNanoseconds(valuationAsOf);
+    if (_text(json, 'scope') != 'holdings_only' ||
+        _text(json, 'policy_version') != 'native_holding_valuation_v1' ||
+        maxAge != 86400 ||
+        !const {'empty', 'unavailable', 'stale_sample'}.contains(status) ||
+        !RegExp(r'^rev_[0-9]{10}$').hasMatch(_text(json, 'ledger_revision')) ||
+        _utcNanoseconds(ledgerAsOf) > valuationTime ||
+        _utcNanoseconds(ledgerRecordedAt) > valuationTime) {
+      throw const FormatException('Invalid holding valuation metadata');
+    }
+    for (final line in lines) {
+      final price = line.price;
+      if (price == null) continue;
+      final observedAt = _utcNanoseconds(price.observedAt);
+      final fetchedAt = _utcNanoseconds(price.fetchedAt);
+      final recordedAt = _utcNanoseconds(price.recordedAt);
+      final age = valuationTime - observedAt;
+      final maxAge = BigInt.from(86400) * BigInt.from(1000000000);
+      if (price.currency != line.currency ||
+          fetchedAt < observedAt ||
+          recordedAt < fetchedAt ||
+          recordedAt > valuationTime ||
+          (line.status == 'valued' && age > maxAge) ||
+          (line.status == 'stale' && age <= maxAge)) {
+        throw const FormatException('Inconsistent holding price timing');
+      }
+    }
+    final unvalued = lines.where((line) => line.status != 'valued').toList();
+    final validState = switch (status) {
+      'empty' =>
+        lines.isEmpty && totalsValue == null && !sample && issues.isEmpty,
+      'unavailable' =>
+        lines.isNotEmpty &&
+            unvalued.isNotEmpty &&
+            totalsValue == null &&
+            issues.length == unvalued.length &&
+            _sameValuationIssues(unvalued, issues),
+      'stale_sample' =>
+        lines.isNotEmpty &&
+            unvalued.isEmpty &&
+            totals.isNotEmpty &&
+            sample &&
+            issues.length == 1 &&
+            issues.single.code == 'sample_data' &&
+            issues.single.field == null,
+      _ => false,
+    };
+    if (!validState ||
+        sample != lines.any((line) => line.price?.sample == true)) {
+      throw const FormatException('Inconsistent holding valuation state');
+    }
+    if (status == 'stale_sample') {
+      var previousCurrency = '';
+      final totalCurrencies = <String>{};
+      for (final total in totals) {
+        if (total.currency.compareTo(previousCurrency) <= 0) {
+          throw const FormatException('Valuation totals must be ordered');
+        }
+        previousCurrency = total.currency;
+        totalCurrencies.add(total.currency);
+      }
+      if (!totalCurrencies.containsAll(lines.map((line) => line.currency)) ||
+          !lines
+              .map((line) => line.currency)
+              .toSet()
+              .containsAll(totalCurrencies)) {
+        throw const FormatException('Valuation total currencies drifted');
+      }
+    }
+    return HoldingValuation(
+      valuationAsOf: valuationAsOf,
+      ledgerRevision: _text(json, 'ledger_revision'),
+      ledgerAsOf: ledgerAsOf,
+      ledgerRecordedAt: ledgerRecordedAt,
+      status: status,
+      sample: sample,
+      totals: totals,
+      lines: lines,
+      issues: issues,
+    );
+  }
+
+  final int maxObservationAgeSeconds;
+  final String valuationAsOf;
+  final String ledgerRevision;
+  final String ledgerAsOf;
+  final String ledgerRecordedAt;
+  final String status;
+  final bool sample;
+  final List<HoldingValuationTotal> totals;
+  final List<HoldingValuationLine> lines;
+  final List<HoldingValuationIssue> issues;
+}
+
+bool _sameValuationIssues(
+  List<HoldingValuationLine> lines,
+  List<HoldingValuationIssue> issues,
+) {
+  for (var index = 0; index < lines.length; index += 1) {
+    final lineIssue = lines[index].issue!;
+    final issue = issues[index];
+    if (lineIssue.code != issue.code || lineIssue.field != issue.field) {
+      return false;
+    }
+  }
+  return true;
+}
+
+BigInt _utcNanoseconds(String value) {
+  final dot = value.indexOf('.');
+  final whole = dot < 0 ? value : '${value.substring(0, dot)}Z';
+  final seconds = DateTime.parse(whole).microsecondsSinceEpoch ~/ 1000000;
+  final fraction = dot < 0
+      ? BigInt.zero
+      : BigInt.parse(
+          value.substring(dot + 1, value.length - 1).padRight(9, '0'),
+        );
+  return BigInt.from(seconds) * BigInt.from(1000000000) + fraction;
+}
+
 class PortfolioSnapshot {
   const PortfolioSnapshot({
     required this.ledgerRevision,

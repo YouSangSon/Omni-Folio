@@ -102,25 +102,32 @@ func parseMarketDataFixture(source io.Reader) (MarketDataPort, error) {
 			return nil, fmt.Errorf("market fixture row %d is not strictly ordered by bar_at", rowNumber+2)
 		}
 		previous = at
-		prices := make([]*big.Rat, 4)
-		for i, name := range []string{"open", "high", "low", "close"} {
-			value, err := parseDecimal(row[i+5])
-			if err != nil || value.Sign() <= 0 {
-				return nil, fmt.Errorf("market fixture row %d has invalid %s", rowNumber+2, name)
-			}
-			prices[i] = value
-		}
-		volume, err := parseDecimal(row[9])
-		if err != nil || volume.Sign() < 0 {
-			return nil, fmt.Errorf("market fixture row %d has invalid volume", rowNumber+2)
-		}
-		if prices[2].Cmp(prices[0]) > 0 || prices[2].Cmp(prices[3]) > 0 ||
-			prices[0].Cmp(prices[1]) > 0 || prices[3].Cmp(prices[1]) > 0 {
-			return nil, fmt.Errorf("market fixture row %d has invalid OHLC range", rowNumber+2)
+		if err := validateMarketDataValues(row[5], row[6], row[7], row[8], row[9]); err != nil {
+			return nil, fmt.Errorf("market fixture row %d: %w", rowNumber+2, err)
 		}
 		series.Bars = append(series.Bars, MarketDataBar{At: at.UTC().Format(time.RFC3339Nano), Open: row[5], High: row[6], Low: row[7], Close: row[8], Volume: row[9]})
 	}
 	return &marketDataFixture{series: series}, nil
+}
+
+func validateMarketDataValues(open, high, low, close, volume string) error {
+	prices := make([]*big.Rat, 4)
+	for index, item := range []struct{ name, raw string }{{"open", open}, {"high", high}, {"low", low}, {"close", close}} {
+		value, err := parseDecimal(item.raw)
+		if err != nil || value.Sign() <= 0 {
+			return fmt.Errorf("has invalid %s", item.name)
+		}
+		prices[index] = value
+	}
+	parsedVolume, err := parseDecimal(volume)
+	if err != nil || parsedVolume.Sign() < 0 {
+		return errors.New("has invalid volume")
+	}
+	if prices[2].Cmp(prices[0]) > 0 || prices[2].Cmp(prices[3]) > 0 ||
+		prices[0].Cmp(prices[1]) > 0 || prices[3].Cmp(prices[1]) > 0 {
+		return errors.New("has invalid OHLC range")
+	}
+	return nil
 }
 
 func (s *Service) handleMarketDataCandles(w http.ResponseWriter, r *http.Request) {

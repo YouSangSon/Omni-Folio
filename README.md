@@ -149,11 +149,17 @@ G1.12는 보유자산 평가에 앞서 local fixture 종목 가격을 schema v11
 
 G4U checkpoint의 backup v8은 가격 series digest/count를 검증하며 legacy artifact를 원본을 바꾸지 않는 owned copy에서 schema v13으로 migration했습니다. 현재 schema v20/backup v14도 그 가격 proof를 보존합니다. 빈 restore 후보는 embedded migration과 동일한 table DDL·latest index·insert-only trigger를 요구합니다. public API, Flutter 화면, provider 요청, scheduler 또는 broker-backed 보유·손익·성과 평가는 추가하지 않았고 `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다.
 
-### Internal native-currency holding valuation
+### Stored-price native-currency holding valuation
 
 G1.13의 `native_holding_valuation_v1`은 같은 read-only transaction에서 현재 ledger snapshot과 append-only event proof, 전체 security-price series를 다시 검증합니다. 보유자산의 internal instrument ID·symbol·currency에 연결되는 as-of venue가 정확히 하나일 때만 24시간 이내 local fixture 가격으로 원통화 시장가와 미실현손익을 계산합니다. 여러 venue, 누락, stale 또는 미래 observed/fetched/recorded 값은 해당 line에 sanitized issue를 남기고 모든 통화별 aggregate를 숨깁니다.
 
-이 모델은 Go package 내부 검증 경계입니다. 현재환율로 역사적 원가를 환산하지 않고 public route, Flutter 평가 화면, provider ingestion, whole-portfolio total 또는 live/current authority를 만들지 않습니다. `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다. G1.14부터 snapshot/OpenAPI는 `fifo_exact_else_half_even_residual_8_v1`을 명시합니다. 기존 유한 decimal FIFO 배분은 exact 유지하고 반복소수만 half-even 양자화하며, 잔여 원가는 열린 lot에 남아 최종 청산 때 모두 소비됩니다. 이 분석용 정책은 세무 원가 규칙을 대신하지 않습니다.
+G1.15는 이 기존 모델을 `GET /v1/portfolio/holding-valuation`과 Flutter 보유자산의 `저장 가격으로 평가 보기` 상세에 연결합니다. 내부 instrument/observation ID는 응답에서 제외하며 수량·원가·원통화 평가액·미실현손익과 가격 provenance를 같은 원장 revision으로 표시합니다. `as_of` 생략 시 서버 UTC now를 쓰고 explicit cutoff는 canonical UTC만 받습니다. 조회 실패 시 이전 결과의 기준시점과 revision을 함께 보존하며 오류 상세는 노출하지 않습니다.
+
+```sh
+curl -fsS 'http://127.0.0.1:8080/v1/portfolio/holding-valuation'
+```
+
+저장 가격이 없거나 24시간보다 오래되면 합계는 숨겨집니다. `make seed-demo`는 거래 원장만 채우므로 가격 누락은 정상입니다. 모든 가격이 있어도 local sample/stale이며 통화를 합산하거나 현재환율로 역사적 원가를 환산하지 않습니다. provider ingestion, whole-portfolio total 또는 live/current authority는 추가하지 않았고 `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다. G1.14부터 snapshot/OpenAPI는 `fifo_exact_else_half_even_residual_8_v1`을 명시합니다. 기존 유한 decimal FIFO 배분은 exact 유지하고 반복소수만 half-even 양자화하며, 잔여 원가는 열린 lot에 남아 최종 청산 때 모두 소비됩니다. 이 분석용 정책은 세무 원가 규칙을 대신하지 않습니다.
 
 ### Credential-free Kiwoom latest trade
 
@@ -227,6 +233,23 @@ curl -fsS http://127.0.0.1:8080/v1/orders
 make run-research
 make run-improvement
 ```
+
+연구 후보로 새 SMA 신호를 계산하려면 아래 offline CLI를 사용합니다. `research.csv`는 후보 생성에 실제로 쓴 원본이며, `latest.csv`는 같은 KRX 6자리 종목의 정렬된 OHLCV입니다. 마지막 시각은 연구 표본보다 뒤여야 하고, 이전 교차 판정을 위해 slow window + 1개 이상의 봉이 필요합니다. 자세한 계약과 한계는 [G3.8G1](gates/g3q-paper-signal-proposals.md)을 따릅니다.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research python3 -m omni_research.signal_cli \
+  --bars /path/to/latest.csv \
+  --research-bars /path/to/research.csv \
+  --artifact /path/to/strategy-improvement-result.json
+```
+
+stdout의 JSON은 비신뢰 로컬 입력에서 계산한 목표 수량 **제안**이며 주문을 실행하지 않습니다. 자체 hash와 입력의 promotion 표시는 연구 성과 증명이 아니므로 Go의 등록 결과·현재 선택 검증을 생략할 수 없습니다. `none`은 새 제안 없음, `death_cross`의 `"0"`은 청산 목표입니다. 위 명령에 `--watch`를 추가하면 새로 관찰한 마지막 봉마다 NDJSON 제안을 출력합니다. [생성 전용 watch의 전달·재시작 한계](gates/g3t-paper-proposal-watch.md)를 먼저 읽으세요. 현재 `paper-run-loop`는 성과 평가·안전 정책만 실행하며 지속 입력·모의 체결 연결은 G3.8G2에 남아 있습니다.
+
+[수동 로컬 paper 사용법](docs/local-paper-workflow.md)의 `paper-init`, `paper-import-bars`, `paper-execute -arm-paper`로 초기화·원본 CSV 검증·모의 체결·성과 안전정책·새 제안 접수를 연결합니다. 실제 증권사와 연결하지 않는 fixture 실행이며 종료 시 자신의 실행 권한을 중지합니다. 실제 OS signal/stale-owner와 복합 재시작 검증은 [G3.8G2B](gates/g3s-local-paper-workflow.md)에서 로컬 통과했습니다. 상시 자동매매나 실거래 완성을 뜻하지 않습니다.
+
+Python `--bundle`은 제안과 계산에 사용한 원본 CSV를 함께 출력합니다. Go `paper-execute -bundle FILE -arm-paper`로 한 번 전달하면 원본 경로를 다시 읽지 않고 기존 검증을 거칩니다. 개별 CSV 1 MiB·전체 JSON 4 MiB 제한입니다. [정확한 byte 전달 gate](gates/g3u-paper-input-bundle.md)
+
+`--watch --bundle`은 별도 `paper-execute-stream -arm-paper`의 stdin pipe로 연결할 수 있습니다. 이 명령은 한 번만 활성화하고 입력 사이에도 소유 임대를 갱신하며, 중지·EOF·오류에서 reader와 권한을 정리합니다. 자동 재활성화나 durable queue는 아니며 stdout 대신 DB 기록으로 실행을 확인합니다. [연속 fixture 사용법](docs/local-paper-workflow.md#명시적으로-연속-fixture-소비하기), [검증 gate](gates/g3w-paper-input-stream.md)
 
 전략 개선 runner는 유한한 long-only SMA 후보를 expanding walk-forward로 평가하고 final holdout을 한 번만 엽니다. 결과는 `paper_candidate` 또는 `no_promotion`만 만들 수 있으며 credential·주문·live 승격 권한을 얻지 못합니다.
 
