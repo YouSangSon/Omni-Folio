@@ -10,6 +10,7 @@ import 'package:http/testing.dart';
 import 'package:omni_folio_client/api.dart';
 import 'package:omni_folio_client/app.dart';
 import 'package:omni_folio_client/models.dart';
+import 'package:omni_folio_client/paper_monitor.dart';
 
 Json fixture(String name) {
   final body = File('../../contracts/fixtures/$name').readAsStringSync();
@@ -114,6 +115,10 @@ class FakeApi implements OmniApi {
     }
     return localOrdersCompleter?.future ?? orderLogValue;
   }
+
+  @override
+  Future<PaperMonitor> paperMonitor() =>
+      throw UnsupportedError('Loaded only from the monitor detail page.');
 
   @override
   Future<LedgerActivityPage> ledgerActivities() async {

@@ -805,6 +805,7 @@ func (s *Service) routes() http.Handler {
 	mux.HandleFunc("GET /v1/portfolio/holding-valuation", s.handleHoldingValuation)
 	mux.HandleFunc("GET /v1/broker-reconciliation/latest", s.handleLatestBrokerReconciliation)
 	mux.HandleFunc("GET /v1/orders", s.handleLocalOrders)
+	mux.HandleFunc("GET /v1/paper/monitor", s.handlePaperMonitor)
 	mux.HandleFunc("GET /v1/ledger/activities", s.handleLedgerActivities)
 	mux.HandleFunc("POST /v1/imports/preview", s.handlePreview)
 	mux.HandleFunc("POST /v1/imports/apply", s.handleApply)

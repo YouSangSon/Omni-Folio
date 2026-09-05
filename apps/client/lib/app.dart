@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'holding_valuation_page.dart';
 import 'models.dart';
+import 'paper_monitor_page.dart';
 
 class OmniFolioApp extends StatefulWidget {
   const OmniFolioApp({super.key, required this.api});
@@ -2110,6 +2111,31 @@ class DataPage extends StatelessWidget {
         _buildReconciliation(context),
         const SizedBox(height: 12),
         _buildLocalOrders(context),
+        const SizedBox(height: 12),
+        _SectionCard(
+          title: '모의 자동매매 상태',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('저장된 로컬 모의 데이터를 요청할 때만 불러옵니다.'),
+              const SizedBox(height: 4),
+              Text(
+                '프로세스 생존, 현재 증권사 상태 또는 실행 권한을 뜻하지 않습니다.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => PaperMonitorPage(api: api),
+                  ),
+                ),
+                icon: const Icon(Icons.monitor_heart_outlined),
+                label: const Text('모의 자동매매 상태 보기'),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }

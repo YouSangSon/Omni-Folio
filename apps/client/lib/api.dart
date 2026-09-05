@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'models.dart';
+import 'paper_monitor.dart';
 
 abstract interface class OmniApi {
   Future<ServiceStatus> status();
@@ -11,6 +12,7 @@ abstract interface class OmniApi {
   Future<MarketCandles> candles(String symbol);
   Future<BrokerReconciliation?> latestBrokerReconciliation();
   Future<LocalOrderLog> localOrders();
+  Future<PaperMonitor> paperMonitor();
   Future<LedgerActivityPage> ledgerActivities();
   Future<ImportPreview> preview(String csv);
   Future<ApplyReceipt> apply(String previewId, String idempotencyKey);
@@ -135,6 +137,10 @@ class RestOmniApi implements OmniApi {
   @override
   Future<LocalOrderLog> localOrders() async =>
       LocalOrderLog.fromJson(await _get('/v1/orders'));
+
+  @override
+  Future<PaperMonitor> paperMonitor() async =>
+      PaperMonitor.fromJson(await _get('/v1/paper/monitor'));
 
   @override
   Future<LedgerActivityPage> ledgerActivities() async =>

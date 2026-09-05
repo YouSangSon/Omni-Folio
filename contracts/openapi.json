@@ -6,6 +6,17 @@
     "description": "Minimal cross-runtime contract for trust status, CSV import, deterministic portfolio snapshots, explicitly labeled sample market data, sanitized ledger activity, stored broker reconciliation, and verified local order lifecycle reads. JSON decimals are canonical strings; IDs are opaque strings."
   },
   "paths": {
+    "/v1/paper/monitor": {
+      "get": {
+        "operationId": "getPaperMonitor",
+        "description": "On-demand, replay-verified local fixture policy observations across all paper accounts. No query parameters, broker requests, financial metrics, process-liveness claim or execution authority. Response is no-store; no monitoring write or renewal occurs.",
+        "responses": {
+          "200": {"description": "One verified database snapshot.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PaperMonitor"}}}},
+          "400": {"description": "Query parameters are not accepted."},
+          "500": {"description": "Recovery or storage failed; no partial result."}
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "operationId": "getHealth",
@@ -470,6 +481,47 @@
       }
     },
     "schemas": {
+      "PaperMonitor": {
+        "type": "object", "additionalProperties": false,
+        "required": ["schema_version", "mode", "observed_at", "strategy_selected", "session_count", "pending_policy_count", "runner", "latest_policy"],
+        "properties": {
+          "schema_version": {"const": "paper-monitor.v1"},
+          "mode": {"const": "paper_fixture_only"},
+          "observed_at": {"type": "string", "format": "date-time", "description": "Server UTC observation time, captured once for this read."},
+          "strategy_selected": {"type": "boolean", "description": "Registry has a selected candidate; this grants no execution authority."},
+          "session_count": {"type": "integer", "minimum": 0},
+          "pending_policy_count": {"type": "integer", "minimum": 0, "description": "All committed valuations without a completed attribution/policy chain, including prior selections. Not runnable queue depth or missing source data."},
+          "runner": {"$ref": "#/components/schemas/PaperMonitorRunner"},
+          "latest_policy": {"oneOf": [{"$ref": "#/components/schemas/PaperMonitorPolicy"}, {"type": "null"}]}
+        }
+      },
+      "PaperMonitorRunner": {
+        "type": "object", "additionalProperties": false,
+        "required": ["state", "heartbeat_at", "expires_at"],
+        "description": "Global policy-runner lease only, not the separate execution lease. Precedence: unowned, clock_regressed, expired, selection_changed, lease_recorded. Expired does not imply takeover readiness. Times are null only when unowned.",
+        "properties": {
+          "state": {"enum": ["unowned", "lease_recorded", "expired", "clock_regressed", "selection_changed"]},
+          "heartbeat_at": {"type": ["string", "null"], "format": "date-time"},
+          "expires_at": {"type": ["string", "null"], "format": "date-time"}
+        }
+      },
+      "PaperMonitorPolicy": {
+        "type": "object", "additionalProperties": false,
+        "required": ["as_of", "recorded_at", "decision", "reason_code", "matches_current_selection"],
+        "description": "Most recently appended policy across all local paper accounts, not necessarily the current strategy or newest market time. A rollback normally makes matches_current_selection false. HOLD is a modeled historical decision, not current safety or profitability. Wall-clock regression may put recorded_at before as_of; consumers must not impose monotonic wall-clock ordering.",
+        "oneOf": [
+          {"properties": {"decision": {"const": "INSUFFICIENT"}, "reason_code": {"const": "minimum_same_selection_samples_not_met"}}},
+          {"properties": {"decision": {"const": "HOLD"}, "reason_code": {"const": "within_local_paper_safety_bounds"}}},
+          {"properties": {"decision": {"const": "HALT_AND_ROLLBACK"}, "reason_code": {"enum": ["max_drawdown_limit_reached", "cumulative_return_floor_reached"]}}}
+        ],
+        "properties": {
+          "as_of": {"type": "string", "format": "date-time"},
+          "recorded_at": {"type": "string", "format": "date-time"},
+          "decision": {"enum": ["INSUFFICIENT", "HOLD", "HALT_AND_ROLLBACK"]},
+          "reason_code": {"enum": ["minimum_same_selection_samples_not_met", "within_local_paper_safety_bounds", "max_drawdown_limit_reached", "cumulative_return_floor_reached"]},
+          "matches_current_selection": {"type": "boolean"}
+        }
+      },
       "OpaqueId": {
         "type": "string",
         "minLength": 1,

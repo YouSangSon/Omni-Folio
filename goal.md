@@ -272,4 +272,6 @@ Market data adapters
 - `make test`, `make check`, `make smoke`를 성공·의도적 실패·SIGINT/SIGTERM으로 각각 종료한 뒤 owned 프로세스/listener/temp/coverage/build 자원이 남지 않으며, SIGKILL로 trap을 건너뛴 stale owner·child process group fixture는 다음 실행의 scoped preflight가 회수하고 unrelated 자원은 보존한다. 현재 containerless suite는 Podman/Kind 생성이 0임을 확인하고, 이를 사용하는 테스트가 생기면 session registry에 기록된 exact ID의 성공·실패·중단·stale-owner 회수까지 같은 matrix에 포함한다. cleanup 또는 inventory 자체가 실패하면 해당 검증은 실패다.
 - README에 로컬 실행, 단일 노드 cloud 배포, 데이터 백업/복원, API 연결, 모의주문 사용법, 실전 주문 활성화 위험과 절차가 기록된다.
 
+운영 모니터는 저장된 증거, 프로세스 생존, 실행 권한을 구분한다. 과거 HOLD나 만료 전 lease만으로 현재 안전·수익성·상시 운영을 주장하지 않고, 만료를 takeover 허가로 바꾸지 않는다. 조회는 주문·arm·heartbeat를 발생시키지 않으며, 오류 시 이전 관찰과 원래 시각을 함께 유지한다. 알림 전달과 장기 운영 증거는 별도 검증한다.
+
 각 단계에서 먼저 현재 코드를 조사하고 가장 작은 수직 슬라이스를 구현한 뒤 테스트로 증명하라. 부분 구현을 전체 완료로 보고하지 말고, 로컬 검증·모의투자 검증·실전 주문 준비·실제 운영 증거를 구분해서 보고하라.

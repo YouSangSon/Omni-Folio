@@ -123,4 +123,6 @@ G6 PostgreSQL and Kubernetes promotion
 
 - G3.8G2K는 밀린 봉마다 체결→성과→정책을 완료해 중간 손실 이후 체결을 막고, 저장된 성과의 미완료 정책부터 재시작한다. 선택 이전 새 성과와 다른 선택의 cached 정책 재사용을 차단하며 기존 접수 signal의 주문 복구 계약은 유지했다. 실제 signal 복구·opt-in soak 포함 전체 check·focused race·리뷰·소유 자원 정리가 통과했다. 수동 성과 전용 명령의 조합과 기존 과거 누락 소급 삽입, 전체 G3.8G2 완료를 뜻하지 않는다. [gate](gates/g3ab-paper-chronological-recovery.md)
 
+- G3.8H는 연결 화면에서 저장된 모의 정책 상태를 요청할 때만 조회한다. 전체 복구를 검증한 단일 DB 관찰에 미완료 정책·최근 결정·소유권 기록을 담으며 계좌 ID·금융 수치·실행 권한은 노출하지 않는다. 전체 check와 최종 focused race·Flutter 84·리뷰·owned cleanup이 통과했다. 물리 기기·브라우저 실렌더링·알림 전달·상시 운영 증거는 아니다. [gate](gates/g3ac-paper-monitor.md)
+
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.
