@@ -162,6 +162,7 @@ ThemeData _theme(Brightness brightness) {
   final action = Color(dark ? 0xFF60A5FA : 0xFF2563EB);
   return ThemeData(
     useMaterial3: true,
+    fontFamily: 'NotoSansKR',
     brightness: brightness,
     scaffoldBackgroundColor: canvas,
     colorScheme: ColorScheme(
@@ -183,6 +184,7 @@ ThemeData _theme(Brightness brightness) {
       elevation: 0,
       titleSpacing: 20,
       titleTextStyle: TextStyle(
+        fontFamily: 'NotoSansKR',
         color: primary,
         fontSize: 22,
         fontWeight: FontWeight.w700,
@@ -199,6 +201,7 @@ ThemeData _theme(Brightness brightness) {
       ),
       labelTextStyle: WidgetStateProperty.resolveWith(
         (states) => TextStyle(
+          fontFamily: 'NotoSansKR',
           color: states.contains(WidgetState.selected) ? action : secondary,
           fontSize: 12,
           fontWeight: states.contains(WidgetState.selected)
@@ -240,14 +243,22 @@ ThemeData _theme(Brightness brightness) {
       style: ElevatedButton.styleFrom(
         minimumSize: const Size(double.infinity, 52),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        textStyle: const TextStyle(
+          fontFamily: 'NotoSansKR',
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         minimumSize: const Size(double.infinity, 52),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        textStyle: const TextStyle(
+          fontFamily: 'NotoSansKR',
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
