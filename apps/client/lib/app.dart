@@ -280,13 +280,16 @@ class PortfolioController extends ChangeNotifier {
   final OmniApi api;
   ServiceStatus? status;
   PortfolioSnapshot? snapshot;
+  CurrentPortfolioValuation? currentValuation;
   BrokerReconciliation? reconciliation;
   LocalOrderLog? orderLog;
   String? error;
   var reconciliationFailed = false;
+  var currentValuationFailed = false;
   var orderLogFailed = false;
   var busy = false;
   var reconciliationBusy = false;
+  var currentValuationBusy = false;
   var orderLogBusy = false;
   var _disposed = false;
 
@@ -296,6 +299,7 @@ class PortfolioController extends ChangeNotifier {
     error = null;
     _notify();
     final optionalRefreshes = <Future<void>>[
+      if (!currentValuationBusy) refreshCurrentValuation(),
       if (!reconciliationBusy) refreshReconciliation(),
       if (!orderLogBusy) refreshLocalOrders(),
     ];
@@ -311,6 +315,21 @@ class PortfolioController extends ChangeNotifier {
     busy = false;
     _notify();
     await Future.wait(optionalRefreshes);
+  }
+
+  Future<void> refreshCurrentValuation() async {
+    if (currentValuationBusy) return;
+    currentValuationBusy = true;
+    currentValuationFailed = false;
+    _notify();
+    try {
+      currentValuation = await api.currentPortfolioValuation();
+    } catch (_) {
+      currentValuationFailed = true;
+    } finally {
+      currentValuationBusy = false;
+      _notify();
+    }
   }
 
   Future<void> refreshReconciliation() async {
@@ -465,6 +484,13 @@ class OverviewPage extends StatelessWidget {
           retainedError: controller.orderLogFailed,
           busy: controller.orderLogBusy,
           onDetails: onConnections,
+        ),
+        const SizedBox(height: 12),
+        _CurrentPortfolioValuationCard(
+          valuation: controller.currentValuation,
+          snapshotRevision: snapshot.ledgerRevision,
+          busy: controller.currentValuationBusy,
+          retainedError: controller.currentValuationFailed,
         ),
         const SizedBox(height: 12),
         _PortfolioHero(snapshot: snapshot),
@@ -633,6 +659,181 @@ class _PortfolioHero extends StatelessWidget {
             const SizedBox(height: 12),
             Text('평가금액 미포함', style: Theme.of(context).textTheme.bodySmall),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CurrentPortfolioValuationCard extends StatelessWidget {
+  const _CurrentPortfolioValuationCard({
+    required this.valuation,
+    required this.snapshotRevision,
+    required this.busy,
+    required this.retainedError,
+  });
+
+  final CurrentPortfolioValuation? valuation;
+  final String snapshotRevision;
+  final bool busy;
+  final bool retainedError;
+
+  @override
+  Widget build(BuildContext context) {
+    final current = valuation;
+    if (current == null) {
+      final title = busy ? '전체 평가 계산 중' : '전체 평가를 불러오지 못했습니다';
+      final body = busy
+          ? '같은 원장 시점의 저장 가격과 직접 환율을 확인하고 있습니다.'
+          : '현금과 보유 내역은 계속 볼 수 있습니다. 새로고침하면 다시 계산합니다.';
+      return Card(
+        child: Semantics(
+          container: true,
+          liveRegion: !busy,
+          label: '$title. $body',
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  busy ? Icons.hourglass_top_rounded : Icons.info_outline,
+                  color: busy ? null : _warningColor(context),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(body, style: Theme.of(context).textTheme.bodySmall),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final mismatch = current.ledgerRevision != snapshotRevision;
+    final valuationTimeText = _time(DateTime.parse(current.valuationAsOf));
+    final total = current.totalValue;
+    if (total == null) {
+      final empty = current.status == 'empty';
+      final title = empty ? '평가할 자산 없음' : '전체 평가를 계산할 수 없음';
+      final body = empty
+          ? '이 평가 시점의 원장에는 평가할 현금과 보유 자산이 없습니다.'
+          : '필요한 저장 가격 또는 직접 환율 ${current.issues.length}건을 확인하세요. 부분 합계는 표시하지 않습니다.';
+      final notices = [
+        if (mismatch) '원장 갱신 전 저장 평가',
+        if (busy) '새 평가 계산 중 · 현재 표시 상태 유지',
+        if (retainedError) '새로고침 실패 · 마지막 정상 상태 유지',
+      ];
+      return Card(
+        child: Semantics(
+          container: true,
+          liveRegion: true,
+          label:
+              '$title. $body. ${notices.join('. ')}. 평가 시각 $valuationTimeText',
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 6),
+                Text(body),
+                for (final notice in notices) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    notice,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: _warningColor(context),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Text(
+                  '평가 시각 $valuationTimeText',
+                  style: _tabular(context).copyWith(
+                    fontSize: Theme.of(context).textTheme.bodySmall?.fontSize,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final totalText = _formattedMoney(total);
+    final cashText = _formattedMoney(current.cashValue!);
+    final holdingsText = _formattedMoney(current.holdingsValue!);
+    final isSample = current.status == 'stale_sample';
+    final authority = isSample
+        ? '저장된 로컬 샘플 기준 · 실시간·증권사 값 아님'
+        : '같은 원장 시점의 KRW 평가 · 증권사 잔고 값 아님';
+    final notices = [
+      authority,
+      if (mismatch) '원장 갱신 전 저장 평가',
+      if (busy) '새 평가 계산 중 · 현재 표시값 유지',
+      if (retainedError) '새로고침 실패 · 마지막 정상 평가 유지',
+    ];
+    return Card(
+      child: Semantics(
+        container: true,
+        excludeSemantics: true,
+        label:
+            '총 자산 $totalText. 현금 $cashText. 보유 자산 $holdingsText. ${notices.join('. ')}. 평가 시각 $valuationTimeText',
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('총 자산', style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 4),
+              Text(
+                totalText,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 24,
+                runSpacing: 8,
+                children: [
+                  _HeroMetric(label: '현금', value: cashText),
+                  _HeroMetric(label: '보유 자산', value: holdingsText),
+                ],
+              ),
+              const SizedBox(height: 12),
+              for (final notice in notices) ...[
+                Text(
+                  notice,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: notice == authority && !isSample
+                        ? null
+                        : _warningColor(context),
+                  ),
+                ),
+                const SizedBox(height: 4),
+              ],
+              Text(
+                '평가 시각 $valuationTimeText',
+                style: _tabular(context).copyWith(
+                  fontSize: Theme.of(context).textTheme.bodySmall?.fontSize,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2930,6 +3131,20 @@ Color _warningColor(BuildContext context) =>
 String _moneySummary(List<Money> money) => money.isEmpty
     ? '없음'
     : money.map((item) => '${item.currency} ${item.amount}').join(' · ');
+
+String _formattedMoney(Money money) {
+  final negative = money.amount.startsWith('-');
+  final unsigned = negative ? money.amount.substring(1) : money.amount;
+  final parts = unsigned.split('.');
+  final whole = parts.first;
+  final buffer = StringBuffer();
+  for (var index = 0; index < whole.length; index += 1) {
+    if (index > 0 && (whole.length - index) % 3 == 0) buffer.write(',');
+    buffer.write(whole[index]);
+  }
+  final fraction = parts.length == 1 ? '' : '.${parts[1]}';
+  return '${money.currency} ${negative ? '-' : ''}$buffer$fraction';
+}
 
 bool _isZero(String amount) => RegExp(r'^-?0(?:\.0+)?$').hasMatch(amount);
 

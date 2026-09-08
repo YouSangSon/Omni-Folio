@@ -8,6 +8,7 @@ import 'paper_monitor.dart';
 abstract interface class OmniApi {
   Future<ServiceStatus> status();
   Future<PortfolioSnapshot> snapshot();
+  Future<CurrentPortfolioValuation> currentPortfolioValuation();
   Future<HoldingValuation> holdingValuation();
   Future<MarketCandles> candles(String symbol);
   Future<BrokerReconciliation?> latestBrokerReconciliation();
@@ -98,6 +99,12 @@ class RestOmniApi implements OmniApi {
   @override
   Future<PortfolioSnapshot> snapshot() async =>
       PortfolioSnapshot.fromJson(await _get('/v1/portfolio/snapshot'));
+
+  @override
+  Future<CurrentPortfolioValuation> currentPortfolioValuation() async =>
+      CurrentPortfolioValuation.fromJson(
+        await _get('/v1/portfolio/current-valuation'),
+      );
 
   @override
   Future<HoldingValuation> holdingValuation() async =>

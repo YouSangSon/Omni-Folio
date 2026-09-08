@@ -263,6 +263,22 @@ class _ProfileApi implements OmniApi {
   Future<PortfolioSnapshot> snapshot() async => _snapshot;
 
   @override
+  Future<CurrentPortfolioValuation> currentPortfolioValuation() async =>
+      const CurrentPortfolioValuation(
+        baseCurrency: 'KRW',
+        valuationAsOf: '2026-08-24T00:00:00Z',
+        ledgerRevision: 'rev_profile',
+        ledgerAsOf: '2026-08-24T00:00:00Z',
+        ledgerRecordedAt: '2026-08-24T00:00:00Z',
+        status: 'complete',
+        sample: false,
+        cashValue: Money('KRW', '1000000'),
+        holdingsValue: Money('KRW', '0'),
+        totalValue: Money('KRW', '1000000'),
+        issues: [],
+      );
+
+  @override
   Future<HoldingValuation> holdingValuation() =>
       throw UnsupportedError('Not part of the G2 frame fixture.');
 

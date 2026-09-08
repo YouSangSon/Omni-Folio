@@ -7,7 +7,7 @@
 - [x] 제품·안전 목표와 조사 기준선
 - [x] Flutter/Go/Python 및 state-authority ADR
 - [x] G0 contracts와 monorepo 실행 명령
-- [x] G1 CSV preview → atomic apply → ledger snapshot/receipt, exact cash-flow·split·두 통화 환전 replay, append-only `CASH_VOID`, direct FX observation, cash-only direct-FX valuation, durable security price observation, internal native-currency holding valuation와 versioned FIFO residual allocation, owner-declared instrument listing, paper operational evaluation, schema v20/backup v14 및 supported legacy owned-copy migration/restore proof
+- [x] G1 CSV preview → atomic apply → ledger snapshot/receipt, exact cash-flow·split·두 통화 환전 replay, append-only `CASH_VOID`, direct FX observation, cash-only direct-FX valuation, durable security price observation, internal native-currency holding valuation, current KRW whole-portfolio valuation과 versioned FIFO residual allocation, owner-declared instrument listing, paper operational evaluation, schema v20/backup v14 및 supported legacy owned-copy migration/restore proof
 - [ ] G2 동일 fixture를 표시하는 Flutter client와 iOS·Android·web build 완료; 실제 import API 기반 demo seed, 모바일 bottom navigation·desktop rail, bounded Overview·lazy Holdings, provenance count·signed PnL·단일 actionable semantics를 포함한 자동 검증 통과, chart 포함 Android emulator profile 2회 통과, 수동 screen-reader·physical-device profile 증거 남음
 - [x] G3 동일 market fixture를 읽는 deterministic Python backtest와 walk-forward 개선 runner
 - [x] local OCI/Compose 정의와 root check/smoke
@@ -16,6 +16,7 @@
 
 - [x] 테스트 시작/정리 preflight: 관측 실패·빈 값의 사전 차단 40개 하위 사례, 실제 smoke build failure 자손 누수 RED/GREEN, 성공·실패·SIGINT·SIGTERM 11개 process-tree matrix와 하네스 중단 정리를 통과했다. 최종 `make check`·실제 `make smoke` 종료 후 소유 listener·binary·temp root 없음을 확인. SIGKILL·host crash guardian 복구는 별도 ([gate](gates/g0-resource-preflight.md)).
 - [x] G1.16 거래 내역 전체 탐색: revision-bound cursor의 50건 단위 이전/다음 페이지, 첫 snapshot·cursor trail 보존, import/refresh 원자 교체, 양방향 nanosecond 경계·cursor loop, 오류·중복 클릭·dispose·스크롤·접근성을 Flutter 13개와 전체 98개에서 검증. 실제 release Chrome에서 101→102건 스냅샷, 3페이지 왕복, 400 오류 보존·키보드 복구·외부 요청 0개와 소유 자원 정리 통과 ([gate](gates/g1l-ledger-activity-pagination.md)).
+- [x] G1.17 현재 KRW 전체 평가: replay-verified 원장·현금·보유자산·local fixture 가격·직접 FX를 서버 cutoff 하나와 read transaction 하나에서 exact 합산하고, 누락·stale·모호 입력은 모든 aggregate를 숨긴다. query 없는 closed API, Flutter optional known-good 소비, revision mismatch·sample/broker 비권위·320px/200% semantics를 검증한다 ([gate](gates/g1m-current-portfolio-valuation.md)).
 - [x] G3.8H 브라우저 통합 확인: 실제 CLI로 저장한 정책을 Flutter release/Chrome에서 조회하고 375·768·1440 화면, 오류 후 원래 관찰 보존, 키보드 재조회·복귀와 owned cleanup 확인. 실행 불가 계좌 예제를 고치고 실제 초기화 명령 RED/GREEN·race 검증. baseline 비교·물리 screen reader·frame budget은 별도 ([gate](gates/g3ad-paper-monitor-browser.md)).
 - [x] G2 로컬 한글 폰트 전달: upstream 고정 Noto Sans KR·OFL과 Cupertino 아이콘을 번들에 포함하고 기본/명시적 버튼 테마의 폰트 누락을 RED/GREEN으로 수정. 새 release 브라우저에서 loopback 외 요청을 차단하고 Home·Import·Connections·monitor 및 외부 요청 0건 검증 ([gate](gates/g2d-local-fonts.md)).
 - [ ] G2 폰트 후속: 약 9.9 MiB 번들의 초기 표시/전송 비용, 물리 iOS·Android glyph·profile과 웹 origin 자체가 없는 offline bootstrap은 별도 검증. 로컬 서버 접근만 허용한 브라우저 결과를 완전한 offline PWA로 승격하지 않음.
@@ -52,7 +53,7 @@
 - [x] G1.13 native-currency holding valuation: 같은 read transaction에서 원장과 전체 가격 series를 검증하고 unique as-of venue의 24시간 이내 local fixture만 사용해 원통화 시장가·미실현손익·통화별 합계를 exact 계산하며 누락·모호·stale이면 aggregate를 숨김
 - [x] G1.14 versioned FIFO cost allocation: 기존 유한 decimal 배분은 exact 보존하고 반복소수인 부분 lot만 `fifo_exact_else_half_even_residual_8_v1`로 half-even 양자화; 잔여 원가는 lot에 남겨 최종 청산 시 exact 소비하며 snapshot/OpenAPI/Flutter와 legacy golden restore 호환성을 검증
 - [x] G1.15 저장 가격 보유자산 평가 read view: internal ID를 제외한 GET API와 독립 Flutter 상세에서 같은 원장 revision의 수량·원가·원통화 평가·가격 provenance를 보여주고 sample/stale, 누락 시 합계 숨김, refresh 실패 시 알려진 정상 결과 보존을 검증 ([gate](gates/g1k-holding-valuation-view.md))
-- [ ] 원장 후속: public/base-currency whole-portfolio·performance valuation, historical FX와 표시/통화별 rounding 정책, provider FX/source priority·calendar 정책, Kiwoom price observation을 valuation authority로 승격할 서버 cutoff·freshness 정책, FX/거래·분할·기업행사 정정, 배당 재투자·국가별 세금 분류와 credentialed broker 체결/현금 reconciliation
+- [ ] 원장 후속: historical-FX cost basis·performance valuation, 사용자 선택 기준통화와 표시/통화별 rounding 정책, provider FX/source priority·calendar 정책, Kiwoom price observation을 valuation authority로 승격할 freshness 정책, FX/거래·분할·기업행사 정정, 배당 재투자·국가별 세금 분류와 credentialed broker 체결/현금 reconciliation
 - [ ] 키움 live/mock credential 검증, official timezone/freshness와 REST tick/0B identity·order 관찰, WebSocket LOGIN/PING/reconnect/resubscribe/backpressure, credentialed scheduled known-good refresh, credentialed ledger reconciliation
 - [ ] 실제 키움 OHLCV를 local chart contract에 연결, 평균단가의 통화·반올림 계약과 실제 체결 timestamp read model을 먼저 정의한 뒤 marker를 추가하고 physical accessibility/performance budget을 증명
 - [ ] K2B 후속: credentialed mock 관찰, submit 조회·안전한 unknown-submit correlation, SELL 정책, public 주문 mutation/확인 UI, production risk·broker-coupled runner fencing, 시장가·정정, 체결-원장 reconciliation

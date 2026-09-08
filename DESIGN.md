@@ -45,6 +45,8 @@ Overview may summarize the stored broker-to-ledger position reconciliation, but 
 
 Overview may also warn about unresolved local submit or cancel actions from the same retained order log used by Connections. It must label the source as local and not current broker state, prohibit resubmission or further manipulation, avoid claiming safety when the log is empty or unavailable, and add no order mutation.
 
+Overview shows G1.17 whole-portfolio valuation as a separate, server-owned card before the raw cash snapshot. It consumes one closed response that already combines cash and holding market value at one ledger revision and cutoff; the client never joins or converts values. Show total first, then KRW cash and holdings, and label local-fixture results `저장된 로컬 샘플 기준 · 실시간·증권사 값 아님`. Missing/stale/ambiguous coverage hides every aggregate and says that partial totals are not shown. A transport/parser refresh failure retains the prior response with its original cutoff/revision; a successful `unavailable` response replaces it, and revision mismatch is visibly labeled `원장 갱신 전 저장 평가`. This card is not historical cost, PnL, performance, advice or broker reconciliation.
+
 On first run, `never_verified` with an empty snapshot is an empty state rather than a successful zero-portfolio summary. Overview offers one primary action to open the existing transaction import flow; a non-empty unverified snapshot remains visible with its trust warning.
 
 For local product review, `make seed-demo` sends the existing golden CSV through the real import preview/apply API and is idempotent once those rows exist. It must not bypass the API, write the database directly, invent broker freshness, or turn unavailable valuation into a displayed estimate.

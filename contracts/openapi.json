@@ -251,6 +251,26 @@
         }
       }
     },
+    "/v1/portfolio/current-valuation": {
+      "get": {
+        "operationId": "getCurrentPortfolioValuation",
+        "description": "Values the replay-verified whole portfolio in KRW at one server-owned UTC cutoff and one read transaction. Cash and current holding market values use only exact direct local-fixture FX and stored local-fixture security prices no older than 24 hours. Any missing, stale, or ambiguous required observation suppresses every aggregate. This is indicative sample data, not broker truth, live pricing, cost basis, PnL, or performance.",
+        "responses": {
+          "200": {
+            "description": "A closed all-or-none KRW aggregate bound to its ledger revision and server cutoff.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CurrentPortfolioValuation"}}}
+          },
+          "400": {
+            "description": "The endpoint does not accept query parameters.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "500": {
+            "description": "Ledger, FX, or security-price durable state failed replay or canonical validation.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          }
+        }
+      }
+    },
     "/v1/broker-reconciliation/latest": {
       "get": {
         "operationId": "getLatestBrokerReconciliation",
@@ -953,6 +973,27 @@
               "$ref": "#/components/schemas/Error"
             }
           }
+        }
+      },
+      "CurrentPortfolioValuation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["scope", "policy_version", "max_observation_age_seconds", "base_currency", "valuation_as_of", "ledger_revision", "ledger_as_of", "ledger_recorded_at", "status", "sample", "cash_value", "holdings_value", "total_value", "issues"],
+        "properties": {
+          "scope": {"const": "whole_portfolio"},
+          "policy_version": {"const": "current_base_portfolio_valuation_v1"},
+          "max_observation_age_seconds": {"const": 86400},
+          "base_currency": {"const": "KRW"},
+          "valuation_as_of": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
+          "ledger_revision": {"type": "string", "pattern": "^rev_[0-9]{10}$"},
+          "ledger_as_of": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
+          "ledger_recorded_at": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
+          "status": {"type": "string", "enum": ["empty", "complete", "stale_sample", "unavailable"]},
+          "sample": {"type": "boolean"},
+          "cash_value": {"anyOf": [{"$ref": "#/components/schemas/Money"}, {"type": "null"}]},
+          "holdings_value": {"anyOf": [{"$ref": "#/components/schemas/Money"}, {"type": "null"}]},
+          "total_value": {"anyOf": [{"$ref": "#/components/schemas/Money"}, {"type": "null"}]},
+          "issues": {"type": "array", "items": {"$ref": "#/components/schemas/Error"}}
         }
       },
       "BrokerPositionDifference": {
