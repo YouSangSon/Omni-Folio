@@ -249,7 +249,7 @@ class _ProfileApi implements OmniApi {
       throw UnsupportedError('Not part of the G2 frame fixture.');
 
   @override
-  Future<LedgerActivityPage> ledgerActivities() async =>
+  Future<LedgerActivityPage> ledgerActivities({String? cursor}) async =>
       const LedgerActivityPage(
         source: 'local_ledger',
         brokerFreshness: 'unverified',

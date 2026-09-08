@@ -27,7 +27,8 @@ G1 ledger vertical slice
 ├─ G1.12 append-only security price observation + schema v11/backup v7 proof
 ├─ G1.13 replay-verified native-currency holding valuation
 ├─ G1.14 versioned recurring FIFO cost allocation + residual conservation
-└─ G1.15 sanitized stored-price holding valuation API and Flutter detail
+├─ G1.15 sanitized stored-price holding valuation API and Flutter detail
+└─ G1.16 revision-bound Flutter ledger activity pagination
    |
 G2 client vertical slice
 ├─ G2.1 Flutter iOS/Android/web build
@@ -99,6 +100,7 @@ G6 PostgreSQL and Kubernetes promotion
 - G3.8F2는 전역 current strategy selection과 exact account를 묶는 schema v21 singleton lease, 단조 증가 fencing token, 10초 heartbeat/30초 TTL, stale-owner 회수, C3/D/E transaction 내부 exact fence 재검증과 `paper-run-loop`의 success/failure/SIGINT/SIGTERM cleanup을 local에서 검증한다. 현재 selection 자체가 전역이므로 runner도 전역 직렬화하며, broker call·credential·public API/UI·deployment·shadow/live authority 또는 수익성을 뜻하지 않는다. 세부 근거는 [`gates/g3p-always-on-paper-runner.md`](gates/g3p-always-on-paper-runner.md)에 둔다.
 - local 검증, broker sandbox, live readiness, 실제 운영 증거를 따로 보고한다.
 - G1.15는 기존 native holding 계산을 sanitized GET과 독립 Flutter 상세에 연결한다. 같은 원장 revision의 수량·원가·가격·평가, exact nanosecond 24시간 경계, 통화별 합계와 sample/stale 경계, empty/partial/retained-error 화면 및 내부 ID 비노출을 로컬 검증한다. 2026-09-05 `make check`는 Go 전체, Flutter 74개, Python 17개, JSON 계약 15개와 scoped cleanup을 통과했다. 전체 계좌 평가, broker-backed freshness, 물리기기·수동 screen-reader 검증 또는 배포 증거는 아니다. 세부 근거는 [`gates/g1k-holding-valuation-view.md`](gates/g1k-holding-valuation-view.md)에 둔다.
+- G1.16은 G1.9의 revision-bound cursor를 Flutter에서 50건 단위로 탐색하고 첫 snapshot·nanosecond 순서·cursor trail·known-good 오류 보존을 강제한다. 최종 `make check`의 Go 전체·Flutter 98개·Python 34개·JSON 17개와 실제 release Chrome의 101→102건 snapshot 교체·3개 페이지 왕복·오류 보존·loopback 외 요청 0개를 통과했다. broker activity, physical-device accessibility, 배포·live readiness는 아니다. [세부 gate](gates/g1l-ledger-activity-pagination.md)
 - external deploy, credential, live 주문, push는 명시 승인 없이는 실행하지 않는다.
 - G3.8G1은 기존 SMA 판정을 공유한 offline 목표 제안과 입력 hash·종목·연구 이후 시점 경계만 증명한다. 2026-09-05 `make check`의 Go 전체·Flutter 전체·Python 25개·JSON 16개 구문 검사·owned cleanup self-test가 통과했다. JSON schema 필드/분기는 별도 회귀 검사이며 완전한 JSON Schema validator 실행은 아니다. 재해시 가능한 비신뢰 입력은 Go registry·선택 검증을 대체하지 않는다. 신호 admission·session/bar ingress·paper 체결 운영 연결은 G3.8G2에 남아 있다. [세부 gate](gates/g3q-paper-signal-proposals.md)
 

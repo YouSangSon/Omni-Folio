@@ -15,7 +15,7 @@
 ## Next
 
 - [x] 테스트 시작/정리 preflight: 관측 실패·빈 값의 사전 차단 40개 하위 사례, 실제 smoke build failure 자손 누수 RED/GREEN, 성공·실패·SIGINT·SIGTERM 11개 process-tree matrix와 하네스 중단 정리를 통과했다. 최종 `make check`·실제 `make smoke` 종료 후 소유 listener·binary·temp root 없음을 확인. SIGKILL·host crash guardian 복구는 별도 ([gate](gates/g0-resource-preflight.md)).
-- [ ] 거래 내역 전체 탐색: revision-bound cursor의 50건 단위 이전/다음 페이지 구현·회귀 보강 중. 첫 snapshot 보존, import/refresh 원자 교체, 양방향 나노초 순서·커서 loop, 오류·중복 클릭·화면 종료·스크롤·접근성과 실제 브라우저 검증 후 판정.
+- [x] G1.16 거래 내역 전체 탐색: revision-bound cursor의 50건 단위 이전/다음 페이지, 첫 snapshot·cursor trail 보존, import/refresh 원자 교체, 양방향 nanosecond 경계·cursor loop, 오류·중복 클릭·dispose·스크롤·접근성을 Flutter 13개와 전체 98개에서 검증. 실제 release Chrome에서 101→102건 스냅샷, 3페이지 왕복, 400 오류 보존·키보드 복구·외부 요청 0개와 소유 자원 정리 통과 ([gate](gates/g1l-ledger-activity-pagination.md)).
 - [x] G3.8H 브라우저 통합 확인: 실제 CLI로 저장한 정책을 Flutter release/Chrome에서 조회하고 375·768·1440 화면, 오류 후 원래 관찰 보존, 키보드 재조회·복귀와 owned cleanup 확인. 실행 불가 계좌 예제를 고치고 실제 초기화 명령 RED/GREEN·race 검증. baseline 비교·물리 screen reader·frame budget은 별도 ([gate](gates/g3ad-paper-monitor-browser.md)).
 - [x] G2 로컬 한글 폰트 전달: upstream 고정 Noto Sans KR·OFL과 Cupertino 아이콘을 번들에 포함하고 기본/명시적 버튼 테마의 폰트 누락을 RED/GREEN으로 수정. 새 release 브라우저에서 loopback 외 요청을 차단하고 Home·Import·Connections·monitor 및 외부 요청 0건 검증 ([gate](gates/g2d-local-fonts.md)).
 - [ ] G2 폰트 후속: 약 9.9 MiB 번들의 초기 표시/전송 비용, 물리 iOS·Android glyph·profile과 웹 origin 자체가 없는 offline bootstrap은 별도 검증. 로컬 서버 접근만 허용한 브라우저 결과를 완전한 offline PWA로 승격하지 않음.

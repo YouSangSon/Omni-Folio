@@ -122,7 +122,7 @@ class FakeApi implements OmniApi {
       throw UnsupportedError('Loaded only from the monitor detail page.');
 
   @override
-  Future<LedgerActivityPage> ledgerActivities() async {
+  Future<LedgerActivityPage> ledgerActivities({String? cursor}) async {
     activityCalls += 1;
     if (fail || failActivities) {
       throw const ApiException('account-main event-secret receipt-secret');

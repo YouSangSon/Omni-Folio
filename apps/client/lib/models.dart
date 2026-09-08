@@ -718,20 +718,22 @@ class LedgerActivityPage {
     final nextCursor = _nullableText(json, 'next_cursor');
     if (source != 'local_ledger' ||
         freshness != 'unverified' ||
-        !RegExp(r'^rev_[0-9]{10}$').hasMatch(ledgerRevision)) {
+        !RegExp(r'^rev_[0-9]{10}$').hasMatch(ledgerRevision) ||
+        (nextCursor != null && nextCursor.length > 1024)) {
       throw const FormatException('Invalid ledger activity metadata');
     }
     final events = _jsonList(
       json,
       'events',
     ).map(LedgerActivity.fromJson).toList(growable: false);
-    if (events.length > 100) {
-      throw const FormatException('Too many ledger activities');
+    if (events.length > 50 || (nextCursor != null && events.length != 50)) {
+      throw const FormatException('Invalid ledger activity page size');
     }
     for (var index = 1; index < events.length; index += 1) {
-      if (DateTime.parse(
-        events[index].occurredAt,
-      ).isAfter(DateTime.parse(events[index - 1].occurredAt))) {
+      if (_utcNanoseconds(
+            events[index].occurredAt,
+          ).compareTo(_utcNanoseconds(events[index - 1].occurredAt)) >
+          0) {
         throw const FormatException('Ledger activities must be newest first');
       }
     }
@@ -751,6 +753,33 @@ class LedgerActivityPage {
   final String recordedAt;
   final List<LedgerActivity> events;
   final String? nextCursor;
+
+  void requireContinuationOf({
+    required LedgerActivityPage initial,
+    required String upperBoundOccurredAt,
+    required String requestedCursor,
+    String? lowerBoundOccurredAt,
+    Iterable<String> traversedCursors = const [],
+  }) {
+    final continuationCursor = nextCursor;
+    if (events.isEmpty ||
+        ledgerRevision != initial.ledgerRevision ||
+        recordedAt != initial.recordedAt ||
+        (continuationCursor != null &&
+            (continuationCursor == requestedCursor ||
+                traversedCursors.contains(continuationCursor))) ||
+        _utcNanoseconds(
+              events.first.occurredAt,
+            ).compareTo(_utcNanoseconds(upperBoundOccurredAt)) >
+            0 ||
+        (lowerBoundOccurredAt != null &&
+            _utcNanoseconds(
+                  events.last.occurredAt,
+                ).compareTo(_utcNanoseconds(lowerBoundOccurredAt)) <
+                0)) {
+      throw const FormatException('Invalid ledger activity continuation');
+    }
+  }
 }
 
 class LedgerActivity {

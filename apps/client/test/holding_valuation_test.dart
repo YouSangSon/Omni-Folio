@@ -557,7 +557,7 @@ class _TestApi implements OmniApi {
       throw UnsupportedError('Not used by this fixture.');
 
   @override
-  Future<LedgerActivityPage> ledgerActivities() async =>
+  Future<LedgerActivityPage> ledgerActivities({String? cursor}) async =>
       const LedgerActivityPage(
         source: 'local_ledger',
         brokerFreshness: 'unverified',
