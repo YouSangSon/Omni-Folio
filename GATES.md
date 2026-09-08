@@ -29,7 +29,8 @@ G1 ledger vertical slice
 ├─ G1.14 versioned recurring FIFO cost allocation + residual conservation
 ├─ G1.15 sanitized stored-price holding valuation API and Flutter detail
 ├─ G1.16 revision-bound Flutter ledger activity pagination
-└─ G1.17 one-cutoff current KRW whole-portfolio valuation
+├─ G1.17 one-cutoff current KRW whole-portfolio valuation
+└─ G1.18 current valuation release browser and single-announcement semantics
    |
 G2 client vertical slice
 ├─ G2.1 Flutter iOS/Android/web build

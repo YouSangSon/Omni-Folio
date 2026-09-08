@@ -690,6 +690,7 @@ class _CurrentPortfolioValuationCard extends StatelessWidget {
         child: Semantics(
           container: true,
           liveRegion: !busy,
+          excludeSemantics: true,
           label: '$title. $body',
           child: Padding(
             padding: const EdgeInsets.all(20),
@@ -739,8 +740,13 @@ class _CurrentPortfolioValuationCard extends StatelessWidget {
         child: Semantics(
           container: true,
           liveRegion: true,
-          label:
-              '$title. $body. ${notices.join('. ')}. 평가 시각 $valuationTimeText',
+          excludeSemantics: true,
+          label: [
+            title,
+            body,
+            ...notices,
+            '평가 시각 $valuationTimeText',
+          ].join('\n'),
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Column(

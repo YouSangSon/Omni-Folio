@@ -14,6 +14,7 @@
 
 ## Next
 
+- [x] G1.18 현재 평가 release browser QA: 실제 KRW 입금 합계·503 정상값 보존·USD 환율 누락 후 합계 제거·375/768/1440 반응형·키보드 재조회를 검증했다. 오류/평가 불가 카드의 중복 semantics와 새 테스트 handle 해제 순서를 교정했고 Flutter 108개·Go 전체 재사용·Python 34개·JSON 17개·수정 후 release 및 owned cleanup을 통과했다. 물리 screen reader와 시각 baseline 비교는 별도 ([gate](gates/g1n-current-valuation-browser.md)).
 - [x] 테스트 시작/정리 preflight: 관측 실패·빈 값의 사전 차단 40개 하위 사례, 실제 smoke build failure 자손 누수 RED/GREEN, 성공·실패·SIGINT·SIGTERM 11개 process-tree matrix와 하네스 중단 정리를 통과했다. 최종 `make check`·실제 `make smoke` 종료 후 소유 listener·binary·temp root 없음을 확인. SIGKILL·host crash guardian 복구는 별도 ([gate](gates/g0-resource-preflight.md)).
 - [x] G1.16 거래 내역 전체 탐색: revision-bound cursor의 50건 단위 이전/다음 페이지, 첫 snapshot·cursor trail 보존, import/refresh 원자 교체, 양방향 nanosecond 경계·cursor loop, 오류·중복 클릭·dispose·스크롤·접근성을 Flutter 13개와 전체 98개에서 검증. 실제 release Chrome에서 101→102건 스냅샷, 3페이지 왕복, 400 오류 보존·키보드 복구·외부 요청 0개와 소유 자원 정리 통과 ([gate](gates/g1l-ledger-activity-pagination.md)).
 - [x] G1.17 현재 KRW 전체 평가: replay-verified 원장·현금·보유자산·local fixture 가격·직접 FX를 서버 cutoff 하나와 read transaction 하나에서 exact 합산하고, 누락·stale·모호 입력은 모든 aggregate를 숨긴다. query 없는 closed API, Flutter optional known-good 소비, revision mismatch·sample/broker 비권위·320px/200% semantics를 검증한다 ([gate](gates/g1m-current-portfolio-valuation.md)).

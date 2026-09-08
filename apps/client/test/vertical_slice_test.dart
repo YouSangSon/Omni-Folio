@@ -2820,6 +2820,64 @@ void main() {
     expect(find.textContaining('현재 원장에 평가할'), findsNothing);
   });
 
+  testWidgets('failed valuation announces each sentence once', (tester) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      await tester.pumpWidget(
+        OmniFolioApp(api: goldenApi()..failCurrentValuation = true),
+      );
+      await pumpUi(tester);
+      final title = find.text('전체 평가를 불러오지 못했습니다');
+      await tester.dragUntilVisible(
+        title,
+        find.byType(ListView),
+        const Offset(0, -200),
+      );
+      final label = tester.getSemantics(title).getSemanticsData().label;
+      expect('전체 평가를 불러오지 못했습니다'.allMatches(label).length, 1);
+      expect('새로고침하면 다시 계산합니다'.allMatches(label).length, 1);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('unavailable valuation announces each sentence once', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      final api = goldenApi()
+        ..currentValuationValue = currentPortfolioValuation(
+          status: 'unavailable',
+          sample: false,
+          cashValue: null,
+          holdingsValue: null,
+          totalValue: null,
+          issues: const [
+            {
+              'code': 'missing_direct_fx',
+              'message': 'missing FX',
+              'field': 'USD',
+            },
+          ],
+        );
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+      final title = find.text('전체 평가를 계산할 수 없음');
+      await tester.dragUntilVisible(
+        title,
+        find.byType(ListView),
+        const Offset(0, -200),
+      );
+      final label = tester.getSemantics(title).getSemanticsData().label;
+      expect('전체 평가를 계산할 수 없음'.allMatches(label).length, 1);
+      expect('부분 합계는 표시하지 않습니다'.allMatches(label).length, 1);
+      expect('평가 시각'.allMatches(label).length, 1);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
   testWidgets('first-run action stays compact on desktop', (tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1;
