@@ -323,7 +323,8 @@ func TestG38C2PaperAuthorization(t *testing.T) {
 			t.Fatal("paper order reached Kiwoom transport")
 			return nil, nil
 		}))
-		if submitted, err := svc.submitAuthorizedKiwoomMockOrder(context.Background(), client, order.OrderID, lease.FencingToken); err == nil || submitted != nil {
+		dispatch := mustKiwoomMockLimitOrderDispatch(t, client)
+		if submitted, err := svc.submitAuthorizedLimitOrder(context.Background(), dispatch, order.OrderID, lease.FencingToken); err == nil || submitted != nil {
 			t.Fatalf("paper order entered Kiwoom submit: state=%+v err=%v", submitted, err)
 		}
 		for _, statement := range []string{

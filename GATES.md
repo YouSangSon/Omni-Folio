@@ -76,6 +76,7 @@ G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4S Kiwoom credential-free durable latest-trade observation
 ├─ G4T Kiwoom credential-free one-shot latest-trade capture
 ├─ G4U owner-declared instrument listing ownership and Kiwoom enforcement
+├─ G4V/K2B3 provider-bound credential-free LIMIT dispatch capability port
 ├─ K2B Kiwoom mock-order broker transport and lookup recovery
 └─ then Toss Securities read-only as the second adapter
    |
@@ -101,6 +102,7 @@ G6 PostgreSQL and Kubernetes promotion
 - local 검증, broker sandbox, live readiness, 실제 운영 증거를 따로 보고한다.
 - G1.15는 기존 native holding 계산을 sanitized GET과 독립 Flutter 상세에 연결한다. 같은 원장 revision의 수량·원가·가격·평가, exact nanosecond 24시간 경계, 통화별 합계와 sample/stale 경계, empty/partial/retained-error 화면 및 내부 ID 비노출을 로컬 검증한다. 2026-09-05 `make check`는 Go 전체, Flutter 74개, Python 17개, JSON 계약 15개와 scoped cleanup을 통과했다. 전체 계좌 평가, broker-backed freshness, 물리기기·수동 screen-reader 검증 또는 배포 증거는 아니다. 세부 근거는 [`gates/g1k-holding-valuation-view.md`](gates/g1k-holding-valuation-view.md)에 둔다.
 - G1.16은 G1.9의 revision-bound cursor를 Flutter에서 50건 단위로 탐색하고 첫 snapshot·nanosecond 순서·cursor trail·known-good 오류 보존을 강제한다. 최종 `make check`의 Go 전체·Flutter 98개·Python 34개·JSON 17개와 실제 release Chrome의 101→102건 snapshot 교체·3개 페이지 왕복·오류 보존·loopback 외 요청 0개를 통과했다. broker activity, physical-device accessibility, 배포·live readiness는 아니다. [세부 gate](gates/g1l-ledger-activity-pagination.md)
+- G4V/K2B3는 Kiwoom mock LIMIT submit을 provider/mode-bound value capability 뒤로 옮겨 application service에서 credential·환경·provider error 타입을 제거한다. zero/mismatch capability는 preflight 전에 차단하고 durable dispatch-before-write, one-shot write, definitive reject와 conservative unknown, raw detail redaction을 유지한다. 새 provider, credential, public API/UI, DB/schema 또는 live authority는 아니다. [세부 gate](gates/g4v-k2b3-limit-order-dispatch-port.md)
 - external deploy, credential, live 주문, push는 명시 승인 없이는 실행하지 않는다.
 - G3.8G1은 기존 SMA 판정을 공유한 offline 목표 제안과 입력 hash·종목·연구 이후 시점 경계만 증명한다. 2026-09-05 `make check`의 Go 전체·Flutter 전체·Python 25개·JSON 16개 구문 검사·owned cleanup self-test가 통과했다. JSON schema 필드/분기는 별도 회귀 검사이며 완전한 JSON Schema validator 실행은 아니다. 재해시 가능한 비신뢰 입력은 Go registry·선택 검증을 대체하지 않는다. 신호 admission·session/bar ingress·paper 체결 운영 연결은 G3.8G2에 남아 있다. [세부 gate](gates/g3q-paper-signal-proposals.md)
 
