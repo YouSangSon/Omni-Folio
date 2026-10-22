@@ -55,9 +55,15 @@ func (s *Service) currentPortfolioValuation(ctx context.Context) (*CurrentPortfo
 	if revision(ledgerRevision) != snapshot.LedgerRevision || proofRecordedAt != snapshot.RecordedAt {
 		return nil, internalError(errors.New("ledger snapshot proof mismatch"))
 	}
-	ledgerAsOf, ledgerAsOfErr := time.Parse(time.RFC3339Nano, snapshot.AsOf)
+	// Keep legacy snapshot/backup replay unchanged; this read contract needs the exact event cutoff.
+	ledgerAsOfRaw := zeroTime
+	err = tx.QueryRowContext(ctx, `SELECT occurred_at FROM events ORDER BY rtrim(occurred_at,'Z') DESC,sequence DESC LIMIT 1`).Scan(&ledgerAsOfRaw)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, internalError(err)
+	}
+	ledgerAsOf, ledgerAsOfErr := time.Parse(time.RFC3339Nano, ledgerAsOfRaw)
 	ledgerRecordedAt, ledgerRecordedAtErr := time.Parse(time.RFC3339Nano, snapshot.RecordedAt)
-	if ledgerAsOfErr != nil || ledgerRecordedAtErr != nil || !canonicalUTCString(snapshot.AsOf) || !canonicalUTCString(snapshot.RecordedAt) {
+	if ledgerAsOfErr != nil || ledgerRecordedAtErr != nil || !canonicalUTCString(ledgerAsOfRaw) || !canonicalUTCString(snapshot.RecordedAt) {
 		return nil, internalError(errors.New("ledger snapshot timestamps are invalid"))
 	}
 	if valuationTime.Before(ledgerAsOf) || valuationTime.Before(ledgerRecordedAt) {
@@ -85,7 +91,7 @@ func (s *Service) currentPortfolioValuation(ctx context.Context) (*CurrentPortfo
 		Scope: "whole_portfolio", PolicyVersion: currentPortfolioValuationPolicy,
 		MaxObservationAgeSeconds: int64(cashFXMaxAge / time.Second),
 		BaseCurrency:             currentPortfolioValuationBaseCurrency, ValuationAsOf: valuationAsOf,
-		LedgerRevision: snapshot.LedgerRevision, LedgerAsOf: snapshot.AsOf, LedgerRecordedAt: snapshot.RecordedAt,
+		LedgerRevision: snapshot.LedgerRevision, LedgerAsOf: ledgerAsOfRaw, LedgerRecordedAt: snapshot.RecordedAt,
 		Status: "complete", Issues: []APIError{},
 	}
 	if len(snapshot.Cash) == 0 && len(snapshot.Holdings) == 0 {

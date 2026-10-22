@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -12,6 +13,37 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestLedgerActivitiesOrderFractionalSecondsAcrossPages(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	applyTestCSV(t, svc, "fractional-activities", testCSV(
+		"whole,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,KRW,1",
+		"nano,account-main,DEPOSIT,2026-01-01T00:00:00.000000001Z,,,,,KRW,2",
+		"tenth,account-main,DEPOSIT,2026-01-01T00:00:00.1Z,,,,,KRW,3",
+		"tenth-tie,account-main,DEPOSIT,2026-01-01T00:00:00.1Z,,,,,KRW,4",
+		"later,account-main,DEPOSIT,2026-01-01T00:00:00.11Z,,,,,KRW,5",
+	))
+	var cursor *ledgerActivityCursor
+	for i, want := range []string{"5", "4", "3", "2", "1"} {
+		page, err := svc.ledgerActivities(context.Background(), 1, cursor)
+		if err != nil || len(page.Events) != 1 || page.Events[0].Amount != want {
+			t.Fatalf("page %d: want amount %s, page=%+v err=%v", i, want, page, err)
+		}
+		if i == 4 {
+			if page.NextCursor != nil {
+				t.Fatal("unexpected continuation")
+			}
+			break
+		}
+		if page.NextCursor == nil {
+			t.Fatal("missing continuation")
+		}
+		cursor, err = svc.decodeLedgerActivityCursor(*page.NextCursor)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 
 func TestG1ELedgerActivitiesArePagedNewestFirstAndRedacted(t *testing.T) {
 	svc, _ := testService(t, nil, nil)

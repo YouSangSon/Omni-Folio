@@ -13,6 +13,25 @@ import (
 
 const currentPortfolioValuationAsOf = "2026-01-11T14:00:00Z"
 
+func TestCurrentPortfolioValuationFractionalLedgerCutoff(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	applyTestCSV(t, svc, "fractional-cutoff", testCSV(
+		"whole,account-main,DEPOSIT,2026-01-11T00:00:00Z,,,,,KRW,1",
+		"fraction,account-main,DEPOSIT,2026-01-11T00:00:00.9Z,,,,,KRW,2",
+	))
+	svc.now = func() time.Time { return mustTime("2026-01-11T00:00:00.1Z") }
+	response := httptest.NewRecorder()
+	svc.routes().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/portfolio/current-valuation", nil))
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("future fractional event was valued: status=%d body=%s", response.Code, response.Body.String())
+	}
+	svc.now = func() time.Time { return mustTime("2026-01-11T00:00:01Z") }
+	valuation, appErr := svc.currentPortfolioValuation(context.Background())
+	if appErr != nil || valuation.LedgerAsOf != "2026-01-11T00:00:00.9Z" || valuation.TotalValue == nil || valuation.TotalValue.Amount != "3" {
+		t.Fatalf("latest exact ledger timestamp lost: valuation=%+v err=%v", valuation, appErr)
+	}
+}
+
 func TestCurrentPortfolioValuationUsesOneExactKRWCutoff(t *testing.T) {
 	svc, _ := testService(t, nil, nil)
 	applyTestCSV(t, svc, "current-portfolio-valuation-seed", testCSV(
