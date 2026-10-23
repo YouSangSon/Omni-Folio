@@ -30,7 +30,8 @@ G1 ledger vertical slice
 ├─ G1.15 sanitized stored-price holding valuation API and Flutter detail
 ├─ G1.16 revision-bound Flutter ledger activity pagination
 ├─ G1.17 one-cutoff current KRW whole-portfolio valuation
-└─ G1.18 current valuation release browser and single-announcement semantics
+├─ G1.18 current valuation release browser and single-announcement semantics
+└─ G1.19 exact fractional-second activity ordering and valuation cutoff
    |
 G2 client vertical slice
 ├─ G2.1 Flutter iOS/Android/web build
@@ -105,6 +106,7 @@ G6 PostgreSQL and Kubernetes promotion
 - G1.15는 기존 native holding 계산을 sanitized GET과 독립 Flutter 상세에 연결한다. 같은 원장 revision의 수량·원가·가격·평가, exact nanosecond 24시간 경계, 통화별 합계와 sample/stale 경계, empty/partial/retained-error 화면 및 내부 ID 비노출을 로컬 검증한다. 2026-09-05 `make check`는 Go 전체, Flutter 74개, Python 17개, JSON 계약 15개와 scoped cleanup을 통과했다. 전체 계좌 평가, broker-backed freshness, 물리기기·수동 screen-reader 검증 또는 배포 증거는 아니다. 세부 근거는 [`gates/g1k-holding-valuation-view.md`](gates/g1k-holding-valuation-view.md)에 둔다.
 - G1.16은 G1.9의 revision-bound cursor를 Flutter에서 50건 단위로 탐색하고 첫 snapshot·nanosecond 순서·cursor trail·known-good 오류 보존을 강제한다. 최종 `make check`의 Go 전체·Flutter 98개·Python 34개·JSON 17개와 실제 release Chrome의 101→102건 snapshot 교체·3개 페이지 왕복·오류 보존·loopback 외 요청 0개를 통과했다. broker activity, physical-device accessibility, 배포·live readiness는 아니다. [세부 gate](gates/g1l-ledger-activity-pagination.md)
 - G1.17은 서버 소유 UTC cutoff 하나와 read transaction 하나에서 replay-verified 원장 cash와 보유자산 시장가를 KRW로 exact 합산한다. local fixture 가격과 `currency -> KRW` 직접 FX만 사용하고 하나라도 missing/stale/ambiguous이면 cash/holdings/total aggregate를 모두 숨긴다. Flutter는 optional read로 알려진 정상 응답과 원래 revision/cutoff를 함께 보존하며 local sample·현재 증권사 값 아님·revision mismatch를 표시한다. 원가 환산·PnL·성과·provider freshness·broker/live truth는 아니다. [세부 gate](gates/g1m-current-portfolio-valuation.md)
+- G1.19는 canonical UTC 소수초의 거래 내역 정렬·cursor 경계와 현재 평가 cutoff를 같은 정확한 시각 순서로 처리한다. 기존 FIFO·snapshot·backup 정책 교정은 별도 후속 과제다. [세부 gate](gates/g1o-exact-activity-cutoff.md)
 - G4V/K2B3는 Kiwoom mock LIMIT submit을 provider/mode-bound value capability 뒤로 옮겨 application service에서 credential·환경·provider error 타입을 제거한다. zero/mismatch capability는 preflight 전에 차단하고 durable dispatch-before-write, one-shot write, definitive reject와 conservative unknown, raw detail redaction을 유지한다. 새 provider, credential, public API/UI, DB/schema 또는 live authority는 아니다. [세부 gate](gates/g4v-k2b3-limit-order-dispatch-port.md)
 - external deploy, credential, live 주문, push는 명시 승인 없이는 실행하지 않는다.
 - G3.8G1은 기존 SMA 판정을 공유한 offline 목표 제안과 입력 hash·종목·연구 이후 시점 경계만 증명한다. 2026-09-05 `make check`의 Go 전체·Flutter 전체·Python 25개·JSON 16개 구문 검사·owned cleanup self-test가 통과했다. JSON schema 필드/분기는 별도 회귀 검사이며 완전한 JSON Schema validator 실행은 아니다. 재해시 가능한 비신뢰 입력은 Go registry·선택 검증을 대체하지 않는다. 신호 admission·session/bar ingress·paper 체결 운영 연결은 G3.8G2에 남아 있다. [세부 gate](gates/g3q-paper-signal-proposals.md)

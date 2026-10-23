@@ -15,6 +15,19 @@ RFC3339Nano는 소수부의 뒤쪽 0을 생략한다. `00Z`가 `00.9Z`보다 문
 - 수정 후 독립 읽기 전용 리뷰: 새 정렬과 cursor 조건·동일 transaction·기존 복구 계약 보존에 병합 차단 사항 없음. 리뷰는 실행 결과를 대신하지 않는다.
 - 원시 로그: ignored `docs/_internal/skill-outputs/goal-20261022-time-{red,green}.log`.
 
+## 최종 로컬 검증 (2026-10-23)
+
+Go 1.24.5, Flutter 3.47.1-stable, Python 3.14.5의 절대 경로와 자식 process PATH를 고정했다. 실행 소스는 `6283e70`이며 이후 변경은 gate 문서뿐이다.
+
+- `make check`는 format·Go vet·Flutter analyze·Python compile·내부 Go 5 package를 통과했지만 root Go package의 기본 10분 제한으로 exit 2였다.
+- 같은 root package를 `make test CORE_TEST_PACKAGES='-timeout=30m .'`로 끝까지 실행했다. 1544.039초 뒤 SIGKILL 복구 child 종료와 stream executable 빌드의 `crypto/x509` 조회 오류 두 건으로 exit 2였다. 나머지 Go 검사에는 실패가 없었다.
+- 해당 두 테스트를 원래 개별 deadline 그대로 다시 실행했다: `make test CORE_TEST_PACKAGES="-timeout=10m -run='TestLocalPaperExecutableSignalRecovery|TestPaperStreamExecutableLifecycle' -count=1 ."` exit 0. Go 200.734초, Flutter 108개, Python 34개, resource preflight와 cleanup self-test가 통과했다. 이전 두 실패의 원인은 확정하지 않았으며, 소스나 개별 deadline을 바꿔 통과시킨 것은 아니다.
+- `make contract-check` exit 0: JSON 17개 구문 확인. 완전한 JSON Schema 적합성 검사와 구분한다. `make smoke` exit 0: 실제 임시 Go/SQLite의 health·status·preview/apply·중복/충돌·snapshot·activity·market data와 종료 정리를 확인했다.
+- 실패 필터의 첫 셸 인용 오류와 사용자 요청에 따른 중단 실행은 통과 근거에서 제외했다. 동일 실행 소스의 통과 범위를 재사용한 분할 검증이며, 전체 `make check` 일괄 성공이나 GitHub CI 성공으로 표현하지 않는다. 저장소 Actions workflow는 0개다.
+- Flutter 소스는 G1.18 release 브라우저 검증 당시 `d9e98aa`와 동일하다. 해당 UI 근거를 재사용하며 새 실제 기기·screen-reader·배포 검증은 주장하지 않는다.
+
+로컬 로그: `docs/_internal/skill-outputs/goal-20261022-pinned-{check,test-budget}.log`, `goal-20261023-resumed-{recovery,contract-check,smoke}.log`.
+
 ## 호환성과 남은 위험
 
 기존 `snapshotFrom`의 FIFO 정렬·AsOf, broker quantity replay와 cash-void DB trigger에도 문자열 시각 비교가 남아 있다. 이를 곧바로 교체하면 기존 backup의 snapshot JSON/provenance/asOf 동등성 검사를 깨뜨릴 수 있다. 별도 버전 정책과 이전 backup 복원·경제 결과 대조가 필요하다. 이번 수정은 해당 금융 replay 문제의 해결을 주장하지 않는다.
