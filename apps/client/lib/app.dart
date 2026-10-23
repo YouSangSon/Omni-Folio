@@ -7,6 +7,7 @@ import 'holding_valuation_page.dart';
 import 'instrument_ledger_page.dart';
 import 'models.dart';
 import 'paper_monitor_page.dart';
+import 'research_report_page.dart';
 
 class OmniFolioApp extends StatefulWidget {
   const OmniFolioApp({super.key, required this.api});
@@ -2548,6 +2549,26 @@ class DataPage extends StatelessWidget {
         _buildReconciliation(context),
         const SizedBox(height: 12),
         _buildLocalOrders(context),
+        const SizedBox(height: 12),
+        _SectionCard(
+          title: '백테스트 보고서',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('가장 나중에 등록된 연구 결과 · 지표 재계산 안 함'),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => ResearchReportPage(api: api),
+                  ),
+                ),
+                icon: const Icon(Icons.analytics_outlined),
+                label: const Text('백테스트 보고서 보기'),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 12),
         _SectionCard(
           title: '모의 자동매매 상태',

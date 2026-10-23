@@ -55,10 +55,13 @@ G3 research vertical slice
 ├─ G3.8C3 immutable marks and account-global performance evidence
 ├─ G3.8D current-selection strategy-window performance evidence
 ├─ G3.8E versioned paper performance safety policy and atomic automatic action
-└─ G3.8F scheduled local paper policy runner
-   ├─ G3.8F1 one-shot paper policy command
-   ├─ G3.8F2 DB-leased/fenced always-on runner
-   └─ G3.8F3 latest pending current-selection policy recovery
+├─ G3.8F scheduled local paper policy runner
+│  ├─ G3.8F1 one-shot paper policy command
+│  ├─ G3.8F2 DB-leased/fenced always-on runner
+│  └─ G3.8F3 latest pending current-selection policy recovery
+├─ G3.8G offline proposals and local paper workflow subgates
+├─ G3.8H stored paper policy status API and Flutter view
+└─ G3.9 stored research report API and Flutter view
    |
 G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4A Kiwoom K0 read contract
@@ -150,5 +153,7 @@ G6 PostgreSQL and Kubernetes promotion
 - G3.8H 브라우저 후속은 실제 Go API에서 정책 없음·저장 정책·offline 보존·키보드 복귀와 375/768/1440 렌더링을 확인하고, 실행 불가 문서 alias를 실제 CLI 회귀 테스트로 교정했다. 소유 자원 정리 통과. visual baseline·physical profile·cold-start offline 한글 표시는 아직 증명하지 않았다. [gate](gates/g3ad-paper-monitor-browser.md)
 
 - G2 로컬 폰트 전달은 고정 Noto/OFL·Cupertino 자산과 공통 버튼 폰트 수정으로 외부 한글 fallback 의존을 제거했다. Flutter 85·새 release 브라우저의 loopback-only 17 GET/외부 요청 0·owned cleanup 통과. 9.9 MiB payload, 물리 glyph/profile과 offline-origin bootstrap은 별도다. [gate](gates/g2d-local-fonts.md)
+
+- G3.9는 최신 등록 연구를 읽는 GET·Flutter 보고서와 지표 원문 정밀도·관측 보존을 검증한다. Go 전체·Flutter135·Python39·JSON17의 결합 검증과 실제 Python 등록→release 브라우저, offline 보존·키보드 복구·375px 다크 화면을 확인했다. 최신 등록은 현재 선택 전략과 무관하며, 지표 재계산·현재 포트폴리오 성과·실전 준비를 증명하지 않는다. [세부 gate](gates/g3ag-research-report.md)
 
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.

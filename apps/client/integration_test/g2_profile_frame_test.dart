@@ -8,6 +8,7 @@ import 'package:omni_folio_client/api.dart';
 import 'package:omni_folio_client/app.dart';
 import 'package:omni_folio_client/models.dart';
 import 'package:omni_folio_client/paper_monitor.dart';
+import 'package:omni_folio_client/research_report.dart';
 
 const _frameBudgetMs = 16.67;
 const _flutterVersion = String.fromEnvironment('G2_FLUTTER_VERSION');
@@ -248,6 +249,10 @@ class _ProfileApi implements OmniApi {
   @override
   Future<PaperMonitor> paperMonitor() =>
       throw UnsupportedError('Not part of the G2 frame fixture.');
+
+  @override
+  Future<ResearchReport> researchReport() =>
+      throw UnsupportedError('Loaded only from the research report page.');
 
   @override
   Future<LedgerActivityPage> ledgerActivities({String? cursor}) async =>
