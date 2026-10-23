@@ -58,7 +58,7 @@ func TestGoldenVerticalSliceAndBackupRestore(t *testing.T) {
 	}
 	legacyGolden := bytes.Replace(
 		fixture(t, "golden-snapshot.json"),
-		[]byte("  \"cost_basis_policy\": \"fifo_exact_else_half_even_residual_8_v1\",\n"),
+		[]byte("  \"cost_basis_policy\": \"fifo_utc_nanosecond_exact_else_half_even_residual_8_v2\",\n"),
 		nil,
 		1,
 	)
@@ -66,8 +66,8 @@ func TestGoldenVerticalSliceAndBackupRestore(t *testing.T) {
 	if err := os.WriteFile(legacyGoldenPath, legacyGolden, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := verifyRestoreProof(backup, legacyGoldenPath); err != nil {
-		t.Fatal("compatible legacy golden was rejected:", err)
+	if _, err := verifyRestoreProof(backup, legacyGoldenPath); err == nil {
+		t.Fatal("current backup accepted a golden without an explicit replay policy")
 	}
 	if err := verifyManifest(backup, fixturePath("golden-snapshot.json"), fixturePath("invalid-backup-manifest.json")); err == nil {
 		t.Fatal("rejected backup manifest was accepted")
@@ -163,8 +163,8 @@ func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 	properties := schema["properties"].(map[string]any)
-	if properties["format_version"].(map[string]any)["const"] != "omni-folio-backup.v15" ||
-		properties["schema_version"].(map[string]any)["const"] != "omni-folio.sqlite.v21" {
+	if properties["format_version"].(map[string]any)["const"] != "omni-folio-backup.v16" ||
+		properties["schema_version"].(map[string]any)["const"] != "omni-folio.sqlite.v22" {
 		t.Fatal("backup contract version drifted from the runtime")
 	}
 
@@ -400,7 +400,7 @@ func assertRecurringFIFOSnapshot(t *testing.T, svc *Service, holdings []Holding,
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(encoded), `"cost_basis_policy":"fifo_exact_else_half_even_residual_8_v1"`) ||
+	if !strings.Contains(string(encoded), `"cost_basis_policy":"fifo_utc_nanosecond_exact_else_half_even_residual_8_v2"`) ||
 		!reflect.DeepEqual(snapshot.Holdings, holdings) ||
 		!reflect.DeepEqual(snapshot.RealizedPnL, []Money{{"USD", realized}}) {
 		t.Fatalf("recurring FIFO policy drifted: %s", encoded)
@@ -645,7 +645,7 @@ func TestHealthAndReadinessAreSeparate(t *testing.T) {
 	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(1, ?)`, "2026-01-10T15:00:00Z"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(22, ?)`, "2026-01-10T15:01:00Z"); err != nil {
+	if _, err := svc.db.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)`, latestSchema+1, "2026-01-10T15:01:00Z"); err != nil {
 		t.Fatal(err)
 	}
 	if w := request("/readyz"); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), `"code":"not_ready"`) {

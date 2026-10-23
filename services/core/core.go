@@ -32,12 +32,12 @@ import (
 const (
 	maxBodyBytes                       = 1 << 20
 	maxImportRows                      = 10_000
-	latestSchema                       = 21
+	latestSchema                       = 22
 	zeroTime                           = "1970-01-01T00:00:00Z"
 	csvSchema                          = "omni-folio.csv.v1"
 	mappingSchema                      = "canonical-transaction.v4"
-	backupFormat                       = "omni-folio-backup.v15"
-	backupSchema                       = "omni-folio.sqlite.v21"
+	backupFormat                       = "omni-folio-backup.v16"
+	backupSchema                       = "omni-folio.sqlite.v22"
 	legacyPaperRunnerFormat            = "omni-folio-backup.v14"
 	legacyPaperRunnerSchema            = "omni-folio.sqlite.v20"
 	legacyPaperPerformancePolicyFormat = "omni-folio-backup.v13"
@@ -189,7 +189,7 @@ type PortfolioSnapshot struct {
 	Provenance      Provenance `json:"provenance"`
 }
 
-const fifoCostBasisPolicy = "fifo_exact_else_half_even_residual_8_v1"
+const fifoCostBasisPolicy = "fifo_utc_nanosecond_exact_else_half_even_residual_8_v2"
 
 type BackupManifest struct {
 	FormatVersion                            string              `json:"format_version"`
@@ -338,6 +338,9 @@ func requireServerStartupRecovery(db *sql.DB) error {
 	if err := requireSchema(db); err != nil {
 		return err
 	}
+	if err := proveLedgerReplayState(context.Background(), db, false); err != nil {
+		return fmt.Errorf("ledger replay startup recovery: %w", err)
+	}
 	if _, err := provePaperPerformancePolicyRecovery(context.Background(), db); err != nil {
 		return fmt.Errorf("paper performance policy startup recovery: %w", err)
 	}
@@ -362,7 +365,7 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("unsupported schema version %d", current)
 		}
 	}
-	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql", "013_instrument_listing_events.sql", "014_paper_evaluation_events.sql", "015_paper_accounting_sessions.sql", "016_paper_market_signals.sql", "017_paper_execution_authorizations.sql", "018_paper_performance_events.sql", "019_paper_strategy_performance_events.sql", "020_paper_performance_policy_events.sql", "021_paper_runner_leases.sql"}
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql", "013_instrument_listing_events.sql", "014_paper_evaluation_events.sql", "015_paper_accounting_sessions.sql", "016_paper_market_signals.sql", "017_paper_execution_authorizations.sql", "018_paper_performance_events.sql", "019_paper_strategy_performance_events.sql", "020_paper_performance_policy_events.sql", "021_paper_runner_leases.sql", "022_ledger_replay_policy.sql"}
 	for version := current + 1; version <= latestSchema; version++ {
 		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
 		if err != nil {
@@ -916,8 +919,18 @@ func (s *Service) handleApply(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleSnapshot(w http.ResponseWriter, r *http.Request) {
-	snapshot, err := snapshotFrom(r.Context(), s.db)
+	tx, err := s.db.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
 	if err != nil {
+		writeError(w, internalError(err))
+		return
+	}
+	defer tx.Rollback()
+	snapshot, err := snapshotFrom(r.Context(), tx)
+	if err != nil {
+		writeError(w, internalError(err))
+		return
+	}
+	if err := tx.Commit(); err != nil {
 		writeError(w, internalError(err))
 		return
 	}
@@ -1470,12 +1483,40 @@ type position struct {
 }
 
 func snapshotFrom(ctx context.Context, q queryer) (*PortfolioSnapshot, error) {
+	if err := requireCurrentLedgerReplay(ctx, q); err != nil {
+		return nil, err
+	}
+	return snapshotFromPolicy(ctx, q, fifoCostBasisPolicy, -1)
+}
+
+func snapshotFromPolicy(ctx context.Context, q queryer, policy string, throughRevision int64) (*PortfolioSnapshot, error) {
+	order := "occurred_at, sequence"
+	if policy == fifoCostBasisPolicy {
+		order = "rtrim(occurred_at,'Z'), sequence"
+	} else if policy != legacyFIFOCostBasisPolicy {
+		return nil, errors.New("unsupported ledger replay policy")
+	}
 	var rev int64
 	var recorded string
 	if err := q.QueryRowContext(ctx, `SELECT revision, recorded_at FROM ledger_meta WHERE singleton=1`).Scan(&rev, &recorded); err != nil {
 		return nil, err
 	}
-	rows, err := q.QueryContext(ctx, `SELECT event_id,type,occurred_at,COALESCE(instrument_id,''),COALESCE(symbol,''),COALESCE(quantity,''),COALESCE(price,''),COALESCE(fee,''),currency,amount,COALESCE(counter_currency,''),COALESCE(counter_amount,''),receipt_id FROM events ORDER BY occurred_at, sequence`)
+	if throughRevision >= 0 {
+		if throughRevision > rev {
+			return nil, errors.New("ledger replay cutoff exceeds current revision")
+		}
+		rev = throughRevision
+		recorded = zeroTime
+		if rev > 0 {
+			if err := q.QueryRowContext(ctx, `SELECT recorded_at FROM events WHERE sequence=?`, rev).Scan(&recorded); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if !canonicalUTCString(recorded) {
+		return nil, errors.New("ledger recorded_at is not canonical UTC")
+	}
+	rows, err := q.QueryContext(ctx, `SELECT event_id,type,occurred_at,COALESCE(instrument_id,''),COALESCE(symbol,''),COALESCE(quantity,''),COALESCE(price,''),COALESCE(fee,''),currency,amount,COALESCE(counter_currency,''),COALESCE(counter_amount,''),receipt_id FROM events WHERE sequence<=? ORDER BY `+order, rev)
 	if err != nil {
 		return nil, err
 	}
@@ -1502,7 +1543,10 @@ func snapshotFrom(ctx context.Context, q queryer) (*PortfolioSnapshot, error) {
 			seenReceipt[receiptID] = true
 			receiptIDs = append(receiptIDs, receiptID)
 		}
-		if occurredAt > asOf {
+		if !canonicalUTCString(occurredAt) {
+			return nil, errors.New("ledger occurred_at is not canonical UTC")
+		}
+		if policy == fifoCostBasisPolicy || occurredAt > asOf {
 			asOf = occurredAt
 		}
 		if typ == "FX_EXCHANGE" {
@@ -1578,7 +1622,7 @@ func snapshotFrom(ctx context.Context, q queryer) (*PortfolioSnapshot, error) {
 		return nil, err
 	}
 	snapshot := &PortfolioSnapshot{
-		PortfolioID: "portfolio_main", LedgerRevision: revision(rev), CostBasisPolicy: fifoCostBasisPolicy, AsOf: asOf, RecordedAt: recorded,
+		PortfolioID: "portfolio_main", LedgerRevision: revision(rev), CostBasisPolicy: policy, AsOf: asOf, RecordedAt: recorded,
 		LiveEnabled: false, ValuationStatus: "unavailable", Cash: []Money{}, Holdings: []Holding{}, RealizedPnL: []Money{},
 		Provenance: Provenance{EventIDs: eventIDs, ReceiptIDs: receiptIDs},
 	}
@@ -2078,6 +2122,10 @@ func verifyBrokerRestoreProof(path string) (brokerRecoveryProof, error) {
 }
 
 func verifyRestoreProof(path, goldenPath string) (orderRecoveryProof, error) {
+	return verifyRestoreProofPolicy(path, goldenPath, false)
+}
+
+func verifyRestoreProofPolicy(path, goldenPath string, archival bool) (orderRecoveryProof, error) {
 	db, err := openExistingDB(path)
 	if err != nil {
 		return orderRecoveryProof{}, err
@@ -2093,7 +2141,17 @@ func verifyRestoreProof(path, goldenPath string) (orderRecoveryProof, error) {
 	if err := requireOrderRestoreSchema(db); err != nil {
 		return orderRecoveryProof{}, err
 	}
-	actual, err := snapshotFrom(context.Background(), db)
+	if err := proveLedgerReplayState(context.Background(), db, archival); err != nil {
+		return orderRecoveryProof{}, err
+	}
+	if _, _, err := (&Service{}).proveLedgerEvents(context.Background(), db); err != nil {
+		return orderRecoveryProof{}, err
+	}
+	policy := fifoCostBasisPolicy
+	if archival {
+		policy = legacyFIFOCostBasisPolicy
+	}
+	actual, err := snapshotFromPolicy(context.Background(), db, policy, -1)
 	if err != nil {
 		return orderRecoveryProof{}, err
 	}
@@ -2107,8 +2165,11 @@ func verifyRestoreProof(path, goldenPath string) (orderRecoveryProof, error) {
 	if err := dec.Decode(&golden); err != nil {
 		return orderRecoveryProof{}, fmt.Errorf("golden snapshot: %w", err)
 	}
-	if golden.CostBasisPolicy == "" {
-		golden.CostBasisPolicy = fifoCostBasisPolicy
+	if archival && golden.CostBasisPolicy == "" {
+		golden.CostBasisPolicy = legacyFIFOCostBasisPolicy
+	}
+	if golden.CostBasisPolicy != policy {
+		return orderRecoveryProof{}, errors.New("golden snapshot replay policy does not match artifact version")
 	}
 	actualJSON, _ := json.Marshal(actual)
 	goldenJSON, _ := json.Marshal(&golden)
@@ -2769,7 +2830,7 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 		"paper_performance_events_state_guard":           {"paper_performance_events", expectedPerformanceStateTrigger},
 		"paper_strategy_performance_events_state_guard":  {"paper_strategy_performance_events", expectedStrategyPerformanceStateTrigger},
 		"paper_performance_policy_events_state_guard":    {"paper_performance_policy_events", policyTriggerSQL["paper_performance_policy_events_state_guard"]},
-		"events_cash_void_guard":                         {"events", "create trigger events_cash_void_guard before insert on events when new.type = 'cash_void' begin select case when not exists ( select 1 from events target where target.account_id = new.account_id and target.source_event_id = new.corrects_source_event_id and target.type in ('deposit', 'withdrawal', 'dividend', 'fee', 'tax') and target.currency = new.currency and target.occurred_at <= new.occurred_at and new.amount = case when target.amount glob '-*' then substr(target.amount, 2) else '-' || target.amount end ) then raise(abort, 'cash void must exactly reverse an eligible event') end; end"},
+		"events_cash_void_guard":                         {"events", "create trigger events_cash_void_guard before insert on events when new.type = 'cash_void' begin select case when not exists ( select 1 from events target where target.account_id = new.account_id and target.source_event_id = new.corrects_source_event_id and target.type in ('deposit', 'withdrawal', 'dividend', 'fee', 'tax') and target.currency = new.currency and rtrim(target.occurred_at, 'z') <= rtrim(new.occurred_at, 'z') and new.amount = case when target.amount glob '-*' then substr(target.amount, 2) else '-' || target.amount end ) then raise(abort, 'cash void must exactly reverse an eligible event') end; end"},
 	}
 	for name, expected := range guardSQL {
 		var definition string
@@ -2971,7 +3032,9 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err := dec.Decode(&manifest); err != nil {
 		return fmt.Errorf("backup manifest: %w", err)
 	}
-	currentManifest := manifest.FormatVersion == backupFormat && manifest.SchemaVersion == backupSchema
+	currentV16Manifest := manifest.FormatVersion == backupFormat && manifest.SchemaVersion == backupSchema
+	legacyV15Manifest := manifest.FormatVersion == "omni-folio-backup.v15" && manifest.SchemaVersion == "omni-folio.sqlite.v21"
+	currentManifest := currentV16Manifest || legacyV15Manifest
 	legacyV14Manifest := manifest.FormatVersion == legacyPaperRunnerFormat && manifest.SchemaVersion == legacyPaperRunnerSchema
 	legacyV13Manifest := manifest.FormatVersion == legacyPaperPerformancePolicyFormat && manifest.SchemaVersion == legacyPaperPerformancePolicySchema
 	legacyV12Manifest := manifest.FormatVersion == legacyStrategyPerformanceFormat && manifest.SchemaVersion == legacyStrategyPerformanceSchema
@@ -3188,7 +3251,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 			return err
 		}
 	}
-	if currentManifest {
+	if currentV16Manifest {
 		policy, err := provePaperPerformancePolicyRecovery(context.Background(), sourceDB)
 		if err != nil {
 			_ = sourceDB.Close()
@@ -3249,7 +3312,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 		}
 	}
 
-	orders, err := verifyRestoreProof(verificationPath, goldenPath)
+	orders, err := verifyRestoreProofPolicy(verificationPath, goldenPath, !currentV16Manifest)
 	if err != nil {
 		return err
 	}

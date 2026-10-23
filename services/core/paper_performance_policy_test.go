@@ -1174,7 +1174,7 @@ func TestG38EBackupV14CarriesAndVerifiesPolicyRecoveryProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v15" || manifest.SchemaVersion != "omni-folio.sqlite.v21" ||
+	if manifest.FormatVersion != backupFormat || manifest.SchemaVersion != backupSchema ||
 		manifest.PaperPerformancePolicyStateSHA256 != proof.SHA256 || manifest.PaperPerformancePolicyEventCount != proof.Events ||
 		manifest.PaperPerformancePolicyActionCount != proof.Actions || manifest.PaperPerformancePolicyAutomaticHaltCount != proof.AutomaticHalts ||
 		manifest.VerificationReceipt.PaperPerformancePolicyCheck != "ok" ||
@@ -1228,6 +1228,7 @@ func TestG38EBackupLegacyV13UsesOwnedV20MigrationWithoutChangingSource(t *testin
 	}
 	legacy["db_sha256"], legacy["size_bytes"], receipt["candidate_db_sha256"] = sha, size, sha
 	legacyManifest := filepath.Join(t.TempDir(), "g38e-v13-source.manifest.json")
+	legacyReplayGolden := legacyGoldenForTest(t, golden, legacy)
 	writeJSONFile(t, legacyManifest, legacy)
 	sourceSHA, sourceSize, err := hashFile(legacyBackup)
 	if err != nil {
@@ -1237,7 +1238,7 @@ func TestG38EBackupLegacyV13UsesOwnedV20MigrationWithoutChangingSource(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyManifest(legacyBackup, golden, legacyManifest); err != nil {
+	if err := verifyManifest(legacyBackup, legacyReplayGolden, legacyManifest); err != nil {
 		t.Fatal(err)
 	}
 	afterSHA, afterSize, sourceErr := hashFile(legacyBackup)
@@ -1296,7 +1297,7 @@ func TestG38EBackupLegacyV13UsesOwnedV20MigrationWithoutChangingSource(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyManifest(legacyBackup, golden, legacyManifest); err == nil {
+	if err := verifyManifest(legacyBackup, legacyReplayGolden, legacyManifest); err == nil {
 		t.Fatal("failed v13 candidate migration was accepted")
 	}
 	afterCandidates, err := filepath.Glob(filepath.Join(os.TempDir(), "omni-folio-restore-legacy.*"))
@@ -1334,6 +1335,7 @@ func sameStringSet(left, right []string) bool {
 
 func downgradePaperPerformancePolicyForTest(t testing.TB, db *sql.DB) {
 	t.Helper()
+	downgradeLedgerReplayForTest(t, db)
 	var currentVersion int
 	if err := db.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&currentVersion); err != nil {
 		t.Fatal(err)

@@ -37,13 +37,43 @@ func run(args []string) error {
 
 func runContext(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: omni-core <migrate|serve|backup|verify-restore|strategy-register|strategy-status|strategy-select|strategy-rollback|paper-run-due|paper-run-loop|paper-init|paper-import-bars|paper-execute|paper-execute-stream>")
+		return fmt.Errorf("usage: omni-core <migrate|ledger-replay-preview|ledger-replay-activate|serve|backup|verify-restore|strategy-register|strategy-status|strategy-select|strategy-rollback|paper-run-due|paper-run-loop|paper-init|paper-import-bars|paper-execute|paper-execute-stream>")
 	}
 	switch args[0] {
 	case "paper-execute-stream":
 		return runLocalPaperStreamCommand(ctx, args[1:], os.Stdin)
 	case "paper-init", "paper-import-bars", "paper-execute":
 		return runLocalPaperCommand(ctx, args, os.Stdout)
+	case "ledger-replay-preview", "ledger-replay-activate":
+		fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
+		dbPath := fs.String("db", "", "stopped core database or owned candidate path")
+		expectedRevision := fs.Int64("expected-revision", 0, "reviewed preview ledger revision")
+		expectedEvents := fs.String("expected-events-sha", "", "reviewed preview events SHA256")
+		expectedSnapshot := fs.String("expected-snapshot-sha", "", "reviewed corrected snapshot SHA256")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *dbPath == "" || fs.NArg() != 0 {
+			return errors.New("ledger replay command requires -db and no positional arguments")
+		}
+		if args[0] == "ledger-replay-preview" && (*expectedRevision != 0 || *expectedEvents != "" || *expectedSnapshot != "") {
+			return errors.New("preview accepts no activation expectations")
+		}
+		db, err := openExistingDB(*dbPath)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		var result *ledgerReplayPreview
+		if args[0] == "ledger-replay-preview" {
+			result, err = previewLedgerReplay(ctx, db)
+		} else {
+			result, err = activateLedgerReplay(ctx, db, *expectedRevision, *expectedEvents, *expectedSnapshot, time.Now())
+		}
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
 	case "migrate":
 		fs := flag.NewFlagSet("migrate", flag.ContinueOnError)
 		dbPath := fs.String("db", "omni-folio.db", "SQLite database path")

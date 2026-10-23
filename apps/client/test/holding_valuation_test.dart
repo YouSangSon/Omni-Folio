@@ -314,7 +314,8 @@ void main() {
     final api = _TestApi(
       snapshotValue: PortfolioSnapshot(
         ledgerRevision: 'rev_0000000001',
-        costBasisPolicy: 'fifo_exact_else_half_even_residual_8_v1',
+        costBasisPolicy:
+            'fifo_utc_nanosecond_exact_else_half_even_residual_8_v2',
         recordedAt: DateTime.utc(2026, 1, 11, 13),
         cash: const [],
         holdings: const [],
@@ -532,7 +533,8 @@ class _TestApi implements OmniApi {
       snapshotValue ??
       PortfolioSnapshot(
         ledgerRevision: 'rev_0000000001',
-        costBasisPolicy: 'fifo_exact_else_half_even_residual_8_v1',
+        costBasisPolicy:
+            'fifo_utc_nanosecond_exact_else_half_even_residual_8_v2',
         recordedAt: DateTime.utc(2026, 1, 11, 13),
         cash: const [],
         holdings: const [

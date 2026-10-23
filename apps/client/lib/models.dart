@@ -769,7 +769,7 @@ class PortfolioSnapshot {
       throw const FormatException('Live valuation is not supported');
     }
     if (_text(json, 'cost_basis_policy') !=
-        'fifo_exact_else_half_even_residual_8_v1') {
+        'fifo_utc_nanosecond_exact_else_half_even_residual_8_v2') {
       throw const FormatException('Unsupported cost basis policy');
     }
     final provenance = json['provenance'];

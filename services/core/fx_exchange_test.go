@@ -61,7 +61,7 @@ func TestFXExchangePreviewApplyReplayAndBackupRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v15" || manifest.SchemaVersion != "omni-folio.sqlite.v21" {
+	if manifest.FormatVersion != backupFormat || manifest.SchemaVersion != backupSchema {
 		t.Fatalf("FX backup versions drifted: %+v", manifest)
 	}
 	if err := verifyManifest(backup, golden, manifestPath); err != nil {
@@ -177,6 +177,9 @@ func TestVerifyManifestMigratesV9BackupCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	manifestPath := writeLegacyV5Manifest(t, svc.db, backup, golden, "omni-folio.sqlite.v9")
+	legacy := readJSONMap(t, manifestPath)
+	golden = legacyGoldenForTest(t, golden, legacy)
+	writeJSONFile(t, manifestPath, legacy)
 	verifyLegacyBackupCopy(t, svc.db, 9, backup, golden, manifestPath)
 	mixed := readJSONMap(t, manifestPath)
 	mixed["fx_observation_state_sha256"] = strings.Repeat("0", 64)
@@ -274,7 +277,7 @@ func legacyV8Backup(t *testing.T) (*sql.DB, string, string, string) {
 	}
 	golden := filepath.Join(dir, "legacy-golden.json")
 	writeJSONFile(t, golden, &PortfolioSnapshot{
-		PortfolioID: "portfolio_main", LedgerRevision: "rev_0000000001", CostBasisPolicy: fifoCostBasisPolicy, AsOf: "2026-01-02T00:00:00Z", RecordedAt: "2026-01-02T00:01:00Z",
+		PortfolioID: "portfolio_main", LedgerRevision: "rev_0000000001", CostBasisPolicy: legacyFIFOCostBasisPolicy, AsOf: "2026-01-02T00:00:00Z", RecordedAt: "2026-01-02T00:01:00Z",
 		LiveEnabled: false, ValuationStatus: "unavailable", Cash: []Money{{Currency: "USD", Amount: "10"}}, Holdings: []Holding{}, RealizedPnL: []Money{},
 		Provenance: Provenance{EventIDs: []string{"legacy-event"}, ReceiptIDs: []string{"legacy-receipt"}},
 	})
