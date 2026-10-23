@@ -9,6 +9,7 @@ import os
 import re
 import selectors
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -215,12 +216,14 @@ class SignalProposalTest(unittest.TestCase):
             self.assertEqual(bundle['proposal']['input_sha256'], hashlib.sha256(captured_bars).hexdigest())
             self.assertEqual(stderr.getvalue(), '')
 
-    def test_bundle_watch_deduplicates_on_proposal(self) -> None:
+    def test_bundle_capture_watch_deduplicates_on_proposal(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             bars, research, artifact = self.inputs(directory)
             artifact_path = directory / 'artifact.json'
             artifact_path.write_text(json.dumps(artifact))
+            archive = directory / 'capture'
+            archive.mkdir(mode=0o700)
             ticks = 0
 
             def wait(_: float) -> None:
@@ -230,11 +233,173 @@ class SignalProposalTest(unittest.TestCase):
                     raise KeyboardInterrupt
 
             stdout, stderr = io.StringIO(), io.StringIO()
-            args = ['--bars', str(bars), '--research-bars', str(research), '--artifact', str(artifact_path), '--bundle', '--watch']
+            args = ['--bars', str(bars), '--research-bars', str(research), '--artifact', str(artifact_path), '--bundle', '--watch', '--capture-dir', str(archive)]
             with patch('time.sleep', side_effect=wait), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 self.assertEqual(main(args), 130)
             self.assertEqual(len(stdout.getvalue().splitlines()), 1)
             self.assertEqual(stderr.getvalue(), '')
+            files = list(archive.iterdir())
+            self.assertEqual(len(files), 1)
+            self.assertEqual(files[0].read_bytes(), stdout.getvalue().encode())
+
+    def test_bundle_capture_precedes_output_and_preserves_exact_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            bars, research, artifact = self.inputs(directory, line_ending=b'\r\n')
+            artifact_path = directory / 'artifact.json'
+            artifact_path.write_text(json.dumps(artifact))
+            archive = directory / 'capture'
+            archive.mkdir(mode=0o700)
+            args = ['--bars', str(bars), '--research-bars', str(research), '--artifact', str(artifact_path), '--bundle', '--capture-dir', str(archive)]
+            captured_bars, captured_research = bars.read_bytes(), research.read_bytes()
+            stdout, stderr = io.StringIO(), io.StringIO()
+            original_write = stdout.write
+
+            def observe_output(value: str) -> int:
+                files = list(archive.iterdir())
+                self.assertEqual(len(files), 1)
+                self.assertEqual(files[0].read_bytes().decode(), value + '\n' if value != '\n' else stdout.getvalue() + '\n')
+                return original_write(value)
+
+            with patch.object(stdout, 'write', side_effect=observe_output), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                self.assertEqual(main(args), 0)
+            files = list(archive.iterdir())
+            raw = files[0].read_bytes()
+            self.assertEqual(raw, stdout.getvalue().encode())
+            bundle = json.loads(raw)
+            self.assertEqual(bundle['bars_csv'].encode(), captured_bars)
+            self.assertEqual(bundle['research_csv'].encode(), captured_research)
+            self.assertEqual(files[0].stat().st_mode & 0o777, 0o600)
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+                self.assertEqual(main(args), 0)
+            self.assertEqual(list(archive.iterdir()), files)
+            self.assertEqual(files[0].read_bytes(), raw)
+            self.assertEqual(stderr.getvalue(), '')
+
+    def capture_inputs(self, directory: Path) -> tuple[list[str], Path]:
+        bars, research, artifact = self.inputs(directory)
+        artifact_path = directory / 'artifact.json'
+        artifact_path.write_text(json.dumps(artifact))
+        archive = directory / 'capture'
+        archive.mkdir(mode=0o700)
+        return ['--bars', str(bars), '--research-bars', str(research), '--artifact', str(artifact_path), '--bundle', '--capture-dir', str(archive)], archive
+
+    def test_bundle_capture_rejects_conflicting_or_unsafe_destinations(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            args, archive = self.capture_inputs(directory)
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(args), 0)
+            destination, = archive.iterdir()
+            raw = destination.read_bytes()
+            destination.unlink()
+            other = directory / 'untouched'
+            other.write_bytes(raw)
+            keep = archive / '.other-writer.tmp'
+            keep.write_bytes(b'keep')
+            for kind in ('different', 'oversized', 'symlink', 'fifo', 'directory'):
+                with self.subTest(kind=kind):
+                    if kind == 'different':
+                        destination.write_bytes(b'different')
+                    elif kind == 'oversized':
+                        destination.write_bytes(b'x' * (4 * 1_048_576 + 1))
+                    elif kind == 'symlink':
+                        destination.symlink_to(other)
+                    elif kind == 'fifo':
+                        os.mkfifo(destination)
+                    else:
+                        destination.mkdir()
+                    before = destination.lstat()
+                    stdout, stderr = io.StringIO(), io.StringIO()
+                    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                        self.assertEqual(main(args), 1)
+                    self.assertEqual(stdout.getvalue(), '')
+                    self.assertEqual(stderr.getvalue(), 'Paper input capture failed; no bundle was emitted.\n')
+                    after = destination.lstat()
+                    self.assertEqual((after.st_ino, after.st_mode, after.st_size, after.st_mtime_ns),
+                                     (before.st_ino, before.st_mode, before.st_size, before.st_mtime_ns))
+                    self.assertEqual(other.read_bytes(), raw)
+                    self.assertEqual(keep.read_bytes(), b'keep')
+                    self.assertEqual(set(archive.iterdir()), {destination, keep})
+                    destination.rmdir() if kind == 'directory' else destination.unlink()
+
+    def test_bundle_capture_requires_private_directory_and_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            args, archive = self.capture_inputs(directory)
+            link = directory / 'link'
+            link.symlink_to(archive, target_is_directory=True)
+            fifo = directory / 'fifo'
+            os.mkfifo(fifo)
+            public = directory / 'public'
+            public.mkdir(mode=0o755)
+            for path in (link, fifo, public, directory / 'missing'):
+                with self.subTest(path=path.name):
+                    stdout, stderr = io.StringIO(), io.StringIO()
+                    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                        self.assertEqual(main([*args[:-1], str(path)]), 1)
+                    self.assertEqual(stdout.getvalue(), '')
+                    self.assertEqual(stderr.getvalue(), 'Paper input capture failed; no bundle was emitted.\n')
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as failure:
+                main([value for value in args if value != '--bundle'])
+            self.assertEqual(failure.exception.code, 2)
+            self.assertEqual(list(archive.iterdir()), [])
+
+    def test_bundle_capture_sync_failure_does_not_emit_or_remove_other_files(self) -> None:
+        for directory_sync in (False, True):
+            with self.subTest(directory_sync=directory_sync), tempfile.TemporaryDirectory() as temporary:
+                args, archive = self.capture_inputs(Path(temporary))
+                keep = archive / '.other-writer.tmp'
+                keep.write_bytes(b'keep')
+                sync = os.fsync
+
+                def fail_sync(fd: int) -> None:
+                    if stat.S_ISDIR(os.fstat(fd).st_mode) == directory_sync:
+                        raise OSError('private storage details')
+                    sync(fd)
+
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with patch('omni_research.signal_cli.os.fsync', side_effect=fail_sync), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    self.assertEqual(main(args), 1)
+                self.assertEqual(stdout.getvalue(), '')
+                self.assertEqual(stderr.getvalue(), 'Paper input capture failed; no bundle was emitted.\n')
+                self.assertEqual(list(archive.glob('*.tmp')), [keep])
+                self.assertEqual(keep.read_bytes(), b'keep')
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    self.assertEqual(main(args), 0)
+                captured, = archive.glob('*.json')
+                self.assertEqual(captured.read_bytes(), stdout.getvalue().encode())
+
+    def test_bundle_capture_native_writers_and_closed_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            args, archive = self.capture_inputs(Path(temporary))
+            command = [sys.executable, '-B', '-m', 'omni_research.signal_cli', *args]
+            children = []
+            try:
+                for _ in range(2):
+                    children.append(subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
+                outputs = [child.communicate(timeout=30) for child in children]
+                self.assertTrue(all(child.returncode == 0 for child in children))
+                self.assertEqual(outputs[0], outputs[1])
+                self.assertEqual(outputs[0][1], b'')
+                captured, = archive.iterdir()
+                self.assertEqual(captured.read_bytes(), outputs[0][0])
+            finally:
+                for child in children:
+                    if child.poll() is None:
+                        child.kill()
+                    child.communicate(timeout=5)
+            captured.unlink()
+            read_fd, write_fd = os.pipe()
+            os.close(read_fd)
+            try:
+                result = subprocess.run(command, stdout=write_fd, stderr=subprocess.PIPE, timeout=30)
+            finally:
+                os.close(write_fd)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stderr, b'Paper signal proposal output is closed; producer stopped.\n')
+            captured, = archive.iterdir()
+            self.assertEqual(captured.read_bytes(), outputs[0][0])
 
     def test_bundle_schema_agrees_with_producer_and_aggregate_cap(self) -> None:
         schema = json.loads((ROOT / 'contracts/paper-input-bundle.schema.json').read_text())

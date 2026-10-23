@@ -89,11 +89,29 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research \
 
 `/absolute/path/paper-input.json`은 앞에서 저장한 파일의 실제 절대 경로로 바꿉니다. `-bundle`은 `-bars`, `-research-bars`, `-proposal`과 함께 사용할 수 없습니다. 두 CSV는 각각 1 MiB, JSON 파일 전체는 4 MiB 이하입니다. 원본 UTF-8·줄바꿈을 보존하고 기존 Go 검증을 그대로 거칩니다. 파일 자체가 실행 승인이나 전달 완료 증거는 아닙니다. 출력 파일은 사용자가 보관하며 실패한 생성 결과로 실행하지 않습니다. [bundle gate](../gates/g3u-paper-input-bundle.md)
 
+## 출력 전에 입력 보관하기
+
+macOS/Linux에서 `--bundle --capture-dir`을 지정하면 검증된 bundle의 정확한 UTF-8/LF byte를 파일에 보관한 뒤 stdout으로 출력합니다. 다음은 저장소 루트 기준입니다. 보관 디렉터리는 미리 존재하고 현재 사용자 소유이며 다른 사용자 권한이 없어야 합니다. 기존 디렉터리의 권한은 자동 변경하지 않습니다.
+
+```bash
+mkdir -p -m 700 data/paper-input-captures
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research \
+  python3 -m omni_research.signal_cli \
+  --bars latest.csv --research-bars research.csv --artifact artifact.json \
+  --bundle --capture-dir data/paper-input-captures
+```
+
+파일명은 마지막 봉 시각과 proposal hash로 결정합니다. 새 파일은 `0600`이며 임시 파일 쓰기·동기화 후 덮어쓰기 없이 공개하고 디렉터리를 동기화합니다. 같은 이름·같은 byte는 재사용하며 내용 충돌, symlink/FIFO, 저장 실패는 stdout 출력 없이 오류로 종료합니다. 디렉터리 동기화나 stdout 실패 뒤에도 완성 파일이 남을 수 있고, 강제 종료 시 임시 파일이 남을 수 있습니다. 다른 실행의 파일이나 남은 임시 파일을 자동 삭제하지 않습니다. 이 검증은 실제 정전 복구 보증이 아닙니다.
+
+필요한 보관 파일 하나를 선택해 위 `paper-execute -bundle /absolute/path/to/captured.json -arm-paper` 경로로 실행합니다. 원본 CSV가 바뀌어도 파일 안의 원본 byte를 검증합니다. 보관은 처리 완료 ACK·실행 승인·자동 재실행이 아니며, 파일명 정렬도 안전한 실행 순서를 보장하지 않습니다. `--watch`에도 옵션을 추가할 수 있지만 관찰한 bundle만 보관합니다. 검사 사이 snapshot 누락이나 소비자 종료 이후 수집은 보장하지 않습니다.
+
+제안의 30초 기한은 보관 시간이 아니라 **Go가 해당 봉을 최초 접수한 receipt**를 기준으로 합니다. 처음 가져오는 오래된 보관 파일은 새 Go receipt를 받을 수 있으므로 이 기능은 시장 freshness나 capture age를 검증하지 않습니다. 이미 접수한 봉의 재실행은 최초 receipt를 유지합니다. 보관 파일은 사용자가 관리하는 별도 입력 자료이며 DB backup에 포함되지 않습니다. [보관 gate](../gates/g3af-paper-input-capture.md)
+
 ## 자동 제안 생성만 관찰하기
 
 앞의 Python `signal_cli` 명령에 `--watch`를 추가하면 현재 유효한 제안을 한 줄 출력한 뒤, 각 검사 완료 1초 후 CSV를 다시 읽습니다. 동일 입력은 다시 출력하지 않습니다. 입력 파일은 각 1 MiB 이하의 일반 파일이어야 하며 작성자는 완성된 파일로 원자 교체해야 합니다. 실행 중 연구 artifact 변경, 연구 CSV hash 불일치, 같은/과거 마지막 봉의 byte 변경 또는 잘못된 입력은 오류로 종료합니다.
 
-출력은 단일 JSON 파일이 아니라 NDJSON 스트림입니다. `--watch --bundle`은 각 줄에 원본 CSV도 담습니다. 이를 `proposal.json`에 계속 덮어쓰거나 1회용 `paper-execute`에 pipe로 연결하지 마세요. 생성기는 파일·DB·주문을 만들지 않으며, 재시작 시 같은 제안이 재출력되거나 검사 사이 중간 snapshot이 누락될 수 있습니다. [생성 전용 gate](../gates/g3t-paper-proposal-watch.md)
+출력은 단일 JSON 파일이 아니라 NDJSON 스트림입니다. `--watch --bundle`은 각 줄에 원본 CSV도 담습니다. 이를 `proposal.json`에 계속 덮어쓰거나 1회용 `paper-execute`에 pipe로 연결하지 마세요. 생성기는 `--capture-dir`을 지정한 경우에만 보관 파일을 만들며 DB·주문을 만들지 않습니다. 재시작 시 같은 제안이 재출력되거나 검사 사이 중간 snapshot이 누락될 수 있습니다. [생성 전용 gate](../gates/g3t-paper-proposal-watch.md)
 
 ## 명시적으로 연속 fixture 소비하기
 

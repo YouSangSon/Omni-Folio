@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import select
 import stat
 import sys
@@ -148,6 +149,42 @@ def _invalid_number(_: str) -> None:
     raise ValueError("non-integer JSON number")
 
 
+def _capture_bundle(directory: Path, name: str, raw: bytes) -> None:
+    # Pin the directory so path replacement cannot redirect publication/cleanup.
+    directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    temporary = None
+    try:
+        info = os.fstat(directory_fd)
+        if info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise ValueError("capture directory must be private and owned")
+        candidate = '.paper-capture-' + secrets.token_hex(16) + '.tmp'
+        fd = os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory_fd)
+        temporary = candidate
+        with os.fdopen(fd, 'wb') as target:
+            target.write(raw)
+            target.flush()
+            os.fsync(target.fileno())
+        try:
+            os.link(temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd, follow_symlinks=False)
+        except FileExistsError:
+            fd = os.open(name, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW, dir_fd=directory_fd)
+            with os.fdopen(fd, 'rb') as existing:
+                info = os.fstat(existing.fileno())
+                if not stat.S_ISREG(info.st_mode) or info.st_size > 4 * 1_048_576:
+                    raise ValueError("capture destination is not a bounded regular file")
+                if existing.read(4 * 1_048_576 + 1) != raw:
+                    raise ValueError("capture destination differs")
+        os.unlink(temporary, dir_fd=directory_fd)
+        temporary = None
+        os.fsync(directory_fd)
+    finally:
+        try:
+            if temporary is not None:
+                os.unlink(temporary, dir_fd=directory_fd)
+        finally:
+            os.close(directory_fd)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Produce a local SMA paper target proposal without execution authority.")
     parser.add_argument("--bars", required=True, type=Path)
@@ -155,13 +192,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--artifact", required=True, type=Path)
     parser.add_argument("--watch", action="store_true", help="emit changed latest-close proposals as NDJSON; no execution authority")
     parser.add_argument("--bundle", action="store_true", help="emit a proposal with its exact validated CSV snapshots")
+    parser.add_argument("--capture-dir", type=Path, help="archive each emitted bundle in an existing private directory before output; not an execution receipt")
     args = parser.parse_args(argv)
+    if args.capture_dir is not None and not args.bundle:
+        parser.error("--capture-dir requires --bundle")
     try:
         raw = read_signal_input(args.artifact)
         artifact = json.loads(raw, object_pairs_hook=_object, parse_float=_invalid_number, parse_constant=_invalid_number)
         previous = None
-        # ponytail: latest-snapshot polling can miss intermediate closes;
-        # durable exact-byte delivery belongs in the later Go ingestion path.
+        # shortcut: polling captures only observed snapshots; use source-owned delivery for every close.
         while True:
             if args.watch:
                 _raise_if_stdout_pipe_closed()
@@ -174,7 +213,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if previous is not None and proposal["data_as_of"] <= previous["data_as_of"]:
                     raise ValueError("watch requires a new close, not rewritten history")
                 output = generate_paper_input_bundle(proposal, raw_bars, research_bytes) if args.bundle else proposal
-                print(_json(output), flush=True)
+                encoded = _json(output)
+                if args.capture_dir is not None:
+                    name = proposal['data_as_of'].replace('-', '').replace(':', '') + '-' + proposal['proposal_sha256'] + '.json'
+                    try:
+                        _capture_bundle(args.capture_dir, name, (encoded + '\n').encode('utf-8'))
+                    except (OSError, ValueError):
+                        print("Paper input capture failed; no bundle was emitted.", file=sys.stderr)
+                        return 1
+                print(encoded, flush=True)
                 previous = proposal
             if not args.watch:
                 return 0

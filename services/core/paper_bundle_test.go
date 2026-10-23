@@ -125,7 +125,11 @@ func TestPaperBundlePythonCLIToGoExecution(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "python3", "-m", "omni_research.signal_cli", "--bars", filepath.Join(dir, "bars.csv"), "--research-bars", filepath.Join(dir, "research.csv"), "--artifact", filepath.Join(dir, "artifact.json"), "--bundle")
+	archive := filepath.Join(dir, "capture")
+	if err := os.Mkdir(archive, 0700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(ctx, "python3", "-m", "omni_research.signal_cli", "--bars", filepath.Join(dir, "bars.csv"), "--research-bars", filepath.Join(dir, "research.csv"), "--artifact", filepath.Join(dir, "artifact.json"), "--bundle", "--capture-dir", archive)
 	cmd.Env = append(os.Environ(), "PYTHONDONTWRITEBYTECODE=1", "PYTHONPATH="+filepath.Join(root, "services/research"))
 	raw, err := cmd.Output()
 	if err != nil {
@@ -135,8 +139,16 @@ func TestPaperBundlePythonCLIToGoExecution(t *testing.T) {
 	if err != nil || !bytes.Equal(decodedBars, bars) || !bytes.Equal(decodedResearch, research) {
 		t.Fatalf("producer snapshots changed: %v", err)
 	}
-	bundlePath := filepath.Join(dir, "bundle.json")
-	if err := os.WriteFile(bundlePath, raw, 0600); err != nil {
+	files, err := os.ReadDir(archive)
+	if err != nil || len(files) != 1 {
+		t.Fatalf("capture files=%v: %v", files, err)
+	}
+	bundlePath := filepath.Join(archive, files[0].Name())
+	captured, err := os.ReadFile(bundlePath)
+	if err != nil || !bytes.Equal(captured, raw) {
+		t.Fatalf("capture differs from emitted bundle: %v", err)
+	}
+	if _, _, _, err := decodePaperInputBundle(captured); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"bars.csv", "research.csv", "artifact.json"} {
