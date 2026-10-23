@@ -71,50 +71,47 @@ class _OmniFolioAppState extends State<OmniFolioApp> {
                 ],
               ),
               body: SafeArea(
-                child: wide
-                    ? Row(
-                        children: [
-                          NavigationRail(
-                            selectedIndex: _tab,
-                            labelType: NavigationRailLabelType.all,
-                            groupAlignment: -0.8,
-                            onDestinationSelected: (index) =>
-                                setState(() => _tab = index),
-                            destinations: const [
-                              NavigationRailDestination(
-                                icon: Icon(Icons.home_outlined),
-                                selectedIcon: Icon(Icons.home_rounded),
-                                label: Text('홈'),
-                              ),
-                              NavigationRailDestination(
-                                icon: Icon(
-                                  Icons.account_balance_wallet_outlined,
-                                ),
-                                selectedIcon: Icon(
-                                  Icons.account_balance_wallet,
-                                ),
-                                label: Text('보유'),
-                              ),
-                              NavigationRailDestination(
-                                icon: Icon(Icons.receipt_long_outlined),
-                                selectedIcon: Icon(Icons.receipt_long),
-                                label: Text('내역'),
-                              ),
-                              NavigationRailDestination(
-                                icon: Icon(Icons.link_outlined),
-                                selectedIcon: Icon(Icons.link),
-                                label: Text('연결'),
-                              ),
-                            ],
+                // Keep the page mounted when only navigation placement changes.
+                child: Row(
+                  children: [
+                    if (wide) ...[
+                      NavigationRail(
+                        selectedIndex: _tab,
+                        labelType: NavigationRailLabelType.all,
+                        groupAlignment: -0.8,
+                        onDestinationSelected: (index) =>
+                            setState(() => _tab = index),
+                        destinations: const [
+                          NavigationRailDestination(
+                            icon: Icon(Icons.home_outlined),
+                            selectedIcon: Icon(Icons.home_rounded),
+                            label: Text('홈'),
                           ),
-                          VerticalDivider(
-                            width: 1,
-                            color: Theme.of(context).dividerColor,
+                          NavigationRailDestination(
+                            icon: Icon(Icons.account_balance_wallet_outlined),
+                            selectedIcon: Icon(Icons.account_balance_wallet),
+                            label: Text('보유'),
                           ),
-                          Expanded(child: content),
+                          NavigationRailDestination(
+                            icon: Icon(Icons.receipt_long_outlined),
+                            selectedIcon: Icon(Icons.receipt_long),
+                            label: Text('내역'),
+                          ),
+                          NavigationRailDestination(
+                            icon: Icon(Icons.link_outlined),
+                            selectedIcon: Icon(Icons.link),
+                            label: Text('연결'),
+                          ),
                         ],
-                      )
-                    : content,
+                      ),
+                      VerticalDivider(
+                        width: 1,
+                        color: Theme.of(context).dividerColor,
+                      ),
+                    ],
+                    Expanded(child: content),
+                  ],
+                ),
               ),
               bottomNavigationBar: wide
                   ? null

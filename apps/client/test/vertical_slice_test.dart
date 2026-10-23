@@ -2059,6 +2059,79 @@ void main() {
     expect(api.applyKeys, everyElement('import-${api.previewValue.previewId}'));
   });
 
+  for (final initialWidth in [899.0, 900.0]) {
+    testWidgets('responsive import state survives from $initialWidth px', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(initialWidth, 1100);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final otherWidth = initialWidth == 899 ? 900.0 : 899.0;
+      Future<void> resize(double width) async {
+        tester.view.physicalSize = Size(width, 1100);
+        await pumpUi(tester);
+        expect(
+          find.byType(NavigationRail),
+          width >= 900 ? findsOneWidget : findsNothing,
+        );
+        expect(
+          find.byType(NavigationBar),
+          width < 900 ? findsOneWidget : findsNothing,
+        );
+        expect(tester.takeException(), isNull);
+      }
+
+      final api = goldenApi()..applyFailures = 1;
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+      await tester.tap(find.text('내역'));
+      await pumpUi(tester);
+      await tester.enterText(find.byType(TextField), 'header\nrow');
+      final field = tester.widget<EditableText>(find.byType(EditableText));
+      const selection = TextSelection(baseOffset: 2, extentOffset: 6);
+      field.controller.selection = selection;
+      await resize(otherWidth);
+      final resized = tester.widget<EditableText>(find.byType(EditableText));
+      expect(resized.controller.text, 'header\nrow');
+      expect(resized.controller.selection, selection);
+      expect(resized.focusNode.hasFocus, isTrue);
+      expect(api.activityCalls, 1);
+
+      await tester.tap(find.text('미리보기 만들기'));
+      await pumpUi(tester);
+      await resize(initialWidth);
+      expect(find.text('적용 가능: 이 미리보기만 원장에 원자적으로 반영됩니다.'), findsOneWidget);
+      final apply = find.widgetWithText(ElevatedButton, '원자적으로 적용');
+      await tester.ensureVisible(apply);
+      await tester.tap(apply);
+      await pumpUi(tester);
+      await resize(otherWidth);
+      expect(find.textContaining('거래 내역을 적용하지 못했습니다.'), findsOneWidget);
+
+      final pendingApply = Completer<ApplyReceipt>();
+      api.applyCompleter = pendingApply;
+      await tester.ensureVisible(apply);
+      await tester.tap(apply);
+      await tester.pump();
+      await resize(initialWidth);
+      expect(tester.widget<ElevatedButton>(apply).onPressed, isNull);
+      expect(api.applyKeys, hasLength(2));
+
+      pendingApply.complete(api.receiptValue);
+      await pumpUi(tester);
+      await resize(otherWidth);
+      await tester.ensureVisible(find.text('적용 확인'));
+      expect(find.textContaining('receipt_golden_001'), findsOneWidget);
+      expect(
+        api.applyKeys,
+        everyElement('import-${api.previewValue.previewId}'),
+      );
+      expect(api.activityCalls, 2);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('apply queues activity refresh while initial load is running', (
     tester,
   ) async {

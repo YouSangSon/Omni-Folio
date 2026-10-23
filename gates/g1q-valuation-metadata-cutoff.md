@@ -37,4 +37,4 @@ On 2026-10-23, rebuilt main `d3059e26f94828dffdb6732990a9b89c1392e0e3` with the 
 
 Local sample valuation is not a live quote or broker-confirmed balance. No credentialed broker, physical-device, remote CI or deployment validation was performed in this unit. Historical valuation and market-data authority remain separate contracts.
 
-The browser run also exposed a separate responsive-shell issue: crossing the 900px layout boundary resets an unsubmitted CSV and its preview. The shell changes the content's parent from `Row/Expanded` to direct content, disposing the page state. Re-entering the fixture at 375px completed the duplicate-flow verification; retaining import state across that boundary remains an open G2 follow-up.
+The browser run also exposed a separate responsive-shell issue: crossing the 900px layout boundary reset an unsubmitted CSV and its preview. Re-entering the fixture at 375px completed the duplicate-flow verification. The subsequent [G2 state-preservation fix](g2-client.md#responsive-import-state-2026-10-23) resolves that limitation and records its own widget/release-browser evidence.

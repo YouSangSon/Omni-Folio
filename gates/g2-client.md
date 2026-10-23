@@ -26,6 +26,21 @@
 - 2026-09-05 [local-font follow-up](g2d-local-fonts.md) bundles pinned Noto/OFL and Cupertino assets, fixes explicit button-style inheritance, and passes 85 Flutter tests plus a fresh release browser with zero external requests across exercised screens. This closes the observed delivery defect, not universal glyphs, physical platform rendering, payload performance, or offline-origin bootstrap.
 - **Gate remains open:** strict raster p95 on representative physical Android/iOS hardware and manual VoiceOver/TalkBack or equivalent screen-reader evidence are not yet recorded. Emulator results do not substitute for physical-device release evidence.
 
+## Responsive import state (2026-10-23)
+
+The release browser verification recorded in [G1.21](g1q-valuation-metadata-cutoff.md#release-browser-supplement) exposed lost CSV/preview state when crossing the 900px shell boundary. The old shell replaced `content` with `Row/Expanded/content`, disposing `ActivityPage`; a pending apply could therefore finish without its receipt being displayed.
+
+The shell now keeps `Row/Expanded/content` at every width and inserts only the desktop rail/divider conditionally. This preserves the active page's element and state without a global key, new controller, cache or tab-retention policy. API, idempotency, money, navigation actions and design tokens are unchanged.
+
+- Both new 899→900 and 900→899 widget cases first failed with an empty CSV value. After the fix they pass for draft, selection, focus, preview, sanitized apply error, pending apply, disabled apply button, completed receipt and unchanged idempotency key. Activity requests remain one initial load plus the deliberate post-apply refresh. Logs: `goal-20261023-responsive-import-{red,focused}.log` under `docs/_internal/skill-outputs/`.
+- Final `make check GO=true` exits 0: Flutter 122, Python 34, format/analyze, resource preflight/cleanup and 17 JSON syntax checks. Go test/vet is explicitly skipped: core source/tests, root tests, contracts, Makefile and pinned tool versions equal PR #23's fully checked `272dfa7`, so its passing Go/vet evidence is reused. This is not a new full Go run or full JSON Schema validation.
+- Independent read-only review found no blocker. Physical-device/profile and manual screen-reader gates above remain open.
+- Actual Flutter release/Go API at 375×812 ↔ 1280×900 preserves CSV, preview and the same receipt in both directions. Tab/Enter creates the preview; duplicate apply returns 0 applied/3 skipped at revision3. Editing input clears preview/receipt; malformed input returns 400, its error survives resizing, and corrected CSV retries successfully. Pending apply and failure/retry timing are controlled by the widget tests rather than inferred from fast real HTTP.
+- Inspected screenshots: `output/playwright/responsive-import-{preview-375,receipt-375,receipt-1280,error-375}.png`. Network and console evidence: `docs/_internal/skill-outputs/goal-20261023-responsive-import-{network,console}.txt`. Only the intentional bad-CSV 400 and absent broker-reconciliation 404 are request failures; CPU-only rendering does not establish a performance result. A stale browser selector during retry setup was rejected before action; a fresh snapshot resolved it.
+- Browser wrapper exits 0 with the real API/release build, preflight 1/1 and Python 34/34. Owned test roots/processes, browser tab/daemon and ports 18082/18083 are clear. Browser log: `goal-20261023-responsive-import-browser.log`.
+
+Follow-up observed in the error screenshot: when there is no retained preview, the existing generic preview-error copy still says the previous preview is preserved. Correct that claim according to actual state; this layout fix does not change the error text.
+
 ## Reproduce
 
 ```sh
