@@ -76,6 +76,7 @@ G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4N local order pending-action and overview warning contract
 ├─ G4O local daily chart display-range selection
 ├─ G4W chart source identity/currency and unknown time basis disclosure
+├─ G4X revision-consistent instrument ledger average cost and original trades
 ├─ G4P first-run empty-snapshot import recovery
 ├─ G4Q Kiwoom credential-free latest-trade normalization
 ├─ G4R Kiwoom credential-free 0B realtime-price frame contract
@@ -114,6 +115,7 @@ G6 PostgreSQL and Kubernetes promotion
 - G1.20은 UTC 순서의 원장 재생을 영속 selector·명시적 전환 receipt와 schema22/backup v16으로 연결한다. 과거 golden 보관 검증과 현재 활성화를 구분하며, 최종 전체 check·로컬 smoke·소유 자원 정리를 통과했다. [세부 gate](gates/g1p-chronological-ledger-replay.md)
 - G4V/K2B3는 Kiwoom mock LIMIT submit을 provider/mode-bound value capability 뒤로 옮겨 application service에서 credential·환경·provider error 타입을 제거한다. zero/mismatch capability는 preflight 전에 차단하고 durable dispatch-before-write, one-shot write, definitive reject와 conservative unknown, raw detail redaction을 유지한다. 새 provider, credential, public API/UI, DB/schema 또는 live authority는 아니다. [세부 gate](gates/g4v-k2b3-limit-order-dispatch-port.md)
 - G4W는 차트 원천의 명시적 종목·통화를 선택 holding과 비교하고 legacy 누락·가격 조정·봉 시각의 미확인 상태를 표시한다. 평균단가와 매매 marker는 계속 후속 gate다. [세부 gate](gates/g4w-chart-source-basis.md)
+- G4X는 현재 잔여 FIFO 원가·수량과 원본 매매를 동일 원장 revision에서 조회한다. 평균만 표시 반올림하며 최근 50건 한계, 로컬 기록·분할 기준 차이를 밝힌다. [세부 gate](gates/g4x-instrument-ledger-detail.md)
 - external deploy, credential, live 주문, push는 명시 승인 없이는 실행하지 않는다.
 - G3.8G1은 기존 SMA 판정을 공유한 offline 목표 제안과 입력 hash·종목·연구 이후 시점 경계만 증명한다. 2026-09-05 `make check`의 Go 전체·Flutter 전체·Python 25개·JSON 16개 구문 검사·owned cleanup self-test가 통과했다. JSON schema 필드/분기는 별도 회귀 검사이며 완전한 JSON Schema validator 실행은 아니다. 재해시 가능한 비신뢰 입력은 Go registry·선택 검증을 대체하지 않는다. 신호 admission·session/bar ingress·paper 체결 운영 연결은 G3.8G2에 남아 있다. [세부 gate](gates/g3q-paper-signal-proposals.md)
 

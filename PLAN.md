@@ -40,6 +40,8 @@
 - [x] G4N local order pending-action and overview warning contract: G4L DTO가 `pending_action=SUBMIT|CANCEL|none`을 필수로 노출해 `FILLED` 상태에 남은 cancel 결과 대기를 숨기지 않고, Flutter가 연결 상세와 홈에서 현재 broker 상태가 아닌 미확정 건수·추가 조작 금지 문구를 표시하며 account/client/provider/internal ID를 계속 제거
 - [x] G4O local daily chart display range: 마지막 수신 봉을 기준으로 `30일/90일/365일/전체`를 client-side에서 선택하고 차트·semantics·정확한 OHLCV 표가 같은 범위를 사용하며 sample/stale/price-adjustment provenance를 유지
 - [x] G4W 차트 원천 종목 ID·통화·시간 의미 공개, 확장 fixture의 명시적 identity 검증과 선택 종목 불일치 차단; legacy unknown·이전 정상 자료 유지. 평균단가·마커 완료는 아래 후속 gate로 유지
+- [x] G4X 종목 원장 상세: 한 revision의 잔여 FIFO 평균원가·원본 BUY/SELL 50건, 시세 실패와 독립 진입, 원본 시각·ID 및 실패 시 이전 결과 보존. 전체 check·smoke·release browser 통과 ([gate](gates/g4x-instrument-ledger-detail.md))
+- [ ] 중복만 가져온 뒤 기존 cash/holding/current valuation의 event 기록 시각과 metadata 기록 시각 비교를 회귀로 재현·교정. 신규 G4X와 달리 기존 세 조회에 동일성 가정이 남아 있음
 - [x] G4P first-run import recovery: 실제 core의 `never_verified`와 빈 cash/holdings/realized PnL snapshot 조합을 홈 empty state로 처리해 기존 거래 내역 가져오기 경로로 연결하고 320px·200% text·48dp·semantics를 검증
 - [x] G4Q credential-free Kiwoom latest trade: 공식 `ka10079` 1틱 응답의 가격과 provider 체결 시각을 기존 read transport로 정규화하고 잘못된 가격·시간 순서·같은 초의 다른 가격·미래 체결을 fail-closed; durable source identity·price-adjustment·persistence는 추측하지 않음
 - [x] G4R credential-free Kiwoom realtime price: 공식 `0B` 단일 KRX-format symbol 등록 packet과 bounded `REAL` frame의 가격·naive provider clock·로컬 receive 시각을 stdlib로 정규화하고 frame 내부 중복/모호성을 fail-closed; venue를 주장하지 않고 WebSocket dependency·network loop·날짜/identity 추론은 추가하지 않음
@@ -59,7 +61,7 @@
 - [x] G1.15 저장 가격 보유자산 평가 read view: internal ID를 제외한 GET API와 독립 Flutter 상세에서 같은 원장 revision의 수량·원가·원통화 평가·가격 provenance를 보여주고 sample/stale, 누락 시 합계 숨김, refresh 실패 시 알려진 정상 결과 보존을 검증 ([gate](gates/g1k-holding-valuation-view.md))
 - [ ] 원장 후속: historical-FX cost basis·performance valuation, 사용자 선택 기준통화와 표시/통화별 rounding 정책, provider FX/source priority·calendar 정책, Kiwoom price observation을 valuation authority로 승격할 freshness 정책, FX/거래·분할·기업행사 정정, 배당 재투자·국가별 세금 분류와 credentialed broker 체결/현금 reconciliation
 - [ ] 키움 live/mock credential 검증, official timezone/freshness와 REST tick/0B identity·order 관찰, WebSocket LOGIN/PING/reconnect/resubscribe/backpressure, credentialed scheduled known-good refresh, credentialed ledger reconciliation
-- [ ] 실제 키움 OHLCV를 local chart contract에 연결, 평균단가의 통화·반올림 계약과 실제 체결 timestamp read model을 먼저 정의한 뒤 marker를 추가하고 physical accessibility/performance budget을 증명
+- [ ] 실제 키움 OHLCV를 local chart contract에 연결, G4X 원장 조회와 비교할 봉 시간 구간·가격 조정 기준 및 실제 체결 timestamp 계약을 정의한 뒤 marker를 추가하고 physical accessibility/performance budget을 증명
 - [ ] K2B 후속: credentialed mock 관찰, submit 조회·안전한 unknown-submit correlation, SELL 정책, public 주문 mutation/확인 UI, production risk·broker-coupled runner fencing, 시장가·정정, 체결-원장 reconciliation
 - [x] deterministic strategy candidate search와 walk-forward challenger evidence
 - [x] Go/SQLite append-only research evidence·paper-candidate selection registry, stale 선택 차단, 직전 선택/`no_strategy` 수동 rollback, 현재 schema v14/backup v9 복구 증명

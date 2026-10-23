@@ -512,6 +512,12 @@ class _TestApi implements OmniApi {
   final PortfolioSnapshot? snapshotValue;
 
   @override
+  Future<InstrumentLedger> instrumentLedger(
+    String instrumentId,
+    String currency,
+  ) => throw UnsupportedError('Not used by this fixture.');
+
+  @override
   Future<HoldingValuation> holdingValuation() async {
     valuationCalls += 1;
     return valuationHandler?.call() ??

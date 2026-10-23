@@ -104,6 +104,12 @@ class FakeApi implements OmniApi {
   }
 
   @override
+  Future<InstrumentLedger> instrumentLedger(
+    String instrumentId,
+    String currency,
+  ) => throw UnsupportedError('Not used by this fixture.');
+
+  @override
   Future<HoldingValuation> holdingValuation() =>
       throw UnsupportedError('Not used by this fixture.');
 

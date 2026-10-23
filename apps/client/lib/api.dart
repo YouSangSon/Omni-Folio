@@ -10,6 +10,10 @@ abstract interface class OmniApi {
   Future<PortfolioSnapshot> snapshot();
   Future<CurrentPortfolioValuation> currentPortfolioValuation();
   Future<HoldingValuation> holdingValuation();
+  Future<InstrumentLedger> instrumentLedger(
+    String instrumentId,
+    String currency,
+  );
   Future<MarketCandles> candles(String symbol);
   Future<BrokerReconciliation?> latestBrokerReconciliation();
   Future<LocalOrderLog> localOrders();
@@ -109,6 +113,27 @@ class RestOmniApi implements OmniApi {
   @override
   Future<HoldingValuation> holdingValuation() async =>
       HoldingValuation.fromJson(await _get('/v1/portfolio/holding-valuation'));
+
+  @override
+  Future<InstrumentLedger> instrumentLedger(
+    String instrumentId,
+    String currency,
+  ) async {
+    final view = InstrumentLedger.fromJson(
+      await _getUri(
+        _uri('/v1/portfolio/instrument-ledger').replace(
+          queryParameters: {
+            'instrument_id': instrumentId,
+            'currency': currency,
+          },
+        ),
+      ),
+    );
+    if (view.instrumentId != instrumentId || view.currency != currency) {
+      throw const FormatException('Instrument ledger does not match request');
+    }
+    return view;
+  }
 
   @override
   Future<MarketCandles> candles(String symbol) async {

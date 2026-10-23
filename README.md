@@ -135,6 +135,18 @@ curl -fsS 'http://127.0.0.1:8080/v1/market-data/candles?symbol=AAPL&interval=1d'
 
 두 형식 모두 `bar_time_basis=unspecified`입니다. `at`은 정렬된 시각 표기일 뿐 거래일·봉 시작/종료·체결의 소속 봉을 증명하지 않습니다. 가격 조정과 시간 기준이 미확인이라 평균단가 선·원장 매매 마커는 아직 표시하지 않습니다. 원본 CSV와 연구 artifact hash는 바뀌지 않습니다. 검증 범위는 [G4W](gates/g4w-chart-source-basis.md)를 참고합니다.
 
+### 종목 원장 평균원가와 매매 기록
+
+보유 → 종목 상세 → 상단 `원장 평균단가·매매 보기`에서 현재 잔여 평균원가와 최근 매수·매도 50건을 확인합니다. 시세 조회 실패 중에도 진입할 수 있습니다. 새로고침 실패 시 이전 결과와 기준시점을 함께 유지합니다.
+
+```sh
+curl -fsS 'http://127.0.0.1:8080/v1/portfolio/instrument-ledger?instrument_id=instrument_aapl&currency=USD'
+```
+
+기존 snapshot의 종목 ID와 통화를 그대로 사용합니다. 한 원장 버전에서 모든 가져온 계좌를 합산하며, 남은 FIFO 원가와 수량은 정확한 소수 문자열로 보존하고 평균만 소수 8자리 half-even으로 표시합니다. Golden fixture는 6주·원가 USD 300.6·평균 USD 50.1입니다. 수량이 0이면 평균은 `null`, 매매 기록이 전혀 없으면 404입니다. `has_more=true`는 더 오래된 매매가 생략됐다는 뜻입니다.
+
+매매 행은 분할로 고치지 않은 원본이며 현재 원가는 원장 분할을 반영합니다. 로컬 기록은 증권사 확인 체결이 아니고, 이 화면은 차트 위의 평균선·매매 마커를 활성화하지 않습니다. [G4X 검증 범위](gates/g4x-instrument-ledger-detail.md)를 참고합니다.
+
 ### Direct FX observation foundation
 
 G1.10은 `1 base_currency = rate quote_currency` 방향의 환율 관측값을 schema v10 `STRICT`/insert-only series에 보존합니다. source observation identity, exact decimal rate, observed/fetched/recorded UTC 시각과 canonical row hash를 검증하며 같은 source·pair·observed-at 충돌을 거절합니다. `GET /v1/market-data/fx/latest`는 explicit `as_of` 이전에 관측되고 수신된 exact 방향만 반환하고 `sample=true`, `state=stale`를 유지합니다. 반대 방향을 자동 역산하거나 `FX_EXCHANGE` cash leg를 환율로 사용하지 않습니다.
