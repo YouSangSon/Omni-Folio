@@ -56,7 +56,8 @@ G3 research vertical slice
 ├─ G3.8E versioned paper performance safety policy and atomic automatic action
 └─ G3.8F scheduled local paper policy runner
    ├─ G3.8F1 one-shot paper policy command
-   └─ G3.8F2 DB-leased/fenced always-on runner
+   ├─ G3.8F2 DB-leased/fenced always-on runner
+   └─ G3.8F3 latest pending current-selection policy recovery
    |
 G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4A Kiwoom K0 read contract
@@ -104,6 +105,7 @@ G6 PostgreSQL and Kubernetes promotion
 - G3.8F1은 external scheduler가 호출할 수 있는 local one-shot CLI `paper-run-due`와 내부 `runDuePaperPerformancePolicy`를 추가한다. 최신 available local fixture close만 as_of로 쓰고 C3/D/E idempotent journal을 재사용해 retry와 두 owner 동시 실행이 같은 durable 결과로 수렴함을 검증하며, 완료 chain retry 전 paper 성과 정책 root recovery를 다시 증명한다. daemon, public API/UI, broker call, credential, deployment, shadow/live promotion 또는 수익성을 뜻하지 않는다. 세부 근거는 [`gates/g3o-scheduled-paper-runner.md`](gates/g3o-scheduled-paper-runner.md)에 둔다.
 - G3.8F2는 전역 current strategy selection과 exact account를 묶는 schema v21 singleton lease, 단조 증가 fencing token, 10초 heartbeat/30초 TTL, stale-owner 회수, C3/D/E transaction 내부 exact fence 재검증과 `paper-run-loop`의 success/failure/SIGINT/SIGTERM cleanup을 local에서 검증한다. 현재 selection 자체가 전역이므로 runner도 전역 직렬화하며, broker call·credential·public API/UI·deployment·shadow/live authority 또는 수익성을 뜻하지 않는다. 세부 근거는 [`gates/g3p-always-on-paper-runner.md`](gates/g3p-always-on-paper-runner.md)에 둔다.
 - local 검증, broker sandbox, live readiness, 실제 운영 증거를 따로 보고한다.
+- G3.8F3은 성과 전용 scheduler의 최신 저장 C3에 미완료 D/E가 있으면 현재 선택 일치 시 그 정책부터 완료한다. 중간 누적 손실을 최신 회복 가격으로 건너뛰던 RED를 교정하고, HOLD 후 진행·no_strategy 재시도·이전 선택 보존과 focused race·전체 check·smoke·소유 자원 정리를 통과했다. 오래된 누락 소급 복구와 주문·체결은 포함하지 않는다. [세부 gate](gates/g3ae-paper-pending-policy-recovery.md)
 - G1.15는 기존 native holding 계산을 sanitized GET과 독립 Flutter 상세에 연결한다. 같은 원장 revision의 수량·원가·가격·평가, exact nanosecond 24시간 경계, 통화별 합계와 sample/stale 경계, empty/partial/retained-error 화면 및 내부 ID 비노출을 로컬 검증한다. 2026-09-05 `make check`는 Go 전체, Flutter 74개, Python 17개, JSON 계약 15개와 scoped cleanup을 통과했다. 전체 계좌 평가, broker-backed freshness, 물리기기·수동 screen-reader 검증 또는 배포 증거는 아니다. 세부 근거는 [`gates/g1k-holding-valuation-view.md`](gates/g1k-holding-valuation-view.md)에 둔다.
 - G1.16은 G1.9의 revision-bound cursor를 Flutter에서 50건 단위로 탐색하고 첫 snapshot·nanosecond 순서·cursor trail·known-good 오류 보존을 강제한다. 최종 `make check`의 Go 전체·Flutter 98개·Python 34개·JSON 17개와 실제 release Chrome의 101→102건 snapshot 교체·3개 페이지 왕복·오류 보존·loopback 외 요청 0개를 통과했다. broker activity, physical-device accessibility, 배포·live readiness는 아니다. [세부 gate](gates/g1l-ledger-activity-pagination.md)
 - G1.17은 서버 소유 UTC cutoff 하나와 read transaction 하나에서 replay-verified 원장 cash와 보유자산 시장가를 KRW로 exact 합산한다. local fixture 가격과 `currency -> KRW` 직접 FX만 사용하고 하나라도 missing/stale/ambiguous이면 cash/holdings/total aggregate를 모두 숨긴다. Flutter는 optional read로 알려진 정상 응답과 원래 revision/cutoff를 함께 보존하며 local sample·현재 증권사 값 아님·revision mismatch를 표시한다. 원가 환산·PnL·성과·provider freshness·broker/live truth는 아니다. [세부 gate](gates/g1m-current-portfolio-valuation.md)

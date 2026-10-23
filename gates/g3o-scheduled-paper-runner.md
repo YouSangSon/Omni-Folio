@@ -11,7 +11,7 @@ It does not add a daemon, cron resource, Kubernetes object, public API, Flutter 
 
 ## Contract
 
-- The runner derives `as_of` only from the latest available local `paper_fixture` KRX/KRW/1d/Asia-Seoul `price_adjustment=unspecified` close whose `source_available_at`, `fetched_at`, and `recorded_at` are all at or before the runner clock.
+- The runner derives its latest available close from local `paper_fixture` KRX/KRW/1d/Asia-Seoul `price_adjustment=unspecified` bars whose `source_available_at`, `fetched_at`, and `recorded_at` are all at or before the runner clock. The [F3 recovery follow-up](g3ae-paper-pending-policy-recovery.md) first completes the account's newest committed performance point when it is older than that close, belongs to the current selection and still lacks D/E. One invocation returns that actual `as_of`; a later invocation may advance after a non-HALT result.
 - It reuses existing G3.8C3 account-global performance, G3.8D current-selection strategy-window performance, and G3.8E policy/action journals.
 - It writes no scheduler table in this checkpoint. Duplicate-process and crash retry safety comes from existing unique/idempotent performance, strategy-performance, and policy keys.
 - It proves the paper performance policy recovery root before returning a completed chain, so old prerequisite corruption cannot be hidden by cached results.

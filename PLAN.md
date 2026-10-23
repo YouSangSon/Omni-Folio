@@ -75,6 +75,7 @@
 - [x] G3.8E fixed v1 local paper performance policy, schema v20/backup v14 recovery proof, deterministic all-armed halt와 exact one-pop rollback의 atomic automatic provenance, v13 owned-copy empty-policy migration
 - [x] G3.8F1 scheduled one-shot paper evaluation/action runner: `paper-run-due` CLI가 최신 available local fixture close를 C3/D/E로 닫고 retry·두 owner 동시 실행을 idempotent journal로 수렴시키며 완료 chain retry 전 paper 성과 정책 root recovery를 다시 증명
 - [x] G3.8F2 DB-leased/fenced always-on local scheduler: 현재 전역 strategy selection에 맞춘 단일 active runner, 10초 heartbeat/30초 TTL, exact stage fencing, stale-owner 회수와 success/failure/SIGINT/SIGTERM cleanup proof
+- [x] G3.8F3 성과 전용 scheduler가 현재 선택의 최신 저장 C3에서 미완료 D/E를 먼저 완료하고 다음 호출에서 최신 close로 진행. 누적 손실 중지·HOLD 진행·재시도·이전 선택 경계, focused race·전체 check·smoke·소유 자원 정리 검증 ([gate](gates/g3ae-paper-pending-policy-recovery.md))
 - [ ] G3.8F 이후 alerting, shadow promotion evidence, CronJob packaging과 broker/live authority는 별도 gate
 - [x] G3.8G1 기존 SMA 판정을 공유하는 offline paper target proposal CLI와 closed contract·입력 provenance 검증; 비신뢰 제안이며 연구 증명·주문 권한 아님 ([gate](gates/g3q-paper-signal-proposals.md))
 - [ ] G3.8G2 proposal의 Go 검증·선택 binding, session/bar ingress, 순차 fill→policy→signal 실행과 process-owned paper authority·lease cleanup 및 지속 제안 생성·수집·실행 연결; 로컬 하위 gate와 상시 운영·소스 전달 검증을 구분

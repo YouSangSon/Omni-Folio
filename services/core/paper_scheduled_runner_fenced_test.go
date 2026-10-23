@@ -193,6 +193,10 @@ func TestG38F2HigherFenceRejectsStaleOwnerAndResumesPrefixesOnce(t *testing.T) {
 
 func TestG38F2ExactHaltRollbackIsTheOnlySelectionChangeAllowedInClaim(t *testing.T) {
 	svc, claim, _ := g38F2ClaimedDueWindow(t)
+	baseline, err := svc.runDuePaperPerformancePolicyWithClaim(context.Background(), k2aAccountRef, claim)
+	if err != nil || baseline == nil || baseline.Decision != "INSUFFICIENT" {
+		t.Fatalf("baseline policy was not completed first result=%+v err=%v", baseline, err)
+	}
 	result, err := svc.runDuePaperPerformancePolicyWithClaim(context.Background(), k2aAccountRef, claim)
 	if err != nil || result == nil || result.Decision != "HALT_AND_ROLLBACK" || result.RollbackSelectionEventID == "" {
 		t.Fatalf("exact policy rollback was rejected result=%+v err=%v", result, err)
