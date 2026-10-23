@@ -6,6 +6,27 @@
     "description": "Minimal cross-runtime contract for trust status, CSV import, deterministic portfolio snapshots, explicitly labeled sample market data, sanitized ledger activity, stored broker reconciliation, and verified local order lifecycle reads. JSON decimals are canonical strings; IDs are opaque strings."
   },
   "paths": {
+    "/v1/research/report": {
+      "get": {
+        "operationId": "getResearchReport",
+        "description": "Returns the latest REGISTERED research artifact by registry sequence, including no_promotion, not the selected strategy or newest wall-clock time. No query parameters are accepted. One database read snapshot validates registry hash/metadata and public shape/bindings without recomputing reported metrics. The reader supports only long_only_sma_crossover 1.0.0, canonical UTC timestamps and the documented numeric caps; the existing writer is unchanged. Unsupported or corrupt newest artifacts fail without falling back to an older report. No source/account IDs, hashes, traces, raw JSON, provenance freshness, live state or execution authority are exposed.",
+        "responses": {
+          "200": {
+            "description": "Stored research artifact, or report=null when no REGISTERED artifact exists.",
+            "headers": {"Cache-Control": {"description": "Do not store this observation.", "schema": {"const": "no-store"}}},
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ResearchReportView"}}}
+          },
+          "400": {
+            "description": "Query parameters are not accepted (invalid_query).",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "500": {
+            "description": "Storage failed or the newest registered artifact is unsupported or corrupt; only generic redacted internal_error details are returned, with no partial result or fallback.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          }
+        }
+      }
+    },
     "/v1/paper/monitor": {
       "get": {
         "operationId": "getPaperMonitor",
@@ -562,6 +583,65 @@
       }
     },
     "schemas": {
+      "ResearchReportView": {
+        "type": "object", "additionalProperties": false,
+        "required": ["schema_version", "mode", "metrics_verification", "observed_at", "report"],
+        "properties": {
+          "schema_version": {"const": "research-report.v1"},
+          "mode": {"const": "research_artifact_only"},
+          "metrics_verification": {"const": "reported_not_recomputed", "description": "Stored reported metrics are shape/binding validated, not recomputed from source bars."},
+          "observed_at": {"$ref": "#/components/schemas/LedgerActivityTimestamp", "description": "Server UTC observation time, captured once for this read in canonical RFC3339Nano form."},
+          "report": {"oneOf": [{"$ref": "#/components/schemas/StoredResearchReport"}, {"type": "null"}]}
+        }
+      },
+      "StoredResearchReport": {
+        "type": "object", "additionalProperties": false,
+        "required": ["recorded_at", "fast_window", "slow_window", "quantity", "candidate_count", "fold_count", "final_holdout", "promotion_target", "failed_gates", "walk_forward", "holdout", "buy_and_hold"],
+        "description": "Latest registered artifact, including failed promotion. fast_window must be less than slow_window; displayed windows identify only the final candidate evaluated on the final holdout, not each walk-forward fold's independently selected candidate. A paper_candidate label is research evidence and grants no execution authority.",
+        "properties": {
+          "recorded_at": {"$ref": "#/components/schemas/LedgerActivityTimestamp", "description": "Canonical UTC RFC3339Nano registration time; registry sequence determines latest even if the wall clock regresses."},
+          "fast_window": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+          "slow_window": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+          "quantity": {"$ref": "#/components/schemas/Decimal", "maxLength": 128, "pattern": "^(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$", "description": "Canonical positive decimal quantity."},
+          "candidate_count": {"type": "integer", "minimum": 1},
+          "fold_count": {"type": "integer", "minimum": 2},
+          "final_holdout": {"$ref": "#/components/schemas/ResearchReportRange"},
+          "promotion_target": {"type": "string", "enum": ["paper_candidate", "no_promotion"]},
+          "failed_gates": {
+            "type": "array", "uniqueItems": true, "maxItems": 3,
+            "description": "Unique failed gates in fixed walk_forward, final_holdout, buy_and_hold_baseline order; empty exactly when promotion_target is paper_candidate.",
+            "items": {"type": "string", "enum": ["walk_forward", "final_holdout", "buy_and_hold_baseline"]},
+            "oneOf": [{"const": []}, {"const": ["walk_forward"]}, {"const": ["final_holdout"]}, {"const": ["buy_and_hold_baseline"]}, {"const": ["walk_forward", "final_holdout"]}, {"const": ["walk_forward", "buy_and_hold_baseline"]}, {"const": ["final_holdout", "buy_and_hold_baseline"]}, {"const": ["walk_forward", "final_holdout", "buy_and_hold_baseline"]}]
+          },
+          "walk_forward": {"$ref": "#/components/schemas/ResearchReportMetrics", "description": "Each fold independently selects its candidate. Reported after_cost_return is the arithmetic mean across folds, max_drawdown is the maximum, and round_trips is the sum."},
+          "holdout": {"$ref": "#/components/schemas/ResearchReportMetrics", "description": "Reported final candidate metrics on the final_holdout span."},
+          "buy_and_hold": {"$ref": "#/components/schemas/ResearchReportMetrics", "description": "Modeled buy-and-hold on the same final holdout span with the same cash, quantity, fees and delayed-fill model; not raw market return."}
+        },
+        "allOf": [{
+          "if": {"properties": {"promotion_target": {"const": "paper_candidate"}}, "required": ["promotion_target"]},
+          "then": {"properties": {"failed_gates": {"maxItems": 0}}},
+          "else": {"properties": {"failed_gates": {"minItems": 1}}}
+        }]
+      },
+      "ResearchReportRange": {
+        "type": "object", "additionalProperties": false,
+        "required": ["first_bar_at", "last_bar_at", "bar_count"],
+        "description": "Final holdout bar range; first_bar_at must be at or before last_bar_at. The timestamps are equal exactly when bar_count is 1.",
+        "properties": {
+          "first_bar_at": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
+          "last_bar_at": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
+          "bar_count": {"type": "integer", "minimum": 1, "maximum": 9007199254740991}
+        }
+      },
+      "ResearchReportMetrics": {
+        "type": "object", "additionalProperties": false,
+        "required": ["after_cost_return", "max_drawdown", "round_trips"],
+        "properties": {
+          "after_cost_return": {"$ref": "#/components/schemas/Decimal", "maxLength": 128, "description": "Reported signed return ratio; no magnitude bound is imposed."},
+          "max_drawdown": {"type": "string", "maxLength": 128, "pattern": "^(?:0|[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$", "description": "Reported canonical nonnegative drawdown ratio; fixed fees can make this exceed 1."},
+          "round_trips": {"type": "string", "maxLength": 128, "pattern": "^(?:0|[1-9][0-9]*)$", "description": "Reported canonical nonnegative integer count."}
+        }
+      },
       "PaperMonitor": {
         "type": "object", "additionalProperties": false,
         "required": ["schema_version", "mode", "observed_at", "strategy_selected", "session_count", "pending_policy_count", "runner", "latest_policy"],

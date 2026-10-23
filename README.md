@@ -1,21 +1,31 @@
 # Omni-Folio
 
+[한국어](README.md) · [日本語](README.ja.md) · [English](README.en.md) · [简体中文](README.zh-CN.md)
+
 개인용 멀티 증권 포트폴리오와 안전한 자동매매를 위한 local-first 플랫폼입니다. Flutter 하나로 iOS·Android·web을 제공하고, Go가 원장·브로커·주문·리스크의 권한을 소유하며, Python은 재현 가능한 연구와 백테스트만 담당합니다.
+
+[현재 상태](#status) · [아키텍처](#architecture) · [빠른 시작](#quick-start) · [사용 흐름](#workflows) · [명령](#commands) · [문서](#documentation) · [안전 원칙](#safety)
+
+한국어 README를 기준으로 네 언어의 구성·명령·지원 범위를 함께 갱신합니다. 연결된 상세 설계와 검증 문서는 한국어 또는 영어로 제공됩니다. README 번역은 앱의 표시 언어 지원을 뜻하지 않습니다.
 
 > [!IMPORTANT]
 > 현재 실거래와 브로커 연결은 비활성입니다. 이 저장소의 백테스트·전략 결과는 수익을 보장하지 않으며 투자 조언이 아닙니다.
+
+<a id="status"></a>
 
 ## 현재 상태
 
 | Gate | 상태 | 증거 |
 |---|---|---|
-| G0 아키텍처·계약 | 통과 | versioned OpenAPI/JSON Schema, runtime ADR, root commands |
-| G1 로컬 원장 | 통과 | CSV preview → atomic apply → exact cash/trade/dividend/tax/split/FX replay → versioned FIFO residual allocation → append-only cash void → direct FX·security price observation → owner-declared instrument listing → snapshot/receipt → schema v22/backup v16와 supported legacy owned-copy migration/restore proof |
-| G2 Flutter client | 부분 통과 | iOS·Android·web release build와 자동 parser/widget 테스트 통과; chart 포함 Android emulator build/raster p95 2회 통과, physical-device·수동 screen-reader 및 test-instrumentation 격리 증거 남음 |
-| G3 research | 통과 | deterministic backtest, expanding walk-forward, final holdout, append-only candidate registry, exact selection-bound order authority, atomic halt/rollback safety, G3.8C2 ex-post closed-bar BUY/SELL·paper accounting, G3.8C3 account-global 성과, G3.8D strategy-window evidence, G3.8E local safety action, G3.8F1 one-shot·G3.8F2 DB-leased always-on local runner |
-| G4 broker·chart·order | 진행 중 | K0 read, local sample OHLCV/Flutter 차트, K1 credential-free candle, G4D price basis, G4E/K2A 주문 상태, G4F/K2B0 알려진 주문 체결 조정, G4G/K2B1 날짜 지정 체결 스캔, G4H known-good snapshot, G4I/K2C 내부 합성 authority, G4J/K2B2 credential-free mock 지정가 submit, G4K 저장된 보유수량 대조 read view, G4L 검증된 로컬 주문 lifecycle read view, G4M 홈 저장 대조 신뢰 요약, G4N pending-action 안전 경고, G4O local daily chart 표시 범위, G4P 첫 실행 import 복구 경로, G4Q 최신 1틱 체결, G4R 0B 실시간 가격 frame, G4S durable 체결 관측, G4T one-shot capture, G4U owner-declared listing enforcement 통과. 실제 키움 credentialed 시세·모의주문 관찰, freshness/scheduling, valuation 승격, unknown-submit 조회 복구, 주문 mutation UI, production risk와 모든 live gate는 남는다. |
+| G0 아키텍처·계약 | 로컬 통과 | 버전이 명시된 OpenAPI/JSON Schema, 런타임 책임 분리, 저장소 공통 명령 |
+| G1 로컬 원장 | 로컬 통과 | CSV 검토·원자적 반영, 정확한 거래·현금·분할·FX 재생, FIFO 원가·저장 가격 평가, schema v22/backup v16와 지원하는 과거 형식의 복구 |
+| G2 Flutter 클라이언트 | 부분 통과 | iOS·Android·web 릴리스 빌드와 자동 파서·위젯 검사, Android 에뮬레이터 프레임 측정. 실기기·수동 스크린 리더와 테스트 계측 격리 검증은 남음 |
+| G3 연구·모의 실행 | 부분 통과 | 재현 가능한 백테스트·walk-forward·홀드아웃, 후보 등록, 로컬 모의 체결·성과·중지·복구. 장기 운영·소스 전달의 완결성은 미검증 |
+| G4 브로커·차트·주문 | 진행 중 | 로컬 샘플 차트, 저장된 대조·주문 기록 조회, 자격 증명 없는 키움 합성 계약. 실제 인증을 사용하는 시세·모의주문 관찰, 결과 미확정 주문 복구와 모든 실거래 단계는 남음 |
 
 세부 상태와 완료 조건은 [`PLAN.md`](PLAN.md)와 [`GATES.md`](GATES.md)에서 관리합니다.
+
+<a id="architecture"></a>
 
 ## 아키텍처
 
@@ -36,6 +46,8 @@ flowchart LR
 - 토스증권의 쉬운 용어와 차분한 정보 위계를 참고하되 화면·상표·trade dress는 복제하지 않습니다.
 
 결정 근거는 [`docs/adr/0001-runtime-and-monorepo.md`](docs/adr/0001-runtime-and-monorepo.md), 브로커 순서와 UX 계약은 [`docs/broker-priority-and-ux.md`](docs/broker-priority-and-ux.md)를 따릅니다.
+
+<a id="quick-start"></a>
 
 ## 빠른 시작
 
@@ -91,6 +103,8 @@ make run-client API_URL=http://127.0.0.1:18080
 ```
 
 `OMNI_API_URL`은 Flutter build-time 값이며 secret을 넣으면 안 됩니다. Make는 `.env`를 자동으로 읽지 않습니다.
+
+<a id="workflows"></a>
 
 ## 검증 가능한 수직 슬라이스
 
@@ -249,6 +263,10 @@ curl -fsS http://127.0.0.1:8080/v1/orders
 
 ### Research와 자동 개선
 
+등록 후 앱의 **연결 → 백테스트 보고서 보기**에서 마지막 등록 결과를 조회합니다. `GET /v1/research/report`는 등록 순서로 하나를 고르며 승격 실패 결과도 포함합니다. 현재 선택된 전략과는 무관합니다. 자료가 없으면 빈 상태를 표시하고, 최신 자료가 손상되었거나 지원 형식을 벗어나면 이전 자료로 대체하지 않습니다. 수동 새로고침 실패 시 화면의 기존 결과·관측 시각은 유지합니다.
+
+화면은 저장된 지표를 읽으며 원본 봉으로 재계산하지 않습니다. 구간별 검증은 매 구간 다시 선택한 후보들의 평균 수익률·최대 낙폭·합산 완료 거래이고, 최종 후보의 파라미터는 별도 홀드아웃 평가에만 적용됩니다. 현재 포트폴리오 성과나 주문 권한을 뜻하지 않습니다. [지원 형식과 검증](gates/g3ag-research-report.md)
+
 ```sh
 make run-research
 make run-improvement
@@ -273,7 +291,7 @@ Python `--bundle`은 제안과 계산에 사용한 원본 CSV를 함께 출력�
 
 전략 개선 runner는 유한한 long-only SMA 후보를 expanding walk-forward로 평가하고 final holdout을 한 번만 엽니다. 결과는 `paper_candidate` 또는 `no_promotion`만 만들 수 있으며 credential·주문·live 승격 권한을 얻지 못합니다.
 
-Go core는 이 로컬 결과를 schema v13에서 도입되어 현재 schema v20에도 보존된 insert-only registry에 등록합니다. `no_promotion`도 거절 evidence로 보존되지만 선택할 수 없습니다. `paper_candidate` 선택은 현재 champion과 직접 비교하는 로직이 아직 없으므로 명시적 CLI와 optimistic concurrency를 요구하며, rollback은 직전 선택이나 `no_strategy`로만 새 이벤트를 append합니다.
+Go core는 이 로컬 결과를 schema v13에서 도입되어 현재 schema v22에도 보존된 insert-only registry에 등록합니다. `no_promotion`도 거절 evidence로 보존되지만 선택할 수 없습니다. `paper_candidate` 선택은 현재 champion과 직접 비교하는 로직이 아직 없으므로 명시적 CLI와 optimistic concurrency를 요구하며, rollback은 직전 선택이나 `no_strategy`로만 새 이벤트를 append합니다.
 
 ```sh
 candidate_file="$(mktemp)"
@@ -313,6 +331,8 @@ G3.8F2는 `omni-core paper-run-loop -db <path> -account <kiwoom_account_...>`를
 
 이 증거는 local ex-post fixture 결과입니다. daemon process 자체는 추가됐지만 public API/UI, broker-backed 평가, credential/live 실행, deployment, alerting, CronJob packaging, shadow/live promotion과 수익성 주장은 추가하지 않습니다.
 
+<a id="commands"></a>
+
 ## 주요 명령
 
 ```text
@@ -340,6 +360,8 @@ docker compose -f infra/compose.yaml down
 
 Compose는 one-shot migration 뒤 non-root/read-only core를 실행하고 API를 loopback에만 공개합니다. 인증·TLS가 없으므로 외부 네트워크나 cloud 배포에 사용하면 안 됩니다. Named volume은 `down` 뒤에도 유지됩니다. `down -v`는 로컬 원장 데이터를 의도적으로 삭제할 때만 사용하세요.
 
+<a id="documentation"></a>
+
 ## 저장소 구조
 
 ```text
@@ -362,6 +384,8 @@ docs/              목표, ADR, research, broker/UX 문서
 - 브라우저 API 실패: Flutter host/port와 `WEB_ORIGIN`을 정확히 맞춥니다. wildcard CORS는 지원하지 않습니다.
 - Compose `unhealthy`: `docker compose -f infra/compose.yaml logs core`로 `/readyz` 실패를 확인합니다.
 - SQLite 이동/백업: core를 먼저 중지합니다. `*.db-wal`과 `*.db-shm`은 같은 DB의 runtime sidecar입니다.
+
+<a id="safety"></a>
 
 ## 안전 원칙
 

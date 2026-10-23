@@ -10,6 +10,7 @@ import 'package:omni_folio_client/app.dart';
 import 'package:omni_folio_client/holding_valuation_page.dart';
 import 'package:omni_folio_client/models.dart';
 import 'package:omni_folio_client/paper_monitor.dart';
+import 'package:omni_folio_client/research_report.dart';
 
 Json holdingValuationJson({
   String status = 'stale_sample',
@@ -586,6 +587,10 @@ class _TestApi implements OmniApi {
   @override
   Future<PaperMonitor> paperMonitor() =>
       throw UnsupportedError('Not used by this fixture.');
+
+  @override
+  Future<ResearchReport> researchReport() =>
+      throw UnsupportedError('Loaded only from the research report page.');
 
   @override
   Future<LedgerActivityPage> ledgerActivities({String? cursor}) async =>

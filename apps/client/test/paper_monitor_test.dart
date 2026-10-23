@@ -151,6 +151,8 @@ void main() {
 
     expect(api.calls, 0);
     await tester.scrollUntilVisible(find.text('모의 자동매매 상태 보기'), 200);
+    await tester.pumpAndSettle();
+    expect(find.text('모의 자동매매 상태 보기').hitTestable(), findsOneWidget);
     await tester.tap(find.text('모의 자동매매 상태 보기'));
     await tester.pumpAndSettle();
 
