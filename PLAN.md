@@ -39,6 +39,7 @@
 - [x] G4M Flutter overview reconciliation trust summary: G4K 저장 결과를 공유해 현재 상태가 아님을 유지하면서 일치·불일치 수와 수집·저장 시각을 홈에 요약하고 기존 연결 상세로 이동하며 375px·200% text semantics를 검증
 - [x] G4N local order pending-action and overview warning contract: G4L DTO가 `pending_action=SUBMIT|CANCEL|none`을 필수로 노출해 `FILLED` 상태에 남은 cancel 결과 대기를 숨기지 않고, Flutter가 연결 상세와 홈에서 현재 broker 상태가 아닌 미확정 건수·추가 조작 금지 문구를 표시하며 account/client/provider/internal ID를 계속 제거
 - [x] G4O local daily chart display range: 마지막 수신 봉을 기준으로 `30일/90일/365일/전체`를 client-side에서 선택하고 차트·semantics·정확한 OHLCV 표가 같은 범위를 사용하며 sample/stale/price-adjustment provenance를 유지
+- [x] G4W 차트 원천 종목 ID·통화·시간 의미 공개, 확장 fixture의 명시적 identity 검증과 선택 종목 불일치 차단; legacy unknown·이전 정상 자료 유지. 평균단가·마커 완료는 아래 후속 gate로 유지
 - [x] G4P first-run import recovery: 실제 core의 `never_verified`와 빈 cash/holdings/realized PnL snapshot 조합을 홈 empty state로 처리해 기존 거래 내역 가져오기 경로로 연결하고 320px·200% text·48dp·semantics를 검증
 - [x] G4Q credential-free Kiwoom latest trade: 공식 `ka10079` 1틱 응답의 가격과 provider 체결 시각을 기존 read transport로 정규화하고 잘못된 가격·시간 순서·같은 초의 다른 가격·미래 체결을 fail-closed; durable source identity·price-adjustment·persistence는 추측하지 않음
 - [x] G4R credential-free Kiwoom realtime price: 공식 `0B` 단일 KRX-format symbol 등록 packet과 bounded `REAL` frame의 가격·naive provider clock·로컬 receive 시각을 stdlib로 정규화하고 frame 내부 중복/모호성을 fail-closed; venue를 주장하지 않고 WebSocket dependency·network loop·날짜/identity 추론은 추가하지 않음

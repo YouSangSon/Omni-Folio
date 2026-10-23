@@ -184,6 +184,7 @@ class _ProfileApi implements OmniApi {
     holdings: List.generate(
       120,
       (index) => Holding(
+        instrumentId: 'profile_$index',
         symbol: 'KRX${index.toString().padLeft(3, '0')}',
         quantity: '${index + 1}',
         costBasis: '${100000 + index}',

@@ -635,8 +635,16 @@
       "MarketDataCandles": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["symbol", "venue", "timezone", "interval", "price_adjustment", "source", "sample", "state", "source_as_of", "fetched_at", "issues", "bars"],
+        "required": ["instrument_id", "currency", "bar_time_basis", "symbol", "venue", "timezone", "interval", "price_adjustment", "source", "sample", "state", "source_as_of", "fetched_at", "issues", "bars"],
+        "description": "instrument_id and currency are either both null (legacy unknown) or both explicitly declared by the source for every bar. They are not inferred from the query, symbol, current listing, or selected holding. The client compares both to the selected holding before accepting an identified series. bar_time_basis=unspecified means at is only a timestamp label, not a proven session date, start, close, or trade-to-bar membership. It cannot authorize ledger overlays.",
+        "oneOf": [
+          {"properties": {"instrument_id": {"type": "null"}, "currency": {"type": "null"}}},
+          {"properties": {"instrument_id": {"type": "string"}, "currency": {"type": "string"}}}
+        ],
         "properties": {
+          "instrument_id": {"type": ["string", "null"], "minLength": 1, "maxLength": 128, "description": "Explicit fixture instrument ID; server also enforces <=128 UTF-8 bytes and no whitespace/control characters."},
+          "currency": {"type": ["string", "null"], "pattern": "^[A-Z]{3}$"},
+          "bar_time_basis": {"const": "unspecified"},
           "symbol": {"type": "string", "minLength": 1},
           "venue": {"type": "string", "minLength": 1},
           "timezone": {"type": "string", "minLength": 1},

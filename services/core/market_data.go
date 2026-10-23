@@ -28,6 +28,8 @@ type MarketDataPort interface {
 }
 
 type MarketDataSeries struct {
+	InstrumentID    *string
+	Currency        *string
 	Symbol          string
 	Venue           string
 	Timezone        string
@@ -76,7 +78,8 @@ func parseMarketDataFixture(source io.Reader) (MarketDataPort, error) {
 		return nil, errors.New("market fixture must be valid CSV")
 	}
 	header := []string{"bar_at", "symbol", "venue", "timezone", "interval", "open", "high", "low", "close", "volume"}
-	if len(records) < 2 || !reflect.DeepEqual(records[0], header) {
+	identifiedHeader := append(append([]string{}, header...), "instrument_id", "currency")
+	if len(records) < 2 || (!reflect.DeepEqual(records[0], header) && !reflect.DeepEqual(records[0], identifiedHeader)) {
 		return nil, errors.New("market fixture requires the canonical header and 1 to 500 rows")
 	}
 	if len(records)-1 > maxMarketDataRows {
@@ -86,6 +89,12 @@ func parseMarketDataFixture(source io.Reader) (MarketDataPort, error) {
 		Symbol: records[1][1], Venue: records[1][2], Timezone: records[1][3], Interval: records[1][4],
 		PriceAdjustment: marketDataAdjustmentUnspecified,
 	}
+	if len(records[0]) == len(identifiedHeader) {
+		series.InstrumentID, series.Currency = &records[1][10], &records[1][11]
+		if !validMarketDataIdentity(series) {
+			return nil, errors.New("market fixture instrument_id and currency are invalid")
+		}
+	}
 	if series.Symbol == "" || series.Venue == "" || series.Timezone == "" || series.Interval == "" {
 		return nil, errors.New("market fixture symbol, venue, timezone, and interval are required")
 	}
@@ -93,6 +102,9 @@ func parseMarketDataFixture(source io.Reader) (MarketDataPort, error) {
 	for rowNumber, row := range records[1:] {
 		if row[1] != series.Symbol || row[2] != series.Venue || row[3] != series.Timezone || row[4] != series.Interval {
 			return nil, fmt.Errorf("market fixture row %d has inconsistent metadata", rowNumber+2)
+		}
+		if series.InstrumentID != nil && (row[10] != *series.InstrumentID || row[11] != *series.Currency) {
+			return nil, fmt.Errorf("market fixture row %d has inconsistent identity", rowNumber+2)
 		}
 		at, err := time.Parse(time.RFC3339, row[0])
 		if err != nil {
@@ -108,6 +120,14 @@ func parseMarketDataFixture(source io.Reader) (MarketDataPort, error) {
 		series.Bars = append(series.Bars, MarketDataBar{At: at.UTC().Format(time.RFC3339Nano), Open: row[5], High: row[6], Low: row[7], Close: row[8], Volume: row[9]})
 	}
 	return &marketDataFixture{series: series}, nil
+}
+
+func validMarketDataIdentity(series *MarketDataSeries) bool {
+	if series.InstrumentID == nil && series.Currency == nil {
+		return true
+	}
+	return series.InstrumentID != nil && series.Currency != nil &&
+		safeOrderID(*series.InstrumentID) && currencyCodePattern.MatchString(*series.Currency)
 }
 
 func validateMarketDataValues(open, high, low, close, volume string) error {
@@ -174,7 +194,14 @@ func (s *Service) handleMarketDataCandles(w http.ResponseWriter, r *http.Request
 		writeError(w, internalError(errors.New("local market data returned an unsupported price adjustment")))
 		return
 	}
+	if !validMarketDataIdentity(series) {
+		writeError(w, internalError(errors.New("local market data returned an invalid identity")))
+		return
+	}
 	writeJSON(w, http.StatusOK, struct {
+		InstrumentID    *string         `json:"instrument_id"`
+		Currency        *string         `json:"currency"`
+		BarTimeBasis    string          `json:"bar_time_basis"`
 		Symbol          string          `json:"symbol"`
 		Venue           string          `json:"venue"`
 		Timezone        string          `json:"timezone"`
@@ -187,5 +214,5 @@ func (s *Service) handleMarketDataCandles(w http.ResponseWriter, r *http.Request
 		FetchedAt       string          `json:"fetched_at"`
 		Issues          []APIError      `json:"issues"`
 		Bars            []MarketDataBar `json:"bars"`
-	}{series.Symbol, series.Venue, series.Timezone, series.Interval, series.PriceAdjustment, "local_fixture", true, "stale", series.Bars[len(series.Bars)-1].At, s.now().UTC().Format(time.RFC3339Nano), []APIError{{Code: "sample_data", Message: "market data is a local sample and not live"}}, series.Bars})
+	}{series.InstrumentID, series.Currency, "unspecified", series.Symbol, series.Venue, series.Timezone, series.Interval, series.PriceAdjustment, "local_fixture", true, "stale", series.Bars[len(series.Bars)-1].At, s.now().UTC().Format(time.RFC3339Nano), []APIError{{Code: "sample_data", Message: "market data is a local sample and not live"}}, series.Bars})
 }

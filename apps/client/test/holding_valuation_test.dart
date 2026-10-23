@@ -539,6 +539,7 @@ class _TestApi implements OmniApi {
         cash: const [],
         holdings: const [
           Holding(
+            instrumentId: 'instrument_aapl',
             symbol: 'AAPL',
             quantity: '3',
             costBasis: '31',

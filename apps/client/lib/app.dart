@@ -1026,6 +1026,12 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
     });
     try {
       final candles = await widget.api.candles(widget.holding.symbol);
+      if (candles.symbol != widget.holding.symbol ||
+          (candles.instrumentId != null &&
+              (candles.instrumentId != widget.holding.instrumentId ||
+                  candles.currency != widget.holding.currency))) {
+        throw const FormatException('Market series does not match holding');
+      }
       if (mounted) setState(() => _candles = candles);
     } catch (_) {
       if (mounted) {
@@ -1178,7 +1184,12 @@ class _MarketMetadata extends StatelessWidget {
       _ => '조정 여부 확인 안 됨',
     };
     return Text(
-      '거래소 ${candles.venue}\n시간대 ${candles.timezone}\n가격 기준 $priceAdjustment\n원천 ${candles.source}\n원천 기준 ${candles.sourceAsOf ?? '없음'}\n가져온 시각 ${candles.fetchedAt}\n상태 ${candles.state}',
+      '거래소 ${candles.venue}\n가격 통화 ${candles.currency ?? '확인 안 됨'}\n'
+      '${candles.instrumentId == null ? '원장 종목과의 연결 확인 안 됨' : '자료에 명시된 종목·통화가 원장 종목과 일치'}\n'
+      '시간대 ${candles.timezone} · 봉 시각 의미 확인 안 됨\n'
+      '가격 기준 $priceAdjustment\n'
+      '평균단가·매매 기록을 겹쳐 표시할 수 없습니다. 가격 조정과 봉 시각의 의미를 확인해야 합니다.\n'
+      '원천 ${candles.source}\n원천 기준 ${candles.sourceAsOf ?? '없음'}\n가져온 시각 ${candles.fetchedAt}\n상태 ${candles.state}',
       style: _tabular(context),
     );
   }
