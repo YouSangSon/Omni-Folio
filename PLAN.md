@@ -41,7 +41,8 @@
 - [x] G4O local daily chart display range: 마지막 수신 봉을 기준으로 `30일/90일/365일/전체`를 client-side에서 선택하고 차트·semantics·정확한 OHLCV 표가 같은 범위를 사용하며 sample/stale/price-adjustment provenance를 유지
 - [x] G4W 차트 원천 종목 ID·통화·시간 의미 공개, 확장 fixture의 명시적 identity 검증과 선택 종목 불일치 차단; legacy unknown·이전 정상 자료 유지. 평균단가·마커 완료는 아래 후속 gate로 유지
 - [x] G4X 종목 원장 상세: 한 revision의 잔여 FIFO 평균원가·원본 BUY/SELL 50건, 시세 실패와 독립 진입, 원본 시각·ID 및 실패 시 이전 결과 보존. 전체 check·smoke·release browser 통과 ([gate](gates/g4x-instrument-ledger-detail.md))
-- [x] G1.21 중복만 가져온 뒤 cash/holding/current valuation의 잘못된 시각 동일성 비교를 교정. 기존 metadata 응답·cutoff와 전체 proof를 유지하며 현재 revision의 모든 event 기록 시각을 나노초 기준으로 검사. 전체 check·smoke 통과 ([gate](gates/g1q-valuation-metadata-cutoff.md))
+- [x] G1.21 중복만 가져온 뒤 cash/holding/current valuation의 잘못된 시각 동일성 비교를 교정. 기존 metadata 응답·cutoff와 전체 proof를 유지하며 현재 revision의 모든 event 기록 시각을 나노초 기준으로 검사. 전체 check·smoke와 merged main의 실제 375px 중복 import → 평가·원장 refresh 통과 ([gate](gates/g1q-valuation-metadata-cutoff.md))
+- [ ] G2 responsive shell: 900px 경계 전환 시 미적용 CSV·preview가 초기화되는 현상 교정. 실제 중복 import 검증 중 발견했으며 적용 전 입력 보존은 아직 미완료 ([근거](gates/g1q-valuation-metadata-cutoff.md#remaining-boundary))
 - [x] G4P first-run import recovery: 실제 core의 `never_verified`와 빈 cash/holdings/realized PnL snapshot 조합을 홈 empty state로 처리해 기존 거래 내역 가져오기 경로로 연결하고 320px·200% text·48dp·semantics를 검증
 - [x] G4Q credential-free Kiwoom latest trade: 공식 `ka10079` 1틱 응답의 가격과 provider 체결 시각을 기존 read transport로 정규화하고 잘못된 가격·시간 순서·같은 초의 다른 가격·미래 체결을 fail-closed; durable source identity·price-adjustment·persistence는 추측하지 않음
 - [x] G4R credential-free Kiwoom realtime price: 공식 `0B` 단일 KRX-format symbol 등록 packet과 bounded `REAL` frame의 가격·naive provider clock·로컬 receive 시각을 stdlib로 정규화하고 frame 내부 중복/모호성을 fail-closed; venue를 주장하지 않고 WebSocket dependency·network loop·날짜/identity 추론은 추가하지 않음
