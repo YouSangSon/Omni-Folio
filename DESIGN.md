@@ -62,6 +62,7 @@ Connections offers a separate `모의 자동매매 상태 보기` page through t
 - Minimum 48×48 logical-pixel interactive targets, which also clears the 44pt iOS floor; default text/control size 16 logical px or larger.
 - All actions work with touch, pointer, keyboard, and screen reader. Hover is supplementary only.
 - Provide visible focus, logical traversal, semantic labels, chart summaries/table alternatives, 200% text support, and reduced-motion final states.
+- Switching between bottom navigation and the desktop rail must preserve the active page's input, focus, preview, errors and pending-operation result; resizing is not navigation.
 - Motion is quiet feedback only: never autoplay, scroll-scrub, or shift layout to present a decision.
 
 ## Live-order boundary in the UI
