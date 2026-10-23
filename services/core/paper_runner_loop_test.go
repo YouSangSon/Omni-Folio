@@ -85,14 +85,17 @@ func TestG38F2PaperRunnerLoopWaitsForNoCloseOrIncompleteMarks(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			svc, _ := g38EPerformanceWindow(t, []string{"100"})
+			svc, baseline := g38EPerformanceWindow(t, []string{"100"})
+			if _, err := svc.applyPaperPerformancePolicy(context.Background(), k2aAccountRef, baseline.StrategySelectionEventID, baseline.StrategyPerformanceID); err != nil {
+				t.Fatal(err)
+			}
 			test.setup(t, svc)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			waits := 0
 			err := svc.runPaperPerformanceLoopWithWait(ctx, k2aAccountRef, func(waitCtx context.Context, delay time.Duration) error {
 				waits++
-				if delay != 10*time.Second || g38EJournalCounts(t, svc).Policy != 0 {
+				if delay != 10*time.Second || g38EJournalCounts(t, svc).Policy != 1 || scheduledPerformanceCount(t, svc) != 1 {
 					t.Fatalf("not-due state was not idle: delay=%s policy=%d", delay, g38EJournalCounts(t, svc).Policy)
 				}
 				cancel()

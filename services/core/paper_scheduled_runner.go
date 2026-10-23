@@ -93,14 +93,34 @@ func (s *Service) prepareDuePaperPerformancePolicyWithClaim(ctx context.Context,
 	if err != nil {
 		return "", nil, err
 	}
+	_, selection, selectedResult, err := currentPaperPerformanceSelection(ctx, tx)
+	if err != nil {
+		return "", nil, err
+	}
+	var previous string
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(as_of),'') FROM paper_performance_events WHERE account_ref=?`, accountRef).Scan(&previous); err != nil {
+		return "", nil, err
+	}
+	if previous != "" && previous < asOf {
+		point, found, err := loadPaperPerformanceByKey(ctx, tx, accountRef, previous)
+		if err != nil || !found {
+			return "", nil, errors.Join(errors.New("scheduled paper runner frontier is missing"), err)
+		}
+		if point.StrategySelectionEventID == selection {
+			if _, complete, err := loadScheduledPaperRunResult(ctx, tx, accountRef, previous); err != nil {
+				return "", nil, err
+			} else if !complete {
+				// A newer C3/D would make this committed loss policy stale.
+				asOf = previous
+			}
+		}
+	}
 	if result, found, err := loadScheduledPaperRunResult(ctx, tx, accountRef, asOf); err != nil {
 		return "", nil, err
 	} else if found {
 		return asOf, result, nil
 	}
-	if _, _, selectedResult, err := currentPaperPerformanceSelection(ctx, tx); err != nil {
-		return "", nil, err
-	} else if selectedResult == noStrategySelection {
+	if selectedResult == noStrategySelection {
 		return "", nil, errors.New("current paper strategy is missing")
 	}
 	session, found, err := loadPaperAccountingSession(ctx, tx, accountRef)

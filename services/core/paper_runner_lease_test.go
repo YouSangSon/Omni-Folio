@@ -273,4 +273,18 @@ func TestG38F2ReleasedPartialPrefixAllowsManualSelectionAndIdlesOldClose(t *test
 	if err := svc.releasePaperRunnerLease(context.Background(), newClaim); err != nil {
 		t.Fatal(err)
 	}
+	const newClose = "2026-01-16T06:30:00.000000000Z"
+	svc.now = func() time.Time { return mustTime("2026-01-16T07:00:00Z") }
+	recordG38C3MarkBar(t, svc, "005930", "g38f2-new-selection-close", newClose, "100")
+	result, err := svc.runDuePaperPerformancePolicy(context.Background(), k2aAccountRef)
+	if err != nil || result == nil || result.AsOf != newClose {
+		t.Fatalf("prior-selection prefix blocked the new selection: result=%+v err=%v", result, err)
+	}
+	point, found, err := loadPaperPerformanceByKey(context.Background(), svc.db, k2aAccountRef, newClose)
+	if err != nil || !found || point.StrategySelectionEventID != selected.CurrentEventID {
+		t.Fatalf("new close selection mismatch: point=%+v err=%v", point, err)
+	}
+	if _, complete, err := loadScheduledPaperRunResult(context.Background(), svc.db, k2aAccountRef, asOf); err != nil || complete {
+		t.Fatalf("old prefix was reattributed to the new selection: complete=%t err=%v", complete, err)
+	}
 }
