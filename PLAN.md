@@ -43,7 +43,7 @@
 - [x] G4X 종목 원장 상세: 한 revision의 잔여 FIFO 평균원가·원본 BUY/SELL 50건, 시세 실패와 독립 진입, 원본 시각·ID 및 실패 시 이전 결과 보존. 전체 check·smoke·release browser 통과 ([gate](gates/g4x-instrument-ledger-detail.md))
 - [x] G1.21 중복만 가져온 뒤 cash/holding/current valuation의 잘못된 시각 동일성 비교를 교정. 기존 metadata 응답·cutoff와 전체 proof를 유지하며 현재 revision의 모든 event 기록 시각을 나노초 기준으로 검사. 전체 check·smoke와 merged main의 실제 375px 중복 import → 평가·원장 refresh 통과 ([gate](gates/g1q-valuation-metadata-cutoff.md))
 - [x] G2 responsive shell: 900px 경계 전환 시 CSV·선택·focus·preview·오류·진행 중 apply·receipt 보존. 양방향 회귀와 Flutter122 검사, 실제 375↔1280px release 흐름 확인 ([근거](gates/g2-client.md#responsive-import-state-2026-10-23))
-- [ ] G2 import 오류 문구: 미리보기가 없거나 입력 수정으로 무효화된 뒤 실패해도 “이전 미리보기는 유지됩니다”라고 표시되는 안내 교정 ([근거](gates/g2-client.md#responsive-import-state-2026-10-23))
+- [x] G2 import 오류 문구: 실제 미리보기가 남아 있을 때만 보존 안내. 첫 실패·입력 무효화·보존 실패 회귀와 release 화면 확인 ([근거](gates/g2-client.md#preview-error-state-2026-10-23))
 - [x] G4P first-run import recovery: 실제 core의 `never_verified`와 빈 cash/holdings/realized PnL snapshot 조합을 홈 empty state로 처리해 기존 거래 내역 가져오기 경로로 연결하고 320px·200% text·48dp·semantics를 검증
 - [x] G4Q credential-free Kiwoom latest trade: 공식 `ka10079` 1틱 응답의 가격과 provider 체결 시각을 기존 read transport로 정규화하고 잘못된 가격·시간 순서·같은 초의 다른 가격·미래 체결을 fail-closed; durable source identity·price-adjustment·persistence는 추측하지 않음
 - [x] G4R credential-free Kiwoom realtime price: 공식 `0B` 단일 KRX-format symbol 등록 packet과 bounded `REAL` frame의 가격·naive provider clock·로컬 receive 시각을 stdlib로 정규화하고 frame 내부 중복/모호성을 fail-closed; venue를 주장하지 않고 WebSocket dependency·network loop·날짜/identity 추론은 추가하지 않음

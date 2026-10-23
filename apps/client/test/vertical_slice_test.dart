@@ -2383,6 +2383,46 @@ void main() {
     expect(find.textContaining('이전 미리보기는 무효'), findsOneWidget);
   });
 
+  testWidgets('preview failure describes only retained state', (tester) async {
+    tester.view.physicalSize = const Size(800, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = goldenApi();
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('내역'));
+    await pumpUi(tester);
+    await tester.enterText(find.byType(TextField), 'header\nrow');
+    final preview = find.text('미리보기 만들기');
+    final retained = find.textContaining('이전 미리보기는 유지됩니다.');
+
+    api.fail = true;
+    await tester.tap(preview);
+    await pumpUi(tester);
+    expect(find.textContaining('미리보기를 완료하지 못했습니다.'), findsOneWidget);
+    expect(retained, findsNothing);
+    expect(find.text('원자적으로 적용'), findsNothing);
+
+    api.fail = false;
+    await tester.tap(preview);
+    await pumpUi(tester);
+    api.fail = true;
+    await tester.tap(preview);
+    await pumpUi(tester);
+    expect(retained, findsOneWidget);
+    expect(find.text('원자적으로 적용'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'header\nchanged-row');
+    await tester.tap(preview);
+    await pumpUi(tester);
+    expect(find.textContaining('미리보기를 완료하지 못했습니다.'), findsOneWidget);
+    expect(retained, findsNothing);
+    expect(find.text('원자적으로 적용'), findsNothing);
+    expect(api.applyKeys, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('import operations never render upstream error details', (
     tester,
   ) async {
