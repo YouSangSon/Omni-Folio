@@ -2163,11 +2163,10 @@ class _ActivityPageState extends State<ActivityPage> {
       }
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _error =
-              '미리보기를 완료하지 못했습니다. 입력을 확인한 뒤 다시 시도하세요.\n'
-              '이전 미리보기는 유지됩니다.',
-        );
+        setState(() {
+          _error = '미리보기를 완료하지 못했습니다. 입력을 확인한 뒤 다시 시도하세요.';
+          if (_preview != null) _error = '$_error\n이전 미리보기는 유지됩니다.';
+        });
       }
     } finally {
       if (mounted) setState(() => _busy = false);
