@@ -955,6 +955,130 @@ class LedgerActivityPage {
   }
 }
 
+class InstrumentLedger {
+  const InstrumentLedger({
+    required this.instrumentId,
+    required this.symbol,
+    required this.currency,
+    required this.ledgerRevision,
+    required this.ledgerAsOf,
+    required this.ledgerRecordedAt,
+    required this.quantity,
+    required this.costBasis,
+    required this.averageCost,
+    required this.hasMore,
+    required this.trades,
+  });
+
+  factory InstrumentLedger.fromJson(Json json) {
+    _requireExactKeys(json, const {
+      'instrument_id',
+      'symbol',
+      'currency',
+      'source',
+      'broker_freshness',
+      'ledger_revision',
+      'ledger_as_of',
+      'ledger_recorded_at',
+      'cost_basis_policy',
+      'average_cost_policy',
+      'quantity',
+      'cost_basis',
+      'average_cost',
+      'trade_limit',
+      'has_more',
+      'trades',
+    });
+    final instrumentId = _text(json, 'instrument_id');
+    final symbol = _text(json, 'symbol');
+    final currency = _currency(json, 'currency');
+    final revision = _text(json, 'ledger_revision');
+    final asOf = _utcText(json, 'ledger_as_of');
+    final recordedAt = _utcText(json, 'ledger_recorded_at');
+    final quantity = _decimal(json, 'quantity');
+    final cost = _decimal(json, 'cost_basis');
+    final average = _nullableDecimal(json, 'average_cost');
+    final hasMore = _bool(json, 'has_more');
+    final trades = _jsonList(
+      json,
+      'trades',
+    ).map(LedgerActivity.fromJson).toList(growable: false);
+    if (_text(json, 'source') != 'local_ledger' ||
+        _text(json, 'broker_freshness') != 'unverified' ||
+        _text(json, 'cost_basis_policy') !=
+            'fifo_utc_nanosecond_exact_else_half_even_residual_8_v2' ||
+        _text(json, 'average_cost_policy') !=
+            'remaining_fifo_cost_per_unit_half_even_8_v1' ||
+        !RegExp(r'^rev_[0-9]{10}$').hasMatch(revision) ||
+        quantity.startsWith('-') ||
+        cost.startsWith('-') ||
+        (quantity == '0'
+            ? (cost != '0' || average != null)
+            : average == null) ||
+        (average != null &&
+            (average.startsWith('-') || _decimalScale(average) > 8)) ||
+        _count(json, 'trade_limit') != 50 ||
+        trades.isEmpty ||
+        trades.length > 50 ||
+        (hasMore && trades.length != 50)) {
+      throw const FormatException('Invalid instrument ledger');
+    }
+    for (var index = 0; index < trades.length; index++) {
+      final trade = trades[index];
+      if (!const {'BUY', 'SELL'}.contains(trade.type) ||
+          trade.currency != currency ||
+          _utcNanoseconds(trade.occurredAt) > _utcNanoseconds(asOf) ||
+          (index > 0 &&
+              _utcNanoseconds(trade.occurredAt) >
+                  _utcNanoseconds(trades[index - 1].occurredAt))) {
+        throw const FormatException('Invalid instrument trade scope');
+      }
+    }
+    return InstrumentLedger(
+      instrumentId: instrumentId,
+      symbol: symbol,
+      currency: currency,
+      ledgerRevision: revision,
+      ledgerAsOf: asOf,
+      ledgerRecordedAt: recordedAt,
+      quantity: quantity,
+      costBasis: cost,
+      averageCost: average,
+      hasMore: hasMore,
+      trades: trades,
+    );
+  }
+
+  final String instrumentId, symbol, currency;
+  final String ledgerRevision, ledgerAsOf, ledgerRecordedAt;
+  final String quantity, costBasis;
+  final String? averageCost;
+  final bool hasMore;
+  final List<LedgerActivity> trades;
+}
+
+bool _tradeCashMatches(
+  String type,
+  String quantity,
+  String price,
+  String fee,
+  String amount,
+) {
+  final productScale = _decimalScale(quantity) + _decimalScale(price);
+  final scale = [
+    productScale,
+    _decimalScale(fee),
+    _decimalScale(amount),
+  ].reduce((a, b) => a > b ? a : b);
+  final gross =
+      _scaledDecimal(quantity, _decimalScale(quantity)) *
+      _scaledDecimal(price, _decimalScale(price)) *
+      BigInt.from(10).pow(scale - productScale);
+  final expected =
+      (type == 'BUY' ? -gross : gross) - _scaledDecimal(fee, scale);
+  return expected == _scaledDecimal(amount, scale);
+}
+
 class LedgerActivity {
   const LedgerActivity({
     required this.type,
@@ -1015,8 +1139,10 @@ class LedgerActivity {
           !price.startsWith('-') &&
           fee != null &&
           !fee.startsWith('-') &&
-          noCounter &&
-          ((type == 'BUY' && negative) || (type == 'SELL' && positive));
+          noCounter;
+      if (valid) {
+        valid = _tradeCashMatches(type, quantity, price, fee, amount);
+      }
     } else if (type == 'DIVIDEND') {
       valid =
           valid &&

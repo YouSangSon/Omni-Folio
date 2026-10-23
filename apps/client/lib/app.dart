@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'holding_valuation_page.dart';
+import 'instrument_ledger_page.dart';
 import 'models.dart';
 import 'paper_monitor_page.dart';
 
@@ -1045,8 +1046,24 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text('${widget.holding.symbol} 시세'),
+      title: Text(
+        '${widget.holding.symbol} 시세',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
       actions: [
+        IconButton(
+          tooltip: '원장 평균단가·매매 보기',
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => InstrumentLedgerPage(
+                api: widget.api,
+                holding: widget.holding,
+              ),
+            ),
+          ),
+          icon: const Icon(Icons.receipt_long_outlined),
+        ),
         IconButton(
           tooltip: '차트 새로고침',
           onPressed: _busy ? null : _refresh,

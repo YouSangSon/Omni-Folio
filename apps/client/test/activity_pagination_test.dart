@@ -116,6 +116,25 @@ class _ActivityApi implements OmniApi {
 
 void main() {
   test(
+    'trade cash accepts zero and negative net sales, rejects mismatches',
+    () {
+      for (final entry in {'1': '0', '1.1': '-0.1'}.entries) {
+        final row = _event(1)
+          ..addAll({
+            'type': 'SELL',
+            'symbol': 'AAPL',
+            'quantity': '0.5',
+            'price': '2',
+            'fee': entry.key,
+            'amount': entry.value,
+          });
+        expect(LedgerActivity.fromJson(row).amount, entry.value);
+        row['amount'] = '100';
+        expect(() => LedgerActivity.fromJson(row), throwsFormatException);
+      }
+    },
+  );
+  test(
     'RestOmniApi round-trips an opaque activity cursor through Uri query',
     () async {
       late http.Request request;

@@ -111,6 +111,67 @@
         }
       }
     },
+    "/v1/portfolio/instrument-ledger": {
+      "get": {
+        "operationId": "getInstrumentLedger",
+        "description": "Returns current remaining FIFO quantity and cost plus the latest 50 original BUY/SELL records for one exact instrument and currency in one verified ledger revision. Aggregates all imported accounts. Average cost is display-only half-even rounding to eight decimal places, not tax basis or a broker price. Trades exclude corporate actions and are not broker-confirmed executions; has_more means older matching trades were omitted. No candle join or historical price adjustment is implied. Only instrument_id and currency are accepted, each exactly once.",
+        "parameters": [
+          {
+            "name": "instrument_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/OpaqueId"
+            },
+            "description": "Exact opaque instrument ID already supplied by the portfolio snapshot; never derive identity from the display symbol."
+          },
+          {
+            "name": "currency",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One current local-ledger observation. A previously traded but now closed holding has quantity/cost 0 and null average; original trades remain.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstrumentLedger"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "description": "No BUY/SELL record for the exact instrument/currency, including dividend-only instruments.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ledger verification failed; details are redacted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/market-data/candles": {
       "get": {
         "operationId": "getMarketDataCandles",
@@ -1035,6 +1096,111 @@
           }
         }
       },
+      "InstrumentLedger": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "instrument_id",
+          "symbol",
+          "currency",
+          "source",
+          "broker_freshness",
+          "ledger_revision",
+          "ledger_as_of",
+          "ledger_recorded_at",
+          "cost_basis_policy",
+          "average_cost_policy",
+          "quantity",
+          "cost_basis",
+          "average_cost",
+          "trade_limit",
+          "has_more",
+          "trades"
+        ],
+        "properties": {
+          "instrument_id": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Display label from the current holding, or the latest returned trade when closed; individual original trade labels may differ."
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "local_ledger"
+            ]
+          },
+          "broker_freshness": {
+            "type": "string",
+            "enum": [
+              "unverified"
+            ]
+          },
+          "ledger_revision": {
+            "type": "string",
+            "pattern": "^rev_[0-9]{10}$"
+          },
+          "ledger_as_of": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp",
+            "description": "Latest event occurrence in this entire ledger revision, not only this instrument."
+          },
+          "ledger_recorded_at": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp",
+            "description": "Recorded time of the last appended event in this revision, not the last duplicate import or the maximum wall-clock time. Earlier events may have later recorded times after a clock adjustment."
+          },
+          "cost_basis_policy": {
+            "type": "string",
+            "enum": [
+              "fifo_utc_nanosecond_exact_else_half_even_residual_8_v2"
+            ]
+          },
+          "average_cost_policy": {
+            "type": "string",
+            "enum": [
+              "remaining_fifo_cost_per_unit_half_even_8_v1"
+            ]
+          },
+          "quantity": {
+            "$ref": "#/components/schemas/Decimal"
+          },
+          "cost_basis": {
+            "$ref": "#/components/schemas/Decimal"
+          },
+          "average_cost": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Decimal"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Current remaining FIFO cost including allocated buy fees divided by split-adjusted current quantity, half-even rounded to 8 decimals for display only. May be 0 for a tiny positive cost; null only when quantity is 0. Never use the rounded value to recompute ledger cost."
+          },
+          "trade_limit": {
+            "type": "integer",
+            "const": 50
+          },
+          "has_more": {
+            "type": "boolean",
+            "description": "A 51st matching BUY/SELL record exists in this revision. No total count or completeness beyond this bound is claimed."
+          },
+          "trades": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/LedgerActivity"
+            },
+            "description": "Only BUY/SELL of the exact instrument/currency, original values, descending occurred_at nanoseconds then append sequence. SPLIT and all other activity types are excluded."
+          }
+        }
+      },
       "LedgerActivity": {
         "type": "object",
         "additionalProperties": false,
@@ -1074,7 +1240,7 @@
               "quantity": {"$ref": "#/components/schemas/Decimal"},
               "price": {"$ref": "#/components/schemas/Decimal"},
               "fee": {"$ref": "#/components/schemas/Decimal"},
-              "amount": {"type": "string", "pattern": "^(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$"},
+              "amount": {"$ref": "#/components/schemas/Decimal", "description": "quantity times price minus fee; zero and negative net proceeds are valid."},
               "counter_currency": {"type": "null"},
               "counter_amount": {"type": "null"},
               "is_correction": {"const": false}
