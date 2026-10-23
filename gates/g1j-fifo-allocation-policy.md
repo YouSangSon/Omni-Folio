@@ -2,6 +2,8 @@
 
 Scope: deterministic analytical cost allocation for partial FIFO lots whose exact proportional cost is recurring. This is not a jurisdictional tax-basis or display-rounding policy.
 
+This is the v1 introduction checkpoint. The current chronological v2 selector, explicit legacy transition, and backup contract are owned by [G1.20](g1p-chronological-ledger-replay.md); the allocation arithmetic below is preserved.
+
 ## Pass evidence
 
 - [x] `PortfolioSnapshot.cost_basis_policy` and OpenAPI pin `fifo_exact_else_half_even_residual_8_v1`; Flutter accepts only that version.

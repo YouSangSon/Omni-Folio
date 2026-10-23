@@ -263,7 +263,7 @@ func (s *Service) ledgerActivities(ctx context.Context, limit int, cursor *ledge
 	return result, nil
 }
 
-func (s *Service) proveLedgerEvents(ctx context.Context, tx *sql.Tx) (int64, string, error) {
+func (s *Service) proveLedgerEvents(ctx context.Context, tx queryer) (int64, string, error) {
 	var revisionValue int64
 	var ledgerRecordedAt string
 	if err := tx.QueryRowContext(ctx, `SELECT revision,recorded_at FROM ledger_meta WHERE singleton=1`).Scan(&revisionValue, &ledgerRecordedAt); err != nil {
@@ -311,7 +311,7 @@ func (s *Service) proveLedgerEvents(ctx context.Context, tx *sql.Tx) (int64, str
 	return revisionValue, activityRecordedAt, nil
 }
 
-func (s *Service) validateStoredLedgerEvent(ctx context.Context, tx *sql.Tx, stored *storedLedgerEvent) error {
+func (s *Service) validateStoredLedgerEvent(ctx context.Context, tx queryer, stored *storedLedgerEvent) error {
 	if stored.eventID == "" || stored.receiptID == "" || !canonicalUTCString(stored.recordedAt) {
 		return errors.New("stored ledger event metadata is invalid")
 	}

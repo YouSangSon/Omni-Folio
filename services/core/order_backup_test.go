@@ -37,7 +37,7 @@ func TestG38DBackupV14StrategyPerformanceProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v15" || manifest.SchemaVersion != "omni-folio.sqlite.v21" ||
+	if manifest.FormatVersion != backupFormat || manifest.SchemaVersion != backupSchema ||
 		manifest.PaperPerformanceStateSHA256 != proof.SHA256 || manifest.PaperPerformanceEventCount != 1 ||
 		manifest.PaperPerformanceMarkCount != event.MarkCount || manifest.VerificationReceipt.PaperPerformanceCheck != "ok" ||
 		manifest.VerificationReceipt.CandidatePaperPerformanceStateSHA256 != proof.SHA256 ||
@@ -133,6 +133,7 @@ func TestG38C3LegacyV11OwnedCopyMigration(t *testing.T) {
 	}
 	legacy["db_sha256"], legacy["size_bytes"], receipt["candidate_db_sha256"] = sha, size, sha
 	legacyManifestPath := filepath.Join(t.TempDir(), "paper-performance-v11.manifest.json")
+	legacyReplayGolden := legacyGoldenForTest(t, golden, legacy)
 	writeJSONFile(t, legacyManifestPath, legacy)
 	manifestSHA, manifestSize, err := hashFile(legacyManifestPath)
 	if err != nil {
@@ -142,7 +143,7 @@ func TestG38C3LegacyV11OwnedCopyMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyManifest(legacyBackup, golden, legacyManifestPath); err != nil {
+	if err := verifyManifest(legacyBackup, legacyReplayGolden, legacyManifestPath); err != nil {
 		t.Fatal(err)
 	}
 	afterSHA, afterSize, err := hashFile(legacyBackup)
@@ -208,12 +209,13 @@ func TestG38DBackupLegacyV12OwnedCopyMigration(t *testing.T) {
 	}
 	legacy["db_sha256"], legacy["size_bytes"], receipt["candidate_db_sha256"] = sha, size, sha
 	legacyManifestPath := filepath.Join(t.TempDir(), "paper-strategy-performance-v12.manifest.json")
+	legacyReplayGolden := legacyGoldenForTest(t, golden, legacy)
 	writeJSONFile(t, legacyManifestPath, legacy)
 	beforeSHA, beforeSize, err := hashFile(legacyBackup)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyManifest(legacyBackup, golden, legacyManifestPath); err != nil {
+	if err := verifyManifest(legacyBackup, legacyReplayGolden, legacyManifestPath); err != nil {
 		t.Fatal(err)
 	}
 	afterSHA, afterSize, err := hashFile(legacyBackup)
@@ -288,7 +290,7 @@ func TestK2ABackupProvesOrderRecoveryState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v15" || manifest.SchemaVersion != "omni-folio.sqlite.v21" {
+	if manifest.FormatVersion != backupFormat || manifest.SchemaVersion != backupSchema {
 		t.Fatalf("backup did not declare the order-aware schema: %+v", manifest)
 	}
 	if manifest.OrderStateSHA256 == "" || manifest.OrderCount != 1 || manifest.OrderEventCount != 3 ||
@@ -507,7 +509,7 @@ func TestG38C1PaperAccountingBackupProofAndV9OwnedCopyMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v15" || manifest.SchemaVersion != "omni-folio.sqlite.v21" ||
+	if manifest.FormatVersion != backupFormat || manifest.SchemaVersion != backupSchema ||
 		manifest.PaperAccountingSessionCount != 1 || manifest.PaperAccountingStateSHA256 == "" ||
 		manifest.VerificationReceipt.CandidatePaperAccountingStateSHA256 != manifest.PaperAccountingStateSHA256 {
 		t.Fatalf("backup omitted paper accounting proof: %+v", manifest)
@@ -583,12 +585,13 @@ func TestG38C1PaperAccountingBackupProofAndV9OwnedCopyMigration(t *testing.T) {
 	legacyManifest["size_bytes"] = legacySize
 	legacyManifest["verification_receipt"].(map[string]any)["candidate_db_sha256"] = legacySHA
 	legacyManifestPath := filepath.Join(t.TempDir(), "paper-accounting-v9.manifest.json")
+	legacyReplayGolden := legacyGoldenForTest(t, legacyGolden, legacyManifest)
 	writeJSONFile(t, legacyManifestPath, legacyManifest)
 	beforeSHA, beforeSize, err := hashFile(legacyBackup)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyManifest(legacyBackup, legacyGolden, legacyManifestPath); err != nil {
+	if err := verifyManifest(legacyBackup, legacyReplayGolden, legacyManifestPath); err != nil {
 		t.Fatal(err)
 	}
 	afterSHA, afterSize, err := hashFile(legacyBackup)
@@ -629,7 +632,7 @@ func TestG38C2PaperMarketBackupV11AndV10OwnedCopyMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v15" || manifest.SchemaVersion != "omni-folio.sqlite.v21" ||
+	if manifest.FormatVersion != backupFormat || manifest.SchemaVersion != backupSchema ||
 		manifest.PaperAccountingSessionCount != 1 || manifest.PaperMarketBarObservationCount != 1 || manifest.PaperSignalEventCount != 1 ||
 		manifest.PaperExecutionAuthorizationCount != 0 || manifest.PaperCapitalizedFillCount != 0 ||
 		manifest.PaperAccountingStateSHA256 == "" || manifest.VerificationReceipt.CandidatePaperAccountingStateSHA256 != manifest.PaperAccountingStateSHA256 {
@@ -698,12 +701,13 @@ func TestG38C2PaperMarketBackupV11AndV10OwnedCopyMigration(t *testing.T) {
 	legacyManifest["db_sha256"], legacyManifest["size_bytes"] = legacySHA, legacySize
 	legacyManifest["verification_receipt"].(map[string]any)["candidate_db_sha256"] = legacySHA
 	legacyManifestPath := filepath.Join(t.TempDir(), "paper-market-v10.manifest.json")
+	legacyReplayGolden := legacyGoldenForTest(t, legacyGolden, legacyManifest)
 	writeJSONFile(t, legacyManifestPath, legacyManifest)
 	beforeSHA, beforeSize, err := hashFile(legacyBackup)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyManifest(legacyBackup, legacyGolden, legacyManifestPath); err != nil {
+	if err := verifyManifest(legacyBackup, legacyReplayGolden, legacyManifestPath); err != nil {
 		t.Fatal(err)
 	}
 	afterSHA, afterSize, err := hashFile(legacyBackup)

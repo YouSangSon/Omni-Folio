@@ -380,7 +380,7 @@ smoke:
 	"$(PYTHON)" -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["service"] == "omni-folio" and d["ledger_revision"] == "rev_0000000000" and d["live_enabled"] is False' "$$status_json"; \
 	$(MAKE) --no-print-directory seed-demo API_URL=http://127.0.0.1:18080; \
 	snapshot_json="$$(curl --fail --silent http://127.0.0.1:18080/v1/portfolio/snapshot)"; \
-	"$(PYTHON)" -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["ledger_revision"] == "rev_0000000003" and d["cost_basis_policy"] == "fifo_exact_else_half_even_residual_8_v1" and d["live_enabled"] is False and d["cash"][0]["amount"] == "778"' "$$snapshot_json"; \
+	"$(PYTHON)" -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["ledger_revision"] == "rev_0000000003" and d["cost_basis_policy"] == "fifo_utc_nanosecond_exact_else_half_even_residual_8_v2" and d["live_enabled"] is False and d["cash"][0]["amount"] == "778"' "$$snapshot_json"; \
 	duplicate_output="$$( $(MAKE) --no-print-directory seed-demo API_URL=http://127.0.0.1:18080 )"; \
 	test "$$duplicate_output" = 'demo: sample ledger already present'; \
 	conflict_csv="$$smoke_dir/conflicting-import.csv"; \

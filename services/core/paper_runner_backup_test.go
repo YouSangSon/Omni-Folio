@@ -25,7 +25,7 @@ func TestG38F2BackupV15BindsReleasedPaperRunnerLeaseProof(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v15" || manifest.SchemaVersion != "omni-folio.sqlite.v21" ||
+	if manifest.FormatVersion != backupFormat || manifest.SchemaVersion != backupSchema ||
 		manifest.PaperRunnerLeaseStateSHA256 != proof.SHA256 || manifest.PaperRunnerLeaseCount != proof.Leases ||
 		manifest.ActivePaperRunnerLeaseCount != proof.Active || manifest.VerificationReceipt.PaperRunnerLeaseCheck != "ok" ||
 		manifest.VerificationReceipt.CandidatePaperRunnerLeaseStateSHA256 != proof.SHA256 ||
@@ -182,13 +182,14 @@ func TestG38F2BackupLegacyV14UsesOwnedV21MigrationWithEmptyLease(t *testing.T) {
 	}
 	manifest["db_sha256"], manifest["size_bytes"], receipt["candidate_db_sha256"] = sha, size, sha
 	legacyManifest := filepath.Join(t.TempDir(), "g38f2-v14-source.manifest.json")
+	legacyReplayGolden := legacyGoldenForTest(t, golden, manifest)
 	writeJSONFile(t, legacyManifest, manifest)
 
 	beforeSHA, beforeSize, err := hashFile(legacy)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyManifest(legacy, golden, legacyManifest); err != nil {
+	if err := verifyManifest(legacy, legacyReplayGolden, legacyManifest); err != nil {
 		t.Fatal(err)
 	}
 	afterSHA, afterSize, err := hashFile(legacy)
@@ -279,6 +280,7 @@ func TestG38F2BackupRejectsRunnerLeaseSchemaAndRecordCorruption(t *testing.T) {
 
 func g38F2DowngradePaperRunnerLeaseForTest(t testing.TB, db *sql.DB) {
 	t.Helper()
+	downgradeLedgerReplayForTest(t, db)
 	if _, err := db.Exec(`DROP TABLE paper_runner_leases; DELETE FROM schema_migrations WHERE version=21`); err != nil {
 		t.Fatal(err)
 	}

@@ -597,7 +597,7 @@ func TestSecurityPriceObservationBackupProofAndLegacyCopyMigrations(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v15" || manifest.SchemaVersion != "omni-folio.sqlite.v21" ||
+	if manifest.FormatVersion != backupFormat || manifest.SchemaVersion != backupSchema ||
 		manifest.SecurityPriceObservationCount != 1 || len(manifest.SecurityPriceObservationStateSHA256) != 64 ||
 		manifest.VerificationReceipt.SecurityPriceObservationCheck != "ok" ||
 		manifest.VerificationReceipt.CandidateSecurityPriceObservationStateSHA256 != manifest.SecurityPriceObservationStateSHA256 {
@@ -686,12 +686,13 @@ func TestSecurityPriceObservationBackupProofAndLegacyCopyMigrations(t *testing.T
 	legacyV11Manifest["size_bytes"] = v11Size
 	legacyV11Manifest["verification_receipt"].(map[string]any)["candidate_db_sha256"] = v11SHA
 	legacyV11ManifestPath := filepath.Join(t.TempDir(), "legacy-v11.manifest.json")
+	legacyReplayGoldenV11 := legacyGoldenForTest(t, golden, legacyV11Manifest)
 	writeJSONFile(t, legacyV11ManifestPath, legacyV11Manifest)
 	beforeV11SHA, beforeV11Size, err := hashFile(legacyV11Backup)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyManifest(legacyV11Backup, golden, legacyV11ManifestPath); err != nil {
+	if err := verifyManifest(legacyV11Backup, legacyReplayGoldenV11, legacyV11ManifestPath); err != nil {
 		t.Fatal(err)
 	}
 	afterV11SHA, afterV11Size, err := hashFile(legacyV11Backup)
@@ -735,12 +736,13 @@ func TestSecurityPriceObservationBackupProofAndLegacyCopyMigrations(t *testing.T
 	legacyManifest["size_bytes"] = size
 	legacyManifest["verification_receipt"].(map[string]any)["candidate_db_sha256"] = sha
 	legacyManifestPath := filepath.Join(t.TempDir(), "legacy-v10.manifest.json")
+	legacyReplayGoldenV10 := legacyGoldenForTest(t, golden, legacyManifest)
 	writeJSONFile(t, legacyManifestPath, legacyManifest)
 	beforeSHA, beforeSize, err := hashFile(legacyBackup)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyManifest(legacyBackup, golden, legacyManifestPath); err != nil {
+	if err := verifyManifest(legacyBackup, legacyReplayGoldenV10, legacyManifestPath); err != nil {
 		t.Fatal(err)
 	}
 	mixed := readJSONMap(t, legacyManifestPath)

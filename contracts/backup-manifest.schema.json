@@ -1,17 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://omni-folio.local/contracts/backup-manifest.v15.schema.json",
-  "title": "Omni-Folio Backup Manifest v15",
-  "description": "CLI contract for a separately restored schema-v21 backup candidate. Legacy v5/schema-v8 or schema-v9 through v14/schema-v20 artifacts are accepted only through an owned migrated copy. Schema validity never authorizes replacing the active DB: database, ledger snapshot, replayable order state, execution authority, risk reservations, paper execution authorizations, known-good broker snapshots, strategy-registry including paper operational evaluations, immutable paper-accounting sessions, closed paper bars and signal cutoffs, immutable paper performance, strategy-window paper performance, paper performance policy, paper runner lease, direct FX-observation, security-price-observation, and instrument-listing proofs must match and verification_receipt must be verified and eligible_for_activation before replacement. A candidate containing an active paper runner lease is preserved for audit but rejected for activation.",
+  "$id": "https://omni-folio.local/contracts/backup-manifest.v16.schema.json",
+  "title": "Omni-Folio Backup Manifest v16",
+  "description": "Current artifacts require the explicit v2 chronological FIFO policy and recomputed immutable replay-transition evidence. Legacy verification is archival and never activates a v2 candidate. CLI contract for a separately restored schema-v22 backup candidate. Legacy v5/schema-v8 or schema-v9 through v15/schema-v21 artifacts are accepted only through an owned migrated copy. Schema validity never authorizes replacing the active DB: database, ledger snapshot, replayable order state, execution authority, risk reservations, paper execution authorizations, known-good broker snapshots, strategy-registry including paper operational evaluations, immutable paper-accounting sessions, closed paper bars and signal cutoffs, immutable paper performance, strategy-window paper performance, paper performance policy, paper runner lease, direct FX-observation, security-price-observation, and instrument-listing proofs must match and verification_receipt must be verified and eligible_for_activation before replacement. A candidate containing an active paper runner lease is preserved for audit but rejected for activation.",
   "type": "object",
   "additionalProperties": false,
   "required": ["format_version", "schema_version", "created_at", "source_ledger_revision", "order_state_sha256", "order_count", "order_event_count", "execution_authority_sha256", "execution_authority_event_count", "risk_reservation_sha256", "risk_reservation_count", "broker_state_sha256", "broker_snapshot_count", "broker_reconciliation_count", "strategy_registry_sha256", "strategy_evidence_count", "strategy_selection_event_count", "paper_evaluation_event_count", "paper_accounting_state_sha256", "paper_accounting_session_count", "paper_market_bar_observation_count", "paper_signal_event_count", "paper_execution_authorization_count", "paper_capitalized_fill_count", "paper_performance_state_sha256", "paper_performance_event_count", "paper_performance_mark_count", "paper_strategy_performance_state_sha256", "paper_strategy_performance_event_count", "paper_strategy_performance_sample_count", "paper_performance_policy_state_sha256", "paper_performance_policy_event_count", "paper_performance_policy_action_count", "paper_performance_policy_automatic_halt_count", "paper_runner_lease_state_sha256", "paper_runner_lease_count", "active_paper_runner_lease_count", "selected_strategy_result_sha256", "fx_observation_state_sha256", "fx_observation_count", "security_price_observation_state_sha256", "security_price_observation_count", "instrument_listing_state_sha256", "instrument_listing_event_count", "active_instrument_listing_count", "db_sha256", "size_bytes", "expected_snapshot_sha256", "encryption", "verification_receipt"],
   "properties": {
     "format_version": {
-      "const": "omni-folio-backup.v15"
+      "const": "omni-folio-backup.v16"
     },
     "schema_version": {
-      "const": "omni-folio.sqlite.v21"
+      "const": "omni-folio.sqlite.v22"
     },
     "created_at": {
       "$ref": "#/$defs/timestamp"

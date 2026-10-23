@@ -30,6 +30,6 @@ Go 1.24.5, Flutter 3.47.1-stable, Python 3.14.5의 절대 경로와 자식 proce
 
 ## 호환성과 남은 위험
 
-기존 `snapshotFrom`의 FIFO 정렬·AsOf, broker quantity replay와 cash-void DB trigger에도 문자열 시각 비교가 남아 있다. 이를 곧바로 교체하면 기존 backup의 snapshot JSON/provenance/asOf 동등성 검사를 깨뜨릴 수 있다. 별도 버전 정책과 이전 backup 복원·경제 결과 대조가 필요하다. 이번 수정은 해당 금융 replay 문제의 해결을 주장하지 않는다.
+이 checkpoint는 기존 FIFO/snapshot·broker quantity·cash-void의 문자열 비교를 남겨 두었다. 이후 [G1.20](g1p-chronological-ledger-replay.md)이 영속 정책 selector·명시적 전환 receipt와 과거 golden 보관 검증을 추가해 이 경계를 교정한다. G1.19 자체의 조회 수정과 구분한다.
 
 Activity cursor는 service 시작마다 바뀌는 키로 봉인되므로 정상 서버 재시작 시 기존 cursor는 거절된다. 향후 키를 영속화하는 hot upgrade를 도입하면 정렬 버전이 다른 cursor를 명시적으로 무효화해야 한다. SQLite datetime/julianday의 제한된 소수 정밀도로 나노초를 대체하지 않는다.

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"reflect"
 	"regexp"
 	"sort"
 	"time"
@@ -98,6 +99,10 @@ func (s *Service) recordKiwoomSnapshot(ctx context.Context, ledgerAccountID stri
 		return nil, err
 	}
 
+	differences, allMatch, err := positionDifferences(storedSnapshot.Positions, ledgerQuantities)
+	if err != nil {
+		return nil, err
+	}
 	var recordSHA, recordJSON, recordRecordedAt string
 	err = tx.QueryRowContext(ctx, `SELECT record_sha256,record_json,recorded_at FROM broker_snapshot_reconciliations
 		WHERE snapshot_id=? AND ledger_account_id=? AND ledger_revision=?`, snapshotID, ledgerAccountID, ledgerRevision).Scan(&recordSHA, &recordJSON, &recordRecordedAt)
@@ -109,6 +114,9 @@ func (s *Service) recordKiwoomSnapshot(ctx context.Context, ledgerAccountID stri
 		if err := requireReconciliationIdentity(record, snapshotID, ledgerAccountID, ledgerRevision, recordRecordedAt); err != nil {
 			return nil, err
 		}
+		if record.AllPositionsMatch != allMatch || !reflect.DeepEqual(record.PositionDifferences, differences) {
+			return nil, errors.New("cached broker reconciliation differs from current ledger replay")
+		}
 		if err := tx.Commit(); err != nil {
 			return nil, err
 		}
@@ -118,10 +126,6 @@ func (s *Service) recordKiwoomSnapshot(ctx context.Context, ledgerAccountID stri
 		return nil, err
 	}
 
-	differences, allMatch, err := positionDifferences(storedSnapshot.Positions, ledgerQuantities)
-	if err != nil {
-		return nil, err
-	}
 	record := &brokerReconciliationRecord{
 		ReconciliationID: s.id("broker_reconciliation"), SnapshotID: snapshotID, LedgerAccountID: ledgerAccountID,
 		LedgerRevision: revision(ledgerRevision), RecordedAt: s.now().UTC().Format(time.RFC3339Nano),
@@ -321,21 +325,27 @@ func requireReconciliationIdentity(record *brokerReconciliationRecord, snapshotI
 }
 
 func ledgerKRXQuantities(ctx context.Context, q orderQuerier, accountID string) (int64, map[string]*big.Rat, error) {
+	if err := requireCurrentLedgerReplay(ctx, q); err != nil {
+		return 0, nil, err
+	}
 	var ledgerRevision int64
 	if err := q.QueryRowContext(ctx, `SELECT revision FROM ledger_meta WHERE singleton=1`).Scan(&ledgerRevision); err != nil {
 		return 0, nil, err
 	}
-	rows, err := q.QueryContext(ctx, `SELECT type,symbol,quantity FROM events
-		WHERE account_id=? AND currency='KRW' AND type IN ('BUY','SELL') ORDER BY occurred_at,sequence`, accountID)
+	rows, err := q.QueryContext(ctx, `SELECT type,symbol,quantity,occurred_at FROM events
+		WHERE account_id=? AND currency='KRW' AND type IN ('BUY','SELL') ORDER BY rtrim(occurred_at,'Z'),sequence`, accountID)
 	if err != nil {
 		return 0, nil, err
 	}
 	defer rows.Close()
 	quantities := map[string]*big.Rat{}
 	for rows.Next() {
-		var typ, symbol, raw string
-		if err := rows.Scan(&typ, &symbol, &raw); err != nil {
+		var typ, symbol, raw, occurredAt string
+		if err := rows.Scan(&typ, &symbol, &raw, &occurredAt); err != nil {
 			return 0, nil, err
+		}
+		if !canonicalUTCString(occurredAt) {
+			return 0, nil, errors.New("broker ledger occurred_at is not canonical UTC")
 		}
 		if !kiwoomStockPattern.MatchString(symbol) {
 			continue

@@ -407,7 +407,17 @@ void main() {
     expect(preview.unresolvedRows, 0);
     expect(snapshot.cash.single.amount, '778');
     expect(snapshot.holdings.single.costBasis, '300.6');
-    expect(snapshot.costBasisPolicy, 'fifo_exact_else_half_even_residual_8_v1');
+    expect(
+      snapshot.costBasisPolicy,
+      'fifo_utc_nanosecond_exact_else_half_even_residual_8_v2',
+    );
+    expect(
+      () => PortfolioSnapshot.fromJson({
+        ...fixture('golden-snapshot.json'),
+        'cost_basis_policy': 'fifo_exact_else_half_even_residual_8_v1',
+      }),
+      throwsFormatException,
+    );
     expect(snapshot.eventCount, 3);
     expect(snapshot.receiptCount, 1);
 
