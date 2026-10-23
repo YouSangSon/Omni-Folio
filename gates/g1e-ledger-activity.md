@@ -27,7 +27,7 @@ Scope: replay-verified, read-only local ledger activity API and accessible recen
   EXPECT: /smoke: health, status, preview, apply, snapshot, activity, market data OK/
   CWD: ..
 
-This gate does not prove restart-stable or multi-replica cursors, current broker activity, broker reconciliation, valuation, exchange rates, full-history browsing, filters, export, correction/order mutation, physical-device accessibility, deployment or live-money readiness.
+This gate does not prove restart-stable or multi-replica cursors, current broker activity, broker reconciliation, valuation, exchange rates, filters, export, correction/order mutation, physical-device accessibility, deployment or live-money readiness. Flutter full-history traversal is a separate consumer gate in [G1.16](g1l-ledger-activity-pagination.md).
 
 ## Evidence (2026-08-28)
 

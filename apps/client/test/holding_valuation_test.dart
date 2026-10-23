@@ -547,6 +547,28 @@ class _TestApi implements OmniApi {
       );
 
   @override
+  Future<CurrentPortfolioValuation> currentPortfolioValuation() async =>
+      const CurrentPortfolioValuation(
+        baseCurrency: 'KRW',
+        valuationAsOf: '2026-01-11T13:00:00Z',
+        ledgerRevision: 'rev_0000000001',
+        ledgerAsOf: '2026-01-11T13:00:00Z',
+        ledgerRecordedAt: '2026-01-11T13:00:00Z',
+        status: 'unavailable',
+        sample: false,
+        cashValue: null,
+        holdingsValue: null,
+        totalValue: null,
+        issues: [
+          HoldingValuationIssue(
+            code: 'missing_security_price',
+            message: 'stored price is unavailable',
+            field: 'AAPL',
+          ),
+        ],
+      );
+
+  @override
   Future<BrokerReconciliation?> latestBrokerReconciliation() async => null;
 
   @override
@@ -557,7 +579,7 @@ class _TestApi implements OmniApi {
       throw UnsupportedError('Not used by this fixture.');
 
   @override
-  Future<LedgerActivityPage> ledgerActivities() async =>
+  Future<LedgerActivityPage> ledgerActivities({String? cursor}) async =>
       const LedgerActivityPage(
         source: 'local_ledger',
         brokerFreshness: 'unverified',

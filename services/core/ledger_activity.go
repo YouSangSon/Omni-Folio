@@ -203,10 +203,11 @@ func (s *Service) ledgerActivities(ctx context.Context, limit int, cursor *ledge
 		FROM events WHERE sequence<=?`
 	args := []any{pageRevision}
 	if cursor != nil {
-		query += ` AND (occurred_at<? OR (occurred_at=? AND sequence<?))`
+		query += ` AND (rtrim(occurred_at,'Z')<rtrim(?,'Z') OR (occurred_at=? AND sequence<?))`
 		args = append(args, cursor.OccurredAt, cursor.OccurredAt, cursor.Sequence)
 	}
-	query += ` ORDER BY occurred_at DESC,sequence DESC LIMIT ?`
+	// Canonical UTC without Z sorts fractional seconds correctly, including whole-second prefixes.
+	query += ` ORDER BY rtrim(occurred_at,'Z') DESC,sequence DESC LIMIT ?`
 	args = append(args, limit+1)
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {

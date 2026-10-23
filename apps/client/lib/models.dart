@@ -556,6 +556,176 @@ class HoldingValuation {
   final List<HoldingValuationIssue> issues;
 }
 
+class CurrentPortfolioValuation {
+  const CurrentPortfolioValuation({
+    required this.baseCurrency,
+    required this.valuationAsOf,
+    required this.ledgerRevision,
+    required this.ledgerAsOf,
+    required this.ledgerRecordedAt,
+    required this.status,
+    required this.sample,
+    required this.cashValue,
+    required this.holdingsValue,
+    required this.totalValue,
+    required this.issues,
+    this.maxObservationAgeSeconds = 86400,
+  });
+
+  factory CurrentPortfolioValuation.fromJson(Json json) {
+    _requireExactKeys(json, const {
+      'scope',
+      'policy_version',
+      'max_observation_age_seconds',
+      'base_currency',
+      'valuation_as_of',
+      'ledger_revision',
+      'ledger_as_of',
+      'ledger_recorded_at',
+      'status',
+      'sample',
+      'cash_value',
+      'holdings_value',
+      'total_value',
+      'issues',
+    });
+    final maxAge = _count(json, 'max_observation_age_seconds');
+    final baseCurrency = _currency(json, 'base_currency');
+    final valuationAsOf = _utcText(json, 'valuation_as_of');
+    final ledgerAsOf = _utcText(json, 'ledger_as_of');
+    final ledgerRecordedAt = _utcText(json, 'ledger_recorded_at');
+    final ledgerRevision = _text(json, 'ledger_revision');
+    final status = _text(json, 'status');
+    final sample = _bool(json, 'sample');
+    final cashValue = _currentValuationMoney(json, 'cash_value');
+    final holdingsValue = _currentValuationMoney(json, 'holdings_value');
+    final totalValue = _currentValuationMoney(json, 'total_value');
+    final issues = _jsonList(
+      json,
+      'issues',
+    ).map(HoldingValuationIssue.fromJson).toList(growable: false);
+    if (_text(json, 'scope') != 'whole_portfolio' ||
+        _text(json, 'policy_version') !=
+            'current_base_portfolio_valuation_v1' ||
+        maxAge != 86400 ||
+        baseCurrency != 'KRW' ||
+        !RegExp(r'^rev_[0-9]{10}$').hasMatch(ledgerRevision) ||
+        _utcNanoseconds(ledgerAsOf) > _utcNanoseconds(valuationAsOf) ||
+        _utcNanoseconds(ledgerRecordedAt) > _utcNanoseconds(valuationAsOf) ||
+        !const {
+          'empty',
+          'complete',
+          'stale_sample',
+          'unavailable',
+        }.contains(status)) {
+      throw const FormatException('Invalid current valuation metadata');
+    }
+    final values = [cashValue, holdingsValue, totalValue];
+    final allValues = values.every((value) => value != null);
+    final noValues = values.every((value) => value == null);
+    if (!allValues && !noValues) {
+      throw const FormatException('Current valuation must be all-or-none');
+    }
+    if (allValues) {
+      if (values.any((value) => value!.currency != baseCurrency) ||
+          holdingsValue!.amount.startsWith('-') ||
+          !_decimalSumEquals(
+            cashValue!.amount,
+            holdingsValue.amount,
+            totalValue!.amount,
+          )) {
+        throw const FormatException('Invalid current valuation aggregate');
+      }
+    }
+    final issueKeys = <String>{};
+    final validCoverageIssues = issues.every((issue) {
+      final key = '${issue.code}:${issue.field}';
+      return const {
+            'missing_direct_fx',
+            'stale_direct_fx',
+            'missing_security_price',
+            'ambiguous_security_price_venue',
+            'stale_security_price',
+          }.contains(issue.code) &&
+          issue.field != null &&
+          issueKeys.add(key);
+    });
+    final validState = switch (status) {
+      'empty' => noValues && !sample && issues.isEmpty,
+      'complete' =>
+        allValues && holdingsValue!.amount == '0' && !sample && issues.isEmpty,
+      'stale_sample' =>
+        allValues &&
+            sample &&
+            issues.length == 1 &&
+            issues.single.code == 'sample_data' &&
+            issues.single.field == null,
+      'unavailable' => noValues && issues.isNotEmpty && validCoverageIssues,
+      _ => false,
+    };
+    if (!validState) {
+      throw const FormatException('Inconsistent current valuation state');
+    }
+    return CurrentPortfolioValuation(
+      baseCurrency: baseCurrency,
+      valuationAsOf: valuationAsOf,
+      ledgerRevision: ledgerRevision,
+      ledgerAsOf: ledgerAsOf,
+      ledgerRecordedAt: ledgerRecordedAt,
+      status: status,
+      sample: sample,
+      cashValue: cashValue,
+      holdingsValue: holdingsValue,
+      totalValue: totalValue,
+      issues: issues,
+    );
+  }
+
+  final int maxObservationAgeSeconds;
+  final String baseCurrency;
+  final String valuationAsOf;
+  final String ledgerRevision;
+  final String ledgerAsOf;
+  final String ledgerRecordedAt;
+  final String status;
+  final bool sample;
+  final Money? cashValue;
+  final Money? holdingsValue;
+  final Money? totalValue;
+  final List<HoldingValuationIssue> issues;
+}
+
+Money? _currentValuationMoney(Json json, String key) {
+  final value = json[key];
+  if (value == null) return null;
+  if (value is! Json) {
+    throw const FormatException('Invalid current valuation money');
+  }
+  _requireExactKeys(value, const {'currency', 'amount'});
+  return Money(_currency(value, 'currency'), _decimal(value, 'amount'));
+}
+
+bool _decimalSumEquals(String left, String right, String total) {
+  final scale = [
+    left,
+    right,
+    total,
+  ].map(_decimalScale).reduce((a, b) => a > b ? a : b);
+  return _scaledDecimal(left, scale) + _scaledDecimal(right, scale) ==
+      _scaledDecimal(total, scale);
+}
+
+int _decimalScale(String value) {
+  final dot = value.indexOf('.');
+  return dot < 0 ? 0 : value.length - dot - 1;
+}
+
+BigInt _scaledDecimal(String value, int scale) {
+  final ownScale = _decimalScale(value);
+  final coefficient = BigInt.parse(value.replaceFirst('.', ''));
+  return coefficient * BigInt.from(10).pow(scale - ownScale);
+}
+
 bool _sameValuationIssues(
   List<HoldingValuationLine> lines,
   List<HoldingValuationIssue> issues,
@@ -718,20 +888,22 @@ class LedgerActivityPage {
     final nextCursor = _nullableText(json, 'next_cursor');
     if (source != 'local_ledger' ||
         freshness != 'unverified' ||
-        !RegExp(r'^rev_[0-9]{10}$').hasMatch(ledgerRevision)) {
+        !RegExp(r'^rev_[0-9]{10}$').hasMatch(ledgerRevision) ||
+        (nextCursor != null && nextCursor.length > 1024)) {
       throw const FormatException('Invalid ledger activity metadata');
     }
     final events = _jsonList(
       json,
       'events',
     ).map(LedgerActivity.fromJson).toList(growable: false);
-    if (events.length > 100) {
-      throw const FormatException('Too many ledger activities');
+    if (events.length > 50 || (nextCursor != null && events.length != 50)) {
+      throw const FormatException('Invalid ledger activity page size');
     }
     for (var index = 1; index < events.length; index += 1) {
-      if (DateTime.parse(
-        events[index].occurredAt,
-      ).isAfter(DateTime.parse(events[index - 1].occurredAt))) {
+      if (_utcNanoseconds(
+            events[index].occurredAt,
+          ).compareTo(_utcNanoseconds(events[index - 1].occurredAt)) >
+          0) {
         throw const FormatException('Ledger activities must be newest first');
       }
     }
@@ -751,6 +923,33 @@ class LedgerActivityPage {
   final String recordedAt;
   final List<LedgerActivity> events;
   final String? nextCursor;
+
+  void requireContinuationOf({
+    required LedgerActivityPage initial,
+    required String upperBoundOccurredAt,
+    required String requestedCursor,
+    String? lowerBoundOccurredAt,
+    Iterable<String> traversedCursors = const [],
+  }) {
+    final continuationCursor = nextCursor;
+    if (events.isEmpty ||
+        ledgerRevision != initial.ledgerRevision ||
+        recordedAt != initial.recordedAt ||
+        (continuationCursor != null &&
+            (continuationCursor == requestedCursor ||
+                traversedCursors.contains(continuationCursor))) ||
+        _utcNanoseconds(
+              events.first.occurredAt,
+            ).compareTo(_utcNanoseconds(upperBoundOccurredAt)) >
+            0 ||
+        (lowerBoundOccurredAt != null &&
+            _utcNanoseconds(
+                  events.last.occurredAt,
+                ).compareTo(_utcNanoseconds(lowerBoundOccurredAt)) <
+                0)) {
+      throw const FormatException('Invalid ledger activity continuation');
+    }
+  }
 }
 
 class LedgerActivity {

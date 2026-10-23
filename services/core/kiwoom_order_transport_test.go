@@ -11,6 +11,90 @@ import (
 	"time"
 )
 
+type fakeLimitOrderDispatchPort struct {
+	preflightCalls int
+	submitCalls    int
+	submitted      OrderIntent
+	preflightErr   error
+	submitRef      string
+	submitErr      error
+	beforeSubmit   func()
+}
+
+func (f *fakeLimitOrderDispatchPort) Preflight(context.Context) error {
+	f.preflightCalls++
+	return f.preflightErr
+}
+
+func (f *fakeLimitOrderDispatchPort) SubmitLimitOrder(_ context.Context, intent OrderIntent) (string, error) {
+	f.submitCalls++
+	f.submitted = intent
+	if f.beforeSubmit != nil {
+		f.beforeSubmit()
+	}
+	return f.submitRef, f.submitErr
+}
+
+func TestAuthorizedLimitOrderUsesProviderNeutralPortAndRedactsUnknownOutcome(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	now := mustTime("2026-01-10T15:00:00Z")
+	svc.now = func() time.Time { return now }
+	order := mustRecordK2AOrder(t, svc, "client-port-unknown")
+	lease := mustK2CLease(t, svc, order.AccountRef)
+	fake := &fakeLimitOrderDispatchPort{submitErr: errors.New("raw broker transport detail")}
+	fake.beforeSubmit = func() {
+		durable, err := svc.loadOrderState(context.Background(), order.OrderID)
+		if err != nil || durable.Status != "SUBMIT_UNKNOWN" || durable.PendingAction != "SUBMIT" {
+			t.Fatalf("transport ran before durable dispatch: state=%+v err=%v", durable, err)
+		}
+	}
+	port := mustLimitOrderDispatchPort(t, "kiwoom", "synthetic", fake)
+
+	state, err := svc.submitAuthorizedLimitOrder(context.Background(), port, order.OrderID, lease.FencingToken)
+	if err == nil || strings.Contains(err.Error(), "raw broker transport detail") {
+		t.Fatalf("unknown provider detail escaped: %v", err)
+	}
+	if state == nil || state.Status != "SUBMIT_UNKNOWN" || state.PendingAction != "SUBMIT" {
+		t.Fatalf("unknown submit state=%+v", state)
+	}
+	if fake.preflightCalls != 1 || fake.submitCalls != 1 || fake.submitted.ClientOrderID != "client-port-unknown" {
+		t.Fatalf("port calls preflight=%d submit=%d intent=%+v", fake.preflightCalls, fake.submitCalls, fake.submitted)
+	}
+
+	if _, err := svc.submitAuthorizedLimitOrder(context.Background(), port, order.OrderID, lease.FencingToken); err == nil {
+		t.Fatal("repeat submit unexpectedly succeeded")
+	}
+	if fake.submitCalls != 1 {
+		t.Fatalf("unknown submit was retried: calls=%d", fake.submitCalls)
+	}
+}
+
+func TestAuthorizedLimitOrderRejectsZeroAndMismatchedCapabilitiesBeforePreflight(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	order := mustRecordK2AOrder(t, svc, "client-port-mismatch")
+	lease := mustK2CLease(t, svc, order.AccountRef)
+	fake := &fakeLimitOrderDispatchPort{}
+	mismatched := mustLimitOrderDispatchPort(t, "toss", "synthetic", fake)
+
+	for name, port := range map[string]LimitOrderDispatchPort{
+		"zero": {}, "provider mismatch": mismatched,
+	} {
+		t.Run(name, func(t *testing.T) {
+			state, err := svc.submitAuthorizedLimitOrder(context.Background(), port, order.OrderID, lease.FencingToken)
+			if err == nil || state != nil {
+				t.Fatalf("invalid capability entered submit: state=%+v err=%v", state, err)
+			}
+		})
+	}
+	if fake.preflightCalls != 0 || fake.submitCalls != 0 {
+		t.Fatalf("mismatched capability was called: preflight=%d submit=%d", fake.preflightCalls, fake.submitCalls)
+	}
+	state, err := svc.loadOrderState(context.Background(), order.OrderID)
+	if err != nil || state.Status != "RECORDED" {
+		t.Fatalf("invalid capability mutated order: state=%+v err=%v", state, err)
+	}
+}
+
 func TestK2B2MockLimitSubmitAcknowledgesOnceAndRedactsProviderIdentity(t *testing.T) {
 	svc, _ := testService(t, nil, nil)
 	now := mustTime("2026-01-10T15:00:00Z")
@@ -43,7 +127,8 @@ func TestK2B2MockLimitSubmitAcknowledgesOnceAndRedactsProviderIdentity(t *testin
 		},
 	}
 	client := newSyntheticKiwoomClient(t, KiwoomMock, script)
-	state, err := svc.submitAuthorizedKiwoomMockOrder(context.Background(), client, order.OrderID, lease.FencingToken)
+	dispatch := mustKiwoomMockLimitOrderDispatch(t, client)
+	state, err := svc.submitAuthorizedLimitOrder(context.Background(), dispatch, order.OrderID, lease.FencingToken)
 	if err != nil || state.Status != "OPEN" || state.PendingAction != "" || len(state.ProviderOrderRefs) != 1 {
 		t.Fatalf("mock submit state=%+v err=%v", state, err)
 	}
@@ -63,7 +148,7 @@ func TestK2B2MockLimitSubmitAcknowledgesOnceAndRedactsProviderIdentity(t *testin
 			t.Fatalf("mock submit leaked %q: state=%s events=%s", forbidden, encoded, storedEvents)
 		}
 	}
-	if _, err := svc.submitAuthorizedKiwoomMockOrder(context.Background(), client, order.OrderID, lease.FencingToken); err == nil || script.calls != 2 {
+	if _, err := svc.submitAuthorizedLimitOrder(context.Background(), dispatch, order.OrderID, lease.FencingToken); err == nil || script.calls != 2 {
 		t.Fatalf("repeat submit reached transport or succeeded: requests=%d err=%v", script.calls, err)
 	}
 }
@@ -84,7 +169,8 @@ func TestK2B2MockLimitSubmitDistinguishesRejectUnknownAndPreflightFailure(t *tes
 					`{"return_code":42,"return_msg":"never persist this provider rejection"}`)
 			},
 		}})
-		state, err := svc.submitAuthorizedKiwoomMockOrder(context.Background(), client, order.OrderID, lease.FencingToken)
+		dispatch := mustKiwoomMockLimitOrderDispatch(t, client)
+		state, err := svc.submitAuthorizedLimitOrder(context.Background(), dispatch, order.OrderID, lease.FencingToken)
 		if err != nil || state.Status != "REJECTED" || state.PendingAction != "" {
 			t.Fatalf("provider rejection state=%+v err=%v", state, err)
 		}
@@ -104,11 +190,12 @@ func TestK2B2MockLimitSubmitDistinguishesRejectUnknownAndPreflightFailure(t *tes
 			}
 			return nil, errors.New("raw transport detail must not escape")
 		}))
-		state, err := svc.submitAuthorizedKiwoomMockOrder(context.Background(), client, order.OrderID, lease.FencingToken)
+		dispatch := mustKiwoomMockLimitOrderDispatch(t, client)
+		state, err := svc.submitAuthorizedLimitOrder(context.Background(), dispatch, order.OrderID, lease.FencingToken)
 		if err == nil || strings.Contains(err.Error(), "raw transport") || state == nil || state.Status != "SUBMIT_UNKNOWN" || state.PendingAction != "SUBMIT" || calls != 2 {
 			t.Fatalf("unknown submit state=%+v calls=%d err=%v", state, calls, err)
 		}
-		if _, err := svc.submitAuthorizedKiwoomMockOrder(context.Background(), client, order.OrderID, lease.FencingToken); err == nil || calls != 2 {
+		if _, err := svc.submitAuthorizedLimitOrder(context.Background(), dispatch, order.OrderID, lease.FencingToken); err == nil || calls != 2 {
 			t.Fatalf("unknown submit was retried: calls=%d err=%v", calls, err)
 		}
 	})
@@ -128,7 +215,8 @@ func TestK2B2MockLimitSubmitDistinguishesRejectUnknownAndPreflightFailure(t *tes
 			},
 		}}
 		client := newSyntheticKiwoomClient(t, KiwoomMock, script)
-		state, err := svc.submitAuthorizedKiwoomMockOrder(context.Background(), client, order.OrderID, lease.FencingToken)
+		dispatch := mustKiwoomMockLimitOrderDispatch(t, client)
+		state, err := svc.submitAuthorizedLimitOrder(context.Background(), dispatch, order.OrderID, lease.FencingToken)
 		if err == nil || state == nil || state.Status != "SUBMIT_UNKNOWN" || script.calls != 2 {
 			t.Fatalf("write auth failure was retried or resolved: state=%+v calls=%d err=%v", state, script.calls, err)
 		}
@@ -143,7 +231,8 @@ func TestK2B2MockLimitSubmitDistinguishesRejectUnknownAndPreflightFailure(t *tes
 		client := newSyntheticKiwoomClient(t, KiwoomMock, kiwoomRoundTripFunc(func(*http.Request) (*http.Response, error) {
 			return nil, errors.New("synthetic token outage")
 		}))
-		if state, err := svc.submitAuthorizedKiwoomMockOrder(context.Background(), client, order.OrderID, lease.FencingToken); err == nil || state != nil {
+		dispatch := mustKiwoomMockLimitOrderDispatch(t, client)
+		if state, err := svc.submitAuthorizedLimitOrder(context.Background(), dispatch, order.OrderID, lease.FencingToken); err == nil || state != nil || strings.Contains(err.Error(), "synthetic token outage") {
 			t.Fatalf("token preflight unexpectedly dispatched: state=%+v err=%v", state, err)
 		}
 		state, err := svc.loadOrderState(context.Background(), order.OrderID)
@@ -159,10 +248,35 @@ func TestK2B2MockLimitSubmitDistinguishesRejectUnknownAndPreflightFailure(t *tes
 			t.Fatal("production transport was called")
 			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
 		}))
-		if state, err := svc.submitAuthorizedKiwoomMockOrder(context.Background(), client, order.OrderID, 1); err == nil || state != nil {
-			t.Fatalf("production client entered mock submit: state=%+v err=%v", state, err)
+		if dispatch, err := newKiwoomMockLimitOrderDispatch(client); err == nil || dispatch.valid() {
+			t.Fatalf("production client created mock dispatch: dispatch=%+v err=%v", dispatch, err)
+		}
+		if dispatch, err := newKiwoomMockLimitOrderDispatch(nil); err == nil || dispatch.valid() {
+			t.Fatalf("nil client created mock dispatch: dispatch=%+v err=%v", dispatch, err)
+		}
+		state, err := svc.loadOrderState(context.Background(), order.OrderID)
+		if err != nil || state.Status != "RECORDED" {
+			t.Fatalf("rejected adapter construction mutated order: state=%+v err=%v", state, err)
 		}
 	})
+}
+
+func mustKiwoomMockLimitOrderDispatch(t *testing.T, client *KiwoomClient) LimitOrderDispatchPort {
+	t.Helper()
+	dispatch, err := newKiwoomMockLimitOrderDispatch(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dispatch
+}
+
+func mustLimitOrderDispatchPort(t *testing.T, provider, mode string, fake *fakeLimitOrderDispatchPort) LimitOrderDispatchPort {
+	t.Helper()
+	dispatch, err := newLimitOrderDispatchPort(provider, mode, fake.Preflight, fake.SubmitLimitOrder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dispatch
 }
 
 func mustJSON(t *testing.T, value any) string {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'api.dart';
@@ -278,13 +280,16 @@ class PortfolioController extends ChangeNotifier {
   final OmniApi api;
   ServiceStatus? status;
   PortfolioSnapshot? snapshot;
+  CurrentPortfolioValuation? currentValuation;
   BrokerReconciliation? reconciliation;
   LocalOrderLog? orderLog;
   String? error;
   var reconciliationFailed = false;
+  var currentValuationFailed = false;
   var orderLogFailed = false;
   var busy = false;
   var reconciliationBusy = false;
+  var currentValuationBusy = false;
   var orderLogBusy = false;
   var _disposed = false;
 
@@ -294,6 +299,7 @@ class PortfolioController extends ChangeNotifier {
     error = null;
     _notify();
     final optionalRefreshes = <Future<void>>[
+      if (!currentValuationBusy) refreshCurrentValuation(),
       if (!reconciliationBusy) refreshReconciliation(),
       if (!orderLogBusy) refreshLocalOrders(),
     ];
@@ -309,6 +315,21 @@ class PortfolioController extends ChangeNotifier {
     busy = false;
     _notify();
     await Future.wait(optionalRefreshes);
+  }
+
+  Future<void> refreshCurrentValuation() async {
+    if (currentValuationBusy) return;
+    currentValuationBusy = true;
+    currentValuationFailed = false;
+    _notify();
+    try {
+      currentValuation = await api.currentPortfolioValuation();
+    } catch (_) {
+      currentValuationFailed = true;
+    } finally {
+      currentValuationBusy = false;
+      _notify();
+    }
   }
 
   Future<void> refreshReconciliation() async {
@@ -463,6 +484,13 @@ class OverviewPage extends StatelessWidget {
           retainedError: controller.orderLogFailed,
           busy: controller.orderLogBusy,
           onDetails: onConnections,
+        ),
+        const SizedBox(height: 12),
+        _CurrentPortfolioValuationCard(
+          valuation: controller.currentValuation,
+          snapshotRevision: snapshot.ledgerRevision,
+          busy: controller.currentValuationBusy,
+          retainedError: controller.currentValuationFailed,
         ),
         const SizedBox(height: 12),
         _PortfolioHero(snapshot: snapshot),
@@ -631,6 +659,187 @@ class _PortfolioHero extends StatelessWidget {
             const SizedBox(height: 12),
             Text('평가금액 미포함', style: Theme.of(context).textTheme.bodySmall),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CurrentPortfolioValuationCard extends StatelessWidget {
+  const _CurrentPortfolioValuationCard({
+    required this.valuation,
+    required this.snapshotRevision,
+    required this.busy,
+    required this.retainedError,
+  });
+
+  final CurrentPortfolioValuation? valuation;
+  final String snapshotRevision;
+  final bool busy;
+  final bool retainedError;
+
+  @override
+  Widget build(BuildContext context) {
+    final current = valuation;
+    if (current == null) {
+      final title = busy ? '전체 평가 계산 중' : '전체 평가를 불러오지 못했습니다';
+      final body = busy
+          ? '같은 원장 시점의 저장 가격과 직접 환율을 확인하고 있습니다.'
+          : '현금과 보유 내역은 계속 볼 수 있습니다. 새로고침하면 다시 계산합니다.';
+      return Card(
+        child: Semantics(
+          container: true,
+          liveRegion: !busy,
+          excludeSemantics: true,
+          label: '$title. $body',
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  busy ? Icons.hourglass_top_rounded : Icons.info_outline,
+                  color: busy ? null : _warningColor(context),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(body, style: Theme.of(context).textTheme.bodySmall),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final mismatch = current.ledgerRevision != snapshotRevision;
+    final valuationTimeText = _time(DateTime.parse(current.valuationAsOf));
+    final total = current.totalValue;
+    if (total == null) {
+      final empty = current.status == 'empty';
+      final title = empty ? '평가할 자산 없음' : '전체 평가를 계산할 수 없음';
+      final body = empty
+          ? '이 평가 시점의 원장에는 평가할 현금과 보유 자산이 없습니다.'
+          : '필요한 저장 가격 또는 직접 환율 ${current.issues.length}건을 확인하세요. 부분 합계는 표시하지 않습니다.';
+      final notices = [
+        if (mismatch) '원장 갱신 전 저장 평가',
+        if (busy) '새 평가 계산 중 · 현재 표시 상태 유지',
+        if (retainedError) '새로고침 실패 · 마지막 정상 상태 유지',
+      ];
+      return Card(
+        child: Semantics(
+          container: true,
+          liveRegion: true,
+          excludeSemantics: true,
+          label: [
+            title,
+            body,
+            ...notices,
+            '평가 시각 $valuationTimeText',
+          ].join('\n'),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 6),
+                Text(body),
+                for (final notice in notices) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    notice,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: _warningColor(context),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Text(
+                  '평가 시각 $valuationTimeText',
+                  style: _tabular(context).copyWith(
+                    fontSize: Theme.of(context).textTheme.bodySmall?.fontSize,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final totalText = _formattedMoney(total);
+    final cashText = _formattedMoney(current.cashValue!);
+    final holdingsText = _formattedMoney(current.holdingsValue!);
+    final isSample = current.status == 'stale_sample';
+    final authority = isSample
+        ? '저장된 로컬 샘플 기준 · 실시간·증권사 값 아님'
+        : '같은 원장 시점의 KRW 평가 · 증권사 잔고 값 아님';
+    final notices = [
+      authority,
+      if (mismatch) '원장 갱신 전 저장 평가',
+      if (busy) '새 평가 계산 중 · 현재 표시값 유지',
+      if (retainedError) '새로고침 실패 · 마지막 정상 평가 유지',
+    ];
+    return Card(
+      child: Semantics(
+        container: true,
+        excludeSemantics: true,
+        label:
+            '총 자산 $totalText. 현금 $cashText. 보유 자산 $holdingsText. ${notices.join('. ')}. 평가 시각 $valuationTimeText',
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('총 자산', style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 4),
+              Text(
+                totalText,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 24,
+                runSpacing: 8,
+                children: [
+                  _HeroMetric(label: '현금', value: cashText),
+                  _HeroMetric(label: '보유 자산', value: holdingsText),
+                ],
+              ),
+              const SizedBox(height: 12),
+              for (final notice in notices) ...[
+                Text(
+                  notice,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: notice == authority && !isSample
+                        ? null
+                        : _warningColor(context),
+                  ),
+                ),
+                const SizedBox(height: 4),
+              ],
+              Text(
+                '평가 시각 $valuationTimeText',
+                style: _tabular(context).copyWith(
+                  fontSize: Theme.of(context).textTheme.bodySmall?.fontSize,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1718,55 +1927,195 @@ class ActivityPage extends StatefulWidget {
 
 class _ActivityPageState extends State<ActivityPage> {
   final _csv = TextEditingController();
+  final _scroll = ScrollController();
+  final _activityHistoryKey = GlobalKey();
   ImportPreview? _preview;
   ApplyReceipt? _receipt;
+  LedgerActivityPage? _firstActivities;
   LedgerActivityPage? _activities;
+  final List<({String cursor, String upperBoundOccurredAt})>
+  _activityCursorTrail = [];
   String? _error;
   var _busy = false;
   var _activityBusy = false;
   var _activityFailed = false;
-  var _activityRefreshQueued = false;
+  var _activityPagingFailed = false;
+  var _activityPageIndex = 0;
+  var _activityEpoch = 0;
+  int? _queuedFirstPageEpoch;
+  var _queuedFirstPageReveal = false;
 
   @override
   void initState() {
     super.initState();
-    _refreshActivities();
+    _refreshActivities(revealResult: false);
   }
 
   @override
   void dispose() {
+    _activityEpoch += 1;
     _csv.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
-  Future<void> _refreshActivities() async {
+  Future<void> _refreshActivities({bool revealResult = true}) async {
     if (!mounted) return;
+    final epoch = ++_activityEpoch;
     if (_activityBusy) {
-      _activityRefreshQueued = true;
+      _queuedFirstPageEpoch = epoch;
+      _queuedFirstPageReveal = revealResult;
+      setState(() {
+        _activityFailed = false;
+        _activityPagingFailed = false;
+      });
       return;
     }
+    await _loadActivityPage(
+      epoch: epoch,
+      refreshFirst: true,
+      revealResult: revealResult,
+    );
+  }
+
+  Future<void> _loadActivityPage({
+    required int epoch,
+    required bool refreshFirst,
+    String? cursor,
+    String? upperBoundOccurredAt,
+    String? lowerBoundOccurredAt,
+    int targetPageIndex = 0,
+    bool movingOlder = false,
+    bool revealResult = true,
+  }) async {
+    if (!mounted || _activityBusy) return;
     setState(() {
       _activityBusy = true;
       _activityFailed = false;
+      _activityPagingFailed = false;
     });
     try {
-      do {
-        _activityRefreshQueued = false;
-        try {
-          final activities = await widget.api.ledgerActivities();
-          if (mounted) {
-            setState(() {
-              _activities = activities;
-              _activityFailed = false;
-            });
-          }
-        } catch (_) {
-          if (mounted) setState(() => _activityFailed = true);
+      final activities = await widget.api.ledgerActivities(cursor: cursor);
+      if (!mounted || epoch != _activityEpoch) return;
+      if (cursor != null) {
+        final first = _firstActivities;
+        if (first == null || upperBoundOccurredAt == null) {
+          throw const FormatException('Missing activity page snapshot');
         }
-      } while (mounted && _activityRefreshQueued);
+        activities.requireContinuationOf(
+          initial: first,
+          upperBoundOccurredAt: upperBoundOccurredAt,
+          requestedCursor: cursor,
+          lowerBoundOccurredAt: lowerBoundOccurredAt,
+          traversedCursors: _activityCursorTrail
+              .take(targetPageIndex - 1)
+              .map((step) => step.cursor),
+        );
+      }
+      setState(() {
+        if (refreshFirst) {
+          _firstActivities = activities;
+          _activities = activities;
+          _activityPageIndex = 0;
+          _activityCursorTrail.clear();
+        } else {
+          _activities = activities;
+          _activityPageIndex = targetPageIndex;
+          if (movingOlder) {
+            _activityCursorTrail.removeRange(
+              targetPageIndex - 1,
+              _activityCursorTrail.length,
+            );
+            _activityCursorTrail.add((
+              cursor: cursor!,
+              upperBoundOccurredAt: upperBoundOccurredAt!,
+            ));
+          } else if (_activityCursorTrail.length > targetPageIndex) {
+            _activityCursorTrail.removeRange(
+              targetPageIndex,
+              _activityCursorTrail.length,
+            );
+          }
+        }
+        _activityFailed = false;
+        _activityPagingFailed = false;
+      });
+      if (revealResult) _revealActivityHistory();
+    } catch (_) {
+      if (mounted && epoch == _activityEpoch) {
+        setState(() {
+          _activityFailed = true;
+          _activityPagingFailed = cursor != null;
+        });
+      }
     } finally {
-      if (mounted) setState(() => _activityBusy = false);
+      if (mounted) {
+        setState(() => _activityBusy = false);
+        final queuedEpoch = _queuedFirstPageEpoch;
+        if (queuedEpoch != null) {
+          final revealQueuedResult = _queuedFirstPageReveal;
+          _queuedFirstPageEpoch = null;
+          _queuedFirstPageReveal = false;
+          await _loadActivityPage(
+            epoch: queuedEpoch,
+            refreshFirst: true,
+            revealResult: revealQueuedResult,
+          );
+        }
+      }
     }
+  }
+
+  void _revealActivityHistory() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final historyContext = _activityHistoryKey.currentContext;
+      if (!mounted || historyContext == null || !_scroll.hasClients) return;
+      Scrollable.ensureVisible(
+        historyContext,
+        duration: Duration.zero,
+        alignment: 0,
+      );
+    });
+  }
+
+  Future<void> _showOlderActivities() async {
+    final activities = _activities;
+    final cursor = activities?.nextCursor;
+    if (_activityBusy || activities == null || cursor == null) return;
+    await _loadActivityPage(
+      epoch: _activityEpoch,
+      refreshFirst: false,
+      cursor: cursor,
+      upperBoundOccurredAt: activities.events.last.occurredAt,
+      targetPageIndex: _activityPageIndex + 1,
+      movingOlder: true,
+    );
+  }
+
+  Future<void> _showNewerActivities() async {
+    final activities = _activities;
+    if (_activityBusy || _activityPageIndex == 0 || activities == null) return;
+    if (_activityPageIndex == 1) {
+      setState(() {
+        _activities = _firstActivities;
+        _activityPageIndex = 0;
+        _activityCursorTrail.clear();
+        _activityFailed = false;
+        _activityPagingFailed = false;
+      });
+      _revealActivityHistory();
+      return;
+    }
+    final targetPageIndex = _activityPageIndex - 1;
+    final step = _activityCursorTrail[targetPageIndex - 1];
+    await _loadActivityPage(
+      epoch: _activityEpoch,
+      refreshFirst: false,
+      cursor: step.cursor,
+      upperBoundOccurredAt: step.upperBoundOccurredAt,
+      lowerBoundOccurredAt: activities.events.first.occurredAt,
+      targetPageIndex: targetPageIndex,
+    );
   }
 
   Future<void> _previewCsv() async {
@@ -1814,7 +2163,7 @@ class _ActivityPageState extends State<ActivityPage> {
       );
       if (!mounted) return;
       setState(() => _receipt = receipt);
-      await _refreshActivities();
+      unawaited(_refreshActivities(revealResult: false));
     } catch (_) {
       if (mounted) {
         setState(
@@ -1842,6 +2191,7 @@ class _ActivityPageState extends State<ActivityPage> {
 
   @override
   Widget build(BuildContext context) => ListView(
+    controller: _scroll,
     padding: const EdgeInsets.all(16),
     children: [
       _SectionCard(
@@ -1907,10 +2257,15 @@ class _ActivityPageState extends State<ActivityPage> {
           (_csv.text.isEmpty && _preview == null && _error == null)) ...[
         const SizedBox(height: 12),
         _ActivityHistoryCard(
+          key: _activityHistoryKey,
           page: _activities,
           busy: _activityBusy,
           failed: _activityFailed,
-          onRetry: _refreshActivities,
+          pagingFailed: _activityPagingFailed,
+          pageIndex: _activityPageIndex,
+          onRetry: () => _refreshActivities(),
+          onOlder: _showOlderActivities,
+          onNewer: _showNewerActivities,
         ),
       ],
     ],
@@ -1919,16 +2274,25 @@ class _ActivityPageState extends State<ActivityPage> {
 
 class _ActivityHistoryCard extends StatelessWidget {
   const _ActivityHistoryCard({
+    super.key,
     required this.page,
     required this.busy,
     required this.failed,
+    required this.pagingFailed,
+    required this.pageIndex,
     required this.onRetry,
+    required this.onOlder,
+    required this.onNewer,
   });
 
   final LedgerActivityPage? page;
   final bool busy;
   final bool failed;
+  final bool pagingFailed;
+  final int pageIndex;
   final VoidCallback onRetry;
+  final VoidCallback onOlder;
+  final VoidCallback onNewer;
 
   @override
   Widget build(BuildContext context) {
@@ -1950,7 +2314,7 @@ class _ActivityHistoryCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             OutlinedButton(
-              onPressed: busy ? null : onRetry,
+              onPressed: onRetry,
               child: const Text('최근 거래 다시 불러오기'),
             ),
           ],
@@ -1963,10 +2327,13 @@ class _ActivityHistoryCard extends StatelessWidget {
             ),
             if (busy) ...[
               const SizedBox(height: 8),
-              _Notice(
-                icon: Icons.sync,
-                text: '거래 내역을 다시 확인하는 중입니다.',
-                color: Theme.of(context).colorScheme.primary,
+              Semantics(
+                liveRegion: true,
+                child: _Notice(
+                  icon: Icons.sync,
+                  text: '거래 내역 페이지를 불러오는 중입니다.',
+                  color: Theme.of(context).colorScheme.primary,
+                ),
               ),
             ],
             if (failed) ...[
@@ -1975,11 +2342,55 @@ class _ActivityHistoryCard extends StatelessWidget {
                 liveRegion: true,
                 child: _Notice(
                   icon: Icons.error_outline,
-                  text: '새로고침에 실패해 마지막 정상 거래 내역을 유지합니다.',
+                  text: pagingFailed
+                      ? '거래 페이지를 불러오지 못해 현재 페이지를 유지합니다.'
+                      : '새로고침에 실패해 마지막 정상 거래 내역을 유지합니다.',
                   color: Theme.of(context).colorScheme.error,
                 ),
               ),
             ],
+            const SizedBox(height: 12),
+            Semantics(
+              liveRegion: true,
+              label: '거래 내역 페이지 ${pageIndex + 1}, ${value.events.length}건',
+              child: Text(
+                '페이지 ${pageIndex + 1} · ${value.events.length}건',
+                style: _tabular(context),
+              ),
+            ),
+            if (pageIndex > 0 || value.nextCursor != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                '한 페이지에 최대 50건만 표시합니다.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+              if (pageIndex > 0)
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 48),
+                  child: OutlinedButton.icon(
+                    onPressed: busy ? null : onNewer,
+                    icon: const Icon(Icons.arrow_upward_rounded),
+                    label: const Text('더 최근 거래'),
+                  ),
+                ),
+              if (pageIndex > 0 && value.nextCursor != null)
+                const SizedBox(height: 8),
+              if (value.nextCursor != null)
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 48),
+                  child: OutlinedButton.icon(
+                    onPressed: busy ? null : onOlder,
+                    icon: const Icon(Icons.arrow_downward_rounded),
+                    label: const Text('더 오래된 거래'),
+                  ),
+                ),
+            ],
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: onRetry,
+              child: const Text('최근 거래 다시 불러오기'),
+            ),
             const SizedBox(height: 12),
             if (value.events.isEmpty)
               const Text('아직 가져온 거래가 없습니다. 아래에서 CSV 거래 내역을 가져오세요.')
@@ -1988,15 +2399,6 @@ class _ActivityHistoryCard extends StatelessWidget {
                 if (index > 0) const Divider(height: 24),
                 _ActivityRow(event: value.events[index]),
               ],
-            if (value.nextCursor != null) ...[
-              const SizedBox(height: 12),
-              const Text('최근 50건만 표시합니다.', style: TextStyle(fontSize: 13)),
-            ],
-            const SizedBox(height: 12),
-            OutlinedButton(
-              onPressed: busy ? null : onRetry,
-              child: const Text('최근 거래 다시 불러오기'),
-            ),
           ],
         ],
       ),
@@ -2735,6 +3137,20 @@ Color _warningColor(BuildContext context) =>
 String _moneySummary(List<Money> money) => money.isEmpty
     ? '없음'
     : money.map((item) => '${item.currency} ${item.amount}').join(' · ');
+
+String _formattedMoney(Money money) {
+  final negative = money.amount.startsWith('-');
+  final unsigned = negative ? money.amount.substring(1) : money.amount;
+  final parts = unsigned.split('.');
+  final whole = parts.first;
+  final buffer = StringBuffer();
+  for (var index = 0; index < whole.length; index += 1) {
+    if (index > 0 && (whole.length - index) % 3 == 0) buffer.write(',');
+    buffer.write(whole[index]);
+  }
+  final fraction = parts.length == 1 ? '' : '.${parts[1]}';
+  return '${money.currency} ${negative ? '-' : ''}$buffer$fraction';
+}
 
 bool _isZero(String amount) => RegExp(r'^-?0(?:\.0+)?$').hasMatch(amount);
 

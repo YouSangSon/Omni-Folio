@@ -803,6 +803,7 @@ func (s *Service) routes() http.Handler {
 	mux.HandleFunc("GET /v1/market-data/fx/latest", s.handleLatestFXObservation)
 	mux.HandleFunc("GET /v1/portfolio/cash-valuation", s.handleCashValuation)
 	mux.HandleFunc("GET /v1/portfolio/holding-valuation", s.handleHoldingValuation)
+	mux.HandleFunc("GET /v1/portfolio/current-valuation", s.handleCurrentPortfolioValuation)
 	mux.HandleFunc("GET /v1/broker-reconciliation/latest", s.handleLatestBrokerReconciliation)
 	mux.HandleFunc("GET /v1/orders", s.handleLocalOrders)
 	mux.HandleFunc("GET /v1/paper/monitor", s.handlePaperMonitor)

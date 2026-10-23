@@ -19,7 +19,50 @@ RESEARCH_PYTHONPATH ?= $(ROOT)/services/research
 MARKET_FIXTURE ?= $(ROOT)/contracts/fixtures/market-bars.csv
 SEED_DEMO_CSV ?= $(ROOT)/contracts/fixtures/golden-import.csv
 
-.PHONY: bootstrap format format-check lint test test-body test-resource-cleanup contract-check check clean clean-test-resources run-core run-client seed-demo run-research run-improvement smoke
+# Observe before creating or reclaiming resources. Capture ps status before
+# normalizing whitespace: a successful awk must not hide a denied ps call.
+define require-process-identity
+owner_command="$$(ps -p "$$$$" -o command=)" && \
+owner_start="$$(ps -p "$$$$" -o lstart=)" && \
+test -n "$$(printf '%s' "$$owner_command" | tr -d '[:space:]')" && \
+owner_start="$$(printf '%s\n' "$$owner_start" | awk '{$$1=$$1; print}')" && \
+test -n "$$owner_start" || { echo 'cannot verify test resource owner process identity' >&2; exit 1; }
+endef
+
+# Reuse the recorded group after its launcher exits; the numeric wait handle
+# alone is not evidence that all descendants have stopped.
+define define-owned-child-cleanup
+stop_child_group() { \
+	session_path="$$1"; \
+	if test -f "$$session_path/.child-starting"; then \
+		for _ in $$(seq 1 100); do \
+			test -f "$$session_path/.child-pgid" -a -f "$$session_path/.child-start" && break; \
+			test -f "$$session_path/.child-starting" || break; \
+			sleep 0.02; \
+		done; \
+	fi; \
+	if test ! -f "$$session_path/.child-pgid" -o ! -f "$$session_path/.child-start"; then \
+		test ! -f "$$session_path/.child-starting" || { echo "owned child process metadata is incomplete: $$session_path" >&2; return 1; }; \
+		return 0; \
+	fi; \
+	child_pgid="$$(sed -n '1p' "$$session_path/.child-pgid")"; \
+	case "$$child_pgid" in ''|*[!0-9]*) echo "invalid owned child process group: $$session_path" >&2; return 1;; esac; \
+	/bin/kill -0 -- "-$$child_pgid" 2>/dev/null || return 0; \
+	recorded_start="$$(sed -n '1p' "$$session_path/.child-start")"; \
+	test -n "$$recorded_start" || { echo "invalid owned child process start: $$session_path" >&2; return 1; }; \
+	current_start="$$(ps -p "$$child_pgid" -o lstart= 2>/dev/null | awk '{$$1=$$1; print}')"; \
+	if test -n "$$current_start" -a "$$current_start" != "$$recorded_start"; then echo "refusing reused child process group: $$child_pgid" >&2; return 1; fi; \
+	/bin/kill -TERM -- "-$$child_pgid" 2>/dev/null || true; \
+	for _ in $$(seq 1 50); do /bin/kill -0 -- "-$$child_pgid" 2>/dev/null || return 0; sleep 0.02; done; \
+	current_start="$$(ps -p "$$child_pgid" -o lstart= 2>/dev/null | awk '{$$1=$$1; print}')"; \
+	if test -n "$$current_start" -a "$$current_start" != "$$recorded_start"; then echo "owned child group changed before KILL: $$child_pgid" >&2; return 1; fi; \
+	/bin/kill -KILL -- "-$$child_pgid" 2>/dev/null || true; \
+	for _ in $$(seq 1 50); do /bin/kill -0 -- "-$$child_pgid" 2>/dev/null || return 0; sleep 0.02; done; \
+	echo "owned child process group remains: $$child_pgid" >&2; return 1; \
+}
+endef
+
+.PHONY: bootstrap format format-check lint test test-body test-resource-preflight test-resource-lifecycle test-resource-cleanup contract-check check clean clean-test-resources run-core run-client seed-demo run-research run-improvement smoke
 
 bootstrap:
 	mkdir -p "$(ROOT)/data"
@@ -40,7 +83,8 @@ lint:
 	"$(PYTHON)" -c 'import pathlib; files=sorted(pathlib.Path("services/research").rglob("*.py")); assert files, "no Python source files found"; [compile(path.read_bytes(), str(path), "exec") for path in files]'
 
 test:
-	+@test_root=; \
+	+@$(require-process-identity); \
+	test_root=; \
 	status=0; \
 	child_pid=; \
 	cleanup() { \
@@ -60,8 +104,8 @@ test:
 	trap 'status=$$?; cleanup' EXIT; \
 	test_root="$$(mktemp -d "$${TMPDIR:-/tmp}/omni-folio-test.XXXXXX")"; \
 	printf '%s\n' "$$$$" >"$$test_root/.owner-pid"; \
-	ps -p "$$$$" -o command= >"$$test_root/.owner-command"; \
-	ps -p "$$$$" -o lstart= | awk '{$$1=$$1; print}' >"$$test_root/.owner-start"; \
+	printf '%s\n' "$$owner_command" >"$$test_root/.owner-command"; \
+	printf '%s\n' "$$owner_start" >"$$test_root/.owner-start"; \
 	: >"$$test_root/.child-starting"; \
 	TMPDIR="$$test_root" "$(PYTHON)" -c 'import os,pathlib,subprocess,sys; os.setsid(); root=pathlib.Path(sys.argv[1]); root.joinpath(".child-pgid").write_text(f"{os.getpid()}\n"); started=" ".join(subprocess.check_output(["ps","-p",str(os.getpid()),"-o","lstart="], text=True).split()); root.joinpath(".child-start").write_text(started+"\n"); root.joinpath(".child-starting").unlink(missing_ok=True); os.execvp(sys.argv[2], sys.argv[2:])' "$$test_root" "$(MAKE)" --no-print-directory test-body & \
 	child_pid=$$!; \
@@ -71,13 +115,21 @@ test:
 	exit "$$child_status"
 
 test-body:
+	$(MAKE) --no-print-directory test-resource-preflight
 	cd services/core && "$(GO)" test $(CORE_TEST_PACKAGES)
 	cd apps/client && "$(FLUTTER)" test
 	cd services/research && PYTHONDONTWRITEBYTECODE=1 "$(PYTHON)" -m unittest discover -s tests -v
 	$(MAKE) --no-print-directory test-resource-cleanup
 
+test-resource-preflight:
+	PYTHONDONTWRITEBYTECODE=1 "$(PYTHON)" tests/test_resource_preflight.py
+
+test-resource-lifecycle:
+	PYTHONDONTWRITEBYTECODE=1 "$(PYTHON)" tests/test_resource_lifecycle.py
+
 test-resource-cleanup:
 	@set -eu; \
+	$(require-process-identity); \
 	stale_root=; stale_group_root=; orphan_group_root=; active_root=; reused_pid_root=; reused_start_root=; stale_pid=; stale_group_pid=; orphan_group_pgid=; \
 	cleanup() { \
 		if test -n "$$stale_pid"; then kill "$$stale_pid" 2>/dev/null || true; wait "$$stale_pid" 2>/dev/null || true; fi; \
@@ -141,7 +193,8 @@ contract-check:
 	"$(PYTHON)" -c 'import json, pathlib; files=sorted(pathlib.Path("contracts").rglob("*.json")); assert files, "no JSON contract files found"; [json.loads(path.read_text(encoding="utf-8")) for path in files]; print(f"validated {len(files)} JSON contract files")'
 
 check:
-	+@check_root=; \
+	+@$(require-process-identity); \
+	check_root=; \
 	cleanup() { \
 		cleanup_status=0; \
 		trap - EXIT INT TERM; \
@@ -161,8 +214,8 @@ check:
 	trap 'status=$$?; cleanup' EXIT; \
 	check_root="$$(mktemp -d "$${TMPDIR:-/tmp}/omni-folio-test.XXXXXX")"; \
 	printf '%s\n' "$$$$" >"$$check_root/.owner-pid"; \
-	ps -p "$$$$" -o command= >"$$check_root/.owner-command"; \
-	ps -p "$$$$" -o lstart= | awk '{$$1=$$1; print}' >"$$check_root/.owner-start"; \
+	printf '%s\n' "$$owner_command" >"$$check_root/.owner-command"; \
+	printf '%s\n' "$$owner_start" >"$$check_root/.owner-start"; \
 	: >"$$check_root/.child-starting"; \
 	"$(PYTHON)" -c 'import os,pathlib,subprocess,sys; os.setsid(); root=pathlib.Path(sys.argv[1]); root.joinpath(".child-pgid").write_text(f"{os.getpid()}\n"); started=" ".join(subprocess.check_output(["ps","-p",str(os.getpid()),"-o","lstart="], text=True).split()); root.joinpath(".child-start").write_text(started+"\n"); root.joinpath(".child-starting").unlink(missing_ok=True); os.execvp(sys.argv[2], sys.argv[2:])' "$$check_root" "$(MAKE)" format-check lint test contract-check & \
 	child_pid=$$!; \
@@ -173,34 +226,8 @@ check:
 
 clean-test-resources:
 	@set -eu; \
-	stop_child_group() { \
-		session_path="$$1"; \
-		if test -f "$$session_path/.child-starting"; then \
-			for _ in $$(seq 1 100); do \
-				test -f "$$session_path/.child-pgid" -a -f "$$session_path/.child-start" && break; \
-				test -f "$$session_path/.child-starting" || break; \
-				sleep 0.02; \
-			done; \
-		fi; \
-		if test ! -f "$$session_path/.child-pgid" -o ! -f "$$session_path/.child-start"; then \
-			test ! -f "$$session_path/.child-starting" || { echo "owned child process metadata is incomplete: $$session_path" >&2; return 1; }; \
-			return 0; \
-		fi; \
-		child_pgid="$$(sed -n '1p' "$$session_path/.child-pgid")"; \
-		case "$$child_pgid" in ''|*[!0-9]*) echo "invalid owned child process group: $$session_path" >&2; return 1;; esac; \
-		/bin/kill -0 -- "-$$child_pgid" 2>/dev/null || return 0; \
-		recorded_start="$$(sed -n '1p' "$$session_path/.child-start")"; \
-		test -n "$$recorded_start" || { echo "invalid owned child process start: $$session_path" >&2; return 1; }; \
-		current_start="$$(ps -p "$$child_pgid" -o lstart= 2>/dev/null | awk '{$$1=$$1; print}')"; \
-		if test -n "$$current_start" -a "$$current_start" != "$$recorded_start"; then echo "refusing reused child process group: $$child_pgid" >&2; return 1; fi; \
-		/bin/kill -TERM -- "-$$child_pgid" 2>/dev/null || true; \
-		for _ in $$(seq 1 50); do /bin/kill -0 -- "-$$child_pgid" 2>/dev/null || return 0; sleep 0.02; done; \
-		current_start="$$(ps -p "$$child_pgid" -o lstart= 2>/dev/null | awk '{$$1=$$1; print}')"; \
-		if test -n "$$current_start" -a "$$current_start" != "$$recorded_start"; then echo "owned child group changed before KILL: $$child_pgid" >&2; return 1; fi; \
-		/bin/kill -KILL -- "-$$child_pgid" 2>/dev/null || true; \
-		for _ in $$(seq 1 50); do /bin/kill -0 -- "-$$child_pgid" 2>/dev/null || return 0; sleep 0.02; done; \
-		echo "owned child process group remains: $$child_pgid" >&2; return 1; \
-	}; \
+	$(require-process-identity); \
+	$(define-owned-child-cleanup); \
 	if test -n "$${TEST_SESSION_ROOT:-}"; then \
 		case "$$TEST_SESSION_ROOT" in "$${TMPDIR:-/tmp}"/omni-folio-test.*) ;; *) echo "refusing unsafe test session root: $$TEST_SESSION_ROOT" >&2; exit 1;; esac; \
 		stop_child_group "$$TEST_SESSION_ROOT"; \
@@ -302,6 +329,8 @@ run-improvement:
 
 smoke:
 	@set -eu; \
+	$(require-process-identity); \
+	$(define-owned-child-cleanup); \
 	$(MAKE) --no-print-directory clean-test-resources; \
 	smoke_dir=; \
 	status=0; \
@@ -310,9 +339,10 @@ smoke:
 	cleanup() { \
 		cleanup_status=0; \
 		trap - EXIT INT TERM; \
-		if test -n "$$child_pid"; then /bin/kill -TERM -- "-$$child_pid" 2>/dev/null || true; wait "$$child_pid" 2>/dev/null || true; fi; \
+		if test -n "$$smoke_dir"; then stop_child_group "$$smoke_dir" || cleanup_status=$$?; fi; \
+		if test -n "$$child_pid" -a "$$cleanup_status" -eq 0; then wait "$$child_pid" 2>/dev/null || true; fi; \
 		if test -n "$$pid"; then kill "$$pid" 2>/dev/null || true; wait "$$pid" 2>/dev/null || true; fi; \
-		if test -n "$$smoke_dir"; then \
+		if test -n "$$smoke_dir" -a "$$cleanup_status" -eq 0; then \
 			case "$$smoke_dir" in "$${TMPDIR:-/tmp}"/omni-folio-smoke.*) test ! -e "$$smoke_dir" || find "$$smoke_dir" -depth -delete 2>/dev/null || test ! -e "$$smoke_dir" || cleanup_status=$$?;; *) echo "refusing unsafe smoke root: $$smoke_dir" >&2; cleanup_status=1;; esac; \
 		fi; \
 		if test "$$status" -ne 0; then exit "$$status"; fi; \
@@ -323,8 +353,8 @@ smoke:
 	trap 'status=$$?; cleanup' EXIT; \
 	smoke_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/omni-folio-smoke.XXXXXX")"; \
 	printf '%s\n' "$$$$" >"$$smoke_dir/.owner-pid"; \
-	ps -p "$$$$" -o command= >"$$smoke_dir/.owner-command"; \
-	ps -p "$$$$" -o lstart= | awk '{$$1=$$1; print}' >"$$smoke_dir/.owner-start"; \
+	printf '%s\n' "$$owner_command" >"$$smoke_dir/.owner-command"; \
+	printf '%s\n' "$$owner_start" >"$$smoke_dir/.owner-start"; \
 	db="$$smoke_dir/omni-folio.db"; \
 	bin="$$smoke_dir/omni-core"; \
 	log="$$smoke_dir/core.log"; \

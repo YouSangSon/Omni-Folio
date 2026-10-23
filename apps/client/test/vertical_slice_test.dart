@@ -27,12 +27,14 @@ class FakeApi implements OmniApi {
     required this.candlesValue,
     required this.orderLogValue,
     required this.activityValue,
+    this.currentValuationValue,
     this.reconciliationValue,
     this.fail = false,
     this.failSnapshot = false,
     this.failReconciliation = false,
     this.failLocalOrders = false,
     this.failActivities = false,
+    this.failCurrentValuation = false,
     this.applyFailures = 0,
     this.failureMessage = '서버를 다시 확인하세요.',
   });
@@ -44,6 +46,9 @@ class FakeApi implements OmniApi {
   MarketCandles candlesValue;
   LocalOrderLog orderLogValue;
   LedgerActivityPage activityValue;
+  CurrentPortfolioValuation? currentValuationValue;
+  Completer<CurrentPortfolioValuation>? currentValuationCompleter;
+  int currentValuationCalls = 0;
   BrokerReconciliation? reconciliationValue;
   Completer<BrokerReconciliation?>? reconciliationCompleter;
   int reconciliationCalls = 0;
@@ -60,6 +65,7 @@ class FakeApi implements OmniApi {
   bool failReconciliation;
   bool failLocalOrders;
   bool failActivities;
+  bool failCurrentValuation;
   int applyFailures;
   String failureMessage;
 
@@ -86,6 +92,15 @@ class FakeApi implements OmniApi {
       throw ApiException(failureMessage);
     }
     return snapshotValue;
+  }
+
+  @override
+  Future<CurrentPortfolioValuation> currentPortfolioValuation() async {
+    currentValuationCalls += 1;
+    if (fail || failCurrentValuation) {
+      throw const ApiException('private-current-valuation-error');
+    }
+    return currentValuationCompleter?.future ?? currentValuationValue!;
   }
 
   @override
@@ -122,7 +137,7 @@ class FakeApi implements OmniApi {
       throw UnsupportedError('Loaded only from the monitor detail page.');
 
   @override
-  Future<LedgerActivityPage> ledgerActivities() async {
+  Future<LedgerActivityPage> ledgerActivities({String? cursor}) async {
     activityCalls += 1;
     if (fail || failActivities) {
       throw const ApiException('account-main event-secret receipt-secret');
@@ -157,6 +172,7 @@ FakeApi goldenApi({
       'issues': const [],
     }),
     snapshotValue: snapshotValue,
+    currentValuationValue: currentPortfolioValuation(),
     previewValue: previewValue,
     receiptValue: receipt,
     candlesValue: marketCandles(),
@@ -164,6 +180,38 @@ FakeApi goldenApi({
     activityValue: LedgerActivityPage.fromJson(ledgerActivitiesJson()),
   );
 }
+
+CurrentPortfolioValuation currentPortfolioValuation({
+  String status = 'stale_sample',
+  bool sample = true,
+  String ledgerRevision = 'rev_0000000003',
+  Object? cashValue = const {'currency': 'KRW', 'amount': '95530'},
+  Object? holdingsValue = const {'currency': 'KRW', 'amount': '61650'},
+  Object? totalValue = const {'currency': 'KRW', 'amount': '157180'},
+  List<Json>? issues,
+}) => CurrentPortfolioValuation.fromJson({
+  'scope': 'whole_portfolio',
+  'policy_version': 'current_base_portfolio_valuation_v1',
+  'max_observation_age_seconds': 86400,
+  'base_currency': 'KRW',
+  'valuation_as_of': '2026-01-11T14:00:00Z',
+  'ledger_revision': ledgerRevision,
+  'ledger_as_of': '2026-01-10T10:00:00Z',
+  'ledger_recorded_at': '2026-01-10T15:01:00Z',
+  'status': status,
+  'sample': sample,
+  'cash_value': cashValue,
+  'holdings_value': holdingsValue,
+  'total_value': totalValue,
+  'issues':
+      issues ??
+      const [
+        {
+          'code': 'sample_data',
+          'message': 'portfolio valuation uses stored local sample data',
+        },
+      ],
+});
 
 MarketCandles marketCandles({
   String state = 'stale',
@@ -1413,8 +1461,11 @@ void main() {
 
       expect(find.byType(ListView), findsOneWidget);
       expect(find.textContaining('데이터 상태: 로컬 기록 확인 완료'), findsOneWidget);
-      await tester.drag(find.byType(ListView), const Offset(0, -500));
-      await tester.pump();
+      await tester.dragUntilVisible(
+        find.text('USD 778'),
+        find.byType(ListView),
+        const Offset(0, -240),
+      );
       expect(find.text('USD 778'), findsOneWidget);
       expect(api.localOrderCalls, 1);
 
@@ -1425,6 +1476,11 @@ void main() {
       pending.complete(LocalOrderLog.fromJson(localOrderLogJson()));
       await pumpUi(tester);
       expect(api.localOrderCalls, 1);
+      await tester.dragUntilVisible(
+        find.textContaining('확인 필요한 주문 1건'),
+        find.byType(ListView),
+        const Offset(0, 240),
+      );
       expect(find.textContaining('확인 필요한 주문 1건'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
@@ -1448,8 +1504,11 @@ void main() {
       expect(find.byType(ListView), findsOneWidget);
       expect(find.textContaining('데이터 상태: 로컬 기록 확인 완료'), findsOneWidget);
       expect(find.textContaining('증권사 잔고 대조 확인 중'), findsOneWidget);
-      await tester.drag(find.byType(ListView), const Offset(0, -500));
-      await tester.pump();
+      await tester.dragUntilVisible(
+        find.text('USD 778'),
+        find.byType(ListView),
+        const Offset(0, -240),
+      );
       expect(find.text('USD 778'), findsOneWidget);
       expect(api.reconciliationCalls, 1);
       final refresh = find.byTooltip('데이터 새로고침');
@@ -1809,6 +1868,11 @@ void main() {
     final api = goldenApi();
     await tester.pumpWidget(OmniFolioApp(api: api));
     await pumpUi(tester);
+    await tester.dragUntilVisible(
+      find.text('USD 778'),
+      find.byType(ListView),
+      const Offset(0, -240),
+    );
     expect(find.text('USD 778'), findsOneWidget);
 
     api.fail = true;
@@ -1816,6 +1880,11 @@ void main() {
     await pumpUi(tester);
 
     expect(find.text('USD 778'), findsOneWidget);
+    await tester.dragUntilVisible(
+      find.textContaining('일부 데이터 확인 필요'),
+      find.byType(ListView),
+      const Offset(0, 240),
+    );
     expect(find.textContaining('일부 데이터 확인 필요'), findsOneWidget);
     expect(find.textContaining('마지막 정상 스냅샷은 유지됩니다'), findsOneWidget);
   });
@@ -2620,6 +2689,193 @@ void main() {
       find.byType(ListView),
       const Offset(0, -300),
     );
+  });
+
+  testWidgets(
+    'overview shows a sample-labeled whole portfolio value at 200 percent text',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 700);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final semantics = tester.ensureSemantics();
+      try {
+        await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+        await pumpUi(tester);
+
+        await tester.dragUntilVisible(
+          find.text('총 자산'),
+          find.byType(ListView),
+          const Offset(0, -240),
+        );
+        await tester.pump();
+
+        expect(find.text('총 자산'), findsOneWidget);
+        expect(find.text('KRW 157,180'), findsOneWidget);
+        expect(find.textContaining('실시간·증권사 값 아님'), findsOneWidget);
+        expect(
+          find.semantics.byLabel(
+            RegExp(
+              r'총 자산 KRW 157,180.*현금 KRW 95,530.*보유 자산 KRW 61,650.*로컬 샘플.*실시간.*증권사 값 아님.*평가 시각',
+            ),
+          ),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  test(
+    'current valuation is optional, retains known-good on error, and replaces it with unavailable',
+    () async {
+      final api = goldenApi();
+      final controller = PortfolioController(api);
+      addTearDown(controller.dispose);
+
+      await controller.refresh();
+      final knownGood = controller.currentValuation;
+      expect(knownGood?.totalValue?.amount, '157180');
+      expect(api.currentValuationCalls, 1);
+
+      api.failCurrentValuation = true;
+      await controller.refreshCurrentValuation();
+      expect(controller.currentValuation, same(knownGood));
+      expect(controller.currentValuationFailed, isTrue);
+
+      api
+        ..failCurrentValuation = false
+        ..currentValuationValue = currentPortfolioValuation(
+          status: 'unavailable',
+          sample: false,
+          cashValue: null,
+          holdingsValue: null,
+          totalValue: null,
+          issues: const [
+            {
+              'code': 'missing_security_price',
+              'message': 'an eligible security price is unavailable',
+              'field': 'AAPL',
+            },
+          ],
+        );
+      await controller.refreshCurrentValuation();
+      expect(controller.currentValuation?.status, 'unavailable');
+      expect(controller.currentValuation?.totalValue, isNull);
+      expect(controller.currentValuationFailed, isFalse);
+    },
+  );
+
+  test(
+    'slow current valuation does not block snapshot and is single-flight',
+    () async {
+      final pending = Completer<CurrentPortfolioValuation>();
+      final api = goldenApi()..currentValuationCompleter = pending;
+      final controller = PortfolioController(api);
+      addTearDown(controller.dispose);
+
+      final refresh = controller.refresh();
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.snapshot?.ledgerRevision, 'rev_0000000003');
+      expect(controller.currentValuationBusy, isTrue);
+      await controller.refreshCurrentValuation();
+      expect(api.currentValuationCalls, 1);
+
+      pending.complete(currentPortfolioValuation());
+      await refresh;
+      expect(controller.currentValuation?.totalValue?.amount, '157180');
+      expect(controller.currentValuationBusy, isFalse);
+    },
+  );
+
+  testWidgets('overview qualifies an empty valuation from an older revision', (
+    tester,
+  ) async {
+    final api = goldenApi()
+      ..currentValuationValue = currentPortfolioValuation(
+        ledgerRevision: 'rev_0000000002',
+        status: 'empty',
+        sample: false,
+        cashValue: null,
+        holdingsValue: null,
+        totalValue: null,
+        issues: const [],
+      );
+
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.dragUntilVisible(
+      find.text('원장 갱신 전 저장 평가'),
+      find.byType(ListView),
+      const Offset(0, -240),
+    );
+
+    expect(find.text('원장 갱신 전 저장 평가'), findsOneWidget);
+    expect(find.textContaining('이 평가 시점의 원장'), findsOneWidget);
+    expect(find.textContaining('현재 원장에 평가할'), findsNothing);
+  });
+
+  testWidgets('failed valuation announces each sentence once', (tester) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      await tester.pumpWidget(
+        OmniFolioApp(api: goldenApi()..failCurrentValuation = true),
+      );
+      await pumpUi(tester);
+      final title = find.text('전체 평가를 불러오지 못했습니다');
+      await tester.dragUntilVisible(
+        title,
+        find.byType(ListView),
+        const Offset(0, -200),
+      );
+      final label = tester.getSemantics(title).getSemanticsData().label;
+      expect('전체 평가를 불러오지 못했습니다'.allMatches(label).length, 1);
+      expect('새로고침하면 다시 계산합니다'.allMatches(label).length, 1);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('unavailable valuation announces each sentence once', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      final api = goldenApi()
+        ..currentValuationValue = currentPortfolioValuation(
+          status: 'unavailable',
+          sample: false,
+          cashValue: null,
+          holdingsValue: null,
+          totalValue: null,
+          issues: const [
+            {
+              'code': 'missing_direct_fx',
+              'message': 'missing FX',
+              'field': 'USD',
+            },
+          ],
+        );
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+      final title = find.text('전체 평가를 계산할 수 없음');
+      await tester.dragUntilVisible(
+        title,
+        find.byType(ListView),
+        const Offset(0, -200),
+      );
+      final label = tester.getSemantics(title).getSemanticsData().label;
+      expect('전체 평가를 계산할 수 없음'.allMatches(label).length, 1);
+      expect('부분 합계는 표시하지 않습니다'.allMatches(label).length, 1);
+      expect('평가 시각'.allMatches(label).length, 1);
+    } finally {
+      semantics.dispose();
+    }
   });
 
   testWidgets('first-run action stays compact on desktop', (tester) async {

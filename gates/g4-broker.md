@@ -17,8 +17,9 @@
 13. G4O local daily chart display-range selection.
 14. G4Q credential-free Kiwoom latest-trade normalization.
 15. G4R credential-free Kiwoom `0B` realtime-price frame contract.
-16. K2B credentialed mock observation, query transport and lookup recovery.
-17. Toss Securities read-only adapter using the same canonical contracts.
+16. G4V/K2B3 provider/mode-bound credential-free LIMIT dispatch capability port.
+17. K2B credentialed mock observation, query transport and lookup recovery.
+18. Toss Securities read-only adapter using the same canonical contracts.
 
 ## Pass when
 
@@ -39,6 +40,7 @@
 - G4R proves only credential-free `0B` registration/bounded REAL-frame normalization with naive provider clock and local receive time kept separate. It omits unproven venue and adds no WebSocket transport, reconnect state, durable identity, persistence, freshness authority or public consumer.
 - K2C proves only credential-free internal execution authority: default-off kill switch, process owner, 30-second SQLite lease/fencing, fixed BUY limits, immutable reservation, DB bypass rejection and current backup recovery. It is not production risk and does not send broker orders.
 - K2B2 proves only the official mock `kt10000` LIMIT BUY request shape on an in-memory transport, with token preflight, durable dispatch-before-write, no write retry, opaque ACK and conservative unknown/reject outcomes. It uses no real credential or external broker request.
+- G4V/K2B3 proves only a provider/mode-bound application capability for that existing mock LIMIT path. Invalid or mismatched capabilities fail before preflight; application-owned durable dispatch-before-write and adapter-owned provider classification preserve one-shot unknown safety without introducing credentials, a route, another provider or live authority.
 - K2B must prove credentialed mock submit/query, broker-coupled runner fencing, public order flow, and broker/ledger reconciliation.
 - Real-money submit remains disabled. Toss order work does not start until a safe test path is documented because a separate official sandbox has not been confirmed.
 
@@ -53,6 +55,7 @@
 - G4H passes credential-free complete snapshot validation, atomic raw snapshot plus ledger-revision reconciliation idempotency, quantity diff, last-known-good retention, insert-only ledger/broker rows and current backup v6 broker-state recovery. No credential, actual broker request, scheduler, authoritative freshness, public route/UI or auto-correction was added.
 - G4I/K2C passes internal default-off execution authority, process owner, lease/fencing, fixed credential-free BUY limits, atomic reservation-bound approval/dispatch and backup v6 recovery. It adds no broker transmission, credential, public route/UI or production/live authority.
 - G4J/K2B2 passes the credential-free Kiwoom mock LIMIT BUY submit contract. Synthetic transport proves the exact request, one-shot write, raw identifier/message/token redaction, definitive rejection and unresolved network/auth outcomes without enabling a route, runner or live authority.
+- G4V/K2B3 passes the credential-free LIMIT dispatch capability contract. A fake capability observes durable `SUBMIT_UNKNOWN` before write, zero/provider-mismatched capabilities make no preflight or submit calls, nil/production Kiwoom clients cannot construct a valid mock capability, and paper intent never reaches the adapter. Independent re-review found no remaining P1/P2.
 - G4K passes a sanitized `GET /v1/broker-reconciliation/latest` contract and Flutter Connections read view. Missing evidence is empty/404, corrupt or orphaned newest evidence fails with a generic 500, and exact decimal strings plus text semantics show stored position differences without refreshing a broker.
 - G4L passes a sanitized `GET /v1/orders` contract and Flutter Connections read view. Empty history is `orders=[]`; corrupt hash, metadata, replay or timestamp fails with a generic 500; retained known-good UI and 200% text semantics forbid resubmission after `SUBMIT_UNKNOWN`.
 - G4M passes the shared stored-reconciliation Overview summary and existing Connections details route without a duplicate read or current-state claim.

@@ -8,12 +8,13 @@ import 'paper_monitor.dart';
 abstract interface class OmniApi {
   Future<ServiceStatus> status();
   Future<PortfolioSnapshot> snapshot();
+  Future<CurrentPortfolioValuation> currentPortfolioValuation();
   Future<HoldingValuation> holdingValuation();
   Future<MarketCandles> candles(String symbol);
   Future<BrokerReconciliation?> latestBrokerReconciliation();
   Future<LocalOrderLog> localOrders();
   Future<PaperMonitor> paperMonitor();
-  Future<LedgerActivityPage> ledgerActivities();
+  Future<LedgerActivityPage> ledgerActivities({String? cursor});
   Future<ImportPreview> preview(String csv);
   Future<ApplyReceipt> apply(String previewId, String idempotencyKey);
 }
@@ -45,9 +46,11 @@ class RestOmniApi implements OmniApi {
     '/v1/market-data/candles',
   ).replace(queryParameters: {'symbol': symbol, 'interval': '1d'});
 
-  Future<Json> _get(String path) async {
+  Future<Json> _get(String path) => _getUri(_uri(path));
+
+  Future<Json> _getUri(Uri uri) async {
     try {
-      final response = await _client.get(_uri(path));
+      final response = await _client.get(uri);
       return _object(response);
     } catch (error) {
       if (error is ApiException || error is FormatException) rethrow;
@@ -98,6 +101,12 @@ class RestOmniApi implements OmniApi {
       PortfolioSnapshot.fromJson(await _get('/v1/portfolio/snapshot'));
 
   @override
+  Future<CurrentPortfolioValuation> currentPortfolioValuation() async =>
+      CurrentPortfolioValuation.fromJson(
+        await _get('/v1/portfolio/current-valuation'),
+      );
+
+  @override
   Future<HoldingValuation> holdingValuation() async =>
       HoldingValuation.fromJson(await _get('/v1/portfolio/holding-valuation'));
 
@@ -143,8 +152,12 @@ class RestOmniApi implements OmniApi {
       PaperMonitor.fromJson(await _get('/v1/paper/monitor'));
 
   @override
-  Future<LedgerActivityPage> ledgerActivities() async =>
-      LedgerActivityPage.fromJson(await _get('/v1/ledger/activities'));
+  Future<LedgerActivityPage> ledgerActivities({String? cursor}) async {
+    final uri = _uri(
+      '/v1/ledger/activities',
+    ).replace(queryParameters: cursor == null ? null : {'cursor': cursor});
+    return LedgerActivityPage.fromJson(await _getUri(uri));
+  }
 
   @override
   Future<ImportPreview> preview(String csv) async {
