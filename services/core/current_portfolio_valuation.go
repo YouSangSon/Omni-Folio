@@ -48,11 +48,11 @@ func (s *Service) currentPortfolioValuation(ctx context.Context) (*CurrentPortfo
 	if err != nil {
 		return nil, internalError(err)
 	}
-	ledgerRevision, proofRecordedAt, err := s.proveLedgerEvents(ctx, tx)
+	ledgerRevision, _, err := s.proveLedgerEvents(ctx, tx)
 	if err != nil {
 		return nil, internalError(err)
 	}
-	if revision(ledgerRevision) != snapshot.LedgerRevision || proofRecordedAt != snapshot.RecordedAt {
+	if revision(ledgerRevision) != snapshot.LedgerRevision {
 		return nil, internalError(errors.New("ledger snapshot proof mismatch"))
 	}
 	// Keep legacy snapshot/backup replay unchanged; this read contract needs the exact event cutoff.
@@ -66,7 +66,12 @@ func (s *Service) currentPortfolioValuation(ctx context.Context) (*CurrentPortfo
 	if ledgerAsOfErr != nil || ledgerRecordedAtErr != nil || !canonicalUTCString(ledgerAsOfRaw) || !canonicalUTCString(snapshot.RecordedAt) {
 		return nil, internalError(errors.New("ledger snapshot timestamps are invalid"))
 	}
-	if valuationTime.Before(ledgerAsOf) || valuationTime.Before(ledgerRecordedAt) {
+	// Import metadata and append order need not follow event recording clocks.
+	var futureRecord bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM events WHERE sequence<=? AND rtrim(recorded_at,'Z')>rtrim(?,'Z'))`, ledgerRevision, valuationAsOf).Scan(&futureRecord); err != nil {
+		return nil, internalError(err)
+	}
+	if valuationTime.Before(ledgerAsOf) || valuationTime.Before(ledgerRecordedAt) || futureRecord {
 		return nil, internalError(errors.New("server valuation cutoff precedes ledger state"))
 	}
 

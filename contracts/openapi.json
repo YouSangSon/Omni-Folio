@@ -804,7 +804,7 @@
           "valuation_as_of": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
           "ledger_revision": {"type": "string", "pattern": "^rev_[0-9]{10}$"},
           "ledger_as_of": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
-          "ledger_recorded_at": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
+          "ledger_recorded_at": {"$ref": "#/components/schemas/LedgerActivityTimestamp", "description": "Current ledger metadata recorded time, including duplicate-only imports; not the last event timestamp. Valuation cutoff must cover this metadata and every event recorded time in the proved revision."},
           "status": {"type": "string", "enum": ["empty", "complete", "stale_sample", "unavailable"]},
           "sample": {"type": "boolean"},
           "total": {"anyOf": [{"$ref": "#/components/schemas/Money"}, {"type": "null"}]},
@@ -1002,9 +1002,7 @@
           "ledger_as_of": {
             "$ref": "#/components/schemas/LedgerActivityTimestamp"
           },
-          "ledger_recorded_at": {
-            "$ref": "#/components/schemas/LedgerActivityTimestamp"
-          },
+          "ledger_recorded_at": {"$ref": "#/components/schemas/LedgerActivityTimestamp", "description": "Current ledger metadata recorded time, including duplicate-only imports; not the last event timestamp. Valuation cutoff must cover this metadata and every event recorded time in the proved revision."},
           "status": {
             "type": "string",
             "enum": [
@@ -1056,7 +1054,7 @@
           "valuation_as_of": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
           "ledger_revision": {"type": "string", "pattern": "^rev_[0-9]{10}$"},
           "ledger_as_of": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
-          "ledger_recorded_at": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
+          "ledger_recorded_at": {"$ref": "#/components/schemas/LedgerActivityTimestamp", "description": "Current ledger metadata recorded time, including duplicate-only imports; not the last event timestamp. Valuation cutoff must cover this metadata and every event recorded time in the proved revision."},
           "status": {"type": "string", "enum": ["empty", "complete", "stale_sample", "unavailable"]},
           "sample": {"type": "boolean"},
           "cash_value": {"anyOf": [{"$ref": "#/components/schemas/Money"}, {"type": "null"}]},
