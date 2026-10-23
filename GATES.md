@@ -143,6 +143,8 @@ G6 PostgreSQL and Kubernetes promotion
 
 - G3.8G2K는 밀린 봉마다 체결→성과→정책을 완료해 중간 손실 이후 체결을 막고, 저장된 성과의 미완료 정책부터 재시작한다. 선택 이전 새 성과와 다른 선택의 cached 정책 재사용을 차단하며 기존 접수 signal의 주문 복구 계약은 유지했다. 실제 signal 복구·opt-in soak 포함 전체 check·focused race·리뷰·소유 자원 정리가 통과했다. 수동 성과 전용 명령의 조합과 기존 과거 누락 소급 삽입, 전체 G3.8G2 완료를 뜻하지 않는다. [gate](gates/g3ab-paper-chronological-recovery.md)
 
+- G3.8G2L은 Python이 관찰한 정확한 bundle을 선택적으로 stdout 전에 보관한다. 같은 이름의 다른 내용을 덮어쓰지 않으며 저장 실패·동시 생성·출력 단절과 보관 파일의 기존 Go 실행 경로를 검증했다. Go 전체·Python39·리뷰·소유 자원 정리가 통과했다. 보관은 처리 완료 ACK·자동 재실행·소스 완결성·freshness 보증이 아니며 G3.8G2는 계속 미완료다. [gate](gates/g3af-paper-input-capture.md)
+
 - G3.8H는 연결 화면에서 저장된 모의 정책 상태를 요청할 때만 조회한다. 전체 복구를 검증한 단일 DB 관찰에 미완료 정책·최근 결정·소유권 기록을 담으며 계좌 ID·금융 수치·실행 권한은 노출하지 않는다. 전체 check와 최종 focused race·Flutter 84·리뷰·owned cleanup이 통과했다. 물리 기기·브라우저 실렌더링·알림 전달·상시 운영 증거는 아니다. [gate](gates/g3ac-paper-monitor.md)
 
 - G3.8H 브라우저 후속은 실제 Go API에서 정책 없음·저장 정책·offline 보존·키보드 복귀와 375/768/1440 렌더링을 확인하고, 실행 불가 문서 alias를 실제 CLI 회귀 테스트로 교정했다. 소유 자원 정리 통과. visual baseline·physical profile·cold-start offline 한글 표시는 아직 증명하지 않았다. [gate](gates/g3ad-paper-monitor-browser.md)
