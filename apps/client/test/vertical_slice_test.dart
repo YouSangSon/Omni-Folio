@@ -214,6 +214,9 @@ CurrentPortfolioValuation currentPortfolioValuation({
 });
 
 MarketCandles marketCandles({
+  String? instrumentId,
+  String? currency,
+  String barTimeBasis = 'unspecified',
   String state = 'stale',
   bool sample = true,
   String priceAdjustment = 'unspecified',
@@ -222,6 +225,9 @@ MarketCandles marketCandles({
   bool includeIssues = true,
   List<Json>? bars,
 }) => MarketCandles.fromJson({
+  'instrument_id': instrumentId,
+  'currency': currency,
+  'bar_time_basis': barTimeBasis,
   'symbol': 'AAPL',
   'venue': 'XNAS',
   'timezone': 'America/New_York',
@@ -747,6 +753,31 @@ void main() {
       ),
     );
     expect(defaultApiUrl, 'http://127.0.0.1:8080');
+  });
+
+  test('market source metadata is nullable but never partial or inferred', () {
+    expect(
+      goldenApi().snapshotValue.holdings.single.instrumentId,
+      'instrument_aapl',
+    );
+    expect(marketCandles().instrumentId, isNull);
+    expect(marketCandles().currency, isNull);
+    for (final fields in [
+      <String?>['instrument_aapl', null],
+      <String?>[null, 'USD'],
+      <String?>['', 'USD'],
+      <String?>['bad id', 'USD'],
+      <String?>['instrument_aapl', 'usd'],
+    ]) {
+      expect(
+        () => marketCandles(instrumentId: fields[0], currency: fields[1]),
+        throwsFormatException,
+      );
+    }
+    expect(
+      () => marketCandles(barTimeBasis: 'session_close'),
+      throwsFormatException,
+    );
   });
 
   test('candles use the fixed daily interval and strict parser', () async {
@@ -2321,6 +2352,11 @@ void main() {
 
       expect(find.text('샘플 데이터 · 실시간 아님'), findsOneWidget);
       expect(find.textContaining('가격 기준 조정 여부 확인 안 됨'), findsOneWidget);
+      await tester.dragUntilVisible(
+        find.text('시세 차트'),
+        find.byKey(const Key('asset-detail-scroll')),
+        const Offset(0, -200),
+      );
       expect(find.text('시세 차트'), findsOneWidget);
       expect(find.textContaining('오래된 시세입니다'), findsOneWidget);
       expect(
@@ -2560,9 +2596,66 @@ void main() {
       semantics.dispose();
       await tester.drag(find.byType(ListView).last, const Offset(0, -500));
       await tester.pump();
+      await tester.dragUntilVisible(
+        find.text('시세 차트'),
+        find.byKey(const Key('asset-detail-scroll')),
+        const Offset(0, -200),
+      );
       expect(find.text('시세 차트'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'asset detail rejects other identity and retains source metadata',
+    (tester) async {
+      final api = goldenApi();
+      api.candlesValue = marketCandles(
+        instrumentId: 'another',
+        currency: 'USD',
+      );
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+      await tester.tap(find.text('보유'));
+      await pumpUi(tester);
+      await tester.tap(find.text('AAPL'));
+      await pumpUi(tester);
+      expect(find.text('시세를 불러오지 못했습니다'), findsOneWidget);
+      expect(find.text('시세 차트'), findsNothing);
+      api.candlesValue = marketCandles(
+        instrumentId: 'instrument_aapl',
+        currency: 'USD',
+      );
+      await tester.tap(find.text('다시 시도'));
+      await pumpUi(tester);
+      expect(find.textContaining('가격 통화 USD'), findsOneWidget);
+      expect(find.textContaining('원장 종목과 일치'), findsOneWidget);
+      expect(find.textContaining('봉 시각 의미 확인 안 됨'), findsOneWidget);
+      for (final bad in [
+        marketCandles(instrumentId: 'another', currency: 'USD'),
+        marketCandles(instrumentId: 'instrument_aapl', currency: 'KRW'),
+      ]) {
+        api.candlesValue = bad;
+        await tester.tap(find.byTooltip('차트 새로고침'));
+        await pumpUi(tester);
+        expect(find.textContaining('마지막 정상 시세는 유지됩니다'), findsOneWidget);
+        expect(find.textContaining('가격 통화 USD'), findsOneWidget);
+        expect(find.textContaining('2026-08-24T03:00:00Z'), findsOneWidget);
+      }
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('asset detail discloses legacy unknown basis', (tester) async {
+    await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+    await pumpUi(tester);
+    await tester.tap(find.text('보유'));
+    await pumpUi(tester);
+    await tester.tap(find.text('AAPL'));
+    await pumpUi(tester);
+    expect(find.textContaining('가격 통화 확인 안 됨'), findsOneWidget);
+    expect(find.textContaining('원장 종목과의 연결 확인 안 됨'), findsOneWidget);
+    expect(find.textContaining('평균단가·매매 기록을 겹쳐 표시할 수 없습니다'), findsOneWidget);
+  });
 
   testWidgets('asset detail error offers retry', (tester) async {
     final api = goldenApi();
@@ -2572,6 +2665,11 @@ void main() {
     await pumpUi(tester);
     await tester.tap(find.text('AAPL'));
     await pumpUi(tester);
+    await tester.dragUntilVisible(
+      find.text('시세 차트'),
+      find.byKey(const Key('asset-detail-scroll')),
+      const Offset(0, -200),
+    );
     expect(find.text('시세 차트'), findsOneWidget);
 
     await tester.pageBack();
@@ -2583,6 +2681,11 @@ void main() {
     api.fail = false;
     await tester.tap(find.text('다시 시도'));
     await pumpUi(tester);
+    await tester.dragUntilVisible(
+      find.text('시세 차트'),
+      find.byKey(const Key('asset-detail-scroll')),
+      const Offset(0, -200),
+    );
     expect(find.text('시세 차트'), findsOneWidget);
   });
 
@@ -2623,6 +2726,11 @@ void main() {
 
       api.candlesCompleter!.complete(api.candlesValue);
       await pumpUi(tester);
+      await tester.dragUntilVisible(
+        find.text('시세 차트'),
+        find.byKey(const Key('asset-detail-scroll')),
+        const Offset(0, -200),
+      );
       expect(find.text('시세 차트'), findsOneWidget);
       semantics.dispose();
     },

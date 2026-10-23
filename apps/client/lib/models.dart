@@ -169,18 +169,21 @@ class Money {
 
 class Holding {
   const Holding({
+    required this.instrumentId,
     required this.symbol,
     required this.quantity,
     required this.costBasis,
     required this.currency,
   });
   factory Holding.fromJson(Json json) => Holding(
+    instrumentId: _text(json, 'instrument_id'),
     symbol: _text(json, 'symbol'),
     quantity: _decimal(json, 'quantity'),
     costBasis: _decimal(json, 'cost_basis'),
     currency: _text(json, 'currency'),
   );
 
+  final String instrumentId;
   final String symbol;
   final String quantity;
   final String costBasis;
@@ -1376,6 +1379,9 @@ int _comparePositiveDecimal(String left, String right) {
 
 class MarketCandles {
   const MarketCandles({
+    required this.instrumentId,
+    required this.currency,
+    required this.barTimeBasis,
     required this.symbol,
     required this.venue,
     required this.timezone,
@@ -1391,6 +1397,24 @@ class MarketCandles {
   });
 
   factory MarketCandles.fromJson(Json json) {
+    final instrumentId = json['instrument_id'];
+    final currency = json['currency'];
+    final barTimeBasis = json['bar_time_basis'] ?? 'unspecified';
+    if ((instrumentId == null) != (currency == null) ||
+        (instrumentId != null &&
+            (instrumentId is! String ||
+                instrumentId.isEmpty ||
+                utf8.encode(instrumentId).length > 128 ||
+                RegExp(
+                  r'\s|[\u0000-\u001f\u007f-\u009f]',
+                ).hasMatch(instrumentId) ||
+                currency is! String ||
+                !RegExp(r'^[A-Z]{3}$').hasMatch(currency))) ||
+        barTimeBasis != 'unspecified') {
+      throw const FormatException(
+        'Invalid market source identity or time basis',
+      );
+    }
     final source = _text(json, 'source');
     final state = _text(json, 'state');
     final priceAdjustment = _text(json, 'price_adjustment');
@@ -1436,6 +1460,9 @@ class MarketCandles {
       throw const FormatException('Inconsistent local fixture provenance');
     }
     return MarketCandles(
+      instrumentId: instrumentId as String?,
+      currency: currency as String?,
+      barTimeBasis: barTimeBasis as String,
       symbol: _text(json, 'symbol'),
       venue: _text(json, 'venue'),
       timezone: _text(json, 'timezone'),
@@ -1451,6 +1478,9 @@ class MarketCandles {
     );
   }
 
+  final String? instrumentId;
+  final String? currency;
+  final String barTimeBasis;
   final String symbol;
   final String venue;
   final String timezone;
