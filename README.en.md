@@ -19,7 +19,7 @@ The Korean README is the source of truth for keeping the structure, commands, an
 |---|---|---|
 | G0 Architecture and contracts | Passed locally | Versioned OpenAPI/JSON Schema, separate runtime responsibilities, repository-wide commands |
 | G1 Local ledger | Passed locally | CSV review and atomic application; exact trade, cash, split, and FX replay; FIFO cost and stored-price valuation; schema v22/backup v16 and recovery of supported older formats |
-| G2 Flutter client | Partially passed | iOS, Android, and web release builds; automated parser and widget checks; Android emulator frame measurements. Physical-device, manual screen-reader, and test-instrumentation isolation verification remain |
+| G2 Flutter client | Partially passed | iOS, Android, and web release builds, automated parser/widget checks, and Android emulator frame measurements. Test-plugin exclusion verified in the unsigned iOS package. Physical-device, manual screen-reader, and store checks remain |
 | G3 Research and paper execution | Partially passed | Reproducible backtests, walk-forward validation, holdouts, candidate registration, and local paper fills, performance, halt, and recovery. Long-running operation and completeness of source delivery remain unverified |
 | G4 Brokers, charts, and orders | In progress | Local sample charts, stored reconciliation and order-history views, and credential-free synthetic Kiwoom contracts. Credentialed market-data and mock-order observations, recovery of orders with unknown outcomes, and all live-trading stages remain |
 
@@ -113,6 +113,15 @@ OMNI_ANDROID_DEVICE=emulator-5554
 adb -s "$OMNI_ANDROID_DEVICE" reverse tcp:8080 tcp:8080
 adb -s "$OMNI_ANDROID_DEVICE" install -r build/app/outputs/flutter-apk/app-release.apk
 ```
+
+On macOS with Xcode, run this from the repository root to build an unsigned iOS release without the test plugin. The pinned Flutter SDK and cached dependencies are required. It removes `integration_test` only from a temporary copy of the committed app and verifies unchanged production dependency locks, preserving the original app’s profile harness.
+
+```sh
+make check-ios-release
+make client-ios-release API_URL=http://127.0.0.1:8080
+```
+
+The outputs are `output/ios-release-<source SHA>/Runner.app` and `build.json`. `COMPLETE` confirms that binary checks and owned temporary-resource cleanup succeeded. Existing output is preserved. Signing, installation, physical-device, and store checks are separate. See the [build mechanism and evidence](gates/g2-client.md#ios-release-packaging-2026-10-25).
 
 <a id="workflows"></a>
 

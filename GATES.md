@@ -158,4 +158,6 @@ G6 PostgreSQL and Kubernetes promotion
 
 - G2 Android release는 debug/profile에만 있던 네트워크 권한을 공통 manifest에 추가하고, 실제 APK·설치 권한·native 원장/보고서 조회·연결 실패 보존과 복구·다크 화면을 검증했다. 두 wrapper exit0와 소유 기기·서버·포트 정리를 확인했으며 physical/iOS 최신 빌드·스토어 계측 격리 gate는 열려 있다. [근거](gates/g2-client.md#android-release-networking-2026-10-25)
 
+- G2 iOS 무서명 release 경로는 원본 profile harness를 보존하며 staging에서 테스트 플러그인을 제거하고 운영 의존성 잠금·원본 파일·완성 바이너리 hash를 확인한다. unit/fake 11개, 실제 Xcode `-jobs 1` 빌드와 소유 임시 자원 정리가 통과했다. 서명·실기기·스토어·새 target의 실제 SIGINT와 G2 전체는 미완료다. [근거](gates/g2-client.md#ios-release-packaging-2026-10-25)
+
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.

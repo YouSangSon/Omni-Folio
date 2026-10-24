@@ -19,7 +19,7 @@
 |---|---|---|
 | G0 架构与契约 | 本地通过 | 带版本的 OpenAPI/JSON Schema、运行时职责分离、仓库统一命令 |
 | G1 本地账本 | 本地通过 | CSV 审核与原子应用，精确重放交易、现金、拆股和 FX，FIFO 成本与存储价格估值，schema v22/backup v16 及受支持历史格式的恢复 |
-| G2 Flutter 客户端 | 部分通过 | iOS、Android、web 发布构建和自动解析器、组件检查，Android 模拟器帧性能测量。真机、手动屏幕阅读器及测试插桩隔离验证仍待完成 |
+| G2 Flutter 客户端 | 部分通过 | iOS、Android、web 发布构建、自动解析器和组件检查，以及 Android 模拟器帧性能测量。已验证未签名 iOS 包排除测试插件。真机、手动屏幕阅读器及应用商店验证仍待完成 |
 | G3 研究与模拟执行 | 部分通过 | 可复现的回测、walk-forward、留出集评估、候选注册、本地模拟成交、绩效、停止与恢复。长期运行和源数据传递的完整性尚未验证 |
 | G4 券商、图表与订单 | 进行中 | 本地样本图表、已存储的对账和订单记录查询、不使用凭据的 Kiwoom 合成契约。使用真实认证的行情与模拟订单观察、结果未确定订单的恢复及所有实盘阶段仍待完成 |
 
@@ -113,6 +113,15 @@ OMNI_ANDROID_DEVICE=emulator-5554
 adb -s "$OMNI_ANDROID_DEVICE" reverse tcp:8080 tcp:8080
 adb -s "$OMNI_ANDROID_DEVICE" install -r build/app/outputs/flutter-apk/app-release.apk
 ```
+
+在 macOS 和 Xcode 上构建不含测试插件的未签名 iOS 发布包时，请在仓库根目录执行。需要固定版本的 Flutter SDK 和已缓存的依赖。此流程仅从已提交应用的临时副本中移除 `integration_test`，并确认生产依赖锁定内容不变，因此原应用的 profile harness 得以保留。
+
+```sh
+make check-ios-release
+make client-ios-release API_URL=http://127.0.0.1:8080
+```
+
+输出为 `output/ios-release-<source SHA>/Runner.app` 和 `build.json`。存在 `COMPLETE` 才表示二进制检查和所属临时资源清理均已成功。不会覆盖已有输出。签名、安装、真机和应用商店验证需另行进行。参见[构建原理与验证依据](gates/g2-client.md#ios-release-packaging-2026-10-25)。
 
 <a id="workflows"></a>
 
