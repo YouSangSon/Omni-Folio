@@ -156,4 +156,6 @@ G6 PostgreSQL and Kubernetes promotion
 
 - G3.9는 최신 등록 연구를 읽는 GET·Flutter 보고서와 지표 원문 정밀도·관측 보존을 검증한다. Go 전체·Flutter135·Python39·JSON17의 결합 검증과 실제 Python 등록→release 브라우저, offline 보존·키보드 복구·375px 다크 화면을 확인했다. 최신 등록은 현재 선택 전략과 무관하며, 지표 재계산·현재 포트폴리오 성과·실전 준비를 증명하지 않는다. [세부 gate](gates/g3ag-research-report.md)
 
+- G2 Android release는 debug/profile에만 있던 네트워크 권한을 공통 manifest에 추가하고, 실제 APK·설치 권한·native 원장/보고서 조회·연결 실패 보존과 복구·다크 화면을 검증했다. 두 wrapper exit0와 소유 기기·서버·포트 정리를 확인했으며 physical/iOS 최신 빌드·스토어 계측 격리 gate는 열려 있다. [근거](gates/g2-client.md#android-release-networking-2026-10-25)
+
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.
