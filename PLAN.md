@@ -22,7 +22,8 @@
 - [x] G1.17 현재 KRW 전체 평가: replay-verified 원장·현금·보유자산·local fixture 가격·직접 FX를 서버 cutoff 하나와 read transaction 하나에서 exact 합산하고, 누락·stale·모호 입력은 모든 aggregate를 숨긴다. query 없는 closed API, Flutter optional known-good 소비, revision mismatch·sample/broker 비권위·320px/200% semantics를 검증한다 ([gate](gates/g1m-current-portfolio-valuation.md)).
 - [x] G3.8H 브라우저 통합 확인: 실제 CLI로 저장한 정책을 Flutter release/Chrome에서 조회하고 375·768·1440 화면, 오류 후 원래 관찰 보존, 키보드 재조회·복귀와 owned cleanup 확인. 실행 불가 계좌 예제를 고치고 실제 초기화 명령 RED/GREEN·race 검증. baseline 비교·물리 screen reader·frame budget은 별도 ([gate](gates/g3ad-paper-monitor-browser.md)).
 - [x] G2 로컬 한글 폰트 전달: upstream 고정 Noto Sans KR·OFL과 Cupertino 아이콘을 번들에 포함하고 기본/명시적 버튼 테마의 폰트 누락을 RED/GREEN으로 수정. 새 release 브라우저에서 loopback 외 요청을 차단하고 Home·Import·Connections·monitor 및 외부 요청 0건 검증 ([gate](gates/g2d-local-fonts.md)).
-- [ ] G2 폰트 후속: 약 9.9 MiB 번들의 초기 표시/전송 비용, 물리 iOS·Android glyph·profile과 웹 origin 자체가 없는 offline bootstrap은 별도 검증. 로컬 서버 접근만 허용한 브라우저 결과를 완전한 offline PWA로 승격하지 않음.
+- [x] G2 웹 초기 전송 관측: 원본 폰트를 유지한 release 빌드와 API·DB 없는 단일 정적 페이지에서 본문 크기·요청 완료·첫 프레임 신호를 기록하고 소유 자원을 정리했다. 한 번의 loopback 관측이며 초기 glyph 표시·성능 예산 통과가 아니다 ([근거](gates/g2d-local-fonts.md#web-startup-observation-2026-10-25)).
+- [ ] G2 폰트 후속: 실제 전송 조건에서의 초기 glyph 표시·예산, 물리 iOS·Android glyph·profile과 웹 origin 자체가 없는 offline bootstrap은 별도 검증. 단일 로컬 관측을 p95·완전한 offline PWA로 승격하지 않음.
 - [x] G2 Android release 네트워크 권한: 실제 병합 manifest의 누락 RED 후 공통 manifest에 `INTERNET` 한 줄 추가. ARM64 APK 권한 차이·실제 native API 조회·등록 보고서·연결 실패 보존/복구·다크 화면과 소유 AVD/프로세스 정리 검증. 실기기·iOS 최신 빌드·스토어 계측 격리는 별도 ([근거](gates/g2-client.md#android-release-networking-2026-10-25)).
 
 - [x] G2 iOS 무서명 포장: immutable app 사본에서 SDK 테스트 플러그인만 제거하고 운영 lock·원본 source·native 바이너리·출력 hash를 확인. unit/fake 11개와 실제 `-jobs 1` 빌드 1회 및 소유 자원 정리 통과. 서명·실기기·스토어·실제 SIGINT는 별도 ([근거](gates/g2-client.md#ios-release-packaging-2026-10-25)).
