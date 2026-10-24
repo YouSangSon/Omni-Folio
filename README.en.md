@@ -104,6 +104,16 @@ make run-client API_URL=http://127.0.0.1:18080
 
 `OMNI_API_URL` is a Flutter build-time value and must not contain secrets. Make does not load `.env` automatically.
 
+To check the local API on an Android ARM64 device or emulator, install the release APK as shown below. Start core on the host first and use an ID from `adb devices`. The device's `127.0.0.1` refers to the device itself, so `adb reverse` connects it to the host API. This APK currently uses a debug signing key for local verification; store distribution validation is separate.
+
+```sh
+cd apps/client
+flutter build apk --release --target-platform android-arm64 --dart-define=OMNI_API_URL=http://127.0.0.1:8080
+OMNI_ANDROID_DEVICE=emulator-5554
+adb -s "$OMNI_ANDROID_DEVICE" reverse tcp:8080 tcp:8080
+adb -s "$OMNI_ANDROID_DEVICE" install -r build/app/outputs/flutter-apk/app-release.apk
+```
+
 <a id="workflows"></a>
 
 ## Verifiable vertical slices
