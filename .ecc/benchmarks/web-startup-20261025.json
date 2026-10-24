@@ -1,0 +1,125 @@
+{
+  "date": "2026-10-25",
+  "kind": "single local HTTP-fresh startup observation; no performance acceptance",
+  "source_revision": "ea597400a66a267c1e8a7cfab63a9e6199009abc",
+  "client_tree": "a44fc6c4f533d466f214e7661e725161bea9b8d3",
+  "environment": {
+    "flutter_version": "3.47.1",
+    "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+    "os": "15.8.1",
+    "cpu": "Apple M1 Max",
+    "viewport": {
+      "width": 1280,
+      "height": 720,
+      "dpr": 1
+    }
+  },
+  "conditions": {
+    "server_workers": 1,
+    "http_cache": "no-store",
+    "compression": false,
+    "backend": "absent; cross-origin API blocked by CSP",
+    "service_worker_controlled": false,
+    "sample_count": 1,
+    "artificial_throttling_requested": false,
+    "compiled_API_URL": "http://127.0.0.1:9"
+  },
+  "first_frame_signal_ms": 400.2,
+  "font": {
+    "path": "/assets/assets/fonts/NotoSansKR.ttf",
+    "sha256": "194018e6b2b293a7964f037b25c0249ce1418bc9ab3c971060a03aa57861e252",
+    "body_bytes": 10414588,
+    "browser_reported_transfer_bytes": 10414888,
+    "request_start_ms": 234.8,
+    "response_end_ms": 250.3,
+    "request_duration_ms": 15.5,
+    "fraction_of_subresource_body": 0.552347
+  },
+  "subresource_body_bytes": 18855157,
+  "resources": [
+    {
+      "path": "/flutter_bootstrap.js",
+      "body_bytes": 13116,
+      "request_duration_ms": 9.3,
+      "response_end_ms": 18.9
+    },
+    {
+      "path": "/canvaskit/chromium/canvaskit.wasm",
+      "body_bytes": 5428553,
+      "request_duration_ms": 14,
+      "response_end_ms": 37.1
+    },
+    {
+      "path": "/canvaskit/chromium/canvaskit.js",
+      "body_bytes": 86226,
+      "request_duration_ms": 18.8,
+      "response_end_ms": 42.2
+    },
+    {
+      "path": "/main.dart.js",
+      "body_bytes": 2727036,
+      "request_duration_ms": 35.9,
+      "response_end_ms": 59.7
+    },
+    {
+      "path": "/assets/FontManifest.json",
+      "body_bytes": 358,
+      "request_duration_ms": 2.3,
+      "response_end_ms": 227.9
+    },
+    {
+      "path": "/assets/fonts/MaterialIcons-Regular.otf",
+      "body_bytes": 12132,
+      "request_duration_ms": 5.4,
+      "response_end_ms": 239.9
+    },
+    {
+      "path": "/assets/assets/fonts/NotoSansKR.ttf",
+      "body_bytes": 10414588,
+      "request_duration_ms": 15.5,
+      "response_end_ms": 250.3
+    },
+    {
+      "path": "/assets/packages/cupertino_icons/assets/CupertinoIcons.ttf",
+      "body_bytes": 1472,
+      "request_duration_ms": 18.8,
+      "response_end_ms": 253.8
+    },
+    {
+      "path": "/assets/fonts/fallback/Roboto-Regular.ttf",
+      "body_bytes": 171676,
+      "request_duration_ms": 20.2,
+      "response_end_ms": 255.3
+    }
+  ],
+  "observed_failures": {
+    "expected_api_CSP_blocks": 5,
+    "uncaught_JS_errors": 0
+  },
+  "host_resource_observation": {
+    "swapouts_before_build": 2060557,
+    "swapouts_after_build": 2060557,
+    "swapouts_after_browser": 2131889,
+    "swapouts_after_cleanup": 2133557,
+    "page_size_bytes": 16384,
+    "attribution": "shared host; increase not attributed solely to this invocation",
+    "action": "owned browser/server stopped; no additional runtime checks"
+  },
+  "cleanup": {
+    "build_exit": 0,
+    "server_exit": 0,
+    "build_temp_root_absent": true,
+    "server_pid_absent": true,
+    "browser_pid_absent": true,
+    "listener_absent": true
+  },
+  "retained_local_artifact": "output/g2-web-startup-ea597400a66a267c1e8a7cfab63a9e6199009abc",
+  "screenshot_sha256": "52862712f7a9a04d1ac0abca32c7168d6cdeeee33d2ded66aff695ddb8b6169b",
+  "limits": [
+    "API/DB absent; error-state startup only",
+    "first-frame event is not physical presentation or Korean glyph paint time",
+    "one uncompressed loopback sample; shared host contention; no p95 or production claim",
+    "no font subset/compression/app source change",
+    "no physical-device/screen-reader/offline-origin/VM validation"
+  ]
+}
