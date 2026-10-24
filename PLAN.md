@@ -25,6 +25,8 @@
 - [ ] G2 폰트 후속: 약 9.9 MiB 번들의 초기 표시/전송 비용, 물리 iOS·Android glyph·profile과 웹 origin 자체가 없는 offline bootstrap은 별도 검증. 로컬 서버 접근만 허용한 브라우저 결과를 완전한 offline PWA로 승격하지 않음.
 - [x] G2 Android release 네트워크 권한: 실제 병합 manifest의 누락 RED 후 공통 manifest에 `INTERNET` 한 줄 추가. ARM64 APK 권한 차이·실제 native API 조회·등록 보고서·연결 실패 보존/복구·다크 화면과 소유 AVD/프로세스 정리 검증. 실기기·iOS 최신 빌드·스토어 계측 격리는 별도 ([근거](gates/g2-client.md#android-release-networking-2026-10-25)).
 
+- [x] G2 iOS 무서명 포장: immutable app 사본에서 SDK 테스트 플러그인만 제거하고 운영 lock·원본 source·native 바이너리·출력 hash를 확인. unit/fake 11개와 실제 `-jobs 1` 빌드 1회 및 소유 자원 정리 통과. 서명·실기기·스토어·실제 SIGINT는 별도 ([근거](gates/g2-client.md#ios-release-packaging-2026-10-25)).
+
 - [x] 키움 K0 read-only transport/normalization 합성 계약
 - [x] provider-neutral local fixture OHLCV API와 Flutter 종목 상세 price/volume chart·정확한 표·샘플 provenance
 - [x] K1 키움 `ka10080`/`ka10081` 합성 candle 계약 검증: KRX 6자리 symbol, 지원 interval, signed price magnitude·exact decimal OHLCV, pagination normalization/dedupe/conflict/cap 확인

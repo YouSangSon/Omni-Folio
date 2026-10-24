@@ -62,12 +62,47 @@ stop_child_group() { \
 }
 endef
 
-.PHONY: bootstrap format format-check lint test test-body test-resource-preflight test-resource-lifecycle test-resource-cleanup contract-check check clean clean-test-resources run-core run-client seed-demo run-research run-improvement smoke
+.PHONY: bootstrap format format-check lint test test-body test-resource-preflight test-resource-lifecycle test-resource-cleanup contract-check check clean clean-test-resources run-core run-client seed-demo run-research run-improvement smoke client-ios-release check-ios-release
 
 bootstrap:
 	mkdir -p "$(ROOT)/data"
 	cd services/core && "$(GO)" mod download
 	cd apps/client && "$(FLUTTER)" pub get
+
+client-ios-release: export IOS_RELEASE_API_URL := $(API_URL)
+client-ios-release: export IOS_RELEASE_FLUTTER := $(FLUTTER)
+client-ios-release:
+	+@set -eu; $(require-process-identity); $(define-owned-child-cleanup); \
+	stage=; output=; output_owned=false; child_pid=; \
+	cleanup() { \
+		status=$$?; trap - EXIT INT TERM; cleanup_status=0; \
+		if test -n "$$stage"; then \
+			: >"$$stage/.cancelled" || cleanup_status=$$?; \
+			stop_child_group "$$stage" || cleanup_status=$$?; \
+			if test "$$cleanup_status" -eq 0 -a -n "$$child_pid"; then wait "$$child_pid" 2>/dev/null || true; fi; \
+			if test "$$cleanup_status" -eq 0; then find "$$stage" -depth -delete || cleanup_status=$$?; fi; \
+		fi; \
+		if test "$$status" -eq 0 -a "$$cleanup_status" -eq 0; then \
+			touch "$$output/COMPLETE"; printf 'Verified unsigned iOS release: %s\n' "$$output"; \
+		elif test "$$output_owned" = true -a "$$cleanup_status" -eq 0; then \
+			find "$$output" -depth -delete || cleanup_status=$$?; \
+		fi; \
+		if test "$$status" -ne 0; then exit "$$status"; fi; exit "$$cleanup_status"; \
+	}; \
+	trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM; \
+	output="$(ROOT)/output/ios-release-$$(git rev-parse HEAD)"; \
+	mkdir -p "$(ROOT)/output"; mkdir "$$output"; output_owned=true; \
+	stage="$$(mktemp -d "$${TMPDIR:-/tmp}/omni-folio-test.XXXXXX")"; \
+	printf '%s\n' "$$$$" >"$$stage/.owner-pid"; \
+	printf '%s\n' "$$owner_command" >"$$stage/.owner-command"; \
+	printf '%s\n' "$$owner_start" >"$$stage/.owner-start"; \
+	: >"$$stage/.child-starting"; \
+	printf 'IOS_RELEASE_STAGE root=%s output=%s\n' "$$stage" "$$output"; \
+	TMPDIR="$$stage" "$(PYTHON)" tools/ios_release.py "$$stage" "$$output" & \
+	child_pid=$$!; child_status=0; wait "$$child_pid" || child_status=$$?; child_pid=; exit "$$child_status"
+
+check-ios-release:
+	PYTHONDONTWRITEBYTECODE=1 "$(PYTHON)" -m unittest discover -s tests -p test_ios_release.py -v
 
 format:
 	cd services/core && "$(GO)" fmt ./...

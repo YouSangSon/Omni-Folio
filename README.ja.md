@@ -19,7 +19,7 @@
 |---|---|---|
 | G0 アーキテクチャ・契約 | ローカル検証通過 | バージョンを明示した OpenAPI/JSON Schema、ランタイムごとの責任分離、リポジトリ共通コマンド |
 | G1 ローカル台帳 | ローカル検証通過 | CSV の確認と原子的な反映、取引・現金・株式分割・FX の正確な再生、FIFO 原価・保存価格による評価、schema v22/backup v16 と対応する旧形式の復元 |
-| G2 Flutter クライアント | 一部検証通過 | iOS・Android・web のリリースビルド、自動パーサー・ウィジェット検査、Android エミュレーターでのフレーム計測。実機・手動スクリーンリーダー検査とテスト計測の分離検証は未完了 |
+| G2 Flutter クライアント | 一部検証通過 | iOS・Android・web のリリースビルド、自動パーサー・ウィジェット検査、Android エミュレーターでのフレーム計測。未署名 iOS パッケージのテストプラグイン除外を確認。実機・手動スクリーンリーダー・ストア検証は未完了 |
 | G3 研究・模擬実行 | 一部検証通過 | 再現可能なバックテスト・walk-forward・ホールドアウト、候補登録、ローカル模擬約定・成績・停止・復旧。長期運用とソース引き渡しの完全性は未検証 |
 | G4 ブローカー・チャート・注文 | 進行中 | ローカルのサンプルチャート、保存済み照合・注文記録の参照、認証情報を使わない Kiwoom の合成契約。実際の認証を伴う相場・模擬注文の観察、結果未確定注文の復旧、すべての実取引段階は未完了 |
 
@@ -113,6 +113,15 @@ OMNI_ANDROID_DEVICE=emulator-5554
 adb -s "$OMNI_ANDROID_DEVICE" reverse tcp:8080 tcp:8080
 adb -s "$OMNI_ANDROID_DEVICE" install -r build/app/outputs/flutter-apk/app-release.apk
 ```
+
+macOS と Xcode でテストプラグインを含まない未署名 iOS リリースを作るには、リポジトリのルートで実行します。固定された Flutter SDK とキャッシュ済みの依存関係が必要です。コミット済みアプリの一時コピーからのみ `integration_test` を削除し、本番用依存関係のロックが変わらないことを確認するため、元のアプリの profile harness は維持されます。
+
+```sh
+make check-ios-release
+make client-ios-release API_URL=http://127.0.0.1:8080
+```
+
+出力は `output/ios-release-<source SHA>/Runner.app` と `build.json` です。`COMPLETE` がある場合に、バイナリ検査と所有する一時リソースの回収まで成功しています。既存の出力は上書きしません。署名・インストール・実機・ストア検証は別途必要です。[ビルドの仕組みと検証根拠](gates/g2-client.md#ios-release-packaging-2026-10-25)を参照してください。
 
 <a id="workflows"></a>
 

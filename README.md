@@ -19,7 +19,7 @@
 |---|---|---|
 | G0 아키텍처·계약 | 로컬 통과 | 버전이 명시된 OpenAPI/JSON Schema, 런타임 책임 분리, 저장소 공통 명령 |
 | G1 로컬 원장 | 로컬 통과 | CSV 검토·원자적 반영, 정확한 거래·현금·분할·FX 재생, FIFO 원가·저장 가격 평가, schema v22/backup v16와 지원하는 과거 형식의 복구 |
-| G2 Flutter 클라이언트 | 부분 통과 | iOS·Android·web 릴리스 빌드와 자동 파서·위젯 검사, Android 에뮬레이터 프레임 측정. 실기기·수동 스크린 리더와 테스트 계측 격리 검증은 남음 |
+| G2 Flutter 클라이언트 | 부분 통과 | iOS·Android·web 릴리스 빌드, 자동 파서·위젯 검사와 Android 에뮬레이터 프레임 측정. iOS 무서명 패키지의 테스트 플러그인 제외 확인. 실기기·수동 스크린 리더·스토어 검증은 남음 |
 | G3 연구·모의 실행 | 부분 통과 | 재현 가능한 백테스트·walk-forward·홀드아웃, 후보 등록, 로컬 모의 체결·성과·중지·복구. 장기 운영·소스 전달의 완결성은 미검증 |
 | G4 브로커·차트·주문 | 진행 중 | 로컬 샘플 차트, 저장된 대조·주문 기록 조회, 자격 증명 없는 키움 합성 계약. 실제 인증을 사용하는 시세·모의주문 관찰, 결과 미확정 주문 복구와 모든 실거래 단계는 남음 |
 
@@ -113,6 +113,15 @@ OMNI_ANDROID_DEVICE=emulator-5554
 adb -s "$OMNI_ANDROID_DEVICE" reverse tcp:8080 tcp:8080
 adb -s "$OMNI_ANDROID_DEVICE" install -r build/app/outputs/flutter-apk/app-release.apk
 ```
+
+macOS와 Xcode에서 테스트 플러그인을 제외한 iOS 무서명 릴리스를 만들려면 저장소 루트에서 실행합니다. 고정된 Flutter SDK와 캐시된 의존성이 필요합니다. 커밋된 앱의 임시 복사본에서만 `integration_test`를 제거하고 운영 의존성 잠금이 그대로인지 확인하므로, 원본 앱의 profile harness는 유지됩니다.
+
+```sh
+make check-ios-release
+make client-ios-release API_URL=http://127.0.0.1:8080
+```
+
+결과는 `output/ios-release-<source SHA>/Runner.app`과 `build.json`입니다. `COMPLETE`가 있어야 바이너리 검사와 소유 임시 자원 정리까지 성공한 결과입니다. 기존 출력은 덮어쓰지 않습니다. 서명·설치·실기기·스토어 검증은 별도입니다. [빌드 원리와 검증 근거](gates/g2-client.md#ios-release-packaging-2026-10-25)를 참고하세요.
 
 <a id="workflows"></a>
 
