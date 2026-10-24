@@ -372,12 +372,15 @@ make run-improvement  运行 walk-forward 策略 fixture
 
 ```sh
 cp .env.example .env
+docker compose -f infra/compose.yaml config --quiet
 docker compose -f infra/compose.yaml up --build
 curl -fsS http://127.0.0.1:8080/readyz
 docker compose -f infra/compose.yaml down
 ```
 
-Compose 在一次性 migration 后运行 non-root/read-only core，并仅在 loopback 暴露 API。由于没有认证和 TLS，不得用于外部网络或云端部署。Named volume 在 `down` 后仍会保留。只有在明确要删除本地账本数据时，才使用 `down -v`。
+Compose 在一次性 migration 后运行 non-root/read-only core，并仅在 loopback 暴露 API。由于没有认证和 TLS，不得作为公开服务使用。Named volume 在 `down` 后仍会保留。只有在明确要删除本地账本数据时，才使用 `down -v`。
+
+运行上限为：`migrate` 使用 `0.25` CPU 和 `512 MiB`，`core` 使用 `0.75` CPU 和 `1536 MiB`，合计 `1 vCPU` 和 `2 GiB`。每个容器的日志按 `3` 个 `10 MB` 文件轮转。这些限制不约束构建资源，也不保证处理性能。进行非公开远程验证前，请先确认[共享 VM 准入条件](gates/g6-deployment.md#single-node-resource-budget)，并通过 SSH 访问。目前尚未验证这些设置在 VM 运行时的实际应用。
 
 <a id="documentation"></a>
 

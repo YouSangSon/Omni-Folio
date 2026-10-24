@@ -1,5 +1,12 @@
 services:
   migrate:
+    cpus: 0.25
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     build:
       context: ..
       dockerfile: infra/core.Dockerfile
@@ -13,6 +20,13 @@ services:
       - /tmp
 
   core:
+    cpus: 0.75
+    mem_limit: 1536m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     build:
       context: ..
       dockerfile: infra/core.Dockerfile

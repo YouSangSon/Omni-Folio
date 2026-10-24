@@ -27,6 +27,8 @@
 
 - [x] G2 iOS 무서명 포장: immutable app 사본에서 SDK 테스트 플러그인만 제거하고 운영 lock·원본 source·native 바이너리·출력 hash를 확인. unit/fake 11개와 실제 `-jobs 1` 빌드 1회 및 소유 자원 정리 통과. 서명·실기기·스토어·실제 SIGINT는 별도 ([근거](gates/g2-client.md#ios-release-packaging-2026-10-25)).
 
+- [ ] my-cloud 비공개 검증: Compose 자원·로그 예산 정규화 검사 후 실제 VM의 공통 잠금·여유 자원·청구 트래픽과 런타임 적용을 확인한다. 현재 SSH는 TCP22 timeout, 제공사 청구 조회는 로그인 대기다. 신규 이미지·대용량 전송은 보류 ([조건](gates/g6-deployment.md#single-node-resource-budget)).
+
 - [x] 키움 K0 read-only transport/normalization 합성 계약
 - [x] provider-neutral local fixture OHLCV API와 Flutter 종목 상세 price/volume chart·정확한 표·샘플 provenance
 - [x] K1 키움 `ka10080`/`ka10081` 합성 candle 계약 검증: KRX 6자리 symbol, 지원 interval, signed price magnitude·exact decimal OHLCV, pagination normalization/dedupe/conflict/cap 확인

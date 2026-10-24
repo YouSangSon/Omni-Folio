@@ -372,12 +372,15 @@ make run-improvement  walk-forward strategy fixture の実行
 
 ```sh
 cp .env.example .env
+docker compose -f infra/compose.yaml config --quiet
 docker compose -f infra/compose.yaml up --build
 curl -fsS http://127.0.0.1:8080/readyz
 docker compose -f infra/compose.yaml down
 ```
 
-Compose は one-shot migration 後に non-root/read-only core を実行し、API を loopback のみに公開します。認証・TLS がないため、外部ネットワークや cloud へのデプロイに使ってはいけません。Named volume は `down` 後も保持されます。`down -v` はローカル台帳データを意図的に削除する場合にのみ使ってください。
+Compose は one-shot migration 後に non-root/read-only core を実行し、API を loopback のみに公開します。認証・TLS がないため、インターネットに公開するサービスとして使用してはいけません。Named volume は `down` 後も保持されます。`down -v` はローカル台帳データを意図的に削除する場合にのみ使ってください。
+
+実行上限は `migrate` が `0.25` CPU・`512 MiB`、`core` が `0.75` CPU・`1536 MiB` で、合計 `1 vCPU`・`2 GiB` です。各コンテナーのログは `10 MB` のファイル `3` 個でローテーションします。ビルドのリソース上限や処理性能の保証ではありません。非公開のリモート検証では、先に[共有 VM の開始条件](gates/g6-deployment.md#single-node-resource-budget)を確認して SSH を使ってください。VM ランタイムへの適用は未検証です。
 
 <a id="documentation"></a>
 
