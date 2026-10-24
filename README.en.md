@@ -372,12 +372,15 @@ make run-improvement  Run the walk-forward strategy fixture
 
 ```sh
 cp .env.example .env
+docker compose -f infra/compose.yaml config --quiet
 docker compose -f infra/compose.yaml up --build
 curl -fsS http://127.0.0.1:8080/readyz
 docker compose -f infra/compose.yaml down
 ```
 
-Compose runs a non-root/read-only core after a one-shot migration and exposes the API only on loopback. With no authentication or TLS, it must not be used on external networks or for cloud deployment. Named volumes persist after `down`. Use `down -v` only when intentionally deleting local ledger data.
+Compose runs a non-root/read-only core after a one-shot migration and exposes the API only on loopback. With no authentication or TLS, it must not be used as a publicly exposed service. Named volumes persist after `down`. Use `down -v` only when intentionally deleting local ledger data.
+
+Runtime limits allocate `0.25` CPU and `512 MiB` to `migrate`, and `0.75` CPU and `1536 MiB` to `core`, totaling `1 vCPU` and `2 GiB`. Each container rotates logs across `3` files of `10 MB`. These are not build-resource limits or throughput guarantees. For private remote verification, first check the [shared-VM entry conditions](gates/g6-deployment.md#single-node-resource-budget) and use SSH. Application of these settings in the VM runtime remains unverified.
 
 <a id="documentation"></a>
 

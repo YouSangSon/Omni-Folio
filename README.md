@@ -372,12 +372,15 @@ make run-improvement  walk-forward strategy fixture 실행
 
 ```sh
 cp .env.example .env
+docker compose -f infra/compose.yaml config --quiet
 docker compose -f infra/compose.yaml up --build
 curl -fsS http://127.0.0.1:8080/readyz
 docker compose -f infra/compose.yaml down
 ```
 
-Compose는 one-shot migration 뒤 non-root/read-only core를 실행하고 API를 loopback에만 공개합니다. 인증·TLS가 없으므로 외부 네트워크나 cloud 배포에 사용하면 안 됩니다. Named volume은 `down` 뒤에도 유지됩니다. `down -v`는 로컬 원장 데이터를 의도적으로 삭제할 때만 사용하세요.
+Compose는 one-shot migration 뒤 non-root/read-only core를 실행하고 API를 loopback에만 공개합니다. 인증·TLS가 없으므로 외부 공개 서비스로 사용하면 안 됩니다. Named volume은 `down` 뒤에도 유지됩니다. `down -v`는 로컬 원장 데이터를 의도적으로 삭제할 때만 사용하세요.
+
+실행 상한은 `migrate`에 `0.25` CPU·`512 MiB`, `core`에 `0.75` CPU·`1536 MiB`로 합계 `1 vCPU`·`2 GiB`입니다. 각 컨테이너의 로그는 `10 MB` 파일 `3`개로 회전합니다. 이는 빌드 자원 상한이나 처리 성능 보장이 아닙니다. 원격 비공개 검증은 [공유 VM 진입 조건](gates/g6-deployment.md#single-node-resource-budget)을 먼저 확인하고 SSH 경로를 사용하세요. 현재 VM 런타임 적용은 미검증입니다.
 
 <a id="documentation"></a>
 
