@@ -68,7 +68,7 @@
 - [x] G1.14 versioned FIFO cost allocation: 기존 유한 decimal 배분은 exact 보존하고 반복소수인 부분 lot만 `fifo_exact_else_half_even_residual_8_v1`로 half-even 양자화; 잔여 원가는 lot에 남겨 최종 청산 시 exact 소비하며 snapshot/OpenAPI/Flutter와 legacy golden restore 호환성을 검증
 - [x] G1.15 저장 가격 보유자산 평가 read view: internal ID를 제외한 GET API와 독립 Flutter 상세에서 같은 원장 revision의 수량·원가·원통화 평가·가격 provenance를 보여주고 sample/stale, 누락 시 합계 숨김, refresh 실패 시 알려진 정상 결과 보존을 검증 ([gate](gates/g1k-holding-valuation-view.md))
 - [ ] 원장 후속: historical-FX cost basis·performance valuation, 사용자 선택 기준통화와 표시/통화별 rounding 정책, provider FX/source priority·calendar 정책, Kiwoom price observation을 valuation authority로 승격할 freshness 정책, FX/거래·분할·기업행사 정정, 배당 재투자·국가별 세금 분류와 credentialed broker 체결/현금 reconciliation
-- [ ] 키움 live/mock credential 검증, official timezone/freshness와 REST tick/0B identity·order 관찰, WebSocket LOGIN/PING/reconnect/resubscribe/backpressure, credentialed scheduled known-good refresh, credentialed ledger reconciliation
+- [ ] 키움 live/mock credential 검증, official timezone/freshness와 REST tick/0B identity·order 관찰, WebSocket LOGIN/PING/reconnect/resubscribe/backpressure, credentialed scheduled known-good refresh, credentialed ledger reconciliation ([실제 연결 재개 조건](gates/g4r-kiwoom-realtime-price.md#realtime-connection-readiness-2026-10-25)).
 - [ ] 실제 키움 OHLCV를 local chart contract에 연결, G4X 원장 조회와 비교할 봉 시간 구간·가격 조정 기준 및 실제 체결 timestamp 계약을 정의한 뒤 marker를 추가하고 physical accessibility/performance budget을 증명
 - [ ] K2B 후속: credentialed mock 관찰, submit 조회·안전한 unknown-submit correlation, SELL 정책, public 주문 mutation/확인 UI, production risk·broker-coupled runner fencing, 시장가·정정, 체결-원장 reconciliation
 - [x] deterministic strategy candidate search와 walk-forward challenger evidence
