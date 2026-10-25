@@ -14,7 +14,7 @@
 
 ## Next
 
-- [ ] CSV 파일 선택: 기존 preview·명시적 apply 흐름에 UTF-8·1MiB 파일 초안을 연결한다. 취소·오류 보존, 입력 경쟁과 결과 무효화, 네이티브 plugin 포장을 집중 검증 중 ([범위](gates/g4p-first-run-import-recovery.md#csv-file-selection)).
+- [ ] CSV 파일 선택: 기존 preview·명시적 apply에 UTF-8·1MiB 초안을 연결했다. 작은 unit/fake의 기존 101개와 수정 집중 4개, 정적 분석·web release를 확인했다. 지속적인 swap 증가로 Android 빌드를 중단·정리했고 iOS 신규 빌드는 미실행이다. 네이티브 빌드 근거가 없어 병합 보류 ([범위·재개 조건](gates/g4p-first-run-import-recovery.md#csv-file-selection)).
 
 - [x] G1.19 거래 내역 정렬·페이지 cursor와 현재 평가 cutoff의 소수초 역전 수정. 실제 API 미래 합산·페이지 순서 RED/GREEN과 독립 리뷰 통과 ([gate](gates/g1o-exact-activity-cutoff.md)).
 - [x] G1.20 FIFO/snapshot·broker quantity·CASH_VOID의 정확한 UTC 재생과 schema22/backup v16의 명시적 정책 전환. 집중 회귀·독립 리뷰·최종 전체 check(Go core386.630초, Flutter108·Python34·JSON17)·로컬 smoke·소유 자원 정리 통과 ([gate](gates/g1p-chronological-ledger-replay.md)).
