@@ -14,7 +14,7 @@
 
 ## Next
 
-- [ ] Phase A 직접 입력: 10가지 기록을 정확한 decimal·원문 시간대/소수초의 CSV 한 건으로 준비하고 기존 preview·명시적 apply를 사용한다. 편집/탭 이동과 독립적으로 원래 반영 요청을 보존하며 결과가 불확실하면 같은 키로 재시도한다. 원격 회귀·전체 검사와 새 web/Android 빌드 확인 중; 새 iOS 빌드·실기기/수동 screen reader·앱 재시작 복구는 미검증 ([gate](gates/g4p-first-run-import-recovery.md#manual-entry), [PR #42](https://github.com/YouSangSon/Omni-Folio/pull/42)).
+- [x] Phase A 직접 입력: 10가지 기록을 정확한 decimal·원문 시간대/소수초의 CSV 한 건으로 준비하고 기존 preview·명시적 apply를 사용한다. 편집/탭 이동과 독립적으로 원래 반영 요청을 보존하며 결과가 불확실하면 같은 키로 재시도한다. 독립 리뷰·공통19사례·Flutter 집중43/전체191·Go 전체/Python39/JSON18·새 web/Android 릴리스와 소스 일치 확인 후 main에 병합했다. 새 iOS 빌드·실기기/수동 screen reader·앱 재시작 복구는 미검증 ([gate](gates/g4p-first-run-import-recovery.md#manual-entry), [PR #42](https://github.com/YouSangSon/Omni-Folio/pull/42)).
 
 - [x] G1.22 검증된 공개 원장 활동의 읽기 전용 CSV 내보내기: 동일 관찰의 원문 decimal/time·최신 순서와 정정 행을 보존하고 계좌/내부 ID를 제외한다. 실제 CLI·출력 cap·수식형 표기·경로/기존 파일 보존·부분 쓰기 정리와 Go 전체·Python39·JSON17·리뷰 통과. backup·재가져오기 형식은 아님 ([gate](gates/g1r-ledger-activity-export.md), [PR #40](https://github.com/YouSangSon/Omni-Folio/pull/40)).
 
