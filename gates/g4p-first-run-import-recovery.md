@@ -51,3 +51,16 @@ Flutter에는 공통 파일 선택 표준 API가 없어 공식 [file_selector 1.
 최종 APK는 23,153,102 bytes·`android-arm64`, SHA-256 `9833de52999c41090052bbcd1d74710e8990e5e18cf875dbc42ce9a551ca8a31`이다. 패키지의 custom permission 보호 수준은 실제 `0x2`로 확인했다. APK는 CI 임시 결과이며 artifact로 업로드하지 않았다. iOS/web은 client·tool pin·iOS builder/Makefile hash가 같음을 확인해 재사용했다. merge 직전 main base `bf04342` 불변과 CI head 일치를 확인했고, 병합 뒤 전체 tree 일치·고유 commit 0·worktree 미사용을 확인해 이 단위의 작업 브랜치만 정리했다.
 
 이 입력·상태 보존·컴파일 단위는 완료했다. 실제 OS 대화상자·클라우드 provider·물리 VoiceOver/TalkBack·실기기·서명/스토어와 my-cloud 배포는 별도 미검증이다. 제공사 청구 트래픽은 로그인 불가로 확인하지 못했으며 새 전송/배포를 실행하지 않았다. 로컬 통합/E2E·DB stack은 실행하지 않았다. G2 전체와 원래 제품 Goal의 완료를 뜻하지 않는다.
+
+### 실제 web 파일 입력 확인 (2026-10-25)
+
+main `4f8224b`와 동일한 client tree `5dce64f`를 가진 기존 `cd91d16` web release를 재사용했다. `build.json`의 원본 대응과 주요 생성 파일 hash를 확인했으며 재빌드는 하지 않았다. API URL은 응답하지 않는 `http://127.0.0.1:9`이고, DB·API 없이 loopback 정적 서버와 Brave 탭 하나만 실행했다. macOS·다크 화면 2560×1300에서 확인했으며 브라우저의 정확한 버전은 기록하지 않았다.
+
+- 실제 DOM의 `CSV 파일 선택` 버튼을 누르고 브라우저 filechooser로 단일 파일을 지정했다. 한글 파일명의 UTF-8 BOM CSV가 기존 초안을 교체하고, BOM 없는 기대 문자열과 텍스트 필드 값이 정확히 같았다. 이 합성 입력은 파일 읽기 확인용이며 서버 CSV 계약을 검증한 결과는 아니다.
+- 이어 잘못된 UTF-8 파일을 지정했을 때 고정된 한국어 오류가 표시되고, 직전에 읽은 정상 문자열은 바뀌지 않았다. screenshot `output/g2-csv-browser/utf8-error-retained.jpg`를 로컬 보존했다(SHA-256 `2feafe1e8d086cd80cc75bea75eeaadad9c4250099af44ba368634d2bb60359d`).
+
+앞선 접근성 클릭에서는 filechooser 이벤트 대기가 실패했고 DOM 클릭에서는 성공했다. 자동화 입력 방식의 결과를 구분하며, 앞선 실패만으로 앱의 파일 선택 결함을 주장하지 않는다. 고정 `file_selector_web 0.9.5`의 `DomHelper.getFiles`는 표준 file input과 `change`·`cancel` 이벤트를 사용한다. filechooser 자동화는 native OS 창·클라우드 provider·실제 취소 동작을 증명하지 않는다.
+
+관측 중 host swapout이 5,111,457→5,176,067로 증가해 두 사례 뒤에는 검사를 추가하지 않았다. 정적 서버 exit 0과 소유 PID·listener·임시 fixture 부재, 탭 종료를 확인했다. 다른 작업은 변경하지 않았고 증가 원인을 이 검증에 단정하지 않는다. 소유권·관측 기록은 `docs/_internal/skill-outputs/goal-20261025-csv-browser{,-dom}-owner.json`에 남겼다.
+
+이 브라우저 실행에서는 preview/apply·receipt, 크기 초과·동일 파일·취소, API 자동 전송 유무를 검증하지 않았다. 해당 unit/fake 105개와 실제 브라우저 증거는 범위가 다르다. 네이티브 플랫폼·실기기·수동 screen reader와 VM 검증도 계속 열려 있다.
