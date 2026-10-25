@@ -216,7 +216,14 @@ void main() {
     await _open(tester, api);
     expect(api.xirrCalls, 1);
     expect(
-      tester.widget<IconButton>(find.byTooltip('수익률 새로고침')).onPressed,
+      tester
+          .widget<IconButton>(
+            find.ancestor(
+              of: find.byTooltip('수익률 새로고침'),
+              matching: find.byType(IconButton),
+            ),
+          )
+          .onPressed,
       isNull,
     );
     await tester.pageBack();

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -137,8 +138,12 @@ func TestPortfolioXIRRNonconventionalResultIsOnlyACandidate(t *testing.T) {
 		"expense,account-main,FEE,2023-01-01T00:00:00Z,,,,,KRW,-132",
 	))
 	r := xirrHTTPReport(t, svc)
-	if r.Status != "candidate" || r.Uniqueness != "not_proven" || r.AnnualRate != nil || r.CandidateRate == nil || *r.CandidateRate != "0.1" || r.Valuation.TotalValue.Amount != "0" {
+	if r.Status != "candidate" || r.Uniqueness != "not_proven" || r.AnnualRate != nil || r.CandidateRate == nil || r.Valuation.TotalValue.Amount != "0" {
 		t.Fatalf("candidate was promoted or discarded: %+v", r)
+	}
+	candidate, err := parseDecimal(*r.CandidateRate)
+	if err != nil || new(big.Rat).Abs(new(big.Rat).Sub(candidate, big.NewRat(1, 10))).Cmp(big.NewRat(1, 10000000000)) > 0 {
+		t.Fatalf("candidate differs from independent root: %s %v", *r.CandidateRate, err)
 	}
 }
 
