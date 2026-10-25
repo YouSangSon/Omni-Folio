@@ -50,9 +50,17 @@ jobs:
       - name: Check manual entry scenarios first
         working-directory: apps/client
         run: flutter test --no-pub --concurrency=1 test/manual_entry_test.dart
-      - name: Check the affected unit and fake scenarios
+      - name: Check Dart formatting and static analysis
         working-directory: apps/client
-        run: flutter test --no-pub --concurrency=1 test/csv_file_test.dart test/vertical_slice_test.dart test/activity_pagination_test.dart
+        run: |
+          dart format --output=none --set-exit-if-changed lib test
+          flutter analyze
+      - name: Check all client unit and fake scenarios
+        working-directory: apps/client
+        run: flutter test --no-pub --concurrency=1
+      - name: Build the web release
+        working-directory: apps/client
+        run: flutter build web --release --dart-define=OMNI_API_URL=http://127.0.0.1:9
       - name: Configure the isolated Gradle budget
         run: |
           gradle_home="$RUNNER_TEMP/omni-gradle"

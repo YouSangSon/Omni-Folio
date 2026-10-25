@@ -48,10 +48,10 @@ jobs:
           grep -Fx 'python 3.14.5' .tool-versions
           go version
           python --version
-      - name: Check ledger export scenarios first
-        run: make test FLUTTER=true CORE_TEST_PACKAGES='-run=^TestLedgerExport -count=1 -timeout=10m ./...'
+      - name: Check manual entry import scenarios first
+        run: make test FLUTTER=true CORE_TEST_PACKAGES='-run=^TestManualEntry -count=1 -timeout=10m ./...'
       - name: Check core, research and contracts with owned cleanup
-        # Client source is unchanged; its own release workflow owns Flutter checks.
+        # The client release workflow owns Flutter checks.
         run: make check DART=true FLUTTER=true CORE_TEST_PACKAGES='-timeout=30m ./...'
       - name: Verify source identity
         run: git diff --exit-code

@@ -18,13 +18,15 @@ String _text(Json value, String key) {
 
 String _decimal(Json value, String key) {
   final result = _text(value, key);
-  if (!RegExp(
-    r'^(?:0|-?(?:[1-9][0-9]*(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9]))$',
-  ).hasMatch(result)) {
+  if (!_canonicalDecimalPattern.hasMatch(result)) {
     throw const FormatException('Decimal fields must be canonical strings');
   }
   return result;
 }
+
+final _canonicalDecimalPattern = RegExp(
+  r'^(?:0|-?(?:[1-9][0-9]*(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9]))$',
+);
 
 int _count(Json value, String key) {
   final result = value[key];
@@ -1063,12 +1065,22 @@ bool _tradeCashMatches(
   String price,
   String fee,
   String amount,
-) {
+) => amount == tradeCashAmount(type, quantity, price, fee);
+
+String tradeCashAmount(String type, String quantity, String price, String fee) {
+  if (!const {'BUY', 'SELL'}.contains(type) ||
+      [quantity, price, fee].any(
+        (value) =>
+            !_canonicalDecimalPattern.hasMatch(value) || value.startsWith('-'),
+      ) ||
+      quantity == '0' ||
+      price == '0') {
+    throw const FormatException('Invalid trade cash input');
+  }
   final productScale = _decimalScale(quantity) + _decimalScale(price);
   final scale = [
     productScale,
     _decimalScale(fee),
-    _decimalScale(amount),
   ].reduce((a, b) => a > b ? a : b);
   final gross =
       _scaledDecimal(quantity, _decimalScale(quantity)) *
@@ -1076,7 +1088,17 @@ bool _tradeCashMatches(
       BigInt.from(10).pow(scale - productScale);
   final expected =
       (type == 'BUY' ? -gross : gross) - _scaledDecimal(fee, scale);
-  return expected == _scaledDecimal(amount, scale);
+  if (expected == BigInt.zero) return '0';
+  final digits = expected.abs().toString().padLeft(scale + 1, '0');
+  var value = digits;
+  if (scale > 0) {
+    final whole = digits.substring(0, digits.length - scale);
+    final fraction = digits
+        .substring(digits.length - scale)
+        .replaceFirst(RegExp(r'0+$'), '');
+    value = fraction.isEmpty ? whole : '$whole.$fraction';
+  }
+  return expected.isNegative ? '-$value' : value;
 }
 
 class LedgerActivity {

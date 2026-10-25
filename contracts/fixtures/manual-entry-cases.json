@@ -1,0 +1,446 @@
+{
+  "schema_version": "manual-entry-cases.v1",
+  "reference": "Immutable synthetic golden values prepared with Python decimal.Decimal at precision 300; UTC/nanosecond expectations explicit; no provider data.",
+  "cases": [
+    {
+      "name": "buy",
+      "type": "BUY",
+      "source_event_id": "manual-00000000000000000000000000000001",
+      "fields": {
+        "occurred_at": "2026-01-05T09:30:00+09:00",
+        "currency": "usd",
+        "symbol": "AAPL",
+        "quantity": "002.00",
+        "price": "10.000",
+        "fee": "0.10"
+      },
+      "seed_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount\nseed-deposit,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000000000000000000000000000000\n",
+      "expected_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id\n\"manual-00000000000000000000000000000001\",\"account-main\",\"BUY\",\"2026-01-05T09:30:00+09:00\",\"AAPL\",\"2\",\"10\",\"0.1\",\"USD\",\"-20.1\",\"\",\"\",\"\"\n",
+      "expected_transaction": {
+        "source_event_id": "manual-00000000000000000000000000000001",
+        "account_id": "account-main",
+        "type": "BUY",
+        "occurred_at": "2026-01-05T00:30:00Z",
+        "currency": "USD",
+        "symbol": "AAPL",
+        "quantity": "2",
+        "price": "10",
+        "fee": "0.1",
+        "amount": "-20.1"
+      }
+    },
+    {
+      "name": "buy_big_integer",
+      "type": "BUY",
+      "source_event_id": "manual-00000000000000000000000000000002",
+      "fields": {
+        "occurred_at": "2026-01-05T09:30:00+09:00",
+        "currency": "usd",
+        "symbol": "AAPL",
+        "quantity": "9007199254740993",
+        "price": "0.00000001",
+        "fee": "0.000000001"
+      },
+      "seed_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount\nseed-deposit,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000000000000000000000000000000\n",
+      "expected_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id\n\"manual-00000000000000000000000000000002\",\"account-main\",\"BUY\",\"2026-01-05T09:30:00+09:00\",\"AAPL\",\"9007199254740993\",\"0.00000001\",\"0.000000001\",\"USD\",\"-90071992.547409931\",\"\",\"\",\"\"\n",
+      "expected_transaction": {
+        "source_event_id": "manual-00000000000000000000000000000002",
+        "account_id": "account-main",
+        "type": "BUY",
+        "occurred_at": "2026-01-05T00:30:00Z",
+        "currency": "USD",
+        "symbol": "AAPL",
+        "quantity": "9007199254740993",
+        "price": "0.00000001",
+        "fee": "0.000000001",
+        "amount": "-90071992.547409931"
+      }
+    },
+    {
+      "name": "sell",
+      "type": "SELL",
+      "source_event_id": "manual-00000000000000000000000000000003",
+      "fields": {
+        "occurred_at": "2026-01-05T09:30:00+09:00",
+        "currency": "usd",
+        "symbol": "AAPL",
+        "quantity": "1.00",
+        "price": "15.00",
+        "fee": "0.010"
+      },
+      "seed_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount\nseed-deposit,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000000000000000000000000000000\nseed-buy,account-main,BUY,2026-01-01T01:00:00Z,AAPL,10,1,0,USD,-10\n",
+      "expected_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id\n\"manual-00000000000000000000000000000003\",\"account-main\",\"SELL\",\"2026-01-05T09:30:00+09:00\",\"AAPL\",\"1\",\"15\",\"0.01\",\"USD\",\"14.99\",\"\",\"\",\"\"\n",
+      "expected_transaction": {
+        "source_event_id": "manual-00000000000000000000000000000003",
+        "account_id": "account-main",
+        "type": "SELL",
+        "occurred_at": "2026-01-05T00:30:00Z",
+        "currency": "USD",
+        "symbol": "AAPL",
+        "quantity": "1",
+        "price": "15",
+        "fee": "0.01",
+        "amount": "14.99"
+      }
+    },
+    {
+      "name": "sell_zero",
+      "type": "SELL",
+      "source_event_id": "manual-00000000000000000000000000000004",
+      "fields": {
+        "occurred_at": "2026-01-05T09:30:00+09:00",
+        "currency": "usd",
+        "symbol": "AAPL",
+        "quantity": "1",
+        "price": "1",
+        "fee": "1"
+      },
+      "seed_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount\nseed-deposit,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000000000000000000000000000000\nseed-buy,account-main,BUY,2026-01-01T01:00:00Z,AAPL,10,1,0,USD,-10\n",
+      "expected_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id\n\"manual-00000000000000000000000000000004\",\"account-main\",\"SELL\",\"2026-01-05T09:30:00+09:00\",\"AAPL\",\"1\",\"1\",\"1\",\"USD\",\"0\",\"\",\"\",\"\"\n",
+      "expected_transaction": {
+        "source_event_id": "manual-00000000000000000000000000000004",
+        "account_id": "account-main",
+        "type": "SELL",
+        "occurred_at": "2026-01-05T00:30:00Z",
+        "currency": "USD",
+        "symbol": "AAPL",
+        "quantity": "1",
+        "price": "1",
+        "fee": "1",
+        "amount": "0"
+      }
+    },
+    {
+      "name": "sell_negative",
+      "type": "SELL",
+      "source_event_id": "manual-00000000000000000000000000000005",
+      "fields": {
+        "occurred_at": "2026-01-05T09:30:00+09:00",
+        "currency": "usd",
+        "symbol": "AAPL",
+        "quantity": "0.01",
+        "price": "0.01",
+        "fee": "1"
+      },
+      "seed_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount\nseed-deposit,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000000000000000000000000000000\nseed-buy,account-main,BUY,2026-01-01T01:00:00Z,AAPL,10,1,0,USD,-10\n",
+      "expected_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id\n\"manual-00000000000000000000000000000005\",\"account-main\",\"SELL\",\"2026-01-05T09:30:00+09:00\",\"AAPL\",\"0.01\",\"0.01\",\"1\",\"USD\",\"-0.9999\",\"\",\"\",\"\"\n",
+      "expected_transaction": {
+        "source_event_id": "manual-00000000000000000000000000000005",
+        "account_id": "account-main",
+        "type": "SELL",
+        "occurred_at": "2026-01-05T00:30:00Z",
+        "currency": "USD",
+        "symbol": "AAPL",
+        "quantity": "0.01",
+        "price": "0.01",
+        "fee": "1",
+        "amount": "-0.9999"
+      }
+    },
+    {
+      "name": "deposit",
+      "type": "DEPOSIT",
+      "source_event_id": "manual-00000000000000000000000000000006",
+      "fields": {
+        "occurred_at": "2026-01-05T09:30:00+09:00",
+        "currency": "usd",
+        "amount": "00012.3400"
+      },
+      "seed_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount\nseed-deposit,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000000000000000000000000000000\n",
+      "expected_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id\n\"manual-00000000000000000000000000000006\",\"account-main\",\"DEPOSIT\",\"2026-01-05T09:30:00+09:00\",\"\",\"\",\"\",\"\",\"USD\",\"12.34\",\"\",\"\",\"\"\n",
+      "expected_transaction": {
+        "source_event_id": "manual-00000000000000000000000000000006",
+        "account_id": "account-main",
+        "type": "DEPOSIT",
+        "occurred_at": "2026-01-05T00:30:00Z",
+        "currency": "USD",
+        "amount": "12.34"
+      }
+    },
+    {
+      "name": "withdrawal",
+      "type": "WITHDRAWAL",
+      "source_event_id": "manual-00000000000000000000000000000007",
+      "fields": {
+        "occurred_at": "2026-01-05T09:30:00+09:00",
+        "currency": "usd",
+        "amount": "2.00"
+      },
+      "seed_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount\nseed-deposit,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000000000000000000000000000000\n",
+      "expected_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id\n\"manual-00000000000000000000000000000007\",\"account-main\",\"WITHDRAWAL\",\"2026-01-05T09:30:00+09:00\",\"\",\"\",\"\",\"\",\"USD\",\"-2\",\"\",\"\",\"\"\n",
+      "expected_transaction": {
+        "source_event_id": "manual-00000000000000000000000000000007",
+        "account_id": "account-main",
+        "type": "WITHDRAWAL",
+        "occurred_at": "2026-01-05T00:30:00Z",
+        "currency": "USD",
+        "amount": "-2"
+      }
+    },
+    {
+      "name": "dividend",
+      "type": "DIVIDEND",
+      "source_event_id": "manual-00000000000000000000000000000008",
+      "fields": {
+        "occurred_at": "2026-01-05T09:30:00+09:00",
+        "currency": "usd",
+        "symbol": "AAPL",
+        "amount": "1.00000001"
+      },
+      "seed_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount\nseed-deposit,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000000000000000000000000000000\n",
+      "expected_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id\n\"manual-00000000000000000000000000000008\",\"account-main\",\"DIVIDEND\",\"2026-01-05T09:30:00+09:00\",\"AAPL\",\"\",\"\",\"\",\"USD\",\"1.00000001\",\"\",\"\",\"\"\n",
+      "expected_transaction": {
+        "source_event_id": "manual-00000000000000000000000000000008",
+        "account_id": "account-main",
+        "type": "DIVIDEND",
+        "occurred_at": "2026-01-05T00:30:00Z",
+        "currency": "USD",
+        "symbol": "AAPL",
+        "amount": "1.00000001"
+      }
+    },
+    {
+      "name": "fee",
+      "type": "FEE",
+      "source_event_id": "manual-00000000000000000000000000000009",
+      "fields": {
+        "occurred_at": "2026-01-05T09:30:00+09:00",
+        "currency": "usd",
+        "amount": "0.1"
+      },
+      "seed_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount\nseed-deposit,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000000000000000000000000000000\n",
+      "expected_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id\n\"manual-00000000000000000000000000000009\",\"account-main\",\"FEE\",\"2026-01-05T09:30:00+09:00\",\"\",\"\",\"\",\"\",\"USD\",\"-0.1\",\"\",\"\",\"\"\n",
+      "expected_transaction": {
+        "source_event_id": "manual-00000000000000000000000000000009",
+        "account_id": "account-main",
+        "type": "FEE",
+        "occurred_at": "2026-01-05T00:30:00Z",
+        "currency": "USD",
+        "amount": "-0.1"
+      }
+    },
+    {
+      "name": "tax",
+      "type": "TAX",
+      "source_event_id": "manual-0000000000000000000000000000000a",
+      "fields": {
+        "occurred_at": "2026-01-05T09:30:00+09:00",
+        "currency": "usd",
+        "amount": "0.01"
+      },
+      "seed_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount\nseed-deposit,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000000000000000000000000000000\n",
+      "expected_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id\n\"manual-0000000000000000000000000000000a\",\"account-main\",\"TAX\",\"2026-01-05T09:30:00+09:00\",\"\",\"\",\"\",\"\",\"USD\",\"-0.01\",\"\",\"\",\"\"\n",
+      "expected_transaction": {
+        "source_event_id": "manual-0000000000000000000000000000000a",
+        "account_id": "account-main",
+        "type": "TAX",
+        "occurred_at": "2026-01-05T00:30:00Z",
+        "currency": "USD",
+        "amount": "-0.01"
+      }
+    },
+    {
+      "name": "split",
+      "type": "SPLIT",
+      "source_event_id": "manual-0000000000000000000000000000000b",
+      "fields": {
+        "occurred_at": "2026-01-05T09:30:00+09:00",
+        "currency": "usd",
+        "symbol": "AAPL",
+        "quantity": "2.0"
+      },
+      "seed_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount\nseed-deposit,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000000000000000000000000000000\nseed-buy,account-main,BUY,2026-01-01T01:00:00Z,AAPL,10,1,0,USD,-10\n",
+      "expected_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id\n\"manual-0000000000000000000000000000000b\",\"account-main\",\"SPLIT\",\"2026-01-05T09:30:00+09:00\",\"AAPL\",\"2\",\"\",\"\",\"USD\",\"0\",\"\",\"\",\"\"\n",
+      "expected_transaction": {
+        "source_event_id": "manual-0000000000000000000000000000000b",
+        "account_id": "account-main",
+        "type": "SPLIT",
+        "occurred_at": "2026-01-05T00:30:00Z",
+        "currency": "USD",
+        "symbol": "AAPL",
+        "quantity": "2",
+        "amount": "0"
+      }
+    },
+    {
+      "name": "reverse_split",
+      "type": "SPLIT",
+      "source_event_id": "manual-0000000000000000000000000000000c",
+      "fields": {
+        "occurred_at": "2026-01-05T09:30:00+09:00",
+        "currency": "usd",
+        "symbol": "AAPL",
+        "quantity": "0.1"
+      },
+      "seed_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount\nseed-deposit,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000000000000000000000000000000\nseed-buy,account-main,BUY,2026-01-01T01:00:00Z,AAPL,10,1,0,USD,-10\n",
+      "expected_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id\n\"manual-0000000000000000000000000000000c\",\"account-main\",\"SPLIT\",\"2026-01-05T09:30:00+09:00\",\"AAPL\",\"0.1\",\"\",\"\",\"USD\",\"0\",\"\",\"\",\"\"\n",
+      "expected_transaction": {
+        "source_event_id": "manual-0000000000000000000000000000000c",
+        "account_id": "account-main",
+        "type": "SPLIT",
+        "occurred_at": "2026-01-05T00:30:00Z",
+        "currency": "USD",
+        "symbol": "AAPL",
+        "quantity": "0.1",
+        "amount": "0"
+      }
+    },
+    {
+      "name": "fx",
+      "type": "FX_EXCHANGE",
+      "source_event_id": "manual-0000000000000000000000000000000d",
+      "fields": {
+        "occurred_at": "2026-01-05T09:30:00+09:00",
+        "currency": "usd",
+        "amount": "100.00",
+        "counter_currency": "krw",
+        "counter_amount": "137000.00"
+      },
+      "seed_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount\nseed-deposit,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000000000000000000000000000000\n",
+      "expected_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id\n\"manual-0000000000000000000000000000000d\",\"account-main\",\"FX_EXCHANGE\",\"2026-01-05T09:30:00+09:00\",\"\",\"\",\"\",\"\",\"USD\",\"-100\",\"KRW\",\"137000\",\"\"\n",
+      "expected_transaction": {
+        "source_event_id": "manual-0000000000000000000000000000000d",
+        "account_id": "account-main",
+        "type": "FX_EXCHANGE",
+        "occurred_at": "2026-01-05T00:30:00Z",
+        "currency": "USD",
+        "amount": "-100",
+        "counter_currency": "KRW",
+        "counter_amount": "137000"
+      }
+    },
+    {
+      "name": "cash_void",
+      "type": "CASH_VOID",
+      "source_event_id": "manual-0000000000000000000000000000000e",
+      "fields": {
+        "occurred_at": "2026-01-05T09:30:00+09:00",
+        "currency": "usd",
+        "amount": "1.00",
+        "corrects_source_event_id": "seed-fee"
+      },
+      "seed_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount\nseed-deposit,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000000000000000000000000000000\nseed-fee,account-main,FEE,2026-01-02T00:00:00Z,,,,,USD,-1\n",
+      "expected_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id\n\"manual-0000000000000000000000000000000e\",\"account-main\",\"CASH_VOID\",\"2026-01-05T09:30:00+09:00\",\"\",\"\",\"\",\"\",\"USD\",\"1\",\"\",\"\",\"seed-fee\"\n",
+      "expected_transaction": {
+        "source_event_id": "manual-0000000000000000000000000000000e",
+        "account_id": "account-main",
+        "type": "CASH_VOID",
+        "occurred_at": "2026-01-05T00:30:00Z",
+        "currency": "USD",
+        "amount": "1",
+        "corrects_source_event_id": "seed-fee"
+      }
+    },
+    {
+      "name": "cash_void_escaped_target",
+      "type": "CASH_VOID",
+      "source_event_id": "manual-0000000000000000000000000000000f",
+      "fields": {
+        "occurred_at": "2026-01-05T09:30:00+09:00",
+        "currency": "usd",
+        "amount": "1",
+        "corrects_source_event_id": "수수료,\"원본\""
+      },
+      "seed_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount\nseed-deposit,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000000000000000000000000000000\n\"수수료,\"\"원본\"\"\",account-main,FEE,2026-01-02T00:00:00Z,,,,,USD,-1\n",
+      "expected_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id\n\"manual-0000000000000000000000000000000f\",\"account-main\",\"CASH_VOID\",\"2026-01-05T09:30:00+09:00\",\"\",\"\",\"\",\"\",\"USD\",\"1\",\"\",\"\",\"수수료,\"\"원본\"\"\"\n",
+      "expected_transaction": {
+        "source_event_id": "manual-0000000000000000000000000000000f",
+        "account_id": "account-main",
+        "type": "CASH_VOID",
+        "occurred_at": "2026-01-05T00:30:00Z",
+        "currency": "USD",
+        "amount": "1",
+        "corrects_source_event_id": "수수료,\"원본\""
+      }
+    },
+    {
+      "name": "timezone_nanoseconds",
+      "type": "DEPOSIT",
+      "source_event_id": "manual-00000000000000000000000000000010",
+      "fields": {
+        "occurred_at": "2026-01-05T00:00:00.123456789+09:00",
+        "currency": "usd",
+        "amount": "1"
+      },
+      "seed_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount\nseed-deposit,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000000000000000000000000000000\n",
+      "expected_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id\n\"manual-00000000000000000000000000000010\",\"account-main\",\"DEPOSIT\",\"2026-01-05T00:00:00.123456789+09:00\",\"\",\"\",\"\",\"\",\"USD\",\"1\",\"\",\"\",\"\"\n",
+      "expected_transaction": {
+        "source_event_id": "manual-00000000000000000000000000000010",
+        "account_id": "account-main",
+        "type": "DEPOSIT",
+        "occurred_at": "2026-01-04T15:00:00.123456789Z",
+        "currency": "USD",
+        "amount": "1"
+      }
+    },
+    {
+      "name": "hidden_trade_fields",
+      "type": "DEPOSIT",
+      "source_event_id": "manual-00000000000000000000000000000011",
+      "fields": {
+        "occurred_at": "2026-01-05T09:30:00+09:00",
+        "currency": "usd",
+        "amount": "1",
+        "symbol": "private-hidden-trade-sentinel",
+        "quantity": "invalid",
+        "price": "invalid",
+        "fee": "invalid",
+        "counter_currency": "KRW",
+        "counter_amount": "999",
+        "corrects_source_event_id": "private-hidden-target"
+      },
+      "seed_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount\nseed-deposit,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000000000000000000000000000000\n",
+      "expected_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id\n\"manual-00000000000000000000000000000011\",\"account-main\",\"DEPOSIT\",\"2026-01-05T09:30:00+09:00\",\"\",\"\",\"\",\"\",\"USD\",\"1\",\"\",\"\",\"\"\n",
+      "expected_transaction": {
+        "source_event_id": "manual-00000000000000000000000000000011",
+        "account_id": "account-main",
+        "type": "DEPOSIT",
+        "occurred_at": "2026-01-05T00:30:00Z",
+        "currency": "USD",
+        "amount": "1"
+      }
+    },
+    {
+      "name": "void_positive_deposit",
+      "type": "CASH_VOID",
+      "source_event_id": "manual-00000000000000000000000000000012",
+      "fields": {
+        "occurred_at": "2026-01-05T00:00:00Z",
+        "currency": "USD",
+        "amount": "-002.500",
+        "corrects_source_event_id": "small-deposit"
+      },
+      "seed_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount\nseed-deposit,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000000000000000000000000000000\nsmall-deposit,account-main,DEPOSIT,2026-01-02T00:00:00Z,,,,,USD,2.5\n",
+      "expected_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id\n\"manual-00000000000000000000000000000012\",\"account-main\",\"CASH_VOID\",\"2026-01-05T00:00:00Z\",\"\",\"\",\"\",\"\",\"USD\",\"-2.5\",\"\",\"\",\"small-deposit\"\n",
+      "expected_transaction": {
+        "source_event_id": "manual-00000000000000000000000000000012",
+        "account_id": "account-main",
+        "type": "CASH_VOID",
+        "occurred_at": "2026-01-05T00:00:00Z",
+        "currency": "USD",
+        "amount": "-2.5",
+        "corrects_source_event_id": "small-deposit"
+      }
+    },
+    {
+      "name": "negative_offset_cross_day",
+      "type": "DEPOSIT",
+      "source_event_id": "manual-00000000000000000000000000000013",
+      "fields": {
+        "occurred_at": "2026-01-05T23:59:59.000000001-04:00",
+        "currency": "USD",
+        "amount": "1"
+      },
+      "seed_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount\nseed-deposit,account-main,DEPOSIT,2026-01-01T00:00:00Z,,,,,USD,1000000000000000000000000000000\n",
+      "expected_csv": "source_event_id,account_id,type,occurred_at,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id\n\"manual-00000000000000000000000000000013\",\"account-main\",\"DEPOSIT\",\"2026-01-05T23:59:59.000000001-04:00\",\"\",\"\",\"\",\"\",\"USD\",\"1\",\"\",\"\",\"\"\n",
+      "expected_transaction": {
+        "source_event_id": "manual-00000000000000000000000000000013",
+        "account_id": "account-main",
+        "type": "DEPOSIT",
+        "occurred_at": "2026-01-06T03:59:59.000000001Z",
+        "currency": "USD",
+        "amount": "1"
+      }
+    }
+  ]
+}

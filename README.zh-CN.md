@@ -133,6 +133,8 @@ Preview 不修改账本。将返回的 `preview_id` 与新的幂等键一起提�
 
 在交易记录页面粘贴文本，或通过 `CSV 파일 선택` 读取不超过 `1MiB` 的 `UTF-8` 文件。仅选择文件不会发送或应用数据；确认内容后，分别执行预览和应用。取消或读取错误会保留原有输入与结果。[文件输入验证范围](gates/g4p-first-run-import-recovery.md#csv-file-selection)
 
+无需 CSV 文件准备一条记录时，使用 `거래 직접 입력` → `검토용 초안 만들기`。这会替换整个 CSV 草稿；取消会保留原有输入与结果。支持全部 10 种记录类型，买卖现金金额以精确十进制计算。使用当前本地默认账户 `account-main` 和默认证券映射 `AAPL`，不会发送订单。从草稿分别执行预览和应用。如果应用结果未知，请保持应用打开并重试同一请求，不要重新录入同一交易。修改 CSV 或切换标签页后，使用 `이전 요청 재시도` 发送原始请求。如果尚未应用，此次重试可能修改账本。重试信息仅在本次应用会话中保留。[直接输入与结果归属](gates/g4p-first-run-import-recovery.md#manual-entry)
+
 CSV type 包括 `DEPOSIT`、`WITHDRAWAL`、`BUY`、`SELL`、`DIVIDEND`、`FEE`、`TAX`、`SPLIT`、`CASH_VOID`、`FX_EXCHANGE`。金额和数量使用规范十进制字符串；现金事件的正负号与拆股的零现金影响会在 apply 前验证。只有 `CASH_VOID` 使用可选的 `corrects_source_event_id` 列，其金额必须与已应用的同账户、同币种现金类事件精确相反。原始事件不会被删除；Flutter 预览会同时显示原始 source/type/currency/amount 和冲销金额。`FX_EXCHANGE` 要求在同一行提供卖出侧的 `currency`/负数 `amount`，以及不同买入侧的 `counter_currency`/正数 `counter_amount`。这两个金额不代表汇率或当前行情，手续费通过单独的 `FEE` 行记录。
 
 ```sh

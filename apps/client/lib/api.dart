@@ -32,8 +32,19 @@ const defaultApiUrl = String.fromEnvironment(
 const apiConnectionError = 'API에 연결할 수 없습니다. 서버 주소를 확인한 뒤 다시 시도하세요.';
 
 class ApiException implements Exception {
-  const ApiException(this.message);
+  const ApiException(this.message, {this.statusCode, this.code});
   final String message;
+  final int? statusCode;
+  final String? code;
+
+  bool get isConfirmedImportRejection =>
+      (statusCode == 409 && code == 'stale_preview') ||
+      (statusCode == 400 &&
+          const {
+            'preview_not_found',
+            'preview_has_errors',
+            'invalid_ledger',
+          }.contains(code));
   @override
   String toString() => message;
 }
@@ -92,6 +103,8 @@ class RestOmniApi implements OmniApi {
         error['message'] is String
             ? error['message'] as String
             : '요청을 완료하지 못했습니다.',
+        statusCode: response.statusCode,
+        code: error['code'] is String ? error['code'] as String : null,
       );
     } on FormatException {
       throw ApiException('요청을 완료하지 못했습니다 (${response.statusCode}).');
