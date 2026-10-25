@@ -51,10 +51,15 @@ backup17/schema23과 backup16/schema22는 기존 chronological FIFO v2의 비보
 
 ## 검증 기록
 
-- 실제 RED: `c078d7de69491dd1b43666f28320043f7abb1e93`, [Core40194885753](https://github.com/YouSangSon/Omni-Folio/actions/runs/40194885753), `unknown command "owner-fx-import"`. 기존 실패 영수증과 전체 로그는 ignored task output에 보존한다.
-- 구현 전 독립 설계 리뷰: whole-version cutoff·옛 재시도·철회 후 pair pin·sample 분리·namespace·이전 backup의 권한 경계를 확정했다. 구현 후 독립 정적 리뷰에서 unavailable 비교 테스트의 모순을 고쳤고 추가 차단 결함은 발견되지 않았다. 리뷰가 제안한 fixture 주식가격+비샘플 owner FX의 두 안내, 복구 후 빈 버전/출처 고정 검사를 보강했다. 최종 원격 Core/Client 검사는 아직이며 런타임 통과를 주장하지 않는다.
-- 공유 합성 응답은 현금/현재 평가/TWR/XIRR/비교와 owner sample/부분 FX/stale FX8사례다. 독립 Fraction 기준값을 사용하며 시장 자료 정확성의 증거가 아니다.
-- 로컬에서는 정적 텍스트·JSON·format만 실행한다. Go/Flutter 전체·분석·web/ARM64 release와 권한/소스 일치는 기존 공개 무료 Ubuntu CI가 소유한다.
+- 실제 RED: `c078d7de69491dd1b43666f28320043f7abb1e93`, [Core40194885753](https://github.com/YouSangSon/Omni-Folio/actions/runs/40194885753), `unknown command "owner-fx-import"`. 기존 실패 영수증과 전체 로그를 보존한다.
+- 독립 설계와 구현 정적 리뷰에서 cutoff·완전한 버전·철회 후 출처 고정·namespace·이전 backup 권한을 확인했다. unavailable 비교가 FX mark를 내보내지 않는 기존 계약에 맞춰 테스트 기대값을 고쳤고 추가 차단 결함은 없었다. fixture 주식가격+비샘플 owner FX의 두 안내와 복구 후 빈 버전/출처 고정 검사도 보강했다.
+- 첫 구현 `2c87e80de49cb66cdcd9ebb3096223cb277bffa9`의 [Client40200103106](https://github.com/YouSangSon/Omni-Folio/actions/runs/40200103106)은 파서/화면29건 통과 후 SemanticsHandle7건을 종료 전에 해제하지 않아 실패했다. 기존 패턴대로 `finally`에서 해제해 검사를 유지했다. [같은 head Core40200103118](https://github.com/YouSangSon/Omni-Folio/actions/runs/40200103118)의 집중 검사는 통과했으나 최종 head 검사로 교체하면서 전체 진행 중 취소했다. 부분/취소 결과를 전체 성공으로 세지 않는다.
+- 최종 검증 head `85d744386ffab923edbf62b6b211125999869048`, [구현 PR #52](https://github.com/YouSangSon/Omni-Folio/pull/52), main `d2c1c8912aa847897f676cc66d351403ce824527`. merge tree `5ba4001aa2bb7637448141ddd3073a54807e6001`가 테스트한 전체 tree와 같음을 확인했다.
+- [Core40200350255/job121190168667](https://github.com/YouSangSon/Omni-Folio/actions/runs/40200350255)은 owner 집중2.679s·전체 Go318.658s·내부5패키지·vet/format·Python39·JSON syntax33·소유 자원 cleanup/source identity를 모두 통과했다.
+- [Client40200350268/job121190016371](https://github.com/YouSangSon/Omni-Folio/actions/runs/40200350268)은 집중36·전체363·Dart30files zero delta/분석·web/ARM64 release·권한 반례8개·source identity를 모두 통과했다. client tree `0cb3546d379f4d70560816afd6b5acb510bad4aa`, APK23,481,098 bytes·SHA256 `8e61d083ff80a56852c23ed094428f4fc867baccc88d384e7466d21f009541f8`, registrant SHA256 `5d31e4d80984b4f5254d2e6629d2cc2b16760ab4774a94faa863c48897f18326`. 빌드 결과와 검증 소스의 연결이며 byte-identical 재현이나 실행 성능 측정은 아니다.
+- 공유 합성 응답은 현금/현재 평가/TWR/XIRR/비교와 owner sample/부분 FX/stale FX8사례다. 독립 Fraction 기준값을 사용하며 시장 자료 정확성의 증거가 아니다. source/sample 분리·과거 시점·수정/철회·재시도·복구·출처 혼합·tx/cutoff·물리 schema·엄격 파서·200% 글자/두 theme와 접근성 반례를 검사했다.
+- 로컬은 정적 텍스트·JSON33·schema 참조·Go/Dart format과 README4언어의 명령/링크/anchor 일치만 검사했다. 번역 설명이 있는 text block은 동일 문자열 비교 대상이 아니며 shell block을 비교했다. 기존 v1 보고서 골든은 바꾸지 않았다. Go/Flutter runtime·빌드는 기존 공개 무료 Ubuntu CI에서만 수행했다.
+- 후속 검증 기록은 PLAN/GATES/이 gate3개 문서만 바꾸며 코드·계약·workflow·client tree를 유지한다. 같은 소스의 통과 증거를 재사용하고 전체 검사를 반복하지 않는다.
 
 ## 남는 경계
 
