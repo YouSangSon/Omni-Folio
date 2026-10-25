@@ -164,43 +164,46 @@ void main() {
     'unavailable overview counts missing input and announces both notices once',
     (tester) async {
       final semantics = tester.ensureSemantics();
-      addTearDown(semantics.dispose);
-      final json = _report('current')
-        ..['status'] = 'unavailable'
-        ..['sample'] = true
-        ..['cash_value'] = null
-        ..['holdings_value'] = null
-        ..['total_value'] = null;
-      (json['issues'] as List).addAll([
-        {
-          'code': 'missing_security_price',
-          'message': 'unavailable',
-          'field': 'AAPL',
-        },
-      ]);
-      final value = CurrentPortfolioValuation.fromJson(json);
-      expect(value.missingInputCount, 1);
-      await tester.pumpWidget(
-        OmniFolioApp(api: _api()..currentValuationValue = value),
-      );
-      await pumpUi(tester);
-      final title = find.text('전체 평가를 계산할 수 없음');
-      await tester.scrollUntilVisible(
-        title,
-        150,
-        scrollable: find
-            .descendant(
-              of: find.byType(OverviewPage),
-              matching: find.byType(Scrollable),
-            )
-            .first,
-      );
-      await tester.pumpAndSettle();
-      expect(find.textContaining('직접 환율 1건'), findsOneWidget);
-      final label = tester.getSemantics(title).getSemanticsData().label;
-      expect(_notice.allMatches(label).length, 1);
-      expect('예시 자료 포함'.allMatches(label).length, 1);
-      expect(tester.takeException(), isNull);
+      try {
+        final json = _report('current')
+          ..['status'] = 'unavailable'
+          ..['sample'] = true
+          ..['cash_value'] = null
+          ..['holdings_value'] = null
+          ..['total_value'] = null;
+        (json['issues'] as List).addAll([
+          {
+            'code': 'missing_security_price',
+            'message': 'unavailable',
+            'field': 'AAPL',
+          },
+        ]);
+        final value = CurrentPortfolioValuation.fromJson(json);
+        expect(value.missingInputCount, 1);
+        await tester.pumpWidget(
+          OmniFolioApp(api: _api()..currentValuationValue = value),
+        );
+        await pumpUi(tester);
+        final title = find.text('전체 평가를 계산할 수 없음');
+        await tester.scrollUntilVisible(
+          title,
+          150,
+          scrollable: find
+              .descendant(
+                of: find.byType(OverviewPage),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        await tester.pumpAndSettle();
+        expect(find.textContaining('직접 환율 1건'), findsOneWidget);
+        final label = tester.getSemantics(title).getSemanticsData().label;
+        expect(_notice.allMatches(label).length, 1);
+        expect('예시 자료 포함'.allMatches(label).length, 1);
+        expect(tester.takeException(), isNull);
+      } finally {
+        semantics.dispose();
+      }
     },
   );
 
@@ -218,27 +221,30 @@ void main() {
           tester.platformDispatcher.clearTextScaleFactorTestValue();
         });
         final semantics = tester.ensureSemantics();
-        addTearDown(semantics.dispose);
-        final api = _api();
-        final widget = switch (page) {
-          'twr' => PortfolioTwrPage(api: api),
-          'xirr' => PortfolioXirrPage(api: api),
-          _ => PortfolioBenchmarksPage(api: api),
-        };
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: ThemeData(brightness: brightness),
-            home: widget,
-          ),
-        );
-        await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text(_notice));
-        await tester.pumpAndSettle();
-        expect(find.text(_notice), findsOneWidget);
-        expect(find.textContaining('예시 가격·환율 포함'), findsNothing);
-        await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
-        await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
-        expect(tester.takeException(), isNull);
+        try {
+          final api = _api();
+          final widget = switch (page) {
+            'twr' => PortfolioTwrPage(api: api),
+            'xirr' => PortfolioXirrPage(api: api),
+            _ => PortfolioBenchmarksPage(api: api),
+          };
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: ThemeData(brightness: brightness),
+              home: widget,
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.ensureVisible(find.text(_notice));
+          await tester.pumpAndSettle();
+          expect(find.text(_notice), findsOneWidget);
+          expect(find.textContaining('예시 가격·환율 포함'), findsNothing);
+          await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+          await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+          expect(tester.takeException(), isNull);
+        } finally {
+          semantics.dispose();
+        }
       });
     }
   }
