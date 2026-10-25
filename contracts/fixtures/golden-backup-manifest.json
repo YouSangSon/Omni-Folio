@@ -1,6 +1,9 @@
 {
-  "format_version": "omni-folio-backup.v17",
-  "schema_version": "omni-folio.sqlite.v23",
+  "owner_fx_series_state_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "owner_fx_series_version_count": 0,
+  "owner_fx_series_point_count": 0,
+  "format_version": "omni-folio-backup.v18",
+  "schema_version": "omni-folio.sqlite.v24",
   "created_at": "2026-01-10T15:02:00Z",
   "source_ledger_revision": "rev_0000000003",
   "order_state_sha256": "34b0bc819983f2fa08ee5e702db8aa5194bd2b2915dc389801b55cac79ed10a8",
@@ -52,6 +55,10 @@
     "algorithm": "none"
   },
   "verification_receipt": {
+    "owner_fx_series_check": "ok",
+    "candidate_owner_fx_series_state_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate_owner_fx_series_version_count": 0,
+    "candidate_owner_fx_series_point_count": 0,
     "receipt_id": "backup_verification_001",
     "candidate_id": "restore_candidate_001",
     "verified_at": "2026-01-10T15:03:00Z",

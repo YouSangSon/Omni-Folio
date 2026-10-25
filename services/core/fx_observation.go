@@ -37,6 +37,8 @@ type FXObservation struct {
 	FetchedAt           string `json:"fetched_at"`
 	RecordedAt          string `json:"recorded_at"`
 	recordSHA256        string
+	ownerVersion        string
+	ownerSample         bool
 }
 
 type fxObservationRecoveryProof struct {

@@ -147,6 +147,11 @@ class _PortfolioBenchmarksPageState extends State<PortfolioBenchmarksPage> {
             ),
           ),
         ),
+        if (report.ownerDeclaredFx)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text('직접 입력 환율 사용 · 시세 제공자가 검증한 값이 아닙니다.'),
+          ),
         if (report.sample)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
@@ -245,6 +250,10 @@ class _PortfolioBenchmarksPageState extends State<PortfolioBenchmarksPage> {
                         '기말 지수 ${row.end?.value ?? '없음'} · 관측 (UTC): ${row.end?.observedAt ?? '없음'}',
                       ),
                       if (row.series.currency == 'USD') ...[
+                        if (row.ownerDeclaredFx)
+                          Text(
+                            '환율 입력 버전: ${row.startFx?.sourceVersion ?? row.endFx?.sourceVersion}',
+                          ),
                         Text(
                           '시작 USD→KRW ${row.startFx?.value ?? '없음'} · 관측 (UTC): ${row.startFx?.observedAt ?? '없음'}',
                         ),

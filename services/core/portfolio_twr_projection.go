@@ -126,9 +126,10 @@ type twrMarks struct {
 	fxTimes    map[string][3]time.Time
 	prices     []SecurityPriceObservation
 	priceTimes map[string][3]time.Time
+	ownerUsed  bool
 }
 
-func (m twrMarks) convert(amount *big.Rat, currency string, at, knownAt time.Time) (*big.Rat, bool, string) {
+func (m *twrMarks) convert(amount *big.Rat, currency string, at, knownAt time.Time) (*big.Rat, bool, string) {
 	if currency == "KRW" || amount.Sign() == 0 {
 		return new(big.Rat).Set(amount), false, ""
 	}
@@ -136,17 +137,18 @@ func (m twrMarks) convert(amount *big.Rat, currency string, at, knownAt time.Tim
 	if fx == nil {
 		return nil, false, "missing_historical_fx"
 	}
-	if at.Sub(m.fxTimes[fx.ObservationID][0]) > cashFXMaxAge {
-		return nil, true, "stale_historical_fx"
+	m.ownerUsed = m.ownerUsed || fx.Source == ownerFXSource
+	if at.Sub(m.fxTimes[fxTimeKey(*fx)][0]) > cashFXMaxAge {
+		return nil, fxIsSample(fx), "stale_historical_fx"
 	}
 	rate, err := parseDecimal(fx.Rate)
 	if err != nil {
-		return nil, true, "numerical_limit"
+		return nil, fxIsSample(fx), "numerical_limit"
 	}
-	return new(big.Rat).Mul(amount, rate), true, ""
+	return new(big.Rat).Mul(amount, rate), fxIsSample(fx), ""
 }
 
-func (m twrMarks) value(ctx context.Context, b *twrBalances, at, knownAt time.Time) (*big.Rat, bool, string) {
+func (m *twrMarks) value(ctx context.Context, b *twrBalances, at, knownAt time.Time) (*big.Rat, bool, string) {
 	total := new(big.Rat)
 	sample := false
 	for _, currency := range sortedKeys(b.cash) {

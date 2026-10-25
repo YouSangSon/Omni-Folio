@@ -10,6 +10,7 @@ import (
 )
 
 const portfolioXIRRPolicy = "restated_external_cash_utc_date_actual_365_v1"
+const portfolioXIRROwnerFXPolicy = "restated_external_cash_utc_date_actual_365_v2"
 
 type PortfolioXIRR struct {
 	PolicyVersion      string                     `json:"policy_version"`
@@ -45,14 +46,23 @@ func (s *Service) portfolioXIRR(ctx context.Context) (*PortfolioXIRR, *appError)
 	if err := proveLedgerReplayState(ctx, tx, false); err != nil {
 		return nil, internalError(err)
 	}
-	valuation, appErr := s.currentPortfolioValuationTx(ctx, tx, asOf)
+	inputs, err := readValuationFXInputs(ctx, tx, asOf)
+	if err != nil {
+		return nil, internalError(err)
+	}
+	valuation, appErr := s.currentPortfolioValuationTx(ctx, tx, asOf, inputs)
 	if appErr != nil {
 		return nil, appErr
 	}
 	result := &PortfolioXIRR{PolicyVersion: portfolioXIRRPolicy, SolverPolicy: xirrSolverPolicy, Scope: "whole_portfolio_since_inception", Valuation: valuation, Status: "unavailable", Sample: valuation.Sample, PeriodEnd: asOf.Format("2006-01-02"), Uniqueness: "not_applicable", Issues: []APIError{}}
+	usedOwnerFX := usesOwnerFX(valuation.Issues)
 	finish := func() (*PortfolioXIRR, *appError) {
 		if result.Sample {
 			result.Issues = appendCurrentValuationIssue(result.Issues, APIError{Code: "sample_data", Message: "return inputs include stored local sample observations"})
+		}
+		if usedOwnerFX {
+			result.PolicyVersion = portfolioXIRROwnerFXPolicy
+			result.Issues = appendCurrentValuationIssue(result.Issues, ownerFXIssue())
 		}
 		if err := tx.Commit(); err != nil {
 			return nil, internalError(err)
@@ -104,21 +114,7 @@ func (s *Service) portfolioXIRR(ctx context.Context) (*PortfolioXIRR, *appError)
 	}
 	eventCount := len(external)
 	result.ExternalEventCount = &eventCount
-	var observations []FXObservation
-	var fxTimes map[string][3]time.Time
-	for _, flow := range external {
-		if flow.currency != "KRW" {
-			observations, _, err = replayFXObservations(ctx, tx)
-			if err != nil {
-				return nil, internalError(err)
-			}
-			fxTimes, err = currentFXObservationTimes(observations)
-			if err != nil {
-				return nil, internalError(err)
-			}
-			break
-		}
-	}
+	observations, fxTimes := inputs.observations, inputs.times
 	flows := make([]xirrCashFlow, 0, len(external)+1)
 	contributions := new(big.Rat)
 	for _, flow := range external {
@@ -139,8 +135,9 @@ func (s *Service) portfolioXIRR(ctx context.Context) (*PortfolioXIRR, *appError)
 				result.Issues = appendCurrentValuationIssue(result.Issues, APIError{Code: "missing_historical_fx", Message: "an eligible historical direct FX observation is required", Field: flow.currency})
 				continue
 			}
-			result.Sample = true
-			if flow.at.Sub(fxTimes[fx.ObservationID][0]) > cashFXMaxAge {
+			result.Sample = result.Sample || fxIsSample(fx)
+			usedOwnerFX = usedOwnerFX || fx.Source == ownerFXSource
+			if flow.at.Sub(fxTimes[fxTimeKey(*fx)][0]) > cashFXMaxAge {
 				result.Issues = appendCurrentValuationIssue(result.Issues, APIError{Code: "stale_historical_fx", Message: "historical FX exceeds the event-time age policy", Field: flow.currency})
 				continue
 			}
@@ -199,15 +196,15 @@ func historicalXIRRFX(observations []FXObservation, times map[string][3]time.Tim
 	var selected *FXObservation
 	for i := range observations {
 		fx := &observations[i]
-		if fx.Source != "local_fixture" || fx.BaseCurrency != currency || fx.QuoteCurrency != "KRW" {
+		if !supportedValuationFX(*fx) || fx.BaseCurrency != currency || fx.QuoteCurrency != "KRW" {
 			continue
 		}
-		clock := times[fx.ObservationID]
+		clock := times[fxTimeKey(*fx)]
 		if clock[0].After(occurredAt) || clock[1].After(knownAt) || clock[2].After(knownAt) {
 			continue
 		}
 		// Equal economic timestamps retain the first verified append, matching valuation selection.
-		if selected == nil || clock[0].After(times[selected.ObservationID][0]) {
+		if selected == nil || clock[0].After(times[fxTimeKey(*selected)][0]) {
 			selected = fx
 		}
 	}

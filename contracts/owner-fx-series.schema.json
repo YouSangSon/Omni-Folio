@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omni-folio.local/contracts/owner-fx-series.v1.schema.json",
+  "title": "Owner-declared complete direct FX series v1",
+  "description": "One complete replacement of a directed pair, not a point patch or provider verification. Empty points withdraw observations while retaining the owner source binding. The server enforces UTF-8 byte bounds, sorted unique points, observed <= fetched <= recorded, immutable versions and no fixture-source mixing.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source_version", "base_currency", "quote_currency", "sample", "fetched_at", "points"],
+  "properties": {
+    "schema_version": {"const": "owner-fx-series.v1"},
+    "source_version": {"$ref": "#/$defs/identity"},
+    "base_currency": {"$ref": "#/$defs/currency"},
+    "quote_currency": {"$ref": "#/$defs/currency"},
+    "sample": {"type": "boolean", "description": "Synthetic/example declaration independent of owner authority and immutable within one source_version."},
+    "fetched_at": {"$ref": "#/$defs/timestamp"},
+    "points": {
+      "type": "array", "minItems": 0, "maxItems": 10000,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["observed_at", "rate"],
+        "properties": {
+          "observed_at": {"$ref": "#/$defs/timestamp"},
+          "rate": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^(?:0\\.[0-9]*[1-9]|[1-9][0-9]*(?:\\.[0-9]*[1-9])?)$", "description": "Positive quote-currency units per one base unit; no inverse/cross inference."}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identity": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$", "description": "At most128 UTF-8 bytes, without Unicode whitespace or control characters."},
+    "currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+    "timestamp": {"type": "string", "minLength": 20, "maxLength": 30, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{0,8}[1-9])?Z$", "description": "Canonical UTC RFC3339Nano; server rejects invalid dates."},
+    "receipt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["storage_check", "authority", "source_version", "base_currency", "quote_currency", "sample", "data_sha256", "point_count", "first_observed_at", "last_observed_at", "fetched_at", "recorded_at"],
+      "properties": {
+        "storage_check": {"const": "verified"},
+        "authority": {"const": "owner_declared"},
+        "source_version": {"$ref": "#/$defs/identity"},
+        "base_currency": {"$ref": "#/$defs/currency"},
+        "quote_currency": {"$ref": "#/$defs/currency"},
+        "sample": {"type": "boolean"},
+        "data_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "point_count": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "first_observed_at": {"anyOf": [{"$ref": "#/$defs/timestamp"}, {"type": "null"}]},
+        "last_observed_at": {"anyOf": [{"$ref": "#/$defs/timestamp"}, {"type": "null"}]},
+        "fetched_at": {"$ref": "#/$defs/timestamp"},
+        "recorded_at": {"$ref": "#/$defs/timestamp"}
+      },
+      "allOf": [{"if": {"properties": {"point_count": {"const": 0}}}, "then": {"properties": {"first_observed_at": {"type": "null"}, "last_observed_at": {"type": "null"}}}, "else": {"properties": {"first_observed_at": {"$ref": "#/$defs/timestamp"}, "last_observed_at": {"$ref": "#/$defs/timestamp"}}}}]
+    }
+  }
+}

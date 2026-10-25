@@ -13,6 +13,7 @@ import (
 // Historical fixtures must not silently discard an admitted benchmark dataset.
 func dropBenchmarkSchemaForLegacy(t testing.TB, db *sql.DB) {
 	t.Helper()
+	dropOwnerFXSchemaForLegacy(t, db)
 	var present int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='benchmark_series_versions'`).Scan(&present); err != nil {
 		t.Fatal(err)
@@ -35,6 +36,7 @@ func dropBenchmarkSchemaForLegacy(t testing.TB, db *sql.DB) {
 }
 
 func stripBenchmarkProofForLegacy(manifest map[string]any) {
+	stripOwnerFXProofForLegacy(manifest)
 	for _, key := range []string{"benchmark_series_state_sha256", "benchmark_series_version_count", "benchmark_series_point_count"} {
 		delete(manifest, key)
 	}
