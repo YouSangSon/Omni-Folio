@@ -14,6 +14,8 @@
 
 ## Next
 
+- [ ] CSV 파일 선택: 기존 preview·명시적 apply 흐름에 UTF-8·1MiB 파일 초안을 연결한다. 취소·오류 보존, 입력 경쟁과 결과 무효화, 네이티브 plugin 포장을 집중 검증 중 ([범위](gates/g4p-first-run-import-recovery.md#csv-file-selection)).
+
 - [x] G1.19 거래 내역 정렬·페이지 cursor와 현재 평가 cutoff의 소수초 역전 수정. 실제 API 미래 합산·페이지 순서 RED/GREEN과 독립 리뷰 통과 ([gate](gates/g1o-exact-activity-cutoff.md)).
 - [x] G1.20 FIFO/snapshot·broker quantity·CASH_VOID의 정확한 UTC 재생과 schema22/backup v16의 명시적 정책 전환. 집중 회귀·독립 리뷰·최종 전체 check(Go core386.630초, Flutter108·Python34·JSON17)·로컬 smoke·소유 자원 정리 통과 ([gate](gates/g1p-chronological-ledger-replay.md)).
 - [x] G1.18 현재 평가 release browser QA: 실제 KRW 입금 합계·503 정상값 보존·USD 환율 누락 후 합계 제거·375/768/1440 반응형·키보드 재조회를 검증했다. 오류/평가 불가 카드의 중복 semantics와 새 테스트 handle 해제 순서를 교정했고 Flutter 108개·Go 전체 재사용·Python 34개·JSON 17개·수정 후 release 및 owned cleanup을 통과했다. 물리 screen reader와 시각 baseline 비교는 별도 ([gate](gates/g1n-current-valuation-browser.md)).

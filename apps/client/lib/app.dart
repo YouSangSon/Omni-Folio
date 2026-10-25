@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'csv_file.dart';
 import 'holding_valuation_page.dart';
 import 'instrument_ledger_page.dart';
 import 'models.dart';
@@ -1963,6 +1964,7 @@ class _ActivityPageState extends State<ActivityPage> {
   _activityCursorTrail = [];
   String? _error;
   var _busy = false;
+  var _fileBusy = false;
   var _activityBusy = false;
   var _activityFailed = false;
   var _activityPagingFailed = false;
@@ -2144,7 +2146,31 @@ class _ActivityPageState extends State<ActivityPage> {
     );
   }
 
+  Future<void> _selectCsvFile() async {
+    if (_busy || _fileBusy) return;
+    setState(() => _fileBusy = true);
+    try {
+      final csv = await selectCsvFile();
+      if (!mounted || csv == null || csv == _csv.text) return;
+      _csv.text = csv;
+      _error = null;
+      _invalidatePreviewOnEdit(csv);
+    } on CsvFileException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error =
+              'CSV 파일을 읽지 못했습니다. 다시 선택하거나 내용을 붙여 넣으세요. 기존 입력과 결과는 유지됩니다.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _fileBusy = false);
+    }
+  }
+
   Future<void> _previewCsv() async {
+    if (_busy || _fileBusy) return;
     if (_csv.text.trim().isEmpty) {
       setState(() => _error = 'CSV 내용을 붙여 넣으세요. 미리보기는 원장을 변경하지 않습니다.');
       return;
@@ -2175,6 +2201,7 @@ class _ActivityPageState extends State<ActivityPage> {
   }
 
   Future<void> _apply() async {
+    if (_busy || _fileBusy) return;
     final preview = _preview;
     if (preview == null || !preview.canApply) return;
     setState(() {
@@ -2224,10 +2251,11 @@ class _ActivityPageState extends State<ActivityPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('원장을 바꾸기 전에 새 거래, 중복, 오류를 먼저 확인합니다.'),
+            const Text('UTF-8·최대 1MiB CSV를 선택하거나 붙여 넣으세요. 선택만으로 전송되지 않습니다.'),
             const SizedBox(height: 12),
             TextField(
               controller: _csv,
+              readOnly: _fileBusy,
               onChanged: _invalidatePreviewOnEdit,
               minLines: 6,
               maxLines: 12,
@@ -2238,15 +2266,26 @@ class _ActivityPageState extends State<ActivityPage> {
               ),
             ),
             const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: _busy ? null : _previewCsv,
-              icon: const Icon(Icons.preview),
-              label: const Text('미리보기 만들기'),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _busy || _fileBusy ? null : _selectCsvFile,
+                  icon: const Icon(Icons.file_open_outlined),
+                  label: const Text('CSV 파일 선택'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _busy || _fileBusy ? null : _previewCsv,
+                  icon: const Icon(Icons.preview),
+                  label: const Text('미리보기 만들기'),
+                ),
+              ],
             ),
           ],
         ),
       ),
-      if (_busy)
+      if (_busy || _fileBusy)
         const Padding(
           padding: EdgeInsets.all(16),
           child: _Loading(compact: true),
@@ -2270,7 +2309,7 @@ class _ActivityPageState extends State<ActivityPage> {
           padding: const EdgeInsets.only(top: 12),
           child: _PreviewCard(
             preview: _preview!,
-            onApply: _busy ? null : _apply,
+            onApply: _busy || _fileBusy ? null : _apply,
           ),
         ),
       if (_receipt != null)

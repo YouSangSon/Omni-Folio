@@ -131,6 +131,8 @@ make client-ios-release API_URL=http://127.0.0.1:8080
 
 Preview は台帳を変更しません。返された `preview_id` を新しい idempotency key とともに apply します。
 
+取引履歴画面ではテキストを貼り付けるか、`CSV 파일 선택` から `UTF-8`・`1MiB` 以下のファイルを読み込みます。選択だけでは送信・反映されません。内容を確認し、プレビューと反映をそれぞれ実行します。キャンセル・読み込みエラーでは既存の入力と結果を保持します。[ファイル入力の検証範囲](gates/g4p-first-run-import-recovery.md#csv-file-selection)
+
 CSV の type は `DEPOSIT`、`WITHDRAWAL`、`BUY`、`SELL`、`DIVIDEND`、`FEE`、`TAX`、`SPLIT`、`CASH_VOID`、`FX_EXCHANGE` です。金額と数量は正規化された10進数文字列で、現金イベントの符号と split の現金影響がゼロであることを apply 前に検証します。任意の `corrects_source_event_id` 列を使うのは `CASH_VOID` だけで、適用済みの同一口座・通貨の cash-like event に対して正確に逆符号の金額でなければなりません。原本は削除せず、Flutter preview には原本の source/type/currency/amount と相殺金額を併せて表示します。`FX_EXCHANGE` は、売却側の `currency`/負の `amount` と、異なる通貨の購入側の `counter_currency`/正の `counter_amount` を1行に指定する必要があります。この2つの金額は為替レートや現在の相場を意味せず、手数料は別の `FEE` 行に記録します。
 
 ```sh
