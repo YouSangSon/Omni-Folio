@@ -20,6 +20,12 @@ RED head `616c309`의 [무료 표준 Core CI](https://github.com/YouSangSon/Omni
 
 검사와 최종 통과 결과는 [PR #38](https://github.com/YouSangSon/Omni-Folio/pull/38)의 해당 head에 연결한다. `.github/workflows/core-checks.yml`은 public/same-repo PR만 고정 action·표준 runner·read-only token으로 실행하고 cache/artifact를 업로드하지 않는다. 집중 검사는 기존 `make test`, 최종 검사는 `make check DART=true FLUTTER=true CORE_TEST_PACKAGES='-timeout=30m ./...'`로 소유 preflight/cleanup을 유지한다. Flutter 소스는 같으므로 이번 Core 검사에서 Dart format·Flutter analyze/test를 실행하지 않는다.
 
+최종 head `ade041a1fa543e4c086c97e751420431519089f7`의 [Core CI #40155050448](https://github.com/YouSangSon/Omni-Folio/actions/runs/40155050448)은 2026-10-25에 전체 성공했다. Ubuntu 24.04 표준 runner에서 Go 1.24.5·Python 3.14.5 pin을 확인했다.
+
+- 집중 `make test FLUTTER=true CORE_TEST_PACKAGES='-run=^TestPaperInputStatus -count=1 -timeout=10m ./...'`: 새 Go 시나리오 8.560초, Python39와 소유 자원 cleanup 통과.
+- 최종 `make check DART=true FLUTTER=true CORE_TEST_PACKAGES='-timeout=30m ./...'`: Go format/vet·전체 검사(core408.602초와 internal packages), Python compile/unit39·JSON17 구문 검사와 소유 자원 cleanup 통과. 별도 `git diff --exit-code`도 통과했다. 중간 컴파일·SIGINT 실패를 이 성공으로 덮어 쓰지 않는다.
+- main 병합 `81bde75e4b1999a7b0d60c6c243b78b0fe35f1ed`와 검증 head의 전체 tree가 같다. client tree `5dce64fdd8e36967da255d049c8260ab774acc5c`는 변경하지 않았다. 로컬에서는 format/diff·문서 링크와 네 README의 명령·링크·anchor·코드 표기 동등성만 확인했다. 브랜치 고유 커밋0·다른 worktree 미사용을 확인해 이번 로컬·원격 브랜치만 정리했다.
+
 이번 Goal은 사용자 요청으로 VM을 우선 건너뛴다. 로컬 SQLite 통합·프로세스 fixture·전체 stack을 실행하지 않으며, 원격 결과와 로컬 format/link 검사를 구분한다. read-only SQLite도 보조파일·reader lock 접근은 가능하므로 파일시스템 무변경을 보장하지 않는다. 조회 시점 뒤 상태 변경, 실제 정전·장기 운영·소스 완결성·자동 재실행·실브로커·실기기 검증은 별도다.
 
 ## Linux CI에서 드러난 watcher 종료 경계
