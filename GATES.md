@@ -35,7 +35,8 @@ G1 ledger vertical slice
 ├─ G1.20 versioned chronological FIFO and explicit legacy replay activation
 ├─ G1.21 duplicate-import valuation and complete recorded-time cutoff
 ├─ G1.22 verified public ledger activity CSV export
-└─ G1.23 retrospective portfolio XIRR and explicit root confidence
+├─ G1.23 retrospective portfolio XIRR and explicit root confidence
+└─ G1.24 retrospective cash-flow-boundary cumulative TWR (gates/g1t-portfolio-twr.md)
    |
 G2 client vertical slice
 ├─ G2.1 Flutter iOS/Android/web build

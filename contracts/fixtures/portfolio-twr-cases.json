@@ -1,0 +1,127 @@
+{
+  "reference": "Python Fraction exact products and Decimal100/ROUND_HALF_EVEN; PP Eq2 concept only, no daily-convention equivalence",
+  "cases": [
+    {
+      "name": "PP two one-percent subperiods",
+      "pairs": [
+        [
+          "101",
+          "100"
+        ],
+        [
+          "111.1",
+          "110"
+        ]
+      ],
+      "expected": "0.0201"
+    },
+    {
+      "name": "two ten-percent subperiods",
+      "pairs": [
+        [
+          "110",
+          "100"
+        ],
+        [
+          "231",
+          "210"
+        ]
+      ],
+      "expected": "0.21"
+    },
+    {
+      "name": "partial withdrawal",
+      "pairs": [
+        [
+          "110",
+          "100"
+        ],
+        [
+          "66",
+          "60"
+        ]
+      ],
+      "expected": "0.21"
+    },
+    {
+      "name": "zero return",
+      "pairs": [
+        [
+          "100",
+          "100"
+        ]
+      ],
+      "expected": "0"
+    },
+    {
+      "name": "loss",
+      "pairs": [
+        [
+          "80",
+          "100"
+        ]
+      ],
+      "expected": "-0.2"
+    },
+    {
+      "name": "total loss",
+      "pairs": [
+        [
+          "0",
+          "100"
+        ]
+      ],
+      "expected": "-1"
+    },
+    {
+      "name": "internal fee",
+      "pairs": [
+        [
+          "99",
+          "100"
+        ]
+      ],
+      "expected": "-0.01"
+    },
+    {
+      "name": "non-finite decimal ratio",
+      "pairs": [
+        [
+          "2",
+          "3"
+        ]
+      ],
+      "expected": "-0.333333333333"
+    },
+    {
+      "name": "half-even lower tie",
+      "pairs": [
+        [
+          "1.0000000000005",
+          "1"
+        ]
+      ],
+      "expected": "0"
+    },
+    {
+      "name": "half-even upper tie",
+      "pairs": [
+        [
+          "1.0000000000015",
+          "1"
+        ]
+      ],
+      "expected": "0.000000000002"
+    },
+    {
+      "name": "negative half-even tie",
+      "pairs": [
+        [
+          "0.9999999999985",
+          "1"
+        ]
+      ],
+      "expected": "-0.000000000002"
+    }
+  ]
+}

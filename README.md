@@ -215,6 +215,18 @@ curl -fsS http://127.0.0.1:8080/v1/portfolio/xirr
 
 [정책·출처·검증 범위](gates/g1s-portfolio-xirr.md)
 
+### 입출금 영향을 뺀 누적 수익률
+
+수익률 상세의 `입출금 영향을 뺀 누적 수익률 보기`에서 원장 시작 이후의 `TWR`을 조회합니다. 입출금 경계별 자산 변화를 이어 계산하며 연환산하지 않습니다. 동일 시각의 외부 입출금을 먼저 처리하고, 정정된 원본 현금 기록은 과거 잔액에서도 제외합니다.
+
+각 경계에 필요한 과거 가격·직접 환율이 없거나 24시간을 넘으면 계산하지 않습니다. 중간 자본이 0 이하인 경로와 분할의 가격 단위가 모호한 경우도 계산 불가로 표시합니다. 전액 출금은 전액 손실로 표시하지 않으며, 예시 관측을 포함한 결과는 실제 투자 성과가 아닙니다.
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/portfolio/twr
+```
+
+[계산 기준·출처·검증 범위](gates/g1t-portfolio-twr.md)
+
 ### Direct-FX cash valuation
 
 G1.11의 `GET /v1/portfolio/cash-valuation`은 replay-verified 현재 원장 cash를 요청한 기준통화로만 평가합니다. canonical UTC `as_of`와 `base_currency`를 필수로 받고, 같은 읽기 transaction에서 원장 event와 FX series 전체를 검증합니다. 동일 통화와 0 잔액 외에는 `cash currency -> base currency` 방향의 직접 관측만 사용하며, 관측 시각부터 24시간 경계를 포함합니다. inverse·cross·interpolation·`FX_EXCHANGE` 추론과 표시용 반올림은 사용하지 않습니다.

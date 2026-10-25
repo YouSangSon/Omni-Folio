@@ -6,6 +6,44 @@
     "description": "Minimal cross-runtime contract for trust status, CSV import, deterministic portfolio snapshots, explicitly labeled sample market data, sanitized ledger activity, stored broker reconciliation, and verified local order lifecycle reads. JSON decimals are canonical strings; IDs are opaque strings."
   },
   "paths": {
+    "/v1/portfolio/twr": {
+      "get": {
+        "operationId": "getPortfolioTWR",
+        "description": "Reads retrospective whole-portfolio cumulative TWR in one verified read transaction. Restates cash corrections; groups external cash before internal events at each exact UTC timestamp. Uses historical local prices and direct FX with separate economic and report knowledge cutoffs and a24h age policy. Nonpositive intermediate capital and ambiguous split units are unavailable. No annualization, broker calls or writes; query parameters rejected.",
+        "responses": {
+          "200": {
+            "description": "Cumulative calculation, empty or unavailable; private identifiers omitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioTWR"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Query parameters are not accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Durable proof or internal validation failed; fixed redacted error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/portfolio/xirr": {
       "get": {
         "operationId": "getPortfolioXIRR",
@@ -621,6 +659,98 @@
       }
     },
     "schemas": {
+      "PortfolioTWR": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "policy_version",
+          "scope",
+          "valuation",
+          "status",
+          "sample",
+          "period_start",
+          "period_end",
+          "external_event_count",
+          "net_contributions",
+          "issues",
+          "boundary_count",
+          "cumulative_rate"
+        ],
+        "properties": {
+          "policy_version": {
+            "const": "restated_external_first_exact_timestamp_twr_v1"
+          },
+          "scope": {
+            "const": "whole_portfolio_since_inception"
+          },
+          "valuation": {
+            "$ref": "#/components/schemas/CurrentPortfolioValuation"
+          },
+          "status": {
+            "enum": [
+              "calculated",
+              "empty",
+              "unavailable"
+            ]
+          },
+          "sample": {
+            "type": "boolean"
+          },
+          "period_start": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "period_end": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "external_event_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "net_contributions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Error"
+            }
+          },
+          "boundary_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "cumulative_rate": {
+            "maxLength": 128,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Decimal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "description": "Since-inception retrospective KRW cumulative TWR, not annualized. Restated external cash groups precede internal events at each exact UTC timestamp. Links asset values immediately before external groups to previous post-flow capital, then terminal value to last positive capital. Requires positive intermediate capital; a full withdrawal is unavailable, not a total loss. Historical prices and direct FX observed by each boundary and fetched/recorded by report cutoff must be <=24h old; split marks must be strictly after the last applied split. Final cash and quantity maps and terminal total reconcile to the proved current ledger. Exact rational products are rounded once to12decimals, with8192bit product and1000boundary budgets. Missing or unsupported inputs never become0percent; no trading no-lookahead or PP daily-convention equivalence claim."
+      },
       "PortfolioXIRR": {
         "type": "object",
         "additionalProperties": false,

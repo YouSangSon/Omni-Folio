@@ -207,6 +207,10 @@ func (s *Service) holdingValuation(ctx context.Context, asOf string) (*HoldingVa
 
 // ponytail: linear selection is enough for a personal price series; add a projection only after measured volume makes it hot.
 func latestEligibleHoldingPrice(observations []SecurityPriceObservation, times map[string][3]time.Time, holding Holding, asOf time.Time) (*SecurityPriceObservation, string) {
+	return latestEligibleHoldingPriceAt(observations, times, holding, asOf, asOf)
+}
+
+func latestEligibleHoldingPriceAt(observations []SecurityPriceObservation, times map[string][3]time.Time, holding Holding, economicAt, knownAt time.Time) (*SecurityPriceObservation, string) {
 	venues := map[string]struct{}{}
 	var selected *SecurityPriceObservation
 	for index := range observations {
@@ -216,7 +220,7 @@ func latestEligibleHoldingPrice(observations []SecurityPriceObservation, times m
 			continue
 		}
 		observationTimes := times[observation.ObservationID]
-		if observationTimes[0].After(asOf) || observationTimes[1].After(asOf) || observationTimes[2].After(asOf) {
+		if observationTimes[0].After(economicAt) || observationTimes[1].After(knownAt) || observationTimes[2].After(knownAt) {
 			continue
 		}
 		venues[observation.Venue] = struct{}{}

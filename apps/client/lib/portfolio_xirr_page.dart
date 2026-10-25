@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'models.dart';
+import 'portfolio_twr_page.dart';
 
 class PortfolioXirrPage extends StatefulWidget {
   const PortfolioXirrPage({super.key, required this.api});
@@ -98,6 +99,16 @@ class _PortfolioXirrPageState extends State<PortfolioXirrPage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Text('로컬 원장 계산 · 현재 증권사 성과 아님'),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () => Navigator.of(context).push<void>(
+            MaterialPageRoute(
+              builder: (_) => PortfolioTwrPage(api: widget.api),
+            ),
+          ),
+          icon: const Icon(Icons.timeline),
+          label: const Text('입출금 영향을 뺀 누적 수익률 보기', textAlign: TextAlign.center),
+        ),
         const SizedBox(height: 12),
         if (_failed)
           Padding(

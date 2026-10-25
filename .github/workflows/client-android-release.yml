@@ -47,9 +47,9 @@ jobs:
       - name: Resolve the committed lock
         working-directory: apps/client
         run: flutter pub get --enforce-lockfile
-      - name: Check portfolio XIRR scenarios first
+      - name: Check portfolio TWR scenarios first
         working-directory: apps/client
-        run: flutter test --no-pub --concurrency=1 test/portfolio_xirr_test.dart
+        run: flutter test --no-pub --concurrency=1 test/portfolio_twr_test.dart
       - name: Check Dart formatting and static analysis
         working-directory: apps/client
         run: |
