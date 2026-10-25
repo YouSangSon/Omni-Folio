@@ -10,6 +10,7 @@ import os
 import re
 import secrets
 import select
+import signal
 import stat
 import sys
 import time
@@ -241,4 +242,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # Background launchers can pass down an ignored SIGINT disposition.
+    signal.signal(signal.SIGINT, signal.default_int_handler)
     raise SystemExit(main())
