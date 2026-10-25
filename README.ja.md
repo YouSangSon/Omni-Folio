@@ -237,9 +237,21 @@ curl -fsS http://127.0.0.1:8080/v1/portfolio/twr
 (cd services/core && go run . benchmark-status -db ../../data/omni-folio.db -benchmark-id synthetic_usd)
 ```
 
-`authority=owner_declared` は所有者が提供した資料、`storage_check=verified` は保存内容の整合性のみを確認したことを示します。同じ `source_version` の内容や `fetched_at` が変わると競合として拒否し、過去のバージョンの再試行で最新の選択を変更しません。実際の指数の配当・分割基準と利用権限、同期間の収益比較・通貨換算・画面は今後の検証対象です。
+`authority=owner_declared` は所有者が提供した資料、`storage_check=verified` は保存内容の整合性のみを確認したことを示します。同じ `source_version` の内容や `fetched_at` が変わると競合として拒否し、過去のバージョンの再試行で最新の選択を変更しません。実際の指数の配当・分割定義とデータ利用権限は別途確認が必要です。保存資料の同期間比較は下記で提供します。
 
 [入力契約・復元方針・検証範囲](gates/g1u-benchmark-series.md)
+
+### 同じ期間の指数と比較
+
+TWR 詳細の `같은 기간의 지수와 비교하기` から、保存した各指数の最新バージョンをまとめて確認できます。1つの応答で台帳・基準時刻・比較期間を揃えます。`KRW` 指数はそのまま、`USD` 指数は元の通貨とウォン換算の収益率を区別します。
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/portfolio/benchmarks
+```
+
+差は公開したポートフォリオ収益率からウォン基準の指数収益率を引いた `%p` です。配当・税金の基準も表示し、為替が不足する場合は元の通貨の値だけを保持します。24時間を超えた観測、開始指数0、資料不足は計算不可とし、サンプルを実際の成績として認証しません。一度に最大32指数を比較し、更新失敗時は以前の比較全体と基準時刻を維持します。
+
+[方針・出典・検証範囲](gates/g1v-portfolio-benchmark-comparison.md)
 
 ### 直接為替による現金評価
 

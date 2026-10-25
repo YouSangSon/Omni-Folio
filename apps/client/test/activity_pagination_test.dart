@@ -87,6 +87,10 @@ Future<void> _tapVisible(WidgetTester tester, Finder finder) async {
 
 class _ActivityApi implements OmniApi {
   @override
+  Future<PortfolioBenchmarks> portfolioBenchmarks() async =>
+      throw UnimplementedError();
+
+  @override
   Future<PortfolioTwr> portfolioTwr() async => throw UnimplementedError();
 
   @override

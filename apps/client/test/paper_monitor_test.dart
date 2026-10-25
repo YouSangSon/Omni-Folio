@@ -344,6 +344,10 @@ void main() {
 
 class _PaperApi implements OmniApi {
   @override
+  Future<PortfolioBenchmarks> portfolioBenchmarks() async =>
+      throw UnimplementedError();
+
+  @override
   Future<PortfolioTwr> portfolioTwr() async => throw UnimplementedError();
 
   @override

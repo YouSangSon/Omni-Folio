@@ -237,9 +237,21 @@ curl -fsS http://127.0.0.1:8080/v1/portfolio/twr
 (cd services/core && go run . benchmark-status -db ../../data/omni-folio.db -benchmark-id synthetic_usd)
 ```
 
-`authority=owner_declared`는 소유자가 제공한 자료라는 뜻이고, `storage_check=verified`는 저장된 내용의 무결성만 확인했다는 뜻입니다. 같은 `source_version`의 내용이나 `fetched_at`이 바뀌면 충돌로 거부하며, 과거 버전 재시도는 최신 선택을 바꾸지 않습니다. 실제 지수의 배당·분할 기준과 사용 권한, 같은 기간의 수익률 비교·환산·화면은 후속 검증 대상입니다.
+`authority=owner_declared`는 소유자가 제공한 자료라는 뜻이고, `storage_check=verified`는 저장된 내용의 무결성만 확인했다는 뜻입니다. 같은 `source_version`의 내용이나 `fetched_at`이 바뀌면 충돌로 거부하며, 과거 버전 재시도는 최신 선택을 바꾸지 않습니다. 실제 지수의 배당·분할 정의와 데이터 사용 권한은 별도 확인 대상입니다. 보관한 자료의 동일 기간 비교는 아래에서 제공합니다.
 
 [입력 계약·복구 정책·검증 범위](gates/g1u-benchmark-series.md)
+
+### 같은 기간의 지수와 비교
+
+TWR 상세의 `같은 기간의 지수와 비교하기`에서 보관한 각 지수의 최신 버전을 함께 조회합니다. 모든 결과는 응답 하나의 원장·보고서 시점과 같은 기간을 사용합니다. `KRW` 지수는 그대로, `USD` 지수는 본래 통화 수익률과 원화 환산 수익률을 구분합니다.
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/portfolio/benchmarks
+```
+
+차이는 공개된 포트폴리오 수익률에서 원화 기준 지수 수익률을 뺀 `%p`입니다. 배당·세금 기준을 함께 표시하며, FX가 부족하면 본래 통화 값만 유지합니다. 24시간을 넘긴 관측·0인 시작 지수·자료 부족은 계산 불가로 표시하고 예시 자료를 실제 성과로 인증하지 않습니다. 한 번에 최대32개를 비교하며 새로고침 실패 시 이전 비교 전체와 시점을 유지합니다.
+
+[정책·출처·검증 범위](gates/g1v-portfolio-benchmark-comparison.md)
 
 ### Direct-FX cash valuation
 

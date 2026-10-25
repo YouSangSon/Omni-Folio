@@ -1,0 +1,973 @@
+{
+  "reports": {
+    "no_benchmarks": {
+      "policy_version": "retrospective_latest_index_24h_native_and_krw_v1",
+      "max_observation_age_seconds": 86400,
+      "portfolio": {
+        "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+        "scope": "whole_portfolio_since_inception",
+        "valuation": {
+          "scope": "whole_portfolio",
+          "policy_version": "current_base_portfolio_valuation_v1",
+          "max_observation_age_seconds": 86400,
+          "base_currency": "KRW",
+          "valuation_as_of": "2026-01-01T00:00:00Z",
+          "ledger_revision": "rev_0000000004",
+          "ledger_as_of": "2026-01-01T00:00:00Z",
+          "ledger_recorded_at": "2026-01-01T00:00:00Z",
+          "status": "complete",
+          "sample": false,
+          "cash_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "holdings_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "total_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "issues": []
+        },
+        "status": "calculated",
+        "sample": false,
+        "period_start": "2025-01-01T00:00:00Z",
+        "period_end": "2026-01-01T00:00:00Z",
+        "external_event_count": 2,
+        "boundary_count": 2,
+        "cumulative_rate": "0.21",
+        "net_contributions": {
+          "currency": "KRW",
+          "amount": "200"
+        },
+        "issues": []
+      },
+      "benchmarks": [],
+      "issues": [
+        {
+          "code": "no_benchmarks",
+          "message": "no benchmark version is available at the report cutoff"
+        }
+      ]
+    },
+    "no_known_benchmarks": {
+      "policy_version": "retrospective_latest_index_24h_native_and_krw_v1",
+      "max_observation_age_seconds": 86400,
+      "portfolio": {
+        "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+        "scope": "whole_portfolio_since_inception",
+        "valuation": {
+          "scope": "whole_portfolio",
+          "policy_version": "current_base_portfolio_valuation_v1",
+          "max_observation_age_seconds": 86400,
+          "base_currency": "KRW",
+          "valuation_as_of": "2026-01-01T00:00:00Z",
+          "ledger_revision": "rev_0000000004",
+          "ledger_as_of": "2026-01-01T00:00:00Z",
+          "ledger_recorded_at": "2026-01-01T00:00:00Z",
+          "status": "complete",
+          "sample": false,
+          "cash_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "holdings_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "total_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "issues": []
+        },
+        "status": "calculated",
+        "sample": false,
+        "period_start": "2025-01-01T00:00:00Z",
+        "period_end": "2026-01-01T00:00:00Z",
+        "external_event_count": 2,
+        "boundary_count": 2,
+        "cumulative_rate": "0.21",
+        "net_contributions": {
+          "currency": "KRW",
+          "amount": "200"
+        },
+        "issues": []
+      },
+      "benchmarks": [],
+      "issues": [
+        {
+          "code": "no_known_benchmarks",
+          "message": "no benchmark version is available at the report cutoff"
+        }
+      ]
+    },
+    "benchmark_limit": {
+      "policy_version": "retrospective_latest_index_24h_native_and_krw_v1",
+      "max_observation_age_seconds": 86400,
+      "portfolio": {
+        "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+        "scope": "whole_portfolio_since_inception",
+        "valuation": {
+          "scope": "whole_portfolio",
+          "policy_version": "current_base_portfolio_valuation_v1",
+          "max_observation_age_seconds": 86400,
+          "base_currency": "KRW",
+          "valuation_as_of": "2026-01-01T00:00:00Z",
+          "ledger_revision": "rev_0000000004",
+          "ledger_as_of": "2026-01-01T00:00:00Z",
+          "ledger_recorded_at": "2026-01-01T00:00:00Z",
+          "status": "complete",
+          "sample": false,
+          "cash_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "holdings_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "total_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "issues": []
+        },
+        "status": "calculated",
+        "sample": false,
+        "period_start": "2025-01-01T00:00:00Z",
+        "period_end": "2026-01-01T00:00:00Z",
+        "external_event_count": 2,
+        "boundary_count": 2,
+        "cumulative_rate": "0.21",
+        "net_contributions": {
+          "currency": "KRW",
+          "amount": "200"
+        },
+        "issues": []
+      },
+      "benchmarks": [],
+      "issues": [
+        {
+          "code": "benchmark_limit",
+          "message": "benchmark comparison exceeds the declared index count limit"
+        }
+      ]
+    },
+    "missing_fx": {
+      "policy_version": "retrospective_latest_index_24h_native_and_krw_v1",
+      "max_observation_age_seconds": 86400,
+      "portfolio": {
+        "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+        "scope": "whole_portfolio_since_inception",
+        "valuation": {
+          "scope": "whole_portfolio",
+          "policy_version": "current_base_portfolio_valuation_v1",
+          "max_observation_age_seconds": 86400,
+          "base_currency": "KRW",
+          "valuation_as_of": "2026-01-01T00:00:00Z",
+          "ledger_revision": "rev_0000000004",
+          "ledger_as_of": "2026-01-01T00:00:00Z",
+          "ledger_recorded_at": "2026-01-01T00:00:00Z",
+          "status": "complete",
+          "sample": false,
+          "cash_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "holdings_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "total_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "issues": []
+        },
+        "status": "calculated",
+        "sample": false,
+        "period_start": "2025-01-01T00:00:00Z",
+        "period_end": "2026-01-01T00:00:00Z",
+        "external_event_count": 2,
+        "boundary_count": 2,
+        "cumulative_rate": "0.21",
+        "net_contributions": {
+          "currency": "KRW",
+          "amount": "200"
+        },
+        "issues": []
+      },
+      "benchmarks": [
+        {
+          "series": {
+            "storage_check": "verified",
+            "authority": "owner_declared",
+            "benchmark_id": "synthetic_krw",
+            "label": "Synthetic KRW test index",
+            "currency": "KRW",
+            "return_basis": "price_index",
+            "source_reference": "https://example.invalid/synthetic-index-methodology",
+            "source_version": "sample-v1",
+            "sample": true,
+            "data_sha256": "91ab0171e53919fa39e8fe02e40181d0190500179053d4eec82573ea5182ef50",
+            "point_count": 2,
+            "first_observed_at": "2025-01-01T00:00:00Z",
+            "last_observed_at": "2026-01-01T00:00:00Z",
+            "fetched_at": "2026-01-01T00:00:00Z",
+            "recorded_at": "2026-01-01T00:00:00Z"
+          },
+          "sample": true,
+          "start": {
+            "observed_at": "2025-01-01T00:00:00Z",
+            "level": "100"
+          },
+          "end": {
+            "observed_at": "2026-01-01T00:00:00Z",
+            "level": "110"
+          },
+          "start_fx": null,
+          "end_fx": null,
+          "native": {
+            "status": "calculated",
+            "rate": "0.1",
+            "issue": null
+          },
+          "krw": {
+            "status": "calculated",
+            "rate": "0.1",
+            "issue": null
+          },
+          "difference_percentage_points": "11"
+        },
+        {
+          "series": {
+            "storage_check": "verified",
+            "authority": "owner_declared",
+            "benchmark_id": "synthetic_usd",
+            "label": "Synthetic USD test index",
+            "currency": "USD",
+            "return_basis": "price_index",
+            "source_reference": "https://example.invalid/synthetic-index-methodology",
+            "source_version": "sample-v1",
+            "sample": true,
+            "data_sha256": "29759933e03fd4ad0221c33a2f6ac34e802b3381c5381b9a2f0d9897f474b1c4",
+            "point_count": 2,
+            "first_observed_at": "2025-01-01T00:00:00Z",
+            "last_observed_at": "2026-01-01T00:00:00Z",
+            "fetched_at": "2026-01-01T00:00:00Z",
+            "recorded_at": "2026-01-01T00:00:00Z"
+          },
+          "sample": true,
+          "start": {
+            "observed_at": "2025-01-01T00:00:00Z",
+            "level": "100"
+          },
+          "end": {
+            "observed_at": "2026-01-01T00:00:00Z",
+            "level": "90"
+          },
+          "start_fx": null,
+          "end_fx": null,
+          "native": {
+            "status": "calculated",
+            "rate": "-0.1",
+            "issue": null
+          },
+          "krw": {
+            "status": "unavailable",
+            "rate": null,
+            "issue": "missing_historical_fx"
+          },
+          "difference_percentage_points": null
+        }
+      ],
+      "issues": []
+    },
+    "portfolio_empty": {
+      "policy_version": "retrospective_latest_index_24h_native_and_krw_v1",
+      "max_observation_age_seconds": 86400,
+      "portfolio": {
+        "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+        "scope": "whole_portfolio_since_inception",
+        "valuation": {
+          "scope": "whole_portfolio",
+          "policy_version": "current_base_portfolio_valuation_v1",
+          "max_observation_age_seconds": 86400,
+          "base_currency": "KRW",
+          "valuation_as_of": "2026-01-01T00:00:00Z",
+          "ledger_revision": "rev_0000000000",
+          "ledger_as_of": "1970-01-01T00:00:00Z",
+          "ledger_recorded_at": "1970-01-01T00:00:00Z",
+          "status": "empty",
+          "sample": false,
+          "cash_value": null,
+          "holdings_value": null,
+          "total_value": null,
+          "issues": []
+        },
+        "status": "empty",
+        "sample": false,
+        "period_start": null,
+        "period_end": "2026-01-01T00:00:00Z",
+        "external_event_count": 0,
+        "boundary_count": 0,
+        "cumulative_rate": null,
+        "net_contributions": null,
+        "issues": []
+      },
+      "benchmarks": [
+        {
+          "series": {
+            "storage_check": "verified",
+            "authority": "owner_declared",
+            "benchmark_id": "synthetic_krw",
+            "label": "Synthetic KRW test index",
+            "currency": "KRW",
+            "return_basis": "price_index",
+            "source_reference": "https://example.invalid/synthetic-index-methodology",
+            "source_version": "sample-v1",
+            "sample": true,
+            "data_sha256": "91ab0171e53919fa39e8fe02e40181d0190500179053d4eec82573ea5182ef50",
+            "point_count": 2,
+            "first_observed_at": "2025-01-01T00:00:00Z",
+            "last_observed_at": "2026-01-01T00:00:00Z",
+            "fetched_at": "2026-01-01T00:00:00Z",
+            "recorded_at": "2026-01-01T00:00:00Z"
+          },
+          "sample": true,
+          "start": null,
+          "end": null,
+          "start_fx": null,
+          "end_fx": null,
+          "native": {
+            "status": "unavailable",
+            "rate": null,
+            "issue": "portfolio_unavailable"
+          },
+          "krw": {
+            "status": "unavailable",
+            "rate": null,
+            "issue": "portfolio_unavailable"
+          },
+          "difference_percentage_points": null
+        },
+        {
+          "series": {
+            "storage_check": "verified",
+            "authority": "owner_declared",
+            "benchmark_id": "synthetic_usd",
+            "label": "Synthetic USD test index",
+            "currency": "USD",
+            "return_basis": "price_index",
+            "source_reference": "https://example.invalid/synthetic-index-methodology",
+            "source_version": "sample-v1",
+            "sample": true,
+            "data_sha256": "29759933e03fd4ad0221c33a2f6ac34e802b3381c5381b9a2f0d9897f474b1c4",
+            "point_count": 2,
+            "first_observed_at": "2025-01-01T00:00:00Z",
+            "last_observed_at": "2026-01-01T00:00:00Z",
+            "fetched_at": "2026-01-01T00:00:00Z",
+            "recorded_at": "2026-01-01T00:00:00Z"
+          },
+          "sample": true,
+          "start": null,
+          "end": null,
+          "start_fx": null,
+          "end_fx": null,
+          "native": {
+            "status": "unavailable",
+            "rate": null,
+            "issue": "portfolio_unavailable"
+          },
+          "krw": {
+            "status": "unavailable",
+            "rate": null,
+            "issue": "portfolio_unavailable"
+          },
+          "difference_percentage_points": null
+        }
+      ],
+      "issues": []
+    },
+    "portfolio_unavailable": {
+      "policy_version": "retrospective_latest_index_24h_native_and_krw_v1",
+      "max_observation_age_seconds": 86400,
+      "portfolio": {
+        "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+        "scope": "whole_portfolio_since_inception",
+        "valuation": {
+          "scope": "whole_portfolio",
+          "policy_version": "current_base_portfolio_valuation_v1",
+          "max_observation_age_seconds": 86400,
+          "base_currency": "KRW",
+          "valuation_as_of": "2026-01-01T00:00:00Z",
+          "ledger_revision": "rev_0000000002",
+          "ledger_as_of": "2025-07-01T00:00:00Z",
+          "ledger_recorded_at": "2026-01-01T00:00:00Z",
+          "status": "complete",
+          "sample": false,
+          "cash_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "holdings_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "total_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "issues": []
+        },
+        "status": "unavailable",
+        "sample": false,
+        "period_start": "2025-01-01T00:00:00Z",
+        "period_end": "2026-01-01T00:00:00Z",
+        "external_event_count": 2,
+        "boundary_count": 2,
+        "cumulative_rate": null,
+        "net_contributions": null,
+        "issues": [
+          {
+            "code": "capital_path_unavailable",
+            "message": "a required input does not meet the declared TWR policy"
+          }
+        ]
+      },
+      "benchmarks": [
+        {
+          "series": {
+            "storage_check": "verified",
+            "authority": "owner_declared",
+            "benchmark_id": "synthetic_krw",
+            "label": "Synthetic KRW test index",
+            "currency": "KRW",
+            "return_basis": "price_index",
+            "source_reference": "https://example.invalid/synthetic-index-methodology",
+            "source_version": "sample-v1",
+            "sample": true,
+            "data_sha256": "91ab0171e53919fa39e8fe02e40181d0190500179053d4eec82573ea5182ef50",
+            "point_count": 2,
+            "first_observed_at": "2025-01-01T00:00:00Z",
+            "last_observed_at": "2026-01-01T00:00:00Z",
+            "fetched_at": "2026-01-01T00:00:00Z",
+            "recorded_at": "2026-01-01T00:00:00Z"
+          },
+          "sample": true,
+          "start": null,
+          "end": null,
+          "start_fx": null,
+          "end_fx": null,
+          "native": {
+            "status": "unavailable",
+            "rate": null,
+            "issue": "portfolio_unavailable"
+          },
+          "krw": {
+            "status": "unavailable",
+            "rate": null,
+            "issue": "portfolio_unavailable"
+          },
+          "difference_percentage_points": null
+        },
+        {
+          "series": {
+            "storage_check": "verified",
+            "authority": "owner_declared",
+            "benchmark_id": "synthetic_usd",
+            "label": "Synthetic USD test index",
+            "currency": "USD",
+            "return_basis": "price_index",
+            "source_reference": "https://example.invalid/synthetic-index-methodology",
+            "source_version": "sample-v1",
+            "sample": true,
+            "data_sha256": "29759933e03fd4ad0221c33a2f6ac34e802b3381c5381b9a2f0d9897f474b1c4",
+            "point_count": 2,
+            "first_observed_at": "2025-01-01T00:00:00Z",
+            "last_observed_at": "2026-01-01T00:00:00Z",
+            "fetched_at": "2026-01-01T00:00:00Z",
+            "recorded_at": "2026-01-01T00:00:00Z"
+          },
+          "sample": true,
+          "start": null,
+          "end": null,
+          "start_fx": null,
+          "end_fx": null,
+          "native": {
+            "status": "unavailable",
+            "rate": null,
+            "issue": "portfolio_unavailable"
+          },
+          "krw": {
+            "status": "unavailable",
+            "rate": null,
+            "issue": "portfolio_unavailable"
+          },
+          "difference_percentage_points": null
+        }
+      ],
+      "issues": []
+    },
+    "zero_start": {
+      "policy_version": "retrospective_latest_index_24h_native_and_krw_v1",
+      "max_observation_age_seconds": 86400,
+      "portfolio": {
+        "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+        "scope": "whole_portfolio_since_inception",
+        "valuation": {
+          "scope": "whole_portfolio",
+          "policy_version": "current_base_portfolio_valuation_v1",
+          "max_observation_age_seconds": 86400,
+          "base_currency": "KRW",
+          "valuation_as_of": "2026-01-01T00:00:00Z",
+          "ledger_revision": "rev_0000000004",
+          "ledger_as_of": "2026-01-01T00:00:00Z",
+          "ledger_recorded_at": "2026-01-01T00:00:00Z",
+          "status": "complete",
+          "sample": false,
+          "cash_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "holdings_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "total_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "issues": []
+        },
+        "status": "calculated",
+        "sample": false,
+        "period_start": "2025-01-01T00:00:00Z",
+        "period_end": "2026-01-01T00:00:00Z",
+        "external_event_count": 2,
+        "boundary_count": 2,
+        "cumulative_rate": "0.21",
+        "net_contributions": {
+          "currency": "KRW",
+          "amount": "200"
+        },
+        "issues": []
+      },
+      "benchmarks": [
+        {
+          "series": {
+            "storage_check": "verified",
+            "authority": "owner_declared",
+            "benchmark_id": "synthetic_krw",
+            "label": "Synthetic KRW test index",
+            "currency": "KRW",
+            "return_basis": "price_index",
+            "source_reference": "https://example.invalid/synthetic-index-methodology",
+            "source_version": "sample-v1",
+            "sample": true,
+            "data_sha256": "09b9e1545e2a0287258d4fff4adfaa9fc6ec5358417beed60c20e9d1984a38ed",
+            "point_count": 2,
+            "first_observed_at": "2025-01-01T00:00:00Z",
+            "last_observed_at": "2026-01-01T00:00:00Z",
+            "fetched_at": "2026-01-01T00:00:00Z",
+            "recorded_at": "2026-01-01T00:00:00Z"
+          },
+          "sample": true,
+          "start": {
+            "observed_at": "2025-01-01T00:00:00Z",
+            "level": "0"
+          },
+          "end": {
+            "observed_at": "2026-01-01T00:00:00Z",
+            "level": "110"
+          },
+          "start_fx": null,
+          "end_fx": null,
+          "native": {
+            "status": "unavailable",
+            "rate": null,
+            "issue": "zero_benchmark_start"
+          },
+          "krw": {
+            "status": "unavailable",
+            "rate": null,
+            "issue": "zero_benchmark_start"
+          },
+          "difference_percentage_points": null
+        }
+      ],
+      "issues": []
+    },
+    "zero_end": {
+      "policy_version": "retrospective_latest_index_24h_native_and_krw_v1",
+      "max_observation_age_seconds": 86400,
+      "portfolio": {
+        "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+        "scope": "whole_portfolio_since_inception",
+        "valuation": {
+          "scope": "whole_portfolio",
+          "policy_version": "current_base_portfolio_valuation_v1",
+          "max_observation_age_seconds": 86400,
+          "base_currency": "KRW",
+          "valuation_as_of": "2026-01-01T00:00:00Z",
+          "ledger_revision": "rev_0000000004",
+          "ledger_as_of": "2026-01-01T00:00:00Z",
+          "ledger_recorded_at": "2026-01-01T00:00:00Z",
+          "status": "complete",
+          "sample": false,
+          "cash_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "holdings_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "total_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "issues": []
+        },
+        "status": "calculated",
+        "sample": false,
+        "period_start": "2025-01-01T00:00:00Z",
+        "period_end": "2026-01-01T00:00:00Z",
+        "external_event_count": 2,
+        "boundary_count": 2,
+        "cumulative_rate": "0.21",
+        "net_contributions": {
+          "currency": "KRW",
+          "amount": "200"
+        },
+        "issues": []
+      },
+      "benchmarks": [
+        {
+          "series": {
+            "storage_check": "verified",
+            "authority": "owner_declared",
+            "benchmark_id": "synthetic_krw",
+            "label": "Synthetic KRW test index",
+            "currency": "KRW",
+            "return_basis": "price_index",
+            "source_reference": "https://example.invalid/synthetic-index-methodology",
+            "source_version": "sample-v1",
+            "sample": true,
+            "data_sha256": "e888eb298bab87eff30bd3aef8d77ee79e2dafd3ce9a9828abb7e5c3a972b1de",
+            "point_count": 2,
+            "first_observed_at": "2025-01-01T00:00:00Z",
+            "last_observed_at": "2026-01-01T00:00:00Z",
+            "fetched_at": "2026-01-01T00:00:00Z",
+            "recorded_at": "2026-01-01T00:00:00Z"
+          },
+          "sample": true,
+          "start": {
+            "observed_at": "2025-01-01T00:00:00Z",
+            "level": "100"
+          },
+          "end": {
+            "observed_at": "2026-01-01T00:00:00Z",
+            "level": "0"
+          },
+          "start_fx": null,
+          "end_fx": null,
+          "native": {
+            "status": "calculated",
+            "rate": "-1",
+            "issue": null
+          },
+          "krw": {
+            "status": "calculated",
+            "rate": "-1",
+            "issue": null
+          },
+          "difference_percentage_points": "121"
+        }
+      ],
+      "issues": []
+    },
+    "stale_fx": {
+      "policy_version": "retrospective_latest_index_24h_native_and_krw_v1",
+      "max_observation_age_seconds": 86400,
+      "portfolio": {
+        "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+        "scope": "whole_portfolio_since_inception",
+        "valuation": {
+          "scope": "whole_portfolio",
+          "policy_version": "current_base_portfolio_valuation_v1",
+          "max_observation_age_seconds": 86400,
+          "base_currency": "KRW",
+          "valuation_as_of": "2026-01-01T00:00:00Z",
+          "ledger_revision": "rev_0000000004",
+          "ledger_as_of": "2026-01-01T00:00:00Z",
+          "ledger_recorded_at": "2026-01-01T00:00:00Z",
+          "status": "complete",
+          "sample": false,
+          "cash_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "holdings_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "total_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "issues": []
+        },
+        "status": "calculated",
+        "sample": false,
+        "period_start": "2025-01-01T00:00:00Z",
+        "period_end": "2026-01-01T00:00:00Z",
+        "external_event_count": 2,
+        "boundary_count": 2,
+        "cumulative_rate": "0.21",
+        "net_contributions": {
+          "currency": "KRW",
+          "amount": "200"
+        },
+        "issues": []
+      },
+      "benchmarks": [
+        {
+          "series": {
+            "storage_check": "verified",
+            "authority": "owner_declared",
+            "benchmark_id": "synthetic_usd",
+            "label": "Synthetic USD test index",
+            "currency": "USD",
+            "return_basis": "price_index",
+            "source_reference": "https://example.invalid/synthetic-index-methodology",
+            "source_version": "sample-v1",
+            "sample": true,
+            "data_sha256": "29759933e03fd4ad0221c33a2f6ac34e802b3381c5381b9a2f0d9897f474b1c4",
+            "point_count": 2,
+            "first_observed_at": "2025-01-01T00:00:00Z",
+            "last_observed_at": "2026-01-01T00:00:00Z",
+            "fetched_at": "2026-01-01T00:00:00Z",
+            "recorded_at": "2026-01-01T00:00:00Z"
+          },
+          "sample": true,
+          "start": {
+            "observed_at": "2025-01-01T00:00:00Z",
+            "level": "100"
+          },
+          "end": {
+            "observed_at": "2026-01-01T00:00:00Z",
+            "level": "90"
+          },
+          "start_fx": {
+            "observed_at": "2024-12-30T23:59:59.999999999Z",
+            "rate": "1000"
+          },
+          "end_fx": {
+            "observed_at": "2026-01-01T00:00:00Z",
+            "rate": "900"
+          },
+          "native": {
+            "status": "calculated",
+            "rate": "-0.1",
+            "issue": null
+          },
+          "krw": {
+            "status": "unavailable",
+            "rate": null,
+            "issue": "stale_historical_fx"
+          },
+          "difference_percentage_points": null
+        }
+      ],
+      "issues": []
+    },
+    "zero_return": {
+      "policy_version": "retrospective_latest_index_24h_native_and_krw_v1",
+      "max_observation_age_seconds": 86400,
+      "portfolio": {
+        "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+        "scope": "whole_portfolio_since_inception",
+        "valuation": {
+          "scope": "whole_portfolio",
+          "policy_version": "current_base_portfolio_valuation_v1",
+          "max_observation_age_seconds": 86400,
+          "base_currency": "KRW",
+          "valuation_as_of": "2026-01-01T00:00:00Z",
+          "ledger_revision": "rev_0000000004",
+          "ledger_as_of": "2026-01-01T00:00:00Z",
+          "ledger_recorded_at": "2026-01-01T00:00:00Z",
+          "status": "complete",
+          "sample": false,
+          "cash_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "holdings_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "total_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "issues": []
+        },
+        "status": "calculated",
+        "sample": false,
+        "period_start": "2025-01-01T00:00:00Z",
+        "period_end": "2026-01-01T00:00:00Z",
+        "external_event_count": 2,
+        "boundary_count": 2,
+        "cumulative_rate": "0.21",
+        "net_contributions": {
+          "currency": "KRW",
+          "amount": "200"
+        },
+        "issues": []
+      },
+      "benchmarks": [
+        {
+          "series": {
+            "storage_check": "verified",
+            "authority": "owner_declared",
+            "benchmark_id": "synthetic_krw",
+            "label": "Synthetic KRW test index",
+            "currency": "KRW",
+            "return_basis": "price_index",
+            "source_reference": "https://example.invalid/synthetic-index-methodology",
+            "source_version": "sample-v1",
+            "sample": true,
+            "data_sha256": "27f1481253bf7ae92d372dc13f0e2427a1d9f4b2935e2bfedb4acc6c2223abd7",
+            "point_count": 2,
+            "first_observed_at": "2025-01-01T00:00:00Z",
+            "last_observed_at": "2026-01-01T00:00:00Z",
+            "fetched_at": "2026-01-01T00:00:00Z",
+            "recorded_at": "2026-01-01T00:00:00Z"
+          },
+          "sample": true,
+          "start": {
+            "observed_at": "2025-01-01T00:00:00Z",
+            "level": "100"
+          },
+          "end": {
+            "observed_at": "2026-01-01T00:00:00Z",
+            "level": "100"
+          },
+          "start_fx": null,
+          "end_fx": null,
+          "native": {
+            "status": "calculated",
+            "rate": "0",
+            "issue": null
+          },
+          "krw": {
+            "status": "calculated",
+            "rate": "0",
+            "issue": null
+          },
+          "difference_percentage_points": "21"
+        }
+      ],
+      "issues": []
+    },
+    "native_limit": {
+      "policy_version": "retrospective_latest_index_24h_native_and_krw_v1",
+      "max_observation_age_seconds": 86400,
+      "portfolio": {
+        "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+        "scope": "whole_portfolio_since_inception",
+        "valuation": {
+          "scope": "whole_portfolio",
+          "policy_version": "current_base_portfolio_valuation_v1",
+          "max_observation_age_seconds": 86400,
+          "base_currency": "KRW",
+          "valuation_as_of": "2026-01-01T00:00:00Z",
+          "ledger_revision": "rev_0000000004",
+          "ledger_as_of": "2026-01-01T00:00:00Z",
+          "ledger_recorded_at": "2026-01-01T00:00:00Z",
+          "status": "complete",
+          "sample": false,
+          "cash_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "holdings_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "total_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "issues": []
+        },
+        "status": "calculated",
+        "sample": false,
+        "period_start": "2025-01-01T00:00:00Z",
+        "period_end": "2026-01-01T00:00:00Z",
+        "external_event_count": 2,
+        "boundary_count": 2,
+        "cumulative_rate": "0.21",
+        "net_contributions": {
+          "currency": "KRW",
+          "amount": "200"
+        },
+        "issues": []
+      },
+      "benchmarks": [
+        {
+          "series": {
+            "storage_check": "verified",
+            "authority": "owner_declared",
+            "benchmark_id": "synthetic_usd",
+            "label": "Synthetic USD test index",
+            "currency": "USD",
+            "return_basis": "price_index",
+            "source_reference": "https://example.invalid/synthetic-index-methodology",
+            "source_version": "sample-v1",
+            "sample": false,
+            "data_sha256": "991758d6f2469d0367b668598098e25896681a0a859bca214abeb9f06a6a52f5",
+            "point_count": 2,
+            "first_observed_at": "2025-01-01T00:00:00Z",
+            "last_observed_at": "2026-01-01T00:00:00Z",
+            "fetched_at": "2026-01-01T00:00:00Z",
+            "recorded_at": "2026-01-01T00:00:00Z"
+          },
+          "sample": true,
+          "start": {
+            "observed_at": "2025-01-01T00:00:00Z",
+            "level": "0.0000000000000000000000000000000000000000000000000000000000003"
+          },
+          "end": {
+            "observed_at": "2026-01-01T00:00:00Z",
+            "level": "1000000000000000000000000000000000000000000000000000000000001"
+          },
+          "start_fx": {
+            "observed_at": "2025-01-01T00:00:00Z",
+            "rate": "1000000000000000000000000000000000000000000000000000000000001"
+          },
+          "end_fx": {
+            "observed_at": "2026-01-01T00:00:00Z",
+            "rate": "0.0000000000000000000000000000000000000000000000000000000000003"
+          },
+          "native": {
+            "status": "unavailable",
+            "rate": null,
+            "issue": "numerical_limit"
+          },
+          "krw": {
+            "status": "calculated",
+            "rate": "0",
+            "issue": null
+          },
+          "difference_percentage_points": "21"
+        }
+      ],
+      "issues": []
+    }
+  }
+}

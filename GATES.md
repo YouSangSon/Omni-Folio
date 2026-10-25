@@ -37,7 +37,8 @@ G1 ledger vertical slice
 ├─ G1.22 verified public ledger activity CSV export
 ├─ G1.23 retrospective portfolio XIRR and explicit root confidence
 ├─ G1.24 retrospective cash-flow-boundary cumulative TWR (gates/g1t-portfolio-twr.md)
-└─ G1.25 immutable KRW/USD benchmark index versions and backup proof (gates/g1u-benchmark-series.md)
+├─ G1.25 immutable KRW/USD benchmark index versions and backup proof (gates/g1u-benchmark-series.md)
+└─ G1.26 same-period native/KRW benchmark comparison (gates/g1v-portfolio-benchmark-comparison.md)
    |
 G2 client vertical slice
 ├─ G2.1 Flutter iOS/Android/web build
@@ -171,3 +172,5 @@ G6 PostgreSQL and Kubernetes promotion
 - G1.24는 외부 입출금 경계와 기말을 같은 관찰에서 평가하는 누적 TWR 단위다. exact 시각/정정·분할 가격 단위·양수 중간 자본과 전액 출금/손실의 구분, 닫힌 상태 계약과 독립 수치·원격 Core/Client 전체·새 web/Android 릴리스가 통과했다. 실제 broker 성과·benchmark·재투자 자동 연결은 별도다. [정책과 검증](gates/g1t-portfolio-twr.md)
 
 - G1.25는 KRW·USD 지수 입력·보관/복구의 선행 단위다. owner 선언과 저장 무결성을 구분하고, 버전 충돌·재시도·추가 trigger/민감 오류·v16 권한을 검증했다. 독립 리뷰와 보완분 재검토, 최종 원격 Core/Client 전체·web/ARM64 release·소스 일치 통과 후 병합했다. 실제 benchmark 비교·환산·화면은 계속 구현할 범위다. [계약과 검증](gates/g1u-benchmark-series.md)
+
+- G1.26은 TWR과 같은 관찰의 지수 비교 API/화면이다. 최신 known 버전과 실제 관측·FX 시각을 고정하며 native/KRW 미계산과 %p를 구분한다. 실제 API404 RED 후 구현 중이고 독립 코드 리뷰 통과 후 최종 원격 검사 대기 상태다. [정책과 검증](gates/g1v-portfolio-benchmark-comparison.md)

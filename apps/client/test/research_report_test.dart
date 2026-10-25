@@ -376,6 +376,10 @@ void main() {
 
 class _ResearchApi implements OmniApi {
   @override
+  Future<PortfolioBenchmarks> portfolioBenchmarks() async =>
+      throw UnimplementedError();
+
+  @override
   Future<PortfolioTwr> portfolioTwr() async => throw UnimplementedError();
 
   @override

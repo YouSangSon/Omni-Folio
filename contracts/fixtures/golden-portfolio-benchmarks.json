@@ -1,0 +1,136 @@
+{
+  "policy_version": "retrospective_latest_index_24h_native_and_krw_v1",
+  "max_observation_age_seconds": 86400,
+  "portfolio": {
+    "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+    "scope": "whole_portfolio_since_inception",
+    "valuation": {
+      "scope": "whole_portfolio",
+      "policy_version": "current_base_portfolio_valuation_v1",
+      "max_observation_age_seconds": 86400,
+      "base_currency": "KRW",
+      "valuation_as_of": "2026-01-01T00:00:00Z",
+      "ledger_revision": "rev_0000000004",
+      "ledger_as_of": "2026-01-01T00:00:00Z",
+      "ledger_recorded_at": "2026-01-01T00:00:00Z",
+      "status": "complete",
+      "sample": false,
+      "cash_value": {
+        "currency": "KRW",
+        "amount": "231"
+      },
+      "holdings_value": {
+        "currency": "KRW",
+        "amount": "0"
+      },
+      "total_value": {
+        "currency": "KRW",
+        "amount": "231"
+      },
+      "issues": []
+    },
+    "status": "calculated",
+    "sample": false,
+    "period_start": "2025-01-01T00:00:00Z",
+    "period_end": "2026-01-01T00:00:00Z",
+    "external_event_count": 2,
+    "boundary_count": 2,
+    "cumulative_rate": "0.21",
+    "net_contributions": {
+      "currency": "KRW",
+      "amount": "200"
+    },
+    "issues": []
+  },
+  "benchmarks": [
+    {
+      "series": {
+        "storage_check": "verified",
+        "authority": "owner_declared",
+        "benchmark_id": "synthetic_krw",
+        "label": "Synthetic KRW test index",
+        "currency": "KRW",
+        "return_basis": "price_index",
+        "source_reference": "https://example.invalid/synthetic-index-methodology",
+        "source_version": "sample-v1",
+        "sample": true,
+        "data_sha256": "91ab0171e53919fa39e8fe02e40181d0190500179053d4eec82573ea5182ef50",
+        "point_count": 2,
+        "first_observed_at": "2025-01-01T00:00:00Z",
+        "last_observed_at": "2026-01-01T00:00:00Z",
+        "fetched_at": "2026-01-01T00:00:00Z",
+        "recorded_at": "2026-01-01T00:00:00Z"
+      },
+      "sample": true,
+      "start": {
+        "observed_at": "2025-01-01T00:00:00Z",
+        "level": "100"
+      },
+      "end": {
+        "observed_at": "2026-01-01T00:00:00Z",
+        "level": "110"
+      },
+      "start_fx": null,
+      "end_fx": null,
+      "native": {
+        "status": "calculated",
+        "rate": "0.1",
+        "issue": null
+      },
+      "krw": {
+        "status": "calculated",
+        "rate": "0.1",
+        "issue": null
+      },
+      "difference_percentage_points": "11"
+    },
+    {
+      "series": {
+        "storage_check": "verified",
+        "authority": "owner_declared",
+        "benchmark_id": "synthetic_usd",
+        "label": "Synthetic USD test index",
+        "currency": "USD",
+        "return_basis": "price_index",
+        "source_reference": "https://example.invalid/synthetic-index-methodology",
+        "source_version": "sample-v1",
+        "sample": true,
+        "data_sha256": "29759933e03fd4ad0221c33a2f6ac34e802b3381c5381b9a2f0d9897f474b1c4",
+        "point_count": 2,
+        "first_observed_at": "2025-01-01T00:00:00Z",
+        "last_observed_at": "2026-01-01T00:00:00Z",
+        "fetched_at": "2026-01-01T00:00:00Z",
+        "recorded_at": "2026-01-01T00:00:00Z"
+      },
+      "sample": true,
+      "start": {
+        "observed_at": "2025-01-01T00:00:00Z",
+        "level": "100"
+      },
+      "end": {
+        "observed_at": "2026-01-01T00:00:00Z",
+        "level": "90"
+      },
+      "start_fx": {
+        "observed_at": "2025-01-01T00:00:00Z",
+        "rate": "1000"
+      },
+      "end_fx": {
+        "observed_at": "2026-01-01T00:00:00Z",
+        "rate": "900"
+      },
+      "native": {
+        "status": "calculated",
+        "rate": "-0.1",
+        "issue": null
+      },
+      "krw": {
+        "status": "calculated",
+        "rate": "-0.19",
+        "issue": null
+      },
+      "difference_percentage_points": "40"
+    }
+  ],
+  "issues": []
+}
