@@ -165,7 +165,7 @@ mkdir -p -m 700 data/exports
   -out ../../data/exports/ledger.csv)
 ```
 
-`ledger-activity-export.v1` 收据包含 revision、行数和 SHA256。不会覆盖已有输出。超过 10,000 行或 32 MiB，或存在不安全的证券标记时，导出会失败。输出文件夹必须属于当前用户、不得允许其他用户写入，并且上级路径也必须可信。此 CSV 既不是 backup，也不是重新导入格式。在电子表格中请将所有列作为文本导入。[契约与限制](gates/g1q-ledger-activity-export.md)
+`ledger-activity-export.v1` 收据包含 revision、行数和 SHA256。不会覆盖已有输出。超过 10,000 行或 32 MiB，或存在不安全的证券标记时，导出会失败。输出文件夹必须属于当前用户、不得允许其他用户写入，并且上级路径也必须可信。此 CSV 既不是 backup，也不是重新导入格式。在电子表格中请将所有列作为文本导入。[契约与限制](gates/g1r-ledger-activity-export.md)
 
 ### 切换现有账本的时间重放策略
 

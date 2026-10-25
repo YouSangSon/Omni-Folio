@@ -33,7 +33,8 @@ G1 ledger vertical slice
 ├─ G1.18 current valuation release browser and single-announcement semantics
 ├─ G1.19 exact fractional-second activity ordering and valuation cutoff
 ├─ G1.20 versioned chronological FIFO and explicit legacy replay activation
-└─ G1.21 duplicate-import valuation and complete recorded-time cutoff
+├─ G1.21 duplicate-import valuation and complete recorded-time cutoff
+└─ G1.22 verified public ledger activity CSV export
    |
 G2 client vertical slice
 ├─ G2.1 Flutter iOS/Android/web build
@@ -117,6 +118,7 @@ G6 PostgreSQL and Kubernetes promotion
 - G1.17은 서버 소유 UTC cutoff 하나와 read transaction 하나에서 replay-verified 원장 cash와 보유자산 시장가를 KRW로 exact 합산한다. local fixture 가격과 `currency -> KRW` 직접 FX만 사용하고 하나라도 missing/stale/ambiguous이면 cash/holdings/total aggregate를 모두 숨긴다. Flutter는 optional read로 알려진 정상 응답과 원래 revision/cutoff를 함께 보존하며 local sample·현재 증권사 값 아님·revision mismatch를 표시한다. 원가 환산·PnL·성과·provider freshness·broker/live truth는 아니다. [세부 gate](gates/g1m-current-portfolio-valuation.md)
 - G1.19는 canonical UTC 소수초의 거래 내역 정렬·cursor 경계와 현재 평가 cutoff를 같은 정확한 시각 순서로 처리한다. 기존 FIFO·snapshot·backup 정책 교정은 별도 후속 과제다. [세부 gate](gates/g1o-exact-activity-cutoff.md)
 - G1.20은 UTC 순서의 원장 재생을 영속 selector·명시적 전환 receipt와 schema22/backup v16으로 연결한다. 과거 golden 보관 검증과 현재 활성화를 구분하며, 최종 전체 check·로컬 smoke·소유 자원 정리를 통과했다. [세부 gate](gates/g1p-chronological-ledger-replay.md)
+- G1.22는 동일 DB 관찰의 공개 원장 활동을 원문 정밀도·최신 순서·정정 행을 유지한 private CSV로 저장한다. 실제 CLI·출력/경로 경계·부분 쓰기 정리와 원격 Core 검사가 통과했다. 계좌·내부 ID·정정 대상 연결이 없어 backup·재가져오기 형식은 아니다. [세부 gate](gates/g1r-ledger-activity-export.md)
 - G1.21은 중복 import가 바꾼 metadata 시각과 마지막 event 시각의 잘못된 동일성 검사를 제거한다. 기존 평가 응답·metadata cutoff는 유지하고 전체 event 기록 시각까지 같은 transaction에서 검사한다. [세부 gate](gates/g1q-valuation-metadata-cutoff.md)
 - G4V/K2B3는 Kiwoom mock LIMIT submit을 provider/mode-bound value capability 뒤로 옮겨 application service에서 credential·환경·provider error 타입을 제거한다. zero/mismatch capability는 preflight 전에 차단하고 durable dispatch-before-write, one-shot write, definitive reject와 conservative unknown, raw detail redaction을 유지한다. 새 provider, credential, public API/UI, DB/schema 또는 live authority는 아니다. [세부 gate](gates/g4v-k2b3-limit-order-dispatch-port.md)
 - G4W는 차트 원천의 명시적 종목·통화를 선택 holding과 비교하고 legacy 누락·가격 조정·봉 시각의 미확인 상태를 표시한다. 평균단가와 매매 marker는 계속 후속 gate다. [세부 gate](gates/g4w-chart-source-basis.md)
