@@ -131,6 +131,8 @@ make client-ios-release API_URL=http://127.0.0.1:8080
 
 Preview는 원장을 변경하지 않습니다. 반환된 `preview_id`를 새 idempotency key와 함께 apply합니다.
 
+거래 내역 화면에서 텍스트를 붙여 넣거나 `CSV 파일 선택`으로 `UTF-8`·`1MiB` 이하 파일을 불러옵니다. 선택만으로 전송·적용되지 않으며, 내용을 확인한 뒤 미리보기와 적용을 각각 실행합니다. 취소·읽기 오류는 기존 입력과 결과를 보존합니다. [파일 입력의 검증 범위](gates/g4p-first-run-import-recovery.md#csv-file-selection)
+
 CSV type은 `DEPOSIT`, `WITHDRAWAL`, `BUY`, `SELL`, `DIVIDEND`, `FEE`, `TAX`, `SPLIT`, `CASH_VOID`, `FX_EXCHANGE`입니다. 금액과 수량은 canonical decimal string이며, 현금 event 부호와 split의 zero cash impact는 apply 전에 검증됩니다. `CASH_VOID`만 optional `corrects_source_event_id` column을 사용하며, 이미 적용된 같은 계좌·통화 cash-like event의 exact 반대 금액이어야 합니다. 원본은 삭제되지 않고 Flutter preview에 원본 source/type/currency/amount와 상쇄 금액이 함께 표시됩니다. `FX_EXCHANGE`는 매도 leg의 `currency`/음수 `amount`와 서로 다른 매수 leg의 `counter_currency`/양수 `counter_amount`를 하나의 행에 요구합니다. 두 금액은 환율이나 현재 시세를 뜻하지 않으며 수수료는 별도 `FEE` 행으로 기록합니다.
 
 ```sh

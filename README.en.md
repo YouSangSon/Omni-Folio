@@ -131,6 +131,8 @@ The outputs are `output/ios-release-<source SHA>/Runner.app` and `build.json`. `
 
 Preview does not change the ledger. Apply the returned `preview_id` with a new idempotency key.
 
+On History, paste text or use `CSV 파일 선택` to load a `UTF-8` file up to `1MiB`. Selection alone sends and applies nothing; review the contents, then run preview and apply separately. Cancellation and read errors preserve the existing input and results. [File input verification scope](gates/g4p-first-run-import-recovery.md#csv-file-selection)
+
 CSV types are `DEPOSIT`, `WITHDRAWAL`, `BUY`, `SELL`, `DIVIDEND`, `FEE`, `TAX`, `SPLIT`, `CASH_VOID`, and `FX_EXCHANGE`. Amounts and quantities are canonical decimal strings; cash-event signs and the zero cash impact of splits are validated before application. Only `CASH_VOID` uses the optional `corrects_source_event_id` column, and its amount must be the exact opposite of an already applied cash-like event in the same account and currency. The original is not deleted; Flutter preview shows the original source/type/currency/amount alongside the offsetting amount. `FX_EXCHANGE` requires the selling leg's `currency`/negative `amount` and a different buying leg's `counter_currency`/positive `counter_amount` in one row. Neither amount represents an exchange rate or current market quote; record fees in separate `FEE` rows.
 
 ```sh

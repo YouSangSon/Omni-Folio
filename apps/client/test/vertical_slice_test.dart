@@ -6,6 +6,7 @@ import 'dart:ui' show SemanticsAction;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:file_selector_platform_interface/file_selector_platform_interface.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:omni_folio_client/api.dart';
@@ -61,6 +62,7 @@ class FakeApi implements OmniApi {
   int candleCalls = 0;
   Completer<ApplyReceipt>? applyCompleter;
   final List<String> applyKeys = [];
+  final List<String> previewInputs = [];
   bool fail;
   bool failSnapshot;
   bool failReconciliation;
@@ -83,6 +85,7 @@ class FakeApi implements OmniApi {
 
   @override
   Future<ImportPreview> preview(String csv) async {
+    previewInputs.add(csv);
     if (fail) throw ApiException(failureMessage);
     return previewValue;
   }
@@ -1172,11 +1175,22 @@ void main() {
     await tester.tap(find.text('내역'));
     await pumpUi(tester);
 
+    await tester.scrollUntilVisible(
+      find.text('거래 내역을 불러오지 못했습니다. 다시 시도하세요.'),
+      200,
+      scrollable: find
+          .descendant(
+            of: find.byType(ListView).first,
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await pumpUi(tester);
     expect(find.textContaining('account-main'), findsNothing);
     expect(find.text('거래 내역을 불러오지 못했습니다. 다시 시도하세요.'), findsOneWidget);
     api.failActivities = false;
-    await tester.drag(find.byType(ListView), const Offset(0, -500));
-    await tester.pump();
+    await tester.ensureVisible(find.text('최근 거래 다시 불러오기'));
+    await pumpUi(tester);
     await tester.tap(find.text('최근 거래 다시 불러오기'));
     await pumpUi(tester);
     expect(find.text('매수 · AAPL'), findsOneWidget);
@@ -2031,6 +2045,290 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('CSV file selection waits for explicit preview and apply', (
+    tester,
+  ) async {
+    final previous = FileSelectorPlatform.instance;
+    final picker = _CsvPicker()..result = _CsvFile('header\n한국어');
+    FileSelectorPlatform.instance = picker;
+    addTearDown(() => FileSelectorPlatform.instance = previous);
+    final api = goldenApi();
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('내역'));
+    await pumpUi(tester);
+    await tester.tap(find.text('CSV 파일 선택'));
+    await pumpUi(tester);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      'header\n한국어',
+    );
+    expect(api.previewInputs, isEmpty);
+    expect(api.applyKeys, isEmpty);
+    expect(picker.types!.single.extensions, ['csv']);
+    expect(picker.types!.single.uniformTypeIdentifiers, [
+      'public.comma-separated-values-text',
+    ]);
+    await tester.tap(find.text('미리보기 만들기'));
+    await pumpUi(tester);
+    expect(api.previewInputs, ['header\n한국어']);
+    final apply = find.text('원자적으로 적용');
+    await tester.ensureVisible(apply);
+    await pumpUi(tester);
+    await tester.tap(apply);
+    await pumpUi(tester);
+    expect(find.text('적용 확인'), findsOneWidget);
+    expect(api.applyKeys, ['import-${api.previewValue.previewId}']);
+  });
+
+  testWidgets('CSV cancellation, same content and failure preserve results', (
+    tester,
+  ) async {
+    final previous = FileSelectorPlatform.instance;
+    final picker = _CsvPicker();
+    FileSelectorPlatform.instance = picker;
+    addTearDown(() => FileSelectorPlatform.instance = previous);
+    final api = goldenApi();
+    await _openCsvImport(tester, api);
+    await tester.enterText(find.byType(TextField), 'header\nrow');
+    await tester.tap(find.text('미리보기 만들기'));
+    await pumpUi(tester);
+    await tester.ensureVisible(find.text('원자적으로 적용'));
+    await pumpUi(tester);
+    await tester.tap(find.text('원자적으로 적용'));
+    await pumpUi(tester);
+    await tester.ensureVisible(find.byType(TextField));
+    await pumpUi(tester);
+    final field = tester.widget<TextField>(find.byType(TextField));
+    const selection = TextSelection(baseOffset: 2, extentOffset: 5);
+    field.controller!.selection = selection;
+    final outerScroll = find
+        .descendant(
+          of: find.byType(ListView).first,
+          matching: find.byType(Scrollable),
+        )
+        .first;
+
+    Future<void> select({String? error}) async {
+      await tester.scrollUntilVisible(
+        find.text('CSV 파일 선택'),
+        -200,
+        scrollable: outerScroll,
+      );
+      await pumpUi(tester);
+      await tester.tap(find.text('CSV 파일 선택'));
+      await pumpUi(tester);
+      if (error != null) {
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('import-error')),
+          200,
+          scrollable: outerScroll,
+        );
+        await pumpUi(tester);
+        expect(find.textContaining(error), findsOneWidget);
+      }
+    }
+
+    Future<void> retained() async {
+      expect(field.controller!.text, 'header\nrow');
+      expect(field.controller!.selection, selection);
+      await tester.scrollUntilVisible(
+        find.text('원자적으로 적용'),
+        200,
+        scrollable: outerScroll,
+      );
+      await pumpUi(tester);
+      expect(find.text('원자적으로 적용'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('적용 확인'),
+        200,
+        scrollable: outerScroll,
+      );
+      await pumpUi(tester);
+      expect(find.textContaining('receipt_golden_001'), findsOneWidget);
+      expect(api.previewInputs, hasLength(1));
+      expect(api.applyKeys, hasLength(1));
+    }
+
+    await select();
+    await retained();
+    picker.error = Exception('private/path/account-secret.csv');
+    await select(error: '기존 입력과 결과는 유지됩니다.');
+    expect(find.textContaining('private/path'), findsNothing);
+    await retained();
+    picker.error = null;
+    picker.result = _CsvFile.bytes(Uint8List.fromList([0xc3, 0x28]));
+    await select(error: 'UTF-8로 저장한');
+    await retained();
+    picker.result = _CsvFile.bytes(Uint8List((1 << 20) + 1));
+    await select(error: '1MiB 이하로 선택하세요.');
+    await retained();
+    picker.result = _CsvFile('header\nrow');
+    await select(error: '1MiB 이하로 선택하세요.');
+    await retained();
+    picker.result = _CsvFile('header\nchanged');
+    await select(error: '이전 미리보기는 무효');
+    expect(field.controller!.text, 'header\nchanged');
+    expect(find.text('적용 확인'), findsNothing);
+    expect(find.text('원자적으로 적용'), findsNothing);
+    expect(find.textContaining('이전 미리보기는 무효'), findsOneWidget);
+    expect(api.previewInputs, hasLength(1));
+  });
+
+  testWidgets(
+    'CSV pending selection guards same-frame actions and survives resize',
+    (tester) async {
+      tester.view.physicalSize = const Size(899, 1100);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final previous = FileSelectorPlatform.instance;
+      final pending = Completer<XFile?>();
+      final picker = _CsvPicker()..pending = pending;
+      FileSelectorPlatform.instance = picker;
+      addTearDown(() => FileSelectorPlatform.instance = previous);
+      final api = goldenApi();
+      await _openCsvImport(tester, api);
+      await tester.enterText(find.byType(TextField), 'header\nrow');
+      await tester.tap(find.text('미리보기 만들기'));
+      await pumpUi(tester);
+      final pick = tester
+          .widget<OutlinedButton>(
+            find.widgetWithText(OutlinedButton, 'CSV 파일 선택'),
+          )
+          .onPressed!;
+      final preview = tester
+          .widget<ElevatedButton>(
+            find.widgetWithText(ElevatedButton, '미리보기 만들기'),
+          )
+          .onPressed!;
+      final apply = tester
+          .widget<ElevatedButton>(
+            find.widgetWithText(ElevatedButton, '원자적으로 적용'),
+          )
+          .onPressed!;
+      pick();
+      pick();
+      preview();
+      apply();
+      await tester.pump();
+      expect(picker.calls, 1);
+      expect(api.previewInputs, hasLength(1));
+      expect(api.applyKeys, isEmpty);
+      expect(tester.widget<TextField>(find.byType(TextField)).readOnly, isTrue);
+      tester.view.physicalSize = const Size(900, 1100);
+      await pumpUi(tester);
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.widgetWithText(OutlinedButton, 'CSV 파일 선택'),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<ElevatedButton>(
+              find.widgetWithText(ElevatedButton, '원자적으로 적용'),
+            )
+            .onPressed,
+        isNull,
+      );
+      pending.complete(_CsvFile('header\nchanged'));
+      await pumpUi(tester);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).readOnly,
+        isFalse,
+      );
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'header\nchanged',
+      );
+      expect(find.text('원자적으로 적용'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('CSV pending read can finish after leaving the import page', (
+    tester,
+  ) async {
+    final previous = FileSelectorPlatform.instance;
+    final read = Completer<Uint8List>();
+    final picker = _CsvPicker()
+      ..result = (_CsvFile('header')..pendingRead = read);
+    FileSelectorPlatform.instance = picker;
+    addTearDown(() => FileSelectorPlatform.instance = previous);
+    final api = goldenApi();
+    await _openCsvImport(tester, api);
+    await tester.tap(find.text('CSV 파일 선택'));
+    await tester.pump();
+    expect(tester.widget<TextField>(find.byType(TextField)).readOnly, isTrue);
+    await tester.tap(find.text('홈'));
+    await pumpUi(tester);
+    read.complete(Uint8List.fromList(utf8.encode('header\nlate')));
+    await pumpUi(tester);
+    expect(api.previewInputs, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final brightness in Brightness.values) {
+    testWidgets('CSV selection fits 320px at 200 percent in $brightness', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(320, 900);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      tester.platformDispatcher.platformBrightnessTestValue = brightness;
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      final semantics = tester.ensureSemantics();
+      await _openCsvImport(tester, goldenApi());
+      final button = find.widgetWithText(OutlinedButton, 'CSV 파일 선택');
+      await tester.ensureVisible(button);
+      await pumpUi(tester);
+      expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
+      expect(
+        tester.getSemantics(button),
+        matchesSemantics(
+          label: 'CSV 파일 선택',
+          isButton: true,
+          hasEnabledState: true,
+          isEnabled: true,
+          isFocusable: true,
+          hasTapAction: true,
+          hasFocusAction: true,
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      semantics.dispose();
+    });
+  }
+
+  testWidgets(
+    'CSV file selection is reachable from the text field by keyboard',
+    (tester) async {
+      final previous = FileSelectorPlatform.instance;
+      final picker = _CsvPicker();
+      FileSelectorPlatform.instance = picker;
+      addTearDown(() => FileSelectorPlatform.instance = previous);
+      await _openCsvImport(tester, goldenApi());
+      await tester.tap(find.byType(TextField));
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await pumpUi(tester);
+      expect(picker.calls, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('applicable preview displays atomic apply receipt', (
     tester,
   ) async {
@@ -2121,6 +2419,18 @@ void main() {
       await tester.pump();
       await resize(initialWidth);
       expect(tester.widget<ElevatedButton>(apply).onPressed, isNull);
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.widgetWithText(OutlinedButton, 'CSV 파일 선택'),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).readOnly,
+        isFalse,
+      );
       expect(api.applyKeys, hasLength(2));
 
       pendingApply.complete(api.receiptValue);
@@ -2443,6 +2753,8 @@ void main() {
     api.fail = true;
     await tester.tap(find.text('미리보기 만들기'));
     await pumpUi(tester);
+    await tester.ensureVisible(find.byKey(const Key('import-error')));
+    await pumpUi(tester);
     expect(find.textContaining(secret), findsNothing);
     expect(find.textContaining('미리보기를 완료하지 못했습니다.'), findsOneWidget);
     expect(
@@ -2451,6 +2763,8 @@ void main() {
     );
 
     api.fail = false;
+    await tester.ensureVisible(find.text('미리보기 만들기'));
+    await pumpUi(tester);
     await tester.tap(find.text('미리보기 만들기'));
     await pumpUi(tester);
     api.applyFailures = 1;
@@ -3281,4 +3595,43 @@ void main() {
       semantics.dispose();
     }
   });
+}
+
+class _CsvPicker extends FileSelectorPlatform {
+  XFile? result;
+  Object? error;
+  Completer<XFile?>? pending;
+  int calls = 0;
+  List<XTypeGroup>? types;
+  @override
+  Future<XFile?> openFile({
+    List<XTypeGroup>? acceptedTypeGroups,
+    String? initialDirectory,
+    String? confirmButtonText,
+  }) async {
+    calls += 1;
+    types = acceptedTypeGroups;
+    if (error != null) throw error!;
+    return pending?.future ?? result;
+  }
+}
+
+class _CsvFile extends XFile {
+  _CsvFile(String text) : this.bytes(Uint8List.fromList(utf8.encode(text)));
+  _CsvFile.bytes(this.bytes) : super('unused');
+  final Uint8List bytes;
+  Completer<Uint8List>? pendingRead;
+  @override
+  Future<int> length() async => bytes.length;
+  @override
+  Stream<Uint8List> openRead([int? start, int? end]) async* {
+    yield await (pendingRead?.future ?? Future.value(bytes));
+  }
+}
+
+Future<void> _openCsvImport(WidgetTester tester, FakeApi api) async {
+  await tester.pumpWidget(OmniFolioApp(api: api));
+  await pumpUi(tester);
+  await tester.tap(find.text('내역'));
+  await pumpUi(tester);
 }
