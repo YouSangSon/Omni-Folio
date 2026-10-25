@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:omni_folio_client/api.dart';
+import 'package:omni_folio_client/models.dart' show PortfolioXirr;
 import 'package:omni_folio_client/app.dart';
 import 'package:omni_folio_client/paper_monitor.dart';
 import 'package:omni_folio_client/paper_monitor_page.dart';

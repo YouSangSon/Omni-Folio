@@ -8,7 +8,6 @@ import 'package:http/testing.dart';
 import 'package:omni_folio_client/api.dart';
 import 'package:omni_folio_client/app.dart';
 import 'package:omni_folio_client/models.dart';
-import 'package:omni_folio_client/portfolio_xirr_page.dart';
 import 'package:omni_folio_client/research_report.dart' show researchPercent;
 
 import 'vertical_slice_test.dart' show FakeApi, fixture, goldenApi, pumpUi;
