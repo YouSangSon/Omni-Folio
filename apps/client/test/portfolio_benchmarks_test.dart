@@ -45,18 +45,24 @@ Future<void> _open(WidgetTester tester, FakeApi api) async {
     xirr.hitTestable(),
     150,
     scrollable: find
-        .ancestor(of: xirr, matching: find.byType(Scrollable))
+        .descendant(
+          of: find.byType(OverviewPage),
+          matching: find.byType(Scrollable),
+        )
         .first,
   );
+  await tester.pumpAndSettle();
   await tester.tap(xirr);
   await tester.pumpAndSettle();
   final twr = find.text('입출금 영향을 뺀 누적 수익률 보기');
   await tester.ensureVisible(twr);
+  await tester.pumpAndSettle();
   await tester.tap(twr);
   await tester.pumpAndSettle();
   expect(api.benchmarksCalls, 0);
   final comparison = find.text('같은 기간의 지수와 비교하기');
   await tester.ensureVisible(comparison);
+  await tester.pumpAndSettle();
   await tester.tap(comparison);
   await tester.pumpAndSettle();
 }

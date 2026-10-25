@@ -204,7 +204,9 @@ func TestPortfolioBenchmarksFXFailureKeepsNativeAndSelectedSample(t *testing.T) 
 		t.Fatal("stale FX hid native or sample provenance")
 	}
 	recordXIRRFX(t, svc, "start", "1000", "2025-01-01T00:00:00Z", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
-	recordXIRRFX(t, svc, "start-tie", "2000", "2025-01-01T00:00:00Z", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
+	if _, err := svc.recordFXObservation(context.Background(), FXObservationInput{Source: "local_fixture", SourceObservationID: "start-tie", BaseCurrency: "USD", QuoteCurrency: "KRW", Rate: "2000", ObservedAt: "2025-01-01T00:00:00Z", FetchedAt: "2026-01-01T00:00:00Z"}); err == nil {
+		t.Fatal("duplicate FX economic timestamp accepted")
+	}
 	r := benchmarkHTTPReport(t, svc)
 	row = r.Benchmarks[0]
 	if *row.KRW.Rate != "-0.01" || *row.DifferencePercentagePoints != "22" || row.StartFX.Rate != "1000" || !row.Sample || r.Portfolio.Sample {
