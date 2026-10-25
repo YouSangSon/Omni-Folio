@@ -14,7 +14,7 @@
 
 ## Next
 
-- [ ] CSV 파일 선택: 기존 preview·명시적 apply에 UTF-8·1MiB 초안을 연결했다. 작은 unit/fake의 기존 101개와 수정 집중 4개, 정적 분석·web·iOS 무서명 release를 확인했다. Android 하네스의 `--no-pub`가 릴리스 등록 갱신을 생략하는 원인을 찾았으며, 이미 활성화된 공개 저장소의 무료 표준 CI에서 정상 명령·최종 105개 검사를 확인한다. [Draft PR #34](https://github.com/YouSangSon/Omni-Folio/pull/34)는 실제 CI 성공까지 병합 보류 ([범위·재개 조건](gates/g4p-first-run-import-recovery.md#csv-file-selection)).
+- [x] CSV 파일 선택: UTF-8·1MiB 초안을 기존 preview·명시적 apply에 연결했다. 관련 105개·권한 반례 8개, 정적 분석과 web·Android·iOS 무서명 release를 확인하고 [PR #34](https://github.com/YouSangSon/Omni-Folio/pull/34)를 main `b82944e`에 병합했다. 실제 OS 대화상자·provider·실기기는 별도 미검증 ([근거·한계](gates/g4p-first-run-import-recovery.md#csv-file-selection)).
 
 - [x] G1.19 거래 내역 정렬·페이지 cursor와 현재 평가 cutoff의 소수초 역전 수정. 실제 API 미래 합산·페이지 순서 RED/GREEN과 독립 리뷰 통과 ([gate](gates/g1o-exact-activity-cutoff.md)).
 - [x] G1.20 FIFO/snapshot·broker quantity·CASH_VOID의 정확한 UTC 재생과 schema22/backup v16의 명시적 정책 전환. 집중 회귀·독립 리뷰·최종 전체 check(Go core386.630초, Flutter108·Python34·JSON17)·로컬 smoke·소유 자원 정리 통과 ([gate](gates/g1p-chronological-ledger-replay.md)).
