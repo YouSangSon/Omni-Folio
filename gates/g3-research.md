@@ -25,4 +25,11 @@
 - `TestG3Registry*`는 실제 Python CLI→Go ingest의 cross-runtime hash, idempotent registration, stale selection, rejected-candidate 차단, 이전 선택/`no_strategy` rollback, insert-only/replay와 현재 schema v10/backup v6 복구를 검증한다.
 - `TestG3StrategyOrderRequiresCurrentSelectionAtRecordAndDispatch`는 이미 기록된 intent의 idempotent retry를 보존하면서 stale 신규 기록과 rollback된 전략의 durable dispatch를 차단하고, 새 selection event에 묶인 주문만 허용함을 검증한다.
 - `TestG3PaperRunner*`는 선택 target→원자 delta/netting→record-time lease/fencing→같은 transaction의 K2C reservation·durable dispatch→공통 order replay→부분/완전 체결→backup/restore와 만료·rollback·동시 중복·Kiwoom transport 차단을 검증한다.
-- 현재 paper adapter는 local fixture 한 건만 처리한다. 수수료·세금·slippage·quote stream, 자동 scheduling, 실제 paper 성능 관찰·성능저하 rollback 또는 broker-write 순간까지의 selection/lease race 차단은 제공하지 않는다.
+- 위 `paper-signal.v2`/`runPaperSignal`의 단일 local ask 검증은 초기 adapter의 범위다. 현재 capitalized 실행과 성과 명령은 아래 별도 gate를 따르며, 초기 adapter의 한계를 전체 구현의 현재 상태로 해석하지 않는다.
+
+## 현재 구현과 남은 경계 (2026-10-25)
+
+- `paper-signal.v3`의 local closed-bar BUY/SELL은 account-global session의 현금·보유수량과 고정 fee·SELL tax·불리한 slippage를 exact 계산한다. [실제 계산](../services/core/internal/paperdomain/paper.go)과 [G3.8C2 회계·복구 근거](g3k-paper-fill-accounting.md)는 ex-post fixture 증거이며 broker 체결이나 live quote stream이 아니다.
+- `paper-run-due`/`paper-run-loop`는 저장된 성과와 안전정책을 실행하고, DB lease/fencing·미완료 정책 복구·자동 halt/rollback을 검증했다. [CLI 진입점](../services/core/main.go), [loop 구현](../services/core/paper_runner_loop.go), [G3.8F2](g3p-always-on-paper-runner.md), [G3.8F3](g3ae-paper-pending-policy-recovery.md)를 따른다. 이 성과 전용 명령은 주문·체결을 생성하지 않는다.
+- 별도의 `paper-execute`/`paper-execute-stream`은 원본 입력·선택을 검증하고 local fixture의 봉별 체결 → 성과 → 안전정책 → 제안 접수를 연결한다. [사용 흐름](../docs/local-paper-workflow.md)과 [G3.8G2K 복구 근거](g3ab-paper-chronological-recovery.md)를 따른다. Python watch의 관찰과 [선택적 입력 보관](g3af-paper-input-capture.md)은 처리 완료 ACK·소스 완결성·자동 재실행을 보장하지 않는다.
+- 로컬 하위 gate 통과와 G3.8G2 전체·상시 운영·배포·실브로커·shadow/live 승격은 구분한다. 장기 운영과 대상 VM 경합, 시장 시각/freshness, broker-write 순간의 권한 검증 및 수익성은 미증명이다. 이 문서 교정은 현재 소스와 기존 gate 근거를 대조한 결과이며 새 실행·성능 측정 결과가 아니다.
