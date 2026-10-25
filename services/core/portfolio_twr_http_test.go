@@ -228,6 +228,7 @@ func TestPortfolioTWRHistoricalPriceAndSplitUnits(t *testing.T) {
 	}{
 		{"post split", "2025-01-02T00:00:01Z", "", false, false, false},
 		{"pre split within24h", "2025-01-01T23:59:59Z", "split_price_unavailable", false, false, false},
+		{"equal split timestamp", "2025-01-02T00:00:00Z", "split_price_unavailable", false, false, false},
 		{"future economic price", "2025-01-02T00:01:00.000000001Z", "missing_security_price", false, false, false},
 		{"future knowledge", "2025-01-02T00:00:01Z", "missing_security_price", false, true, false},
 		{"ambiguous venue", "2025-01-02T00:00:01Z", "ambiguous_security_price_venue", false, false, true},

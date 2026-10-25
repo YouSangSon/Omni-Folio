@@ -114,6 +114,42 @@ void main() {
       ..['boundary_count'] = 0;
     expect(() => PortfolioTwr.fromJson(j), throwsFormatException);
   });
+  for (final cause in ['cash_flow_limit', 'no_external_cash_flows']) {
+    test('unavailable reason $cause must agree with known counts', () {
+      final j = _state('full_withdrawal');
+      j['issues'] = [
+        {'code': cause, 'message': 'private'},
+      ];
+      expect(() => PortfolioTwr.fromJson(j), throwsFormatException);
+    });
+  }
+  test('calculation input failure requires an external boundary', () {
+    final j = _state('full_withdrawal')
+      ..['period_start'] = null
+      ..['external_event_count'] = 0
+      ..['boundary_count'] = 0
+      ..['issues'] = [
+        {'code': 'missing_historical_fx', 'message': 'private'},
+      ];
+    expect(() => PortfolioTwr.fromJson(j), throwsFormatException);
+  });
+  test('unavailable has one primary reason', () {
+    final j = _state('full_withdrawal');
+    (j['issues'] as List).add({
+      'code': 'missing_historical_fx',
+      'message': 'private',
+    });
+    expect(() => PortfolioTwr.fromJson(j), throwsFormatException);
+  });
+  test('actual boundary cap is an accepted unavailable reason', () {
+    final j = _state('full_withdrawal')
+      ..['external_event_count'] = 1001
+      ..['boundary_count'] = 1001
+      ..['issues'] = [
+        {'code': 'cash_flow_limit', 'message': 'private'},
+      ];
+    expect(PortfolioTwr.fromJson(j).status, 'unavailable');
+  });
   test('TWR uses only its read endpoint', () async {
     final api = RestOmniApi(
       baseUrl: 'http://localhost',
@@ -144,15 +180,18 @@ void main() {
     tester,
   ) async {
     final semantics = tester.ensureSemantics();
-    addTearDown(semantics.dispose);
-    await _open(tester, _api(_report()));
-    expect(
-      tester.getSemantics(find.byKey(const Key('portfolio-twr-rate'))).label,
-      contains('21%'),
-    );
-    await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
-    await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
-    await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+    try {
+      await _open(tester, _api(_report()));
+      expect(
+        tester.getSemantics(find.byKey(const Key('portfolio-twr-rate'))).label,
+        contains('21%'),
+      );
+      await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+      await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
+      await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+    } finally {
+      semantics.dispose();
+    }
   });
   testWidgets(
     'pending request is single flight and failed refresh retains whole report',

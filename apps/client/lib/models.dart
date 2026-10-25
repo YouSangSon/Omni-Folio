@@ -1538,6 +1538,20 @@ class PortfolioTwr {
     ))
       throw const FormatException('Invalid TWR issue');
     final missingValuation = seen.contains('valuation_unavailable');
+    final reasons = seen.difference(const {'sample_data'});
+    final reason = reasons.isEmpty ? null : reasons.first;
+    final unavailableInputs = switch (reason) {
+      'valuation_unavailable' => count == null && boundaries == null,
+      'no_external_cash_flows' => count == 0 && boundaries == 0,
+      'cash_flow_limit' => boundaries != null && boundaries > 1000,
+      null => false,
+      _ =>
+        count != null &&
+            count > 0 &&
+            boundaries != null &&
+            boundaries >= 1 &&
+            boundaries <= 1000,
+    };
     final valid = switch (status) {
       'calculated' =>
         rate != null &&
@@ -1560,7 +1574,8 @@ class PortfolioTwr {
       'unavailable' =>
         rate == null &&
             net == null &&
-            issues.any((issue) => issue.code != 'sample_data') &&
+            reasons.length == 1 &&
+            unavailableInputs &&
             valuation.status != 'empty',
       _ => false,
     };

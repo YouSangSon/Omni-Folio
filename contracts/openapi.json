@@ -749,7 +749,7 @@
             ]
           }
         },
-        "description": "Since-inception retrospective KRW XIRR. Exact event conversion before UTC-date aggregation; actual/365 and twelve-decimal numerical output. Annual rate only for one sign change; nonconventional converged values are candidates without certified uniqueness. Missing observations or numerical failures never become zero. Cash voids remove the original external flow. Historical FX observed_at <= event occurrence, fetched/recorded <= report cutoff; <=24h economic age. This is not a trading no-lookahead policy."
+        "description": "Since-inception retrospective KRW cumulative TWR, not annualized. Restated external cash groups precede internal events at each exact UTC timestamp. Links asset values immediately before external groups to previous post-flow capital, then terminal value to last positive capital. Requires positive intermediate capital; a full withdrawal is unavailable, not a total loss. Historical prices and direct FX observed by each boundary and fetched/recorded by report cutoff must be <=24h old; split marks must be strictly after the last applied split. Final cash and quantity maps and terminal total reconcile to the proved current ledger. Exact rational products are rounded once to12decimals, with8192bit product and1000boundary budgets. Missing or unsupported inputs never become0percent; no trading no-lookahead or PP daily-convention equivalence claim."
       },
       "PortfolioXIRR": {
         "type": "object",
