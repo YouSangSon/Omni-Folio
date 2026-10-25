@@ -3,7 +3,8 @@ name: Client Android release
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+    # Drafts already run checks; becoming ready must not repeat the same head.
+    types: [opened, synchronize, reopened]
     paths:
       - apps/client/**
       - contracts/fixtures/**
@@ -71,7 +72,7 @@ jobs:
         run: |
           git diff --exit-code -- apps/client .tool-versions
           python - <<'PY'
-          import hashlib, json, os, subprocess, zipfile
+          import copy, hashlib, json, os, subprocess, zipfile
           import xml.etree.ElementTree as ET
           from pathlib import Path
 
@@ -84,8 +85,55 @@ jobs:
           analyzer = Path(os.environ["ANDROID_HOME"]) / "cmdline-tools/latest/bin/apkanalyzer"
           manifest = ET.fromstring(subprocess.check_output([str(analyzer), "manifest", "print", str(apk)]))
           ns = "{http://schemas.android.com/apk/res/android}"
-          permissions = [entry.get(ns + "name") for entry in manifest.findall("uses-permission")]
-          assert permissions == ["android.permission.INTERNET"], permissions
+          def verify_permissions(root):
+              assert root.get("package") == "com.example.omni_folio_client"
+              receiver = root.get("package") + ".DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+              requests = [entry for entry in root if entry.tag.split("}")[-1].startswith("uses-permission")]
+              assert all(entry.tag == "uses-permission" for entry in requests)
+              permissions = [entry.get(ns + "name") for entry in requests]
+              assert len(permissions) == 2 and set(permissions) == {"android.permission.INTERNET", receiver}, permissions
+              assert all(ns + "maxSdkVersion" not in entry.attrib for entry in requests)
+              assert not any(entry.tag.split("}")[-1] == "permission-tree" for entry in root)
+              definitions = [entry for entry in root if entry.tag.split("}")[-1] == "permission"]
+              assert len(definitions) == 1 and definitions[0].tag == "permission"
+              assert definitions[0].get(ns + "name") == receiver
+              level = definitions[0].get(ns + "protectionLevel")
+              assert level is not None
+              assert level == "signature" or int(level, 0) == 2, level
+              return sorted(permissions), level
+
+          permissions, receiver_level = verify_permissions(manifest)
+          def must_reject(root, reason):
+              try:
+                  verify_permissions(root)
+              except (AssertionError, ValueError):
+                  return
+              raise AssertionError("unsafe permission fixture accepted: " + reason)
+
+          invalid = copy.deepcopy(manifest)
+          invalid.set("package", "other.application")
+          must_reject(invalid, "different package")
+          invalid = copy.deepcopy(manifest)
+          ET.SubElement(invalid, "uses-permission", {ns + "name": "android.permission.CAMERA"})
+          must_reject(invalid, "additional permission")
+          invalid = copy.deepcopy(manifest)
+          ET.SubElement(invalid, "uses-permission", {ns + "name": "android.permission.INTERNET"})
+          must_reject(invalid, "duplicate permission")
+          invalid = copy.deepcopy(manifest)
+          invalid.find("permission").set(ns + "protectionLevel", "normal")
+          must_reject(invalid, "weakened protection")
+          invalid = copy.deepcopy(manifest)
+          invalid.find("permission").attrib.pop(ns + "protectionLevel")
+          must_reject(invalid, "missing protection")
+          invalid = copy.deepcopy(manifest)
+          invalid.find("permission").set(ns + "protectionLevel", "0x12")
+          must_reject(invalid, "extra protection flag")
+          invalid = copy.deepcopy(manifest)
+          ET.SubElement(invalid, "uses-permission-sdk-23", {ns + "name": "android.permission.CAMERA"})
+          must_reject(invalid, "SDK-specific permission")
+          invalid = copy.deepcopy(manifest)
+          ET.SubElement(invalid, "permission-tree", {ns + "name": "other.namespace"})
+          must_reject(invalid, "permission namespace")
           application = manifest.find("application")
           assert application is not None and application.get(ns + "debuggable", "false") == "false"
           with zipfile.ZipFile(apk) as archive:
@@ -100,6 +148,7 @@ jobs:
               "source_revision": revision, "client_tree": client_tree,
               "apk_sha256": digest, "apk_bytes": apk.stat().st_size,
               "registrant_sha256": hashlib.sha256(registrant.read_bytes()).hexdigest(),
-              "permissions": permissions, "target_platform": "android-arm64",
+              "permissions": permissions, "receiver_permission_level": receiver_level,
+              "permission_negative_fixtures": 8, "target_platform": "android-arm64",
           }, sort_keys=True))
           PY
