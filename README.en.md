@@ -215,6 +215,18 @@ curl -fsS http://127.0.0.1:8080/v1/portfolio/xirr
 
 [Policy, sources, and verification scope](gates/g1s-portfolio-xirr.md)
 
+### Cumulative return with cash-flow effects removed
+
+Use `입출금 영향을 뺀 누적 수익률 보기` in the return detail to read since-inception `TWR`. It links asset changes between external cash-flow boundaries without annualizing them. External flows precede internal events at the same timestamp; canceled original cash records are also removed from historical balances.
+
+A missing historical price or direct FX rate, or one older than 24 hours, makes the result unavailable. Nonpositive intermediate capital and ambiguous split price units are also unsupported. A full withdrawal is not shown as a total loss, and results containing sample observations are not actual investment performance.
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/portfolio/twr
+```
+
+[Calculation policy, sources, and verification scope](gates/g1t-portfolio-twr.md)
+
 ### Direct-FX cash valuation
 
 G1.11's `GET /v1/portfolio/cash-valuation` values replay-verified current ledger cash only in the requested base currency. It requires canonical UTC `as_of` and `base_currency`, validating ledger events and the entire FX series in the same read transaction. Except for matching currencies and zero balances, it uses only direct observations in the `cash currency -> base currency` direction, including the 24-hour boundary from observation time. It uses no inverse rates, cross rates, interpolation, `FX_EXCHANGE` inference, or display rounding.

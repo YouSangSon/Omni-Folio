@@ -170,6 +170,9 @@ double _p95(Iterable<Duration> values) {
 
 class _ProfileApi implements OmniApi {
   @override
+  Future<PortfolioTwr> portfolioTwr() async => throw UnimplementedError();
+
+  @override
   Future<PortfolioXirr> portfolioXirr() =>
       throw UnsupportedError('XIRR is loaded only from its detail page.');
 

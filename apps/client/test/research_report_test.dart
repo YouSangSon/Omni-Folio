@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:omni_folio_client/api.dart';
-import 'package:omni_folio_client/models.dart' show PortfolioXirr;
+import 'package:omni_folio_client/models.dart' show PortfolioXirr, PortfolioTwr;
 import 'package:omni_folio_client/app.dart';
 import 'package:omni_folio_client/research_report.dart';
 import 'package:omni_folio_client/research_report_page.dart';
@@ -375,6 +375,9 @@ void main() {
 }
 
 class _ResearchApi implements OmniApi {
+  @override
+  Future<PortfolioTwr> portfolioTwr() async => throw UnimplementedError();
+
   @override
   Future<PortfolioXirr> portfolioXirr() =>
       throw UnsupportedError('XIRR is loaded only from its detail page.');

@@ -87,6 +87,9 @@ Future<void> _tapVisible(WidgetTester tester, Finder finder) async {
 
 class _ActivityApi implements OmniApi {
   @override
+  Future<PortfolioTwr> portfolioTwr() async => throw UnimplementedError();
+
+  @override
   Future<PortfolioXirr> portfolioXirr() =>
       throw UnsupportedError('XIRR is loaded only from its detail page.');
 

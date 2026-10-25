@@ -1442,6 +1442,182 @@ class ApplyReceipt {
   final DateTime recordedAt;
 }
 
+class PortfolioTwr {
+  const PortfolioTwr._({
+    required this.valuation,
+    required this.status,
+    required this.sample,
+    required this.periodStart,
+    required this.periodEnd,
+    required this.externalEventCount,
+    required this.boundaryCount,
+    required this.cumulativeRate,
+    required this.netContributions,
+    required this.issues,
+  });
+
+  factory PortfolioTwr.fromJson(Json json) {
+    _requireExactKeys(json, const {
+      'policy_version',
+      'scope',
+      'valuation',
+      'status',
+      'sample',
+      'period_start',
+      'period_end',
+      'external_event_count',
+      'boundary_count',
+      'cumulative_rate',
+      'net_contributions',
+      'issues',
+    });
+    if (_text(json, 'policy_version') !=
+            'restated_external_first_exact_timestamp_twr_v1' ||
+        _text(json, 'scope') != 'whole_portfolio_since_inception' ||
+        json['valuation'] is! Json) {
+      throw const FormatException('Unsupported TWR report');
+    }
+    final valuation = CurrentPortfolioValuation.fromJson(
+      json['valuation'] as Json,
+    );
+    final status = _text(json, 'status');
+    final sample = _bool(json, 'sample');
+    final start = json['period_start'] == null
+        ? null
+        : _utcText(json, 'period_start');
+    final end = _utcText(json, 'period_end');
+    final count = json['external_event_count'] == null
+        ? null
+        : _count(json, 'external_event_count');
+    final boundaries = json['boundary_count'] == null
+        ? null
+        : _count(json, 'boundary_count');
+    final rate = _nullableDecimal(json, 'cumulative_rate');
+    if (rate != null &&
+        (rate.length > 128 ||
+            _decimalScale(rate) > 12 ||
+            (rate.startsWith('-') &&
+                _comparePositiveDecimal(rate.substring(1), '1') > 0))) {
+      throw const FormatException('Invalid TWR rate');
+    }
+    Money? net;
+    if (json['net_contributions'] != null) {
+      if (json['net_contributions'] is! Json)
+        throw const FormatException('Invalid TWR cash');
+      final money = json['net_contributions'] as Json;
+      _requireExactKeys(money, const {'currency', 'amount'});
+      net = Money.fromJson(money);
+      if (net.currency != 'KRW')
+        throw const FormatException('Invalid TWR currency');
+    }
+    final issues = _jsonList(
+      json,
+      'issues',
+    ).map(HoldingValuationIssue.fromJson).toList(growable: false);
+    const codes = {
+      'sample_data',
+      'valuation_unavailable',
+      'no_external_cash_flows',
+      'cash_flow_limit',
+      'numerical_limit',
+      'capital_path_unavailable',
+      'ambiguous_split_boundary',
+      'split_price_unavailable',
+      'missing_security_price',
+      'stale_security_price',
+      'ambiguous_security_price_venue',
+      'missing_historical_fx',
+      'stale_historical_fx',
+    };
+    final seen = <String>{};
+    if (issues.any(
+      (issue) =>
+          !codes.contains(issue.code) ||
+          !seen.add(issue.code) ||
+          issue.field != null,
+    ))
+      throw const FormatException('Invalid TWR issue');
+    final missingValuation = seen.contains('valuation_unavailable');
+    final valid = switch (status) {
+      'calculated' =>
+        rate != null &&
+            net != null &&
+            count != null &&
+            count > 0 &&
+            boundaries != null &&
+            boundaries <= 1000 &&
+            valuation.totalValue != null &&
+            issues.every((issue) => issue.code == 'sample_data'),
+      'empty' =>
+        rate == null &&
+            net == null &&
+            count == 0 &&
+            boundaries == 0 &&
+            start == null &&
+            !sample &&
+            issues.isEmpty &&
+            valuation.status == 'empty',
+      'unavailable' =>
+        rate == null &&
+            net == null &&
+            issues.any((issue) => issue.code != 'sample_data') &&
+            valuation.status != 'empty',
+      _ => false,
+    };
+    if (!valid ||
+        sample != seen.contains('sample_data') ||
+        (valuation.sample && !sample) ||
+        end != valuation.valuationAsOf ||
+        (start != null && _utcNanoseconds(start) > _utcNanoseconds(end)) ||
+        (missingValuation &&
+            (valuation.totalValue != null ||
+                count != null ||
+                boundaries != null ||
+                start != null)) ||
+        (!missingValuation &&
+            status != 'empty' &&
+            (valuation.totalValue == null ||
+                count == null ||
+                boundaries == null)) ||
+        ((count == null) != (boundaries == null)) ||
+        (count == null && start != null) ||
+        (count == 0 && (start != null || boundaries != 0)) ||
+        (count != null &&
+            count > 0 &&
+            (start == null ||
+                boundaries == null ||
+                boundaries < 1 ||
+                boundaries > count)) ||
+        (boundaries != null &&
+            boundaries > 1000 &&
+            !seen.contains('cash_flow_limit'))) {
+      throw const FormatException('Inconsistent TWR report');
+    }
+    return PortfolioTwr._(
+      valuation: valuation,
+      status: status,
+      sample: sample,
+      periodStart: start,
+      periodEnd: end,
+      externalEventCount: count,
+      boundaryCount: boundaries,
+      cumulativeRate: rate,
+      netContributions: net,
+      issues: List.unmodifiable(issues),
+    );
+  }
+  final CurrentPortfolioValuation valuation;
+  final String status;
+  final bool sample;
+  final String? periodStart;
+  final String periodEnd;
+  final int? externalEventCount;
+  final int? boundaryCount;
+  final String? cumulativeRate;
+  final Money? netContributions;
+  final List<HoldingValuationIssue> issues;
+}
+
 class PortfolioXirr {
   const PortfolioXirr._({
     required this.valuation,

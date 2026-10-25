@@ -507,6 +507,9 @@ void main() {
 
 class _TestApi implements OmniApi {
   @override
+  Future<PortfolioTwr> portfolioTwr() async => throw UnimplementedError();
+
+  @override
   Future<PortfolioXirr> portfolioXirr() =>
       throw UnsupportedError('XIRR is loaded only from its detail page.');
 
