@@ -308,6 +308,8 @@ The [manual local paper workflow](docs/local-paper-workflow.md) connects initial
 
 Python `--bundle` outputs the proposal together with the original CSV used in its calculation. Passing it once to Go's `paper-execute -bundle FILE -arm-paper` applies existing validation without rereading the original paths. Limits are 1 MiB per CSV and 4 MiB for the entire JSON. [Exact-byte delivery gate](gates/g3u-paper-input-bundle.md)
 
+Use `paper-input-status -db PATH -account ACCOUNT -selection-event EVENT -bundle FILE` to compare one saved input with the database's bars, first receipt, signal and order records through a read-only connection. These records are not a completion ACK, freshness proof or execution authorization; inspection does not decide whether to replay. [Usage and meaning](docs/local-paper-workflow.md#saved-input-status)
+
 `--watch --bundle` can pipe into stdin of a separate `paper-execute-stream -arm-paper`. This command arms once, renews its ownership lease between inputs, and cleans up the reader and authority on stop, EOF, or error. It provides neither automatic rearming nor a durable queue; confirm execution through DB records rather than stdout. [Continuous fixture usage](docs/local-paper-workflow.md#명시적으로-연속-fixture-소비하기), [verification gate](gates/g3w-paper-input-stream.md)
 
 The strategy-improvement runner evaluates a finite set of long-only SMA candidates using expanding walk-forward validation and opens the final holdout only once. Results can be only `paper_candidate` or `no_promotion`; they gain no credentials, order authority, or authority for live promotion.

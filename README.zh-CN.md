@@ -308,6 +308,8 @@ stdout 的 JSON 是从不可信本地输入计算得到的目标数量**提案**
 
 Python 的 `--bundle` 会一起输出提案和计算所用的原始 CSV。通过 Go `paper-execute -bundle FILE -arm-paper` 一次传递后，不会重新读取原始路径，而是执行现有验证。单个 CSV 限制为 1 MiB，完整 JSON 限制为 4 MiB。[精确字节传递 gate](gates/g3u-paper-input-bundle.md)
 
+使用 `paper-input-status -db PATH -account ACCOUNT -selection-event EVENT -bundle FILE`，可通过只读连接将一份已保存输入与 DB 中的 K 线、首次 receipt、信号及订单记录逐项核对。这些记录不代表完成 ACK、freshness 或执行授权；查询不会决定是否重新执行。[使用方法与含义](docs/local-paper-workflow.md#saved-input-status)
+
 `--watch --bundle` 可通过 stdin pipe 连接单独的 `paper-execute-stream -arm-paper`。此命令只激活一次，在输入间隔中也会续租所有权 lease，并在停止、EOF 或错误时清理 reader 和权限。它不是自动重新激活机制或持久队列；请通过数据库记录而非 stdout 确认执行情况。[连续 fixture 使用方法](docs/local-paper-workflow.md#명시적으로-연속-fixture-소비하기)、[验证 gate](gates/g3w-paper-input-stream.md)
 
 策略改进 runner 使用 expanding walk-forward 评估有限的仅做多 SMA 候选，且只打开最终留出集一次。结果只能为 `paper_candidate` 或 `no_promotion`，不会获得凭据、下单或晋级实盘的权限。

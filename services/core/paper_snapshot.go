@@ -29,38 +29,9 @@ func (s *Service) importPaperSnapshot(ctx context.Context, raw []byte) (*PaperSn
 	if s == nil || s.db == nil || s.now == nil {
 		return nil, errors.New("paper snapshot importer is not configured")
 	}
-	if len(raw) > maxMarketDataBytes {
-		return nil, fmt.Errorf("paper snapshot must not exceed %d bytes", maxMarketDataBytes)
-	}
-	records, err := csv.NewReader(bytes.NewReader(raw)).ReadAll()
+	bars, inputSHA, err := parsePaperSnapshot(raw, s.now)
 	if err != nil {
-		return nil, errors.New("paper snapshot must be valid CSV")
-	}
-	if len(records) < 2 || !reflect.DeepEqual(records[0], paperSnapshotCSVHeader) {
-		return nil, errors.New("paper snapshot requires the canonical header and 1 to 500 rows")
-	}
-	if len(records)-1 > maxMarketDataRows {
-		return nil, fmt.Errorf("paper snapshot must not contain more than %d rows", maxMarketDataRows)
-	}
-
-	hash := sha256.Sum256(raw)
-	inputSHA := hex.EncodeToString(hash[:])
-	now := s.now().UTC()
-	bars := make([]PaperMarketBarObservation, 0, len(records)-1)
-	for index, row := range records[1:] {
-		bar, err := paperSnapshotBar(row, inputSHA, now)
-		if err != nil {
-			return nil, fmt.Errorf("paper snapshot row %d: %w", index+2, err)
-		}
-		if index > 0 {
-			if bar.Symbol != bars[0].Symbol || bar.Venue != bars[0].Venue || bar.Timezone != bars[0].Timezone || bar.Interval != bars[0].Interval {
-				return nil, fmt.Errorf("paper snapshot row %d has inconsistent metadata", index+2)
-			}
-			if bar.CloseAt <= bars[index-1].CloseAt {
-				return nil, fmt.Errorf("paper snapshot row %d is not strictly ordered by bar_at", index+2)
-			}
-		}
-		bars = append(bars, bar)
+		return nil, err
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -119,6 +90,44 @@ func (s *Service) importPaperSnapshot(ctx context.Context, raw []byte) (*PaperSn
 		return nil, err
 	}
 	return &PaperSnapshotImport{InputSHA256: inputSHA, SignalBarObservationID: anchor.ObservationID, Bars: len(bars), Added: added}, nil
+}
+
+func parsePaperSnapshot(raw []byte, clock func() time.Time) ([]PaperMarketBarObservation, string, error) {
+	if len(raw) > maxMarketDataBytes {
+		return nil, "", fmt.Errorf("paper snapshot must not exceed %d bytes", maxMarketDataBytes)
+	}
+	records, err := csv.NewReader(bytes.NewReader(raw)).ReadAll()
+	if err != nil {
+		return nil, "", errors.New("paper snapshot must be valid CSV")
+	}
+	if len(records) < 2 || !reflect.DeepEqual(records[0], paperSnapshotCSVHeader) {
+		return nil, "", errors.New("paper snapshot requires the canonical header and 1 to 500 rows")
+	}
+	if len(records)-1 > maxMarketDataRows {
+		return nil, "", fmt.Errorf("paper snapshot must not contain more than %d rows", maxMarketDataRows)
+	}
+
+	hash := sha256.Sum256(raw)
+	inputSHA := hex.EncodeToString(hash[:])
+	now := clock().UTC()
+	bars := make([]PaperMarketBarObservation, 0, len(records)-1)
+	for index, row := range records[1:] {
+		bar, err := paperSnapshotBar(row, inputSHA, now)
+		if err != nil {
+			return nil, "", fmt.Errorf("paper snapshot row %d: %w", index+2, err)
+		}
+		if index > 0 {
+			if bar.Symbol != bars[0].Symbol || bar.Venue != bars[0].Venue || bar.Timezone != bars[0].Timezone || bar.Interval != bars[0].Interval {
+				return nil, "", fmt.Errorf("paper snapshot row %d has inconsistent metadata", index+2)
+			}
+			if bar.CloseAt <= bars[index-1].CloseAt {
+				return nil, "", fmt.Errorf("paper snapshot row %d is not strictly ordered by bar_at", index+2)
+			}
+		}
+		bars = append(bars, bar)
+	}
+
+	return bars, inputSHA, nil
 }
 
 func paperSnapshotBar(row []string, inputSHA string, now time.Time) (PaperMarketBarObservation, error) {
