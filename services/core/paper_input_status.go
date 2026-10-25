@@ -7,9 +7,6 @@ import (
 	"errors"
 	"flag"
 	"io"
-	"net/url"
-	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -55,7 +52,7 @@ func runPaperInputStatusCommand(ctx context.Context, args []string, output io.Wr
 	if err != nil {
 		return invalid
 	}
-	db, err := openPaperInputStatusDB(ctx, *dbPath)
+	db, err := openReadOnlyExistingDB(ctx, *dbPath)
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -71,33 +68,6 @@ func runPaperInputStatusCommand(ctx context.Context, args []string, output io.Wr
 		return invalid
 	}
 	return json.NewEncoder(output).Encode(result)
-}
-
-func openPaperInputStatusDB(ctx context.Context, path string) (*sql.DB, error) {
-	path, err := filepath.Abs(path)
-	if err != nil {
-		return nil, err
-	}
-	info, err := os.Stat(path)
-	if err != nil || !info.Mode().IsRegular() {
-		return nil, errors.New("paper input status requires an existing regular database")
-	}
-	u := url.URL{Scheme: "file", Path: path}
-	u.RawQuery = url.Values{
-		"mode": {"ro"}, "_txlock": {"deferred"},
-		"_busy_timeout": {"5000"}, "_foreign_keys": {"on"},
-	}.Encode()
-	db, err := sql.Open("sqlite3", u.String())
-	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-	if err := db.PingContext(ctx); err != nil {
-		db.Close()
-		return nil, err
-	}
-	return db, nil
 }
 
 // These are stored facts, never an ACK, replay decision or permission to arm.

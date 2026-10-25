@@ -89,7 +89,7 @@ func inspectPaperInputForTest(t *testing.T, svc *Service, selection string, raw 
 	if err := svc.db.QueryRow(`PRAGMA database_list`).Scan(&sequence, &name, &path); err != nil {
 		t.Fatal(err)
 	}
-	db, err := openPaperInputStatusDB(context.Background(), path)
+	db, err := openReadOnlyExistingDB(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +256,7 @@ func TestPaperInputStatusTracksAnEarlierVerifiedBackup(t *testing.T) {
 	if result := inspectPaperInputForTest(t, svc, selection, raw); !result.SignalRecorded {
 		t.Fatal("current database did not observe admission")
 	}
-	db, err := openPaperInputStatusDB(context.Background(), backup)
+	db, err := openReadOnlyExistingDB(context.Background(), backup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,7 @@ func TestPaperInputStatusReadOnlyURIAndClosedOutput(t *testing.T) {
 	if _, err := svc.db.Exec(`VACUUM INTO ?`, path); err != nil {
 		t.Fatal(err)
 	}
-	db, err := openPaperInputStatusDB(context.Background(), path)
+	db, err := openReadOnlyExistingDB(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +303,7 @@ func TestPaperInputStatusReadOnlyURIAndClosedOutput(t *testing.T) {
 		t.Fatal("inspection accepted an execution flag")
 	}
 	missing := filepath.Join(t.TempDir(), "missing.db")
-	if db, err := openPaperInputStatusDB(context.Background(), missing); err == nil {
+	if db, err := openReadOnlyExistingDB(context.Background(), missing); err == nil {
 		db.Close()
 		t.Fatal("inspection created a database")
 	}

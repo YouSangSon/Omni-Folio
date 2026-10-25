@@ -154,6 +154,19 @@ rm -f "$preview_file"
 
 Golden fixture の期待値は新規3行、revision `rev_0000000003`、USD cash `778`、AAPL 6株、cost basis `300.6` です。動的な ID と timestamp は実行ごとに変わります。
 
+### 台帳履歴の CSV エクスポート
+
+検証済み台帳の公開履歴フィールドを CSV に保存します。同じ DB 観測の新しい順を保ち、口座・内部 ID は除外します。数値と日時は元の文字列を保持し、元の行と訂正行は両方残します。
+
+```sh
+mkdir -p -m 700 data/exports
+(cd services/core && go run . ledger-export \
+  -db ../../data/omni-folio.db \
+  -out ../../data/exports/ledger.csv)
+```
+
+`ledger-activity-export.v1` の receipt は revision・行数・SHA256 を示します。既存の出力は上書きしません。10,000行・32 MiB の上限超過や安全でない銘柄表記がある場合は失敗します。出力先フォルダーは現在のユーザー所有で、他ユーザーの書き込みを許可せず、上位パスも信頼できる必要があります。この CSV は backup・再取り込み形式ではありません。表計算ソフトでは全列をテキストとして取り込んでください。[契約と制限](gates/g1q-ledger-activity-export.md)
+
 ### 既存台帳の時系列再生ポリシーへの切り替え
 
 schema22/backup v16 は、正確な UTC 順序による FIFO v2 ポリシーを使用します。既存の台帳がある DB は、migrate だけでは正常に実行できません。旧 core を停止して原本の backup を保全したうえで、[G1.20 の preview → 確認 → activate → 新 backup の検証手順](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차)に従います。過去の backup の保管検証と、現在のポリシーの有効化は区別します。

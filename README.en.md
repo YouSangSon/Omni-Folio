@@ -154,6 +154,19 @@ rm -f "$preview_file"
 
 The golden fixture expects 3 new rows, revision `rev_0000000003`, USD cash `778`, 6 AAPL shares, and cost basis `300.6`. Dynamic IDs and timestamps vary between runs.
 
+### Export ledger activity as CSV
+
+Save the verified ledger's public activity fields as CSV. The export preserves newest-first ordering from one database observation and excludes account and internal IDs. Numbers and timestamps retain their original strings; original and correction rows remain together.
+
+```sh
+mkdir -p -m 700 data/exports
+(cd services/core && go run . ledger-export \
+  -db ../../data/omni-folio.db \
+  -out ../../data/exports/ledger.csv)
+```
+
+The `ledger-activity-export.v1` receipt reports the revision, row count and SHA256. Existing output is never overwritten. Exceeding 10,000 rows or 32 MiB, or an unsafe symbol label, fails the export. The output directory must belong to the current user and disallow writes by other users; its ancestor path must also be trusted. This CSV is neither a backup nor a reimport format. Import every column as text in a spreadsheet. [Contract and limitations](gates/g1q-ledger-activity-export.md)
+
 ### Transition an existing ledger to chronological replay
 
 schema22/backup v16 uses the FIFO v2 policy with exact UTC ordering. A DB with an existing ledger cannot run normally after migration alone. Stop the old core, preserve the original backup, and follow [G1.20's preview → review → activate → verify new backup procedure](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차). Distinguish validation of archived historical backups from activation of the current policy.
