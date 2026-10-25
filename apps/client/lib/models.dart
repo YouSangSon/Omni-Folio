@@ -1502,13 +1502,15 @@ class PortfolioTwr {
     }
     Money? net;
     if (json['net_contributions'] != null) {
-      if (json['net_contributions'] is! Json)
+      if (json['net_contributions'] is! Json) {
         throw const FormatException('Invalid TWR cash');
+      }
       final money = json['net_contributions'] as Json;
       _requireExactKeys(money, const {'currency', 'amount'});
       net = Money.fromJson(money);
-      if (net.currency != 'KRW')
+      if (net.currency != 'KRW') {
         throw const FormatException('Invalid TWR currency');
+      }
     }
     final issues = _jsonList(
       json,
@@ -1535,8 +1537,9 @@ class PortfolioTwr {
           !codes.contains(issue.code) ||
           !seen.add(issue.code) ||
           issue.field != null,
-    ))
+    )) {
       throw const FormatException('Invalid TWR issue');
+    }
     final missingValuation = seen.contains('valuation_unavailable');
     final reasons = seen.difference(const {'sample_data'});
     final reason = reasons.isEmpty ? null : reasons.first;

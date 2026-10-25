@@ -68,7 +68,7 @@ class _PortfolioTwrPageState extends State<PortfolioTwrPage> {
 
   Widget _content(BuildContext context) {
     final report = _report;
-    if (report == null)
+    if (report == null) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -87,6 +87,7 @@ class _PortfolioTwrPageState extends State<PortfolioTwrPage> {
           ],
         ],
       );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [

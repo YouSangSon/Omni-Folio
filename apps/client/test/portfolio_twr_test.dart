@@ -267,7 +267,7 @@ void main() {
   }
   for (final brightness in Brightness.values) {
     for (final size in [const Size(375, 812), const Size(812, 375)]) {
-      testWidgets('TWR $brightness ${size} at200percent reduced motion', (
+      testWidgets('TWR $brightness $size at200percent reduced motion', (
         tester,
       ) async {
         tester.view.physicalSize = size;
