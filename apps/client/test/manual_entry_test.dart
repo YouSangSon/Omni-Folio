@@ -107,15 +107,21 @@ Future<void> _history(WidgetTester tester, FakeApi api) async {
   await pumpUi(tester);
 }
 
-Future<void> _tapHistory(WidgetTester tester, String label) async {
-  final target = find.text(label);
-  await tester.ensureVisible(target);
-  await tester.pump();
+Future<void> _revealHistory(
+  WidgetTester tester,
+  Finder target, {
+  double delta = 200,
+}) async {
+  if (target.evaluate().isNotEmpty) {
+    await tester.ensureVisible(target);
+    await tester.pump();
+    delta = tester.getCenter(target).dy < tester.view.physicalSize.height / 2
+        ? -200
+        : 200;
+  }
   await tester.scrollUntilVisible(
     target.hitTestable(),
-    tester.getCenter(target).dy < tester.view.physicalSize.height / 2
-        ? -200
-        : 200,
+    delta,
     maxScrolls: 30,
     scrollable: find
         .descendant(
@@ -124,6 +130,12 @@ Future<void> _tapHistory(WidgetTester tester, String label) async {
         )
         .first,
   );
+  await tester.pump();
+}
+
+Future<void> _tapHistory(WidgetTester tester, String label) async {
+  final target = find.text(label);
+  await _revealHistory(tester, target);
   await tester.tap(target);
 }
 
@@ -281,9 +293,7 @@ void main() {
       await tester.ensureVisible(find.text('미리보기 만들기'));
       await _tapHistory(tester, '미리보기 만들기');
       await pumpUi(tester);
-      final apply = find.text('원자적으로 적용');
-      await tester.ensureVisible(apply);
-      await tester.tap(apply);
+      await _tapHistory(tester, '원자적으로 적용');
       await pumpUi(tester);
       expect(api.previewInputs, [csv]);
       expect(api.applyKeys, ['import-preview_manual_001']);
@@ -292,8 +302,7 @@ void main() {
       await _tapHistory(tester, '미리보기 만들기');
       await pumpUi(tester);
       expect(api.previewInputs, [csv, csv]);
-      await tester.ensureVisible(apply);
-      await tester.tap(apply);
+      await _tapHistory(tester, '원자적으로 적용');
       await pumpUi(tester);
       expect(api.applyKeys, [
         'import-preview_manual_001',
@@ -303,6 +312,7 @@ void main() {
         tester.widget<TextField>(find.byType(TextField)).controller!.text,
         csv,
       );
+      await _revealHistory(tester, find.text('적용 확인'));
       expect(find.text('적용 확인'), findsOneWidget);
       expect(find.textContaining('적용 1건'), findsOneWidget);
     },
@@ -316,8 +326,7 @@ void main() {
     await tester.enterText(find.byType(TextField), 'original csv');
     await _tapHistory(tester, '미리보기 만들기');
     await pumpUi(tester);
-    await tester.ensureVisible(find.text('원자적으로 적용'));
-    await tester.tap(find.text('원자적으로 적용'));
+    await _tapHistory(tester, '원자적으로 적용');
     await pumpUi(tester);
     await tester.ensureVisible(find.text('거래 직접 입력'));
     await _openManual(tester);
@@ -328,6 +337,7 @@ void main() {
       tester.widget<TextField>(find.byType(TextField)).controller!.text,
       'original csv',
     );
+    await _revealHistory(tester, find.text('적용 확인'));
     expect(find.text('적용 확인'), findsOneWidget);
     expect(api.previewInputs, ['original csv']);
     expect(api.applyKeys, hasLength(1));
@@ -380,14 +390,14 @@ void main() {
     await tester.enterText(find.byType(TextField), 'original csv');
     await _tapHistory(tester, '미리보기 만들기');
     await pumpUi(tester);
-    await tester.ensureVisible(find.text('원자적으로 적용'));
-    await tester.tap(find.text('원자적으로 적용'));
+    await _tapHistory(tester, '원자적으로 적용');
     await tester.pump();
-    await tester.ensureVisible(find.byType(TextField));
+    await _revealHistory(tester, find.byType(TextField), delta: -200);
     expect(tester.widget<TextField>(find.byType(TextField)).readOnly, isFalse);
     await tester.enterText(find.byType(TextField), 'edited csv');
     await tester.tap(find.text('홈'));
     await pumpUi(tester);
+    expect(api.applyKeys, hasLength(1));
     gate.completeError(const ApiException('private-apply-sentinel'));
     await pumpUi(tester);
     await tester.tap(find.text('내역'));
@@ -405,8 +415,7 @@ void main() {
     await pumpUi(tester);
     expect(api.previewInputs, ['original csv', 'new current csv']);
     api.applyCompleter = null;
-    await tester.ensureVisible(find.text('이전 요청 재시도'));
-    await tester.tap(find.text('이전 요청 재시도'));
+    await _tapHistory(tester, '이전 요청 재시도');
     await pumpUi(tester);
     expect(api.applyKeys, everyElement('import-preview_manual_001'));
     expect(api.applyKeys, hasLength(2));
@@ -414,6 +423,7 @@ void main() {
       tester.widget<TextField>(find.byType(TextField)).controller!.text,
       'new current csv',
     );
+    await _revealHistory(tester, find.text('이전 입력 적용 확인'));
     expect(find.text('이전 입력 적용 확인'), findsOneWidget);
     expect(find.text('적용 확인'), findsNothing);
     expect(find.textContaining('private-apply-sentinel'), findsNothing);
@@ -454,17 +464,18 @@ void main() {
     await tester.enterText(find.byType(TextField), 'original csv');
     await _tapHistory(tester, '미리보기 만들기');
     await pumpUi(tester);
-    await tester.ensureVisible(find.text('원자적으로 적용'));
-    await tester.tap(find.text('원자적으로 적용'));
+    await _tapHistory(tester, '원자적으로 적용');
     await tester.pump();
-    await tester.ensureVisible(find.byType(TextField));
+    await _revealHistory(tester, find.byType(TextField), delta: -200);
     await tester.enterText(find.byType(TextField), 'edited csv');
+    expect(api.applyKeys, hasLength(1));
     gate.complete(api.receiptValue);
     await pumpUi(tester);
     expect(
       tester.widget<TextField>(find.byType(TextField)).controller!.text,
       'edited csv',
     );
+    await _revealHistory(tester, find.text('이전 입력 적용 확인'));
     expect(find.text('이전 입력 적용 확인'), findsOneWidget);
     expect(find.text('적용 확인'), findsNothing);
     expect(tester.takeException(), isNull);
@@ -481,6 +492,7 @@ void main() {
     await _tapHistory(tester, '미리보기 만들기');
     await tester.pump();
     await tester.enterText(find.byType(TextField), 'edited');
+    expect(api.previewInputs, ['original']);
     gate.completeError(const ApiException('private-preview-sentinel'));
     await pumpUi(tester);
     expect(
@@ -505,9 +517,13 @@ void main() {
     await tester.enterText(find.byType(TextField), 'original');
     await _tapHistory(tester, '미리보기 만들기');
     await pumpUi(tester);
-    await tester.ensureVisible(find.text('원자적으로 적용'));
-    await tester.tap(find.text('원자적으로 적용'));
+    await _tapHistory(tester, '원자적으로 적용');
     await pumpUi(tester);
+    await _revealHistory(
+      tester,
+      find.textContaining('이전 반영 요청이 거절되었습니다.'),
+      delta: -200,
+    );
     expect(find.textContaining('이전 반영 요청이 거절되었습니다.'), findsOneWidget);
     final open = find.widgetWithText(OutlinedButton, '거래 직접 입력');
     expect(tester.widget<OutlinedButton>(open).onPressed, isNotNull);

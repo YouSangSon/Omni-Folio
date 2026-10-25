@@ -160,6 +160,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
                     ),
                   DropdownButtonFormField<String>(
                     initialValue: _type,
+                    isExpanded: true,
                     decoration: const InputDecoration(labelText: '기록 유형'),
                     items: [
                       for (final type in manualEntryTypes.entries)
