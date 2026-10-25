@@ -104,7 +104,7 @@
   - [x] G3.8G2J 실제 Python→Go 연결을 122.029초 실행해 12개 입력의 durable 처리·13개 정책·11회 갱신과 종료 후 전체 복구·소유 리소스 반환을 검증. 120회 관찰에서 최소 lease 여유 12.005초이며 하루 운영·관찰 사이 무중단 보증은 아님 ([gate](gates/g3aa-paper-real-clock-soak.md))
   - [x] G3.8G2K 누락 봉의 체결·성과·안전정책을 봉별로 연결해 중간 손실 이후 체결을 차단. RED/GREEN, D/E 재시작·selection 경계, 실제 signal 복구, opt-in soak 포함 전체 check·focused race·소유 자원 정리와 리뷰 통과. 수동 성과 전용 명령의 조합·기존 과거 누락 소급 복구 및 전체 G3.8G2 완료는 아님 ([gate](gates/g3ab-paper-chronological-recovery.md))
   - [x] G3.8G2L 선택적 `--bundle --capture-dir`로 관찰한 정확한 입력을 stdout 전에 보관하고 기존 Go 명령으로 명시적 재실행. 동시 생성·저장 실패·출력 단절·원본 교체·재시도와 Go 전체/Python39·리뷰·소유 자원 정리 통과. 처리 완료 ACK·자동 재실행·소스 완결성·freshness는 보장하지 않음 ([gate](gates/g3af-paper-input-capture.md))
-  - [ ] G3.8G2M 보관 입력의 읽기 전용 DB 대조: 과거 selection·입력 봉/receipt·signal/order를 독립 사실로 조회하며 완료·freshness·실행 허가를 추론하지 않는다. 원격 SQLite·native CLI·복구/오류 경계와 전체 Core 검사 진행 중 ([gate](gates/g3ah-paper-input-status.md)).
+  - [x] G3.8G2M 보관 입력의 읽기 전용 DB 대조: 과거 selection·입력 봉/receipt·signal/order를 독립 사실로 조회하며 완료·freshness·실행 허가를 추론하지 않는다. 원격 SQLite·native CLI·복구/오류 경계와 Go 전체·Python39·JSON17 및 소유 자원 정리 통과. Linux watcher의 상속된 SIGINT 무시도 통제된 RED 후 CLI 진입점에서 교정; 상시 운영·자동 재실행은 별도 ([gate](gates/g3ah-paper-input-status.md), [PR #38](https://github.com/YouSangSon/Omni-Folio/pull/38)).
 - [ ] strategy/risk/paper runner와 자동 paper/shadow promotion evidence
 - [x] G3.8H 로컬 모의 정책 상태 GET·Flutter 조회: 복구 검증된 소유권·미완료 chain·최근 정책만 표시하고 실행/갱신 권한은 만들지 않음. 전체 check, 최종 focused race, Flutter 84·analyze, 계약·보안 검사, 읽기 전용 리뷰와 owned cleanup 통과. 브라우저 실렌더링·물리 기기·알림·상시 운영 증거는 별도 ([gate](gates/g3ac-paper-monitor.md))
 
