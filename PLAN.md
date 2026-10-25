@@ -14,7 +14,7 @@
 
 ## Next
 
-- [ ] G1.23 원장 시작 이후의 XIRR: 같은 관찰의 현재 KRW 자산과 정정 후 외부 입출금, 과거 환율의 두 시점, UTC 날짜/365일과 유일근·참고 후보를 구분한다. API·Flutter 상세와 독립 골든 구현 후 원격 검증 중. TWR·benchmark와 실제 증권사 성과는 별도 ([gate](gates/g1s-portfolio-xirr.md), [PR #44](https://github.com/YouSangSon/Omni-Folio/pull/44)).
+- [x] G1.23 원장 시작 이후의 XIRR: 같은 관찰의 현재 KRW 자산과 정정 후 외부 입출금, 과거 환율의 두 시점, UTC 날짜/365일과 유일근·참고 후보를 구분한다. 독립 수치19사례·공유 응답·리뷰/delta 보완과 Go 전체/Python39/JSON21, Flutter 집중29/전체220·분석·web/Android 릴리스·패키지/소스 일치 검증 후 main에 병합했다. TWR·benchmark와 실제 증권사 성과는 별도 ([gate](gates/g1s-portfolio-xirr.md), [PR #44](https://github.com/YouSangSon/Omni-Folio/pull/44)).
 
 - [x] Phase A 직접 입력: 10가지 기록을 정확한 decimal·원문 시간대/소수초의 CSV 한 건으로 준비하고 기존 preview·명시적 apply를 사용한다. 편집/탭 이동과 독립적으로 원래 반영 요청을 보존하며 결과가 불확실하면 같은 키로 재시도한다. 독립 리뷰·공통19사례·Flutter 집중43/전체191·Go 전체/Python39/JSON18·새 web/Android 릴리스와 소스 일치 확인 후 main에 병합했다. 새 iOS 빌드·실기기/수동 screen reader·앱 재시작 복구는 미검증 ([gate](gates/g4p-first-run-import-recovery.md#manual-entry), [PR #42](https://github.com/YouSangSon/Omni-Folio/pull/42)).
 
