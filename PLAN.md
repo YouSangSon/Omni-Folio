@@ -30,7 +30,7 @@
 
 - [x] G2 iOS 무서명 포장: immutable app 사본에서 SDK 테스트 플러그인만 제거하고 운영 lock·원본 source·native 바이너리·출력 hash를 확인. unit/fake 11개와 실제 `-jobs 1` 빌드 1회 및 소유 자원 정리 통과. 서명·실기기·스토어·실제 SIGINT는 별도 ([근거](gates/g2-client.md#ios-release-packaging-2026-10-25)).
 
-- [ ] my-cloud 비공개 검증: Compose 자원·로그 예산 정규화 검사 후 실제 VM의 공통 잠금·여유 자원·청구 트래픽과 런타임 적용을 확인한다. 현재 SSH는 TCP22 timeout, 제공사 청구 조회는 로그인 대기다. 신규 이미지·대용량 전송은 보류 ([조건](gates/g6-deployment.md#single-node-resource-budget)).
+- [ ] my-cloud 비공개 검증: **이번 Goal은 사용자 요청으로 VM을 우선 건너뛴다(2026-10-25).** Compose 자원·로그 예산 정규화만 확인했으며 실제 VM의 공통 잠금·여유 자원·청구 트래픽과 런타임 적용은 미확인이다. 마지막 SSH 관측은 TCP22 timeout이었다. VM 작업을 재개할 때 [진입 조건](gates/g6-deployment.md#single-node-resource-budget)부터 확인한다.
 
 - [x] 키움 K0 read-only transport/normalization 합성 계약
 - [x] provider-neutral local fixture OHLCV API와 Flutter 종목 상세 price/volume chart·정확한 표·샘플 provenance
@@ -104,6 +104,7 @@
   - [x] G3.8G2J 실제 Python→Go 연결을 122.029초 실행해 12개 입력의 durable 처리·13개 정책·11회 갱신과 종료 후 전체 복구·소유 리소스 반환을 검증. 120회 관찰에서 최소 lease 여유 12.005초이며 하루 운영·관찰 사이 무중단 보증은 아님 ([gate](gates/g3aa-paper-real-clock-soak.md))
   - [x] G3.8G2K 누락 봉의 체결·성과·안전정책을 봉별로 연결해 중간 손실 이후 체결을 차단. RED/GREEN, D/E 재시작·selection 경계, 실제 signal 복구, opt-in soak 포함 전체 check·focused race·소유 자원 정리와 리뷰 통과. 수동 성과 전용 명령의 조합·기존 과거 누락 소급 복구 및 전체 G3.8G2 완료는 아님 ([gate](gates/g3ab-paper-chronological-recovery.md))
   - [x] G3.8G2L 선택적 `--bundle --capture-dir`로 관찰한 정확한 입력을 stdout 전에 보관하고 기존 Go 명령으로 명시적 재실행. 동시 생성·저장 실패·출력 단절·원본 교체·재시도와 Go 전체/Python39·리뷰·소유 자원 정리 통과. 처리 완료 ACK·자동 재실행·소스 완결성·freshness는 보장하지 않음 ([gate](gates/g3af-paper-input-capture.md))
+  - [ ] G3.8G2M 보관 입력의 읽기 전용 DB 대조: 과거 selection·입력 봉/receipt·signal/order를 독립 사실로 조회하며 완료·freshness·실행 허가를 추론하지 않는다. 원격 SQLite·native CLI·복구/오류 경계와 전체 Core 검사 진행 중 ([gate](gates/g3ah-paper-input-status.md)).
 - [ ] strategy/risk/paper runner와 자동 paper/shadow promotion evidence
 - [x] G3.8H 로컬 모의 정책 상태 GET·Flutter 조회: 복구 검증된 소유권·미완료 chain·최근 정책만 표시하고 실행/갱신 권한은 만들지 않음. 전체 check, 최종 focused race, Flutter 84·analyze, 계약·보안 검사, 읽기 전용 리뷰와 owned cleanup 통과. 브라우저 실렌더링·물리 기기·알림·상시 운영 증거는 별도 ([gate](gates/g3ac-paper-monitor.md))
 

@@ -107,6 +107,24 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research \
 
 제안의 30초 기한은 보관 시간이 아니라 **Go가 해당 봉을 최초 접수한 receipt**를 기준으로 합니다. 처음 가져오는 오래된 보관 파일은 새 Go receipt를 받을 수 있으므로 이 기능은 시장 freshness나 capture age를 검증하지 않습니다. 이미 접수한 봉의 재실행은 최초 receipt를 유지합니다. 보관 파일은 사용자가 관리하는 별도 입력 자료이며 DB backup에 포함되지 않습니다. [보관 gate](../gates/g3af-paper-input-capture.md)
 
+<a id="saved-input-status"></a>
+
+## 보관 입력을 DB 기록과 대조하기
+
+재실행을 판단하기 전에 보관 파일 한 건이 지정한 DB에 어떤 기록을 남겼는지 조회할 수 있습니다. 저장소 루트에서 실행합니다. 정확한 과거 selection event도 허용하며, 명령은 실행 권한을 취득하지 않습니다.
+
+```bash
+(cd services/core && go run . paper-input-status \
+  -db /absolute/path/paper.db \
+  -account kiwoom_account_AAAAAAAAAAAAAAAAAAAAAAAA \
+  -selection-event "$PAPER_SELECTION_EVENT" \
+  -bundle /absolute/path/to/captured.json)
+```
+
+`current_selection_matches`, `bar_state`, 최초 `bar_recorded_at`·`proposal_deadline`, `signal_recorded`, 연결된 `order_status`를 독립적으로 확인합니다. 기록 없는 봉은 `not_observed_in_this_database`이며, 없는 시각·주문은 JSON `null`입니다. 현재 DB를 기준으로 하므로 이전 backup을 조회하면 이후 입력 기록은 다시 없을 수 있습니다.
+
+`completion=unknown`, `execution_authorized=false`, `freshness=unverified`는 항상 유지됩니다. 기록 부재는 “미처리”, 신호 존재나 성공 종료는 “완료”, deadline 표시는 “지금 실행 가능”이라는 뜻이 아닙니다. 입력의 구조·hash·연구 binding과 저장 기록을 검사하며 SMA admission을 대신하지 않습니다. `none`·no-delta·정책 HALT도 처리 완료 ACK가 아닙니다. CLI는 `-arm-paper`를 받지 않으며, 불일치·손상은 기록 부재로 숨기지 않고 redacted 오류로 종료합니다. [원리·검증 범위](../gates/g3ah-paper-input-status.md)
+
 ## 자동 제안 생성만 관찰하기
 
 앞의 Python `signal_cli` 명령에 `--watch`를 추가하면 현재 유효한 제안을 한 줄 출력한 뒤, 각 검사 완료 1초 후 CSV를 다시 읽습니다. 동일 입력은 다시 출력하지 않습니다. 입력 파일은 각 1 MiB 이하의 일반 파일이어야 하며 작성자는 완성된 파일로 원자 교체해야 합니다. 실행 중 연구 artifact 변경, 연구 CSV hash 불일치, 같은/과거 마지막 봉의 byte 변경 또는 잘못된 입력은 오류로 종료합니다.

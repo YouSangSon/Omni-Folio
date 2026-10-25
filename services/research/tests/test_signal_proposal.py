@@ -99,15 +99,22 @@ class SignalProposalTest(unittest.TestCase):
                         self.assertEqual(result.stderr, 'Paper signal proposal input is invalid; no proposal was produced.\n')
 
     def test_watch_real_signals_and_invalid_update_leave_no_owned_resources(self) -> None:
-        for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGKILL, None):
-            with self.subTest(signal=sig), tempfile.TemporaryDirectory() as temporary:
+        for sig, inherited_ignore in ((signal.SIGINT, False), (signal.SIGINT, True),
+                                      (signal.SIGTERM, False), (signal.SIGKILL, False), (None, False)):
+            with self.subTest(signal=sig, inherited_ignore=inherited_ignore), tempfile.TemporaryDirectory() as temporary:
                 directory = Path(temporary)
                 bars, research, artifact = self.inputs(directory)
                 artifact_path = directory / 'artifact.json'
                 artifact_path.write_text(json.dumps(artifact))
                 args = ['--bars', str(bars), '--research-bars', str(research), '--artifact', str(artifact_path), '--watch']
                 before = {p.name: p.read_bytes() for p in directory.iterdir()}
-                child = subprocess.Popen([sys.executable, '-B', '-m', 'omni_research.signal_cli', *args],
+                command = [sys.executable, '-B', '-m', 'omni_research.signal_cli', *args]
+                if inherited_ignore:
+                    launcher = ('import os,signal,sys; signal.signal(signal.SIGINT,signal.SIG_IGN); '
+                                'assert signal.getsignal(signal.SIGINT)==signal.SIG_IGN; '
+                                'os.execv(sys.executable,[sys.executable,"-B","-m","omni_research.signal_cli",*sys.argv[1:]])')
+                    command = [sys.executable, '-B', '-c', launcher, *args]
+                child = subprocess.Popen(command,
                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 try:
                     with selectors.DefaultSelector() as ready:

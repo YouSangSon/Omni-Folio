@@ -308,6 +308,8 @@ stdout の JSON は、信頼できないローカル入力から計算した目�
 
 Python の `--bundle` は、提案と計算に使った原本 CSV をまとめて出力します。Go の `paper-execute -bundle FILE -arm-paper` で一度渡すと、原本のパスを読み直さず既存の検証を通します。各 CSV は1 MiB、JSON 全体は4 MiB が上限です。[正確な byte 引き渡しの gate](gates/g3u-paper-input-bundle.md)
 
+保存した入力1件は `paper-input-status -db PATH -account ACCOUNT -selection-event EVENT -bundle FILE` で、DB の足・初回 receipt・シグナル・注文記録と読み取り専用で照合できます。記録は完了 ACK・freshness・実行許可ではなく、照会は再実行の可否を判断しません。[使い方と意味](docs/local-paper-workflow.md#saved-input-status)
+
 `--watch --bundle` は、別の `paper-execute-stream -arm-paper` の stdin pipe に接続できます。このコマンドは一度だけ有効化し、入力の合間にも所有 lease を更新し、停止・EOF・エラー時に reader と権限を片付けます。自動再有効化や durable queue ではなく、実行は stdout の代わりに DB 記録で確認します。[連続 fixture の使い方](docs/local-paper-workflow.md#명시적으로-연속-fixture-소비하기)、[検証 gate](gates/g3w-paper-input-stream.md)
 
 戦略改善 runner は有限個の long-only SMA 候補を expanding walk-forward で評価し、final holdout を一度だけ開きます。結果は `paper_candidate` または `no_promotion` だけで、認証情報・注文・live 昇格の権限は得られません。

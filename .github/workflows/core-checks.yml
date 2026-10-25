@@ -1,0 +1,57 @@
+name: Core checks
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - services/core/**
+      - services/research/**
+      - contracts/**
+      - tests/**
+      - tools/**
+      - Makefile
+      - .tool-versions
+      - .github/workflows/core-checks.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: core-checks
+  cancel-in-progress: false
+
+jobs:
+  core:
+    if: github.repository == 'YouSangSon/Omni-Folio' && github.event.repository.private == false && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    env:
+      GOMAXPROCS: '2'
+      GOFLAGS: -p=1
+      GOTOOLCHAIN: local
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.24.5'
+          cache: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.14.5'
+      - name: Verify tool pins
+        run: |
+          grep -Fx 'golang 1.24.5' .tool-versions
+          grep -Fx 'python 3.14.5' .tool-versions
+          go version
+          python --version
+      - name: Check saved-input scenarios first
+        run: make test FLUTTER=true CORE_TEST_PACKAGES='-run=^TestPaperInputStatus -count=1 -timeout=10m ./...'
+      - name: Check core, research and contracts with owned cleanup
+        # Client source is unchanged; its own release workflow owns Flutter checks.
+        run: make check DART=true FLUTTER=true CORE_TEST_PACKAGES='-timeout=30m ./...'
+      - name: Verify source identity
+        run: git diff --exit-code

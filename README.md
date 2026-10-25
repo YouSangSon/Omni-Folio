@@ -308,6 +308,8 @@ stdout의 JSON은 비신뢰 로컬 입력에서 계산한 목표 수량 **제안
 
 Python `--bundle`은 제안과 계산에 사용한 원본 CSV를 함께 출력합니다. Go `paper-execute -bundle FILE -arm-paper`로 한 번 전달하면 원본 경로를 다시 읽지 않고 기존 검증을 거칩니다. 개별 CSV 1 MiB·전체 JSON 4 MiB 제한입니다. [정확한 byte 전달 gate](gates/g3u-paper-input-bundle.md)
 
+보관 입력 한 건은 `paper-input-status -db PATH -account ACCOUNT -selection-event EVENT -bundle FILE`로 DB의 봉·최초 receipt·신호·주문 기록과 읽기 전용으로 대조합니다. 기록은 처리 완료 ACK·freshness·실행 승인이 아니며, 조회가 재실행 여부를 결정하지 않습니다. [조회 방법과 의미](docs/local-paper-workflow.md#saved-input-status)
+
 `--watch --bundle`은 별도 `paper-execute-stream -arm-paper`의 stdin pipe로 연결할 수 있습니다. 이 명령은 한 번만 활성화하고 입력 사이에도 소유 임대를 갱신하며, 중지·EOF·오류에서 reader와 권한을 정리합니다. 자동 재활성화나 durable queue는 아니며 stdout 대신 DB 기록으로 실행을 확인합니다. [연속 fixture 사용법](docs/local-paper-workflow.md#명시적으로-연속-fixture-소비하기), [검증 gate](gates/g3w-paper-input-stream.md)
 
 전략 개선 runner는 유한한 long-only SMA 후보를 expanding walk-forward로 평가하고 final holdout을 한 번만 엽니다. 결과는 `paper_candidate` 또는 `no_promotion`만 만들 수 있으며 credential·주문·live 승격 권한을 얻지 못합니다.
