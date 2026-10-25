@@ -265,3 +265,38 @@ func TestBenchmarkSeriesLegacyV16PreservesReplayAuthorityAndSource(t *testing.T)
 		t.Fatal("v16 claimed future proof")
 	}
 }
+
+func TestBenchmarkSeriesRejectsUnexpectedTriggerAndIndexBeforeWriting(t *testing.T) {
+	for name, definition := range map[string]string{
+		"ignore":      `CREATE TRIGGER unexpected_benchmark_trigger BEFORE INSERT ON benchmark_series_versions BEGIN SELECT RAISE(IGNORE); END`,
+		"side effect": `CREATE TRIGGER unexpected_benchmark_trigger AFTER INSERT ON benchmark_series_versions BEGIN INSERT INTO benchmark_trigger_probe VALUES ('changed'); END`,
+		"index":       `CREATE INDEX unexpected_benchmark_index ON benchmark_series_versions(recorded_at)`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc, _ := testService(t, nil, nil)
+			if _, err := svc.db.Exec(`CREATE TABLE benchmark_trigger_probe(value TEXT)`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := svc.db.Exec(definition); err != nil {
+				t.Fatal(err)
+			}
+			receipt, err := svc.importBenchmarkSeries(context.Background(), []byte(benchmarkSeriesTestInput))
+			if err == nil || receipt != nil {
+				t.Fatalf("unexpected schema reported storage success: %+v %v", receipt, err)
+			}
+			var stored, sideEffects int
+			if err := svc.db.QueryRow(`SELECT COUNT(*) FROM benchmark_series_versions`).Scan(&stored); err != nil {
+				t.Fatal(err)
+			}
+			if err := svc.db.QueryRow(`SELECT COUNT(*) FROM benchmark_trigger_probe`).Scan(&sideEffects); err != nil {
+				t.Fatal(err)
+			}
+			if stored != 0 || sideEffects != 0 {
+				t.Fatalf("rejected schema wrote rows: benchmark=%d side_effects=%d", stored, sideEffects)
+			}
+			if _, err := proveBenchmarkSeriesRecovery(context.Background(), svc.db); err == nil {
+				t.Fatal("recovery accepted extra schema object")
+			}
+		})
+	}
+}
