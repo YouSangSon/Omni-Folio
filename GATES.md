@@ -167,3 +167,4 @@ G6 PostgreSQL and Kubernetes promotion
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.
 
 - G1.23은 외부 입출금과 현재 KRW 자산을 같은 관찰에서 검증하는 회고 XIRR 단위다. 유일근·참고 후보·계산 불가를 구분하며 독립 골든·원격 Core/Client 검사와 새 web/Android 릴리스가 통과했다. TWR·benchmark·실제 증권사 성과를 대신하지 않는다. [정책과 검증](gates/g1s-portfolio-xirr.md)
+- G1.24는 외부 입출금 경계와 기말을 같은 관찰에서 평가하는 누적 TWR 단위다. exact 시각/정정·분할 가격 단위·양수 중간 자본과 전액 출금/손실의 구분, 닫힌 상태 계약과 독립 수치·원격 Core/Client 전체·새 web/Android 릴리스가 통과했다. 실제 broker 성과·benchmark·재투자 자동 연결은 별도다. [정책과 검증](gates/g1t-portfolio-twr.md)
