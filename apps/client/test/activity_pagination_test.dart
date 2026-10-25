@@ -86,6 +86,10 @@ Future<void> _tapVisible(WidgetTester tester, Finder finder) async {
 }
 
 class _ActivityApi implements OmniApi {
+  @override
+  Future<PortfolioXirr> portfolioXirr() =>
+      throw UnsupportedError('XIRR is loaded only from its detail page.');
+
   _ActivityApi({required this.first, this.previewValue, this.receiptValue});
 
   LedgerActivityPage first;

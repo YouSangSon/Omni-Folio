@@ -41,8 +41,18 @@ func (s *Service) currentPortfolioValuation(ctx context.Context) (*CurrentPortfo
 	}
 	defer tx.Rollback()
 
+	result, appErr := s.currentPortfolioValuationTx(ctx, tx, s.now().UTC())
+	if appErr != nil {
+		return nil, appErr
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, internalError(err)
+	}
+	return result, nil
+}
+
+func (s *Service) currentPortfolioValuationTx(ctx context.Context, tx *sql.Tx, valuationTime time.Time) (*CurrentPortfolioValuation, *appError) {
 	// The server owns one cutoff inside the same read transaction as every required input.
-	valuationTime := s.now().UTC()
 	valuationAsOf := valuationTime.Format(time.RFC3339Nano)
 	snapshot, err := snapshotFrom(ctx, tx)
 	if err != nil {
@@ -101,9 +111,6 @@ func (s *Service) currentPortfolioValuation(ctx context.Context) (*CurrentPortfo
 	}
 	if len(snapshot.Cash) == 0 && len(snapshot.Holdings) == 0 {
 		result.Status = "empty"
-		if err := tx.Commit(); err != nil {
-			return nil, internalError(err)
-		}
 		return result, nil
 	}
 
@@ -207,9 +214,6 @@ func (s *Service) currentPortfolioValuation(ctx context.Context) (*CurrentPortfo
 				Code: "sample_data", Message: "portfolio valuation uses stored local sample prices or FX data",
 			})
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, internalError(err)
 	}
 	return result, nil
 }

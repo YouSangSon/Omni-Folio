@@ -506,6 +506,10 @@ void main() {
 }
 
 class _TestApi implements OmniApi {
+  @override
+  Future<PortfolioXirr> portfolioXirr() =>
+      throw UnsupportedError('XIRR is loaded only from its detail page.');
+
   _TestApi({this.snapshotValue});
 
   int valuationCalls = 0;

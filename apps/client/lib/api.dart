@@ -10,6 +10,7 @@ abstract interface class OmniApi {
   Future<ServiceStatus> status();
   Future<PortfolioSnapshot> snapshot();
   Future<CurrentPortfolioValuation> currentPortfolioValuation();
+  Future<PortfolioXirr> portfolioXirr();
   Future<HoldingValuation> holdingValuation();
   Future<InstrumentLedger> instrumentLedger(
     String instrumentId,
@@ -124,6 +125,10 @@ class RestOmniApi implements OmniApi {
       CurrentPortfolioValuation.fromJson(
         await _get('/v1/portfolio/current-valuation'),
       );
+
+  @override
+  Future<PortfolioXirr> portfolioXirr() async =>
+      PortfolioXirr.fromJson(await _get('/v1/portfolio/xirr'));
 
   @override
   Future<HoldingValuation> holdingValuation() async =>

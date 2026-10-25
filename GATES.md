@@ -34,7 +34,8 @@ G1 ledger vertical slice
 ├─ G1.19 exact fractional-second activity ordering and valuation cutoff
 ├─ G1.20 versioned chronological FIFO and explicit legacy replay activation
 ├─ G1.21 duplicate-import valuation and complete recorded-time cutoff
-└─ G1.22 verified public ledger activity CSV export
+├─ G1.22 verified public ledger activity CSV export
+└─ G1.23 retrospective portfolio XIRR (verification pending)
    |
 G2 client vertical slice
 ├─ G2.1 Flutter iOS/Android/web build
@@ -163,3 +164,5 @@ G6 PostgreSQL and Kubernetes promotion
 - G2 iOS 무서명 release 경로는 원본 profile harness를 보존하며 staging에서 테스트 플러그인을 제거하고 운영 의존성 잠금·원본 파일·완성 바이너리 hash를 확인한다. unit/fake 11개, 실제 Xcode `-jobs 1` 빌드와 소유 임시 자원 정리가 통과했다. 서명·실기기·스토어·새 target의 실제 SIGINT와 G2 전체는 미완료다. [근거](gates/g2-client.md#ios-release-packaging-2026-10-25)
 
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.
+
+- G1.23은 외부 입출금과 현재 KRW 자산을 같은 관찰에서 검증하는 회고 XIRR 단위다. 유일근·참고 후보·계산 불가를 구분하며 원격 검증 전이다. TWR·benchmark·실제 증권사 성과를 대신하지 않는다. [정책과 검증](gates/g1s-portfolio-xirr.md)

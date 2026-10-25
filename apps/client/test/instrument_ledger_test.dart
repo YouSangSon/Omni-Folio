@@ -60,6 +60,10 @@ Json _view() => {
 };
 
 class _Api implements OmniApi {
+  @override
+  Future<PortfolioXirr> portfolioXirr() =>
+      throw UnsupportedError('XIRR is loaded only from its detail page.');
+
   Future<InstrumentLedger> Function()? load;
   int calls = 0;
   @override

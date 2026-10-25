@@ -28,6 +28,19 @@ final _canonicalDecimalPattern = RegExp(
   r'^(?:0|-?(?:[1-9][0-9]*(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9]))$',
 );
 
+String decimalPercent(String value) {
+  if (!_canonicalDecimalPattern.hasMatch(value)) {
+    throw const FormatException('Invalid decimal percent');
+  }
+  final negative = value.startsWith('-');
+  final parts = (negative ? value.substring(1) : value).split('.');
+  final fraction = parts.length == 2 ? parts[1] : '';
+  var whole = '${parts[0]}${fraction.padRight(2, '0').substring(0, 2)}';
+  whole = whole.replaceFirst(RegExp(r'^0+(?=[0-9])'), '');
+  final remainder = fraction.length > 2 ? fraction.substring(2) : '';
+  return '${negative ? '-' : ''}$whole${remainder.isEmpty ? '' : '.$remainder'}%';
+}
+
 int _count(Json value, String key) {
   final result = value[key];
   if (result is! int || result < 0) {
@@ -1427,6 +1440,230 @@ class ApplyReceipt {
   final int skippedDuplicateRows;
   final String ledgerRevisionAfter;
   final DateTime recordedAt;
+}
+
+class PortfolioXirr {
+  const PortfolioXirr._({
+    required this.valuation,
+    required this.status,
+    required this.sample,
+    required this.periodStart,
+    required this.periodEnd,
+    required this.externalEventCount,
+    required this.signChanges,
+    required this.annualRate,
+    required this.candidateRate,
+    required this.netContributions,
+    required this.issues,
+  });
+
+  factory PortfolioXirr.fromJson(Json json) {
+    _requireExactKeys(json, const {
+      'policy_version',
+      'solver_policy',
+      'scope',
+      'valuation',
+      'status',
+      'sample',
+      'period_start',
+      'period_end',
+      'external_event_count',
+      'sign_changes',
+      'uniqueness',
+      'annual_rate',
+      'candidate_rate',
+      'net_contributions',
+      'issues',
+    });
+    if (_text(json, 'policy_version') !=
+            'restated_external_cash_utc_date_actual_365_v1' ||
+        _text(json, 'solver_policy') !=
+            'single_change_bracket_else_log_newton_0_1_v1' ||
+        _text(json, 'scope') != 'whole_portfolio_since_inception') {
+      throw const FormatException('Unsupported XIRR policy');
+    }
+    if (json['valuation'] is! Json) {
+      throw const FormatException('Missing XIRR valuation');
+    }
+    final valuation = CurrentPortfolioValuation.fromJson(
+      json['valuation'] as Json,
+    );
+    final status = _text(json, 'status');
+    final sample = _bool(json, 'sample');
+    final start = _nullableText(json, 'period_start');
+    final end = _text(json, 'period_end');
+    void date(String value) {
+      if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) {
+        throw const FormatException('Invalid XIRR date');
+      }
+      _utcText({'at': '${value}T00:00:00Z'}, 'at');
+    }
+
+    date(end);
+    if (start != null) date(start);
+    final count = json['external_event_count'] == null
+        ? null
+        : _count(json, 'external_event_count');
+    final changes = json['sign_changes'] == null
+        ? null
+        : _count(json, 'sign_changes');
+    final rate = _nullableDecimal(json, 'annual_rate');
+    final candidate = _nullableDecimal(json, 'candidate_rate');
+    for (final value in [rate, candidate]) {
+      if (value != null &&
+          (value.length > 323 ||
+              !double.parse(value).isFinite ||
+              _decimalScale(value) > 12 ||
+              (value.startsWith('-') &&
+                  _comparePositiveDecimal(value.substring(1), '1') >= 0))) {
+        throw const FormatException('Invalid XIRR numerical rate');
+      }
+    }
+    Money? net;
+    if (json['net_contributions'] != null) {
+      if (json['net_contributions'] is! Json) {
+        throw const FormatException('Invalid XIRR cash');
+      }
+      final money = json['net_contributions'] as Json;
+      _requireExactKeys(money, const {'currency', 'amount'});
+      net = Money.fromJson(money);
+      if (net.currency != 'KRW') {
+        throw const FormatException('Invalid XIRR currency');
+      }
+    }
+    final issues = _jsonList(
+      json,
+      'issues',
+    ).map(HoldingValuationIssue.fromJson).toList(growable: false);
+    const codes = {
+      'sample_data',
+      'valuation_unavailable',
+      'missing_historical_fx',
+      'stale_historical_fx',
+      'insufficient_period',
+      'one_sided_cash_flows',
+      'cash_flow_limit',
+      'numerical_limit',
+      'uniqueness_not_proven',
+    };
+    final issueKeys = <String>{};
+    if (issues.any(
+      (issue) =>
+          !codes.contains(issue.code) ||
+          !issueKeys.add('${issue.code}:${issue.field}') ||
+          (issue.field != null &&
+              (!const {
+                    'missing_historical_fx',
+                    'stale_historical_fx',
+                  }.contains(issue.code) ||
+                  !RegExp(r'^[A-Z]{3}$').hasMatch(issue.field!))),
+    )) {
+      throw const FormatException('Invalid XIRR issue');
+    }
+    final hasSample = issues.any((issue) => issue.code == 'sample_data');
+    final incompleteFlows = issues.any(
+      (issue) => const {
+        'valuation_unavailable',
+        'missing_historical_fx',
+        'stale_historical_fx',
+      }.contains(issue.code),
+    );
+    final unknownInputs = incompleteFlows && (net != null || changes != null);
+    final invalidValuationMissing =
+        issues.any((issue) => issue.code == 'valuation_unavailable') &&
+        (count != null || start != null || valuation.totalValue != null);
+    if (unknownInputs || invalidValuationMissing) {
+      throw const FormatException(
+        'Uncomputed XIRR inputs were reported as known',
+      );
+    }
+    final unique = _text(json, 'uniqueness');
+    final valid = switch (status) {
+      'calculated' =>
+        rate != null &&
+            candidate == null &&
+            changes == 1 &&
+            unique == 'unique' &&
+            issues.every((issue) => issue.code == 'sample_data'),
+      'candidate' =>
+        rate == null &&
+            candidate != null &&
+            changes != null &&
+            changes > 1 &&
+            unique == 'not_proven' &&
+            issues.any((issue) => issue.code == 'uniqueness_not_proven') &&
+            issues.every(
+              (issue) => const {
+                'sample_data',
+                'uniqueness_not_proven',
+              }.contains(issue.code),
+            ),
+      'empty' =>
+        rate == null &&
+            candidate == null &&
+            unique == 'not_applicable' &&
+            valuation.status == 'empty' &&
+            count == 0 &&
+            start == null &&
+            net == null &&
+            issues.isEmpty &&
+            !sample,
+      'unavailable' =>
+        rate == null &&
+            candidate == null &&
+            unique == 'not_applicable' &&
+            issues.any(
+              (issue) => !const {
+                'sample_data',
+                'uniqueness_not_proven',
+              }.contains(issue.code),
+            ),
+      _ => false,
+    };
+    if (!valid ||
+        sample != hasSample ||
+        (valuation.sample && !sample) ||
+        end != valuation.valuationAsOf.substring(0, 10) ||
+        (start != null && start.compareTo(end) > 0) ||
+        (count == null && start != null) ||
+        (count == 0 && start != null) ||
+        (count != null && count > 0 && start == null) ||
+        (changes != null && changes > 9999) ||
+        (count != null && changes != null && changes > count) ||
+        ((rate != null || candidate != null) &&
+            (valuation.totalValue == null ||
+                net == null ||
+                count == null ||
+                count == 0 ||
+                start == end))) {
+      throw const FormatException('Inconsistent XIRR report');
+    }
+    return PortfolioXirr._(
+      valuation: valuation,
+      status: status,
+      sample: sample,
+      periodStart: start,
+      periodEnd: end,
+      externalEventCount: count,
+      signChanges: changes,
+      annualRate: rate,
+      candidateRate: candidate,
+      netContributions: net,
+      issues: List.unmodifiable(issues),
+    );
+  }
+
+  final CurrentPortfolioValuation valuation;
+  final String status;
+  final bool sample;
+  final String? periodStart;
+  final String periodEnd;
+  final int? externalEventCount;
+  final int? signChanges;
+  final String? annualRate;
+  final String? candidateRate;
+  final Money? netContributions;
+  final List<HoldingValuationIssue> issues;
 }
 
 class MarketIssue {

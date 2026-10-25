@@ -1,3 +1,5 @@
+import 'models.dart' show decimalPercent;
+
 typedef ResearchJson = Map<String, dynamic>;
 
 enum ResearchPromotion { paperCandidate, noPromotion }
@@ -179,13 +181,7 @@ class ResearchMetrics {
 
 String researchPercent(String value) {
   _decimal(value);
-  final negative = value.startsWith('-');
-  final parts = (negative ? value.substring(1) : value).split('.');
-  final fraction = parts.length == 2 ? parts[1] : '';
-  var whole = '${parts[0]}${fraction.padRight(2, '0').substring(0, 2)}';
-  whole = whole.replaceFirst(RegExp(r'^0+(?=[0-9])'), '');
-  final remainder = fraction.length > 2 ? fraction.substring(2) : '';
-  return '${negative ? '-' : ''}$whole${remainder.isEmpty ? '' : '.$remainder'}%';
+  return decimalPercent(value);
 }
 
 ResearchJson _object(Object? value) {

@@ -10,6 +10,7 @@ import 'instrument_ledger_page.dart';
 import 'manual_entry_page.dart';
 import 'models.dart';
 import 'paper_monitor_page.dart';
+import 'portfolio_xirr_page.dart';
 import 'research_report_page.dart';
 
 class OmniFolioApp extends StatefulWidget {
@@ -500,6 +501,18 @@ class OverviewPage extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         _PortfolioHero(snapshot: snapshot),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () => Navigator.of(context).push<void>(
+            MaterialPageRoute(
+              builder: (_) => PortfolioXirrPage(api: controller.api),
+            ),
+          ),
+          icon: const Icon(Icons.trending_up),
+          label: const Text('입출금을 반영한 수익률 보기', textAlign: TextAlign.center),
+        ),
+        const SizedBox(height: 12),
+
         if (snapshot.holdings.isNotEmpty) ...[
           const SizedBox(height: 16),
           _SectionCard(
