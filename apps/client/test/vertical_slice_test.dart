@@ -2350,6 +2350,7 @@ void main() {
     await pumpUi(tester);
     expect(find.textContaining('중복 반영되지 않습니다'), findsOneWidget);
     await tester.ensureVisible(apply);
+    await tester.pump();
     await tester.tap(apply);
     await pumpUi(tester);
     expect(find.text('적용 확인'), findsOneWidget);

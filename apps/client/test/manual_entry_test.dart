@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -254,6 +255,24 @@ void main() {
         ),
         throwsFormatException,
       );
+    },
+  );
+
+  testWidgets(
+    'manual entry is reachable after the existing CSV keyboard action',
+    (tester) async {
+      final api = _manualApi();
+      await _history(tester, api);
+      await tester.tap(find.byType(TextField));
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.byType(ManualEntryPage), findsOneWidget);
+      expect(api.previewInputs, isEmpty);
+      expect(api.applyKeys, isEmpty);
     },
   );
 

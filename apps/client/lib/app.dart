@@ -2317,6 +2317,14 @@ class _ActivityPageState extends State<ActivityPage> {
               runSpacing: 8,
               children: [
                 OutlinedButton.icon(
+                  onPressed: _busy || _fileBusy ? null : _selectCsvFile,
+                  icon: const Icon(Icons.file_open_outlined),
+                  label: const Text('CSV 파일 선택'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 52),
+                  ),
+                ),
+                OutlinedButton.icon(
                   onPressed:
                       _busy ||
                           _fileBusy ||
@@ -2326,14 +2334,6 @@ class _ActivityPageState extends State<ActivityPage> {
                       : _openManualEntry,
                   icon: const Icon(Icons.edit_note_outlined),
                   label: const Text('거래 직접 입력'),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(0, 52),
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _busy || _fileBusy ? null : _selectCsvFile,
-                  icon: const Icon(Icons.file_open_outlined),
-                  label: const Text('CSV 파일 선택'),
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size(0, 52),
                   ),
