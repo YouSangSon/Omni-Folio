@@ -197,9 +197,9 @@ func (s *Service) paperInputStatus(ctx context.Context, account, selection strin
 	if anchor.InputDataSHA256 != inputSHA {
 		return nil, errors.New("paper input differs from its first receipt")
 	}
-	recorded, err := parsePaperTime(anchor.RecordedAt)
-	if err != nil {
-		return nil, err
+	recorded, valid := parsePaperTime(anchor.RecordedAt)
+	if !valid {
+		return nil, errors.New("paper input first receipt time is invalid")
 	}
 	deadline := recorded.Add(30 * time.Second).Format(canonicalPaperTimeLayout)
 	result.BarState, result.BarRecordedAt, result.ProposalDeadline = "matched", &anchor.RecordedAt, &deadline
