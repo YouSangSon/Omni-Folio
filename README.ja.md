@@ -165,7 +165,7 @@ mkdir -p -m 700 data/exports
   -out ../../data/exports/ledger.csv)
 ```
 
-`ledger-activity-export.v1` の receipt は revision・行数・SHA256 を示します。既存の出力は上書きしません。10,000行・32 MiB の上限超過や安全でない銘柄表記がある場合は失敗します。出力先フォルダーは現在のユーザー所有で、他ユーザーの書き込みを許可せず、上位パスも信頼できる必要があります。この CSV は backup・再取り込み形式ではありません。表計算ソフトでは全列をテキストとして取り込んでください。[契約と制限](gates/g1q-ledger-activity-export.md)
+`ledger-activity-export.v1` の receipt は revision・行数・SHA256 を示します。既存の出力は上書きしません。10,000行・32 MiB の上限超過や安全でない銘柄表記がある場合は失敗します。出力先フォルダーは現在のユーザー所有で、他ユーザーの書き込みを許可せず、上位パスも信頼できる必要があります。この CSV は backup・再取り込み形式ではありません。表計算ソフトでは全列をテキストとして取り込んでください。[契約と制限](gates/g1r-ledger-activity-export.md)
 
 ### 既存台帳の時系列再生ポリシーへの切り替え
 

@@ -165,7 +165,7 @@ mkdir -p -m 700 data/exports
   -out ../../data/exports/ledger.csv)
 ```
 
-`ledger-activity-export.v1` 영수증에는 revision·행 수·SHA256이 나옵니다. 기존 출력은 덮어쓰지 않습니다. 최대 10,000행·32 MiB를 넘거나 안전하지 않은 종목 표기가 있으면 실패합니다. 출력 폴더는 현재 사용자 소유이며 다른 사용자에게 쓰기가 허용되지 않아야 하고, 상위 경로도 신뢰할 수 있어야 합니다. 이 CSV는 backup·재가져오기 형식이 아닙니다. 스프레드시트에서는 모든 열을 텍스트로 가져오세요. [계약과 한계](gates/g1q-ledger-activity-export.md)
+`ledger-activity-export.v1` 영수증에는 revision·행 수·SHA256이 나옵니다. 기존 출력은 덮어쓰지 않습니다. 최대 10,000행·32 MiB를 넘거나 안전하지 않은 종목 표기가 있으면 실패합니다. 출력 폴더는 현재 사용자 소유이며 다른 사용자에게 쓰기가 허용되지 않아야 하고, 상위 경로도 신뢰할 수 있어야 합니다. 이 CSV는 backup·재가져오기 형식이 아닙니다. 스프레드시트에서는 모든 열을 텍스트로 가져오세요. [계약과 한계](gates/g1r-ledger-activity-export.md)
 
 ### 기존 원장의 시간 재생 정책 전환
 

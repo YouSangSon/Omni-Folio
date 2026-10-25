@@ -165,7 +165,7 @@ mkdir -p -m 700 data/exports
   -out ../../data/exports/ledger.csv)
 ```
 
-The `ledger-activity-export.v1` receipt reports the revision, row count and SHA256. Existing output is never overwritten. Exceeding 10,000 rows or 32 MiB, or an unsafe symbol label, fails the export. The output directory must belong to the current user and disallow writes by other users; its ancestor path must also be trusted. This CSV is neither a backup nor a reimport format. Import every column as text in a spreadsheet. [Contract and limitations](gates/g1q-ledger-activity-export.md)
+The `ledger-activity-export.v1` receipt reports the revision, row count and SHA256. Existing output is never overwritten. Exceeding 10,000 rows or 32 MiB, or an unsafe symbol label, fails the export. The output directory must belong to the current user and disallow writes by other users; its ancestor path must also be trusted. This CSV is neither a backup nor a reimport format. Import every column as text in a spreadsheet. [Contract and limitations](gates/g1r-ledger-activity-export.md)
 
 ### Transition an existing ledger to chronological replay
 
