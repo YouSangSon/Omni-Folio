@@ -18,7 +18,7 @@
 | Gate | 状態 | 根拠 |
 |---|---|---|
 | G0 アーキテクチャ・契約 | ローカル検証通過 | バージョンを明示した OpenAPI/JSON Schema、ランタイムごとの責任分離、リポジトリ共通コマンド |
-| G1 ローカル台帳 | ローカル検証通過 | CSV の確認と原子的な反映、取引・現金・株式分割・FX の正確な再生、FIFO 原価・保存価格による評価、schema v23/backup v17 と対応する旧形式の復元 |
+| G1 ローカル台帳 | ローカル検証通過 | CSV の確認と原子的な反映、取引・現金・株式分割・FX の正確な再生、FIFO 原価・保存価格による評価、schema v24/backup v18 と対応する旧形式の復元 |
 | G2 Flutter クライアント | 一部検証通過 | iOS・Android・web のリリースビルド、自動パーサー・ウィジェット検査、Android エミュレーターでのフレーム計測。未署名 iOS パッケージのテストプラグイン除外を確認。実機・手動スクリーンリーダー・ストア検証は未完了 |
 | G3 研究・模擬実行 | 一部検証通過 | 再現可能なバックテスト・walk-forward・ホールドアウト、候補登録、ローカル模擬約定・成績・停止・復旧。長期運用とソース引き渡しの完全性は未検証 |
 | G4 ブローカー・チャート・注文 | 進行中 | ローカルのサンプルチャート、保存済み照合・注文記録の参照、認証情報を使わない Kiwoom の合成契約。実際の認証を伴う相場・模擬注文の観察、結果未確定注文の復旧、すべての実取引段階は未完了 |
@@ -171,7 +171,7 @@ mkdir -p -m 700 data/exports
 
 ### 既存台帳の時系列再生ポリシーへの切り替え
 
-schema23/backup v17 は、正確な UTC 順序による FIFO v2 ポリシーを使用します。既存の台帳がある DB は、migrate だけでは正常に実行できません。旧 core を停止して原本の backup を保全したうえで、[G1.20 の preview → 確認 → activate → 新 backup の検証手順](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차)に従います。過去の backup の保管検証と、現在のポリシーの有効化は区別します。
+schema24/backup v18 は、正確な UTC 順序による FIFO v2 ポリシーを使用します。既存の台帳がある DB は、migrate だけでは正常に実行できません。旧 core を停止して原本の backup を保全したうえで、[G1.20 の preview → 確認 → activate → 新 backup の検証手順](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차)に従います。過去の backup の保管検証と、現在のポリシーの有効化は区別します。
 
 ### ローカルサンプルの OHLCV チャート
 
@@ -201,7 +201,19 @@ curl -fsS 'http://127.0.0.1:8080/v1/portfolio/instrument-ledger?instrument_id=in
 
 G1.10 は `1 base_currency = rate quote_currency` 方向の為替観測値を schema v10 の `STRICT`/insert-only series に保存します。データソースの観測 identity、正確な10進数レート、observed/fetched/recorded の UTC 時刻、正規化した行の hash を検証し、同じ source・pair・observed-at での競合を拒否します。`GET /v1/market-data/fx/latest` は、明示された `as_of` 以前に観測・受信した完全に同じ方向の値のみを返し、`sample=true`、`state=stale` を維持します。反対方向の自動逆算や、`FX_EXCHANGE` の現金 leg を為替レートとして使うことはありません。
 
-現在の writer は Go 内部のテスト境界のみで、provider ingestion・公開の変更 API・scheduler・Flutter の評価画面はありません。この route は保存契約を検証する基盤であり、利用可能な現在の為替 feed ではありません。`PortfolioSnapshot.valuation_status` も引き続き `unavailable` です。
+この fixture writer と GET の契約は維持します。直接入力為替は以下の別のバージョン journal に保存し、この GET には混ぜません。provider の自動取得や scheduler はなく、`PortfolioSnapshot.valuation_status` は引き続き `unavailable` です。
+
+### 直接入力した為替のバージョン保管と成績への適用
+
+完全な直接為替ファイルを既存 DB に取り込むと、現金・現在の KRW 評価・TWR・XIRR・USD 指数の KRW 換算で同じ入力バージョンを使用します。方向は `1 USD = rate KRW` で、逆数やクロスレートは推測しません。
+
+```sh
+(cd services/core && go run . owner-fx-import -db ../../data/omni-folio.db -input ../../contracts/fixtures/owner-fx-usdkrw-sample.json)
+```
+
+この古い `sample=true` の例は合成資料で、現在評価の24時間条件を満たしません。実際の入力は[閉じた入力契約](contracts/owner-fx-series.schema.json)に従います。修正は新しい `source_version` で全点を提出し、空の `points` はその方向の使用を撤回します。削除された点を旧バージョンから補わず、旧バージョンの再試行でも最新選択は変わりません。同じ方向で fixture と直接入力は混在できず、撤回後も出所の区分を維持します。
+
+`storage_check=verified` は保存内容の整合性のみを示します。`sample=false` でも韓国語アプリの直接入力為替の案内は残ります。観測・取得・記録時刻と24時間条件を別々に検証し、銘柄価格・証券会社の相場・提供者の正確性を認証しません。[方針・復元・検証範囲](gates/g1w-owner-fx-series.md)
 
 ### 入出金を反映した年率リターン
 
@@ -267,7 +279,7 @@ curl -fsS 'http://127.0.0.1:8080/v1/portfolio/cash-valuation?base_currency=KRW&a
 
 G1.12 は保有資産評価に先立ち、local fixture の銘柄価格を schema v11 で導入した `STRICT`/insert-only series に保存します。source identity、instrument ID、symbol、venue、currency、正の正規化価格、`price_adjustment=unspecified`、observed/fetched/recorded の UTC 時刻、正規化した行の hash を検証します。内部の exact-as-of 取得は、すべての identity 次元を固定し、3つの時刻が cutoff 以下の観測値だけを選びます。
 
-G4U checkpoint の backup v8 は価格 series の digest/count を検証し、legacy artifact を原本を変更しない所有下のコピーで schema v13 に migration しました。現在の schema v23/backup v17 もその価格の検証根拠を保全します。空の復元候補にも、embedded migration と同一の table DDL・latest index・insert-only trigger が必要です。公開 API、Flutter 画面、provider リクエスト、scheduler、ブローカーに基づく保有・損益・成績評価は追加しておらず、`PortfolioSnapshot.valuation_status` は引き続き `unavailable` です。
+G4U checkpoint の backup v8 は価格 series の digest/count を検証し、legacy artifact を原本を変更しない所有下のコピーで schema v13 に migration しました。現在の schema v24/backup v18 もその価格の検証根拠を保全します。空の復元候補にも、embedded migration と同一の table DDL・latest index・insert-only trigger が必要です。公開 API、Flutter 画面、provider リクエスト、scheduler、ブローカーに基づく保有・損益・成績評価は追加しておらず、`PortfolioSnapshot.valuation_status` は引き続き `unavailable` です。
 
 ### 保存価格による原通貨建て保有資産評価
 
@@ -325,7 +337,7 @@ cd services/core
 go test -run '^TestG4H' -count=1 ./...
 ```
 
-G4U checkpoint の schema v13/backup v8 は、ledger event、cash-void/FX guard、直接為替観測、銘柄価格観測、instrument listing、raw broker snapshot、revision ごとの broker 照合、execution-authority event、risk reservation、strategy registry と当時の synthetic/paper 注文を insert-only で保護しました。現在の schema v23/backup v17 は、その検証根拠と G3.8C2 paper accounting、G3.8C3 account-global performance、G3.8D strategy-window evidence、G3.8E paper safety policy/action recovery を併せて保全します。G4H 自体は認証情報、broker リクエスト、スケジューリング、公式 freshness/timezone、現金・評価額の照合、公開 API/UI、live readiness を証明しません。
+G4U checkpoint の schema v13/backup v8 は、ledger event、cash-void/FX guard、直接為替観測、銘柄価格観測、instrument listing、raw broker snapshot、revision ごとの broker 照合、execution-authority event、risk reservation、strategy registry と当時の synthetic/paper 注文を insert-only で保護しました。現在の schema v24/backup v18 は、その検証根拠と G3.8C2 paper accounting、G3.8C3 account-global performance、G3.8D strategy-window evidence、G3.8E paper safety policy/action recovery を併せて保全します。G4H 自体は認証情報、broker リクエスト、スケジューリング、公式 freshness/timezone、現金・評価額の照合、公開 API/UI、live readiness を証明しません。
 
 ### 保存済み broker 照合結果の参照画面
 
@@ -379,7 +391,7 @@ Python の `--bundle` は、提案と計算に使った原本 CSV をまとめ�
 
 戦略改善 runner は有限個の long-only SMA 候補を expanding walk-forward で評価し、final holdout を一度だけ開きます。結果は `paper_candidate` または `no_promotion` だけで、認証情報・注文・live 昇格の権限は得られません。
 
-Go core はこのローカル結果を、schema v13 で導入し現在の schema v23 でも保全している insert-only registry に登録します。`no_promotion` も却下の根拠として保全しますが、選択はできません。`paper_candidate` の選択には、現在の champion と直接比較するロジックがまだないため、明示的な CLI と optimistic concurrency が必要です。rollback は直前の選択または `no_strategy` に戻す新しいイベントの追記のみです。
+Go core はこのローカル結果を、schema v13 で導入し現在の schema v24 でも保全している insert-only registry に登録します。`no_promotion` も却下の根拠として保全しますが、選択はできません。`paper_candidate` の選択には、現在の champion と直接比較するロジックがまだないため、明示的な CLI と optimistic concurrency が必要です。rollback は直前の選択または `no_strategy` に戻す新しいイベントの追記のみです。
 
 ```sh
 candidate_file="$(mktemp)"

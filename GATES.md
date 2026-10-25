@@ -38,7 +38,8 @@ G1 ledger vertical slice
 ├─ G1.23 retrospective portfolio XIRR and explicit root confidence
 ├─ G1.24 retrospective cash-flow-boundary cumulative TWR (gates/g1t-portfolio-twr.md)
 ├─ G1.25 immutable KRW/USD benchmark index versions and backup proof (gates/g1u-benchmark-series.md)
-└─ G1.26 same-period native/KRW benchmark comparison (gates/g1v-portfolio-benchmark-comparison.md)
+├─ G1.26 same-period native/KRW benchmark comparison (gates/g1v-portfolio-benchmark-comparison.md)
+└─ G1.27 complete owner FX versions, performance and recovery (gates/g1w-owner-fx-series.md)
    |
 G2 client vertical slice
 ├─ G2.1 Flutter iOS/Android/web build
@@ -174,3 +175,5 @@ G6 PostgreSQL and Kubernetes promotion
 - G1.25는 KRW·USD 지수 입력·보관/복구의 선행 단위다. owner 선언과 저장 무결성을 구분하고, 버전 충돌·재시도·추가 trigger/민감 오류·v16 권한을 검증했다. 독립 리뷰와 보완분 재검토, 최종 원격 Core/Client 전체·web/ARM64 release·소스 일치 통과 후 병합했다. 비교·환산·화면은 G1.26에 별도로 기록한다. [계약과 검증](gates/g1u-benchmark-series.md)
 
 - G1.26은 TWR과 같은 관찰의 지수 비교 API/화면이다. 최신 known 버전과 실제 관측·FX 시각을 고정하며 native/KRW 미계산과 %p를 구분한다. 실제 API404 RED·테스트 입력/분석 보완·독립 리뷰 후 최종 Core 전체·Python39/JSON30·Flutter63/327·web/ARM64 release·권한/소스 일치를 통과해 병합했다. 실제 시장 자료·배포·전체 Goal 완료는 별도다. [정책과 검증](gates/g1v-portfolio-benchmark-comparison.md)
+
+- G1.27은 직접 입력 환율의 버전·수정/철회·재시도·같은 관찰의 성과 계산과 UI 출처 안내를 연결한다. 실제 RED·독립 설계 확인 후 구현 리뷰·최종 원격 검증 진행 중이다. [정책와 검증](gates/g1w-owner-fx-series.md)

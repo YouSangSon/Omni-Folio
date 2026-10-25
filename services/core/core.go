@@ -32,12 +32,12 @@ import (
 const (
 	maxBodyBytes                       = 1 << 20
 	maxImportRows                      = 10_000
-	latestSchema                       = 23
+	latestSchema                       = 24
 	zeroTime                           = "1970-01-01T00:00:00Z"
 	csvSchema                          = "omni-folio.csv.v1"
 	mappingSchema                      = "canonical-transaction.v4"
-	backupFormat                       = "omni-folio-backup.v17"
-	backupSchema                       = "omni-folio.sqlite.v23"
+	backupFormat                       = "omni-folio-backup.v18"
+	backupSchema                       = "omni-folio.sqlite.v24"
 	legacyPaperRunnerFormat            = "omni-folio-backup.v14"
 	legacyPaperRunnerSchema            = "omni-folio.sqlite.v20"
 	legacyPaperPerformancePolicyFormat = "omni-folio-backup.v13"
@@ -240,6 +240,9 @@ type BackupManifest struct {
 	BenchmarkSeriesStateSHA256               string              `json:"benchmark_series_state_sha256"`
 	BenchmarkSeriesVersionCount              int                 `json:"benchmark_series_version_count"`
 	BenchmarkSeriesPointCount                int                 `json:"benchmark_series_point_count"`
+	OwnerFXSeriesStateSHA256                 string              `json:"owner_fx_series_state_sha256"`
+	OwnerFXSeriesVersionCount                int                 `json:"owner_fx_series_version_count"`
+	OwnerFXSeriesPointCount                  int                 `json:"owner_fx_series_point_count"`
 	DBSHA256                                 string              `json:"db_sha256"`
 	SizeBytes                                int64               `json:"size_bytes"`
 	ExpectedSnapshotSHA256                   string              `json:"expected_snapshot_sha256"`
@@ -266,6 +269,7 @@ type VerificationReceipt struct {
 	SecurityPriceObservationCheck                string   `json:"security_price_observation_check"`
 	InstrumentListingCheck                       string   `json:"instrument_listing_check"`
 	BenchmarkSeriesCheck                         string   `json:"benchmark_series_check"`
+	OwnerFXSeriesCheck                           string   `json:"owner_fx_series_check"`
 	PaperPerformanceCheck                        string   `json:"paper_performance_check"`
 	PaperStrategyPerformanceCheck                string   `json:"paper_strategy_performance_check"`
 	PaperPerformancePolicyCheck                  string   `json:"paper_performance_policy_check"`
@@ -282,6 +286,9 @@ type VerificationReceipt struct {
 	CandidateBenchmarkSeriesStateSHA256          string   `json:"candidate_benchmark_series_state_sha256"`
 	CandidateBenchmarkSeriesVersionCount         int      `json:"candidate_benchmark_series_version_count"`
 	CandidateBenchmarkSeriesPointCount           int      `json:"candidate_benchmark_series_point_count"`
+	CandidateOwnerFXSeriesStateSHA256            string   `json:"candidate_owner_fx_series_state_sha256"`
+	CandidateOwnerFXSeriesVersionCount           int      `json:"candidate_owner_fx_series_version_count"`
+	CandidateOwnerFXSeriesPointCount             int      `json:"candidate_owner_fx_series_point_count"`
 	CandidatePaperPerformanceStateSHA256         string   `json:"candidate_paper_performance_state_sha256"`
 	CandidatePaperStrategyPerformanceStateSHA256 string   `json:"candidate_paper_strategy_performance_state_sha256"`
 	CandidatePaperPerformancePolicyStateSHA256   string   `json:"candidate_paper_performance_policy_state_sha256"`
@@ -361,6 +368,9 @@ func requireServerStartupRecovery(db *sql.DB) error {
 	if _, err := proveBenchmarkSeriesRecovery(context.Background(), db); err != nil {
 		return fmt.Errorf("benchmark series startup recovery: %w", err)
 	}
+	if _, err := proveOwnerFXSeriesRecovery(context.Background(), db); err != nil {
+		return fmt.Errorf("owner FX series startup recovery: %w", err)
+	}
 	return nil
 }
 
@@ -379,7 +389,7 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("unsupported schema version %d", current)
 		}
 	}
-	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql", "013_instrument_listing_events.sql", "014_paper_evaluation_events.sql", "015_paper_accounting_sessions.sql", "016_paper_market_signals.sql", "017_paper_execution_authorizations.sql", "018_paper_performance_events.sql", "019_paper_strategy_performance_events.sql", "020_paper_performance_policy_events.sql", "021_paper_runner_leases.sql", "022_ledger_replay_policy.sql", "023_benchmark_series_versions.sql"}
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql", "013_instrument_listing_events.sql", "014_paper_evaluation_events.sql", "015_paper_accounting_sessions.sql", "016_paper_market_signals.sql", "017_paper_execution_authorizations.sql", "018_paper_performance_events.sql", "019_paper_strategy_performance_events.sql", "020_paper_performance_policy_events.sql", "021_paper_runner_leases.sql", "022_ledger_replay_policy.sql", "023_benchmark_series_versions.sql", "024_owner_fx_series_versions.sql"}
 	for version := current + 1; version <= latestSchema; version++ {
 		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
 		if err != nil {
@@ -1812,6 +1822,10 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err != nil {
 		return nil, fmt.Errorf("source benchmark series recovery proof: %w", err)
 	}
+	sourceOwnerFX, err := proveOwnerFXSeriesRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source owner FX series recovery proof: %w", err)
+	}
 	createdAt := now().UTC()
 	quoted := strings.ReplaceAll(out, "'", "''")
 	if _, err := db.Exec(`VACUUM INTO '` + quoted + `'`); err != nil {
@@ -1866,6 +1880,10 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err != nil {
 		return nil, err
 	}
+	candidateOwnerFX, err := verifyOwnerFXSeriesRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
 	if sourceOrders != candidateOrders {
 		return nil, errors.New("backup order recovery proof does not match source")
 	}
@@ -1898,6 +1916,9 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	}
 	if sourceBenchmark != candidateBenchmark {
 		return nil, errors.New("backup benchmark series recovery proof does not match source")
+	}
+	if sourceOwnerFX != candidateOwnerFX {
+		return nil, errors.New("backup owner FX series recovery proof does not match source")
 	}
 	dbSHA, size, err := hashFile(out)
 	if err != nil {
@@ -1945,6 +1966,7 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 		InstrumentListingStateSHA256: sourceInstrumentListings.SHA256, InstrumentListingEventCount: sourceInstrumentListings.Events,
 		ActiveInstrumentListingCount: sourceInstrumentListings.Active,
 		BenchmarkSeriesStateSHA256:   sourceBenchmark.SHA256, BenchmarkSeriesVersionCount: sourceBenchmark.Versions, BenchmarkSeriesPointCount: sourceBenchmark.Points,
+		OwnerFXSeriesStateSHA256: sourceOwnerFX.SHA256, OwnerFXSeriesVersionCount: sourceOwnerFX.Versions, OwnerFXSeriesPointCount: sourceOwnerFX.Points,
 		DBSHA256: dbSHA, SizeBytes: size, ExpectedSnapshotSHA256: snapshotSHA,
 		Encryption: BackupEncryption{Encrypted: false, Algorithm: "none"},
 		VerificationReceipt: VerificationReceipt{
@@ -1960,6 +1982,7 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 			CandidateFXObservationStateSHA256:            candidateFX.SHA256, CandidateSecurityPriceObservationStateSHA256: candidateSecurityPrices.SHA256,
 			CandidateInstrumentListingStateSHA256: candidateInstrumentListings.SHA256, EligibleForActivation: eligible, Errors: verificationErrors,
 			BenchmarkSeriesCheck: "ok", CandidateBenchmarkSeriesStateSHA256: candidateBenchmark.SHA256, CandidateBenchmarkSeriesVersionCount: candidateBenchmark.Versions, CandidateBenchmarkSeriesPointCount: candidateBenchmark.Points,
+			OwnerFXSeriesCheck: "ok", CandidateOwnerFXSeriesStateSHA256: candidateOwnerFX.SHA256, CandidateOwnerFXSeriesVersionCount: candidateOwnerFX.Versions, CandidateOwnerFXSeriesPointCount: candidateOwnerFX.Points,
 		},
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
@@ -2024,6 +2047,10 @@ func verifyRestore(path, goldenPath string) error {
 		return err
 	}
 	_, err = verifyBenchmarkSeriesRestoreProof(path)
+	if err != nil {
+		return err
+	}
+	_, err = verifyOwnerFXSeriesRestoreProof(path)
 	return err
 }
 
@@ -2225,6 +2252,9 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	}
 	if err := requireBenchmarkSeriesSchema(context.Background(), db); err != nil {
 		return fmt.Errorf("restore benchmark schema: %w", err)
+	}
+	if err := requireOwnerFXSeriesSchema(context.Background(), db); err != nil {
+		return fmt.Errorf("restore owner FX schema: %w", err)
 	}
 	for _, table := range []string{"events", "order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "paper_execution_authorizations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "paper_evaluation_events", "paper_accounting_sessions", "paper_market_bar_observations", "paper_signal_events", "paper_performance_events", "paper_strategy_performance_events", "paper_performance_policy_events", "fx_observations", "security_price_observations"} {
 		var strict int
@@ -3071,10 +3101,12 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err := dec.Decode(&manifest); err != nil {
 		return fmt.Errorf("backup manifest: %w", err)
 	}
-	currentV17Manifest := manifest.FormatVersion == backupFormat && manifest.SchemaVersion == backupSchema
+	currentV18Manifest := manifest.FormatVersion == backupFormat && manifest.SchemaVersion == backupSchema
+	legacyV17Manifest := manifest.FormatVersion == "omni-folio-backup.v17" && manifest.SchemaVersion == "omni-folio.sqlite.v23"
 	legacyV16Manifest := manifest.FormatVersion == "omni-folio-backup.v16" && manifest.SchemaVersion == "omni-folio.sqlite.v22"
-	// Backup format is independent of ledger replay authority: v16 remains nonarchival.
-	nonArchivalManifest := currentV17Manifest || legacyV16Manifest
+	hasBenchmarkManifest := currentV18Manifest || legacyV17Manifest
+	// Backup format is independent of ledger replay authority: v16/v17 remain nonarchival.
+	nonArchivalManifest := hasBenchmarkManifest || legacyV16Manifest
 	legacyV15Manifest := manifest.FormatVersion == "omni-folio-backup.v15" && manifest.SchemaVersion == "omni-folio.sqlite.v21"
 	currentManifest := nonArchivalManifest || legacyV15Manifest
 	legacyV14Manifest := manifest.FormatVersion == legacyPaperRunnerFormat && manifest.SchemaVersion == legacyPaperRunnerSchema
@@ -3101,7 +3133,10 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err := json.Unmarshal(fields["verification_receipt"], &receiptFields); err != nil {
 		return fmt.Errorf("backup verification receipt fields: %w", err)
 	}
-	if err := requireBenchmarkManifestFields(fields, receiptFields, currentV17Manifest); err != nil {
+	if err := requireBenchmarkManifestFields(fields, receiptFields, hasBenchmarkManifest); err != nil {
+		return err
+	}
+	if err := requireOwnerFXManifestFields(fields, receiptFields, currentV18Manifest); err != nil {
 		return err
 	}
 	if currentManifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
@@ -3321,7 +3356,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 			return errors.New("source paper runner lease recovery proof mismatch")
 		}
 	}
-	if currentV17Manifest {
+	if hasBenchmarkManifest {
 		proof, err := proveBenchmarkSeriesRecovery(context.Background(), sourceDB)
 		if err != nil {
 			_ = sourceDB.Close()
@@ -3330,6 +3365,23 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 		if !benchmarkManifestMatches(manifest, proof) {
 			_ = sourceDB.Close()
 			return errors.New("source benchmark series proof mismatch")
+		}
+	}
+	if currentV18Manifest {
+		proof, err := proveOwnerFXSeriesRecovery(context.Background(), sourceDB)
+		if err != nil {
+			_ = sourceDB.Close()
+			return err
+		}
+		if !ownerFXManifestMatches(manifest, proof) {
+			_ = sourceDB.Close()
+			return errors.New("source owner FX series proof mismatch")
+		}
+	} else {
+		var present int
+		if err := sourceDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name='owner_fx_series_versions'`).Scan(&present); err != nil || present != 0 {
+			_ = sourceDB.Close()
+			return errors.New("legacy backup cannot contain an owner FX journal")
 		}
 	}
 	if err := sourceDB.Close(); err != nil {
@@ -3529,12 +3581,23 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err != nil {
 		return err
 	}
-	if currentV17Manifest {
+	if hasBenchmarkManifest {
 		if !benchmarkManifestMatches(manifest, benchmark) {
 			return errors.New("backup benchmark series proof mismatch")
 		}
 	} else if benchmark.Versions != 0 || benchmark.Points != 0 || benchmark.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
 		return errors.New("legacy backup unexpectedly contains benchmark series")
+	}
+	ownerFX, err := verifyOwnerFXSeriesRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if currentV18Manifest {
+		if !ownerFXManifestMatches(manifest, ownerFX) {
+			return errors.New("backup owner FX series proof mismatch")
+		}
+	} else if ownerFX.Versions != 0 || ownerFX.Points != 0 || ownerFX.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
+		return errors.New("legacy backup unexpectedly contains owner FX series")
 	}
 	db, err := openExistingDB(verificationPath)
 	if err != nil {

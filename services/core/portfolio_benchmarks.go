@@ -12,6 +12,7 @@ import (
 )
 
 const portfolioBenchmarksPolicy = "retrospective_latest_index_24h_native_and_krw_v1"
+const portfolioBenchmarksOwnerFXPolicy = "retrospective_latest_index_24h_native_and_krw_v2"
 
 // shortcut: compare up to32 latest IDs; add explicit selection or paging when owners need more.
 const maxPortfolioBenchmarks = 32
@@ -23,8 +24,19 @@ type BenchmarkRateResult struct {
 }
 
 type BenchmarkFXMark struct {
-	ObservedAt string `json:"observed_at"`
-	Rate       string `json:"rate"`
+	ObservedAt    string `json:"observed_at"`
+	Rate          string `json:"rate"`
+	Source        string `json:"source,omitempty"`
+	SourceVersion string `json:"source_version,omitempty"`
+	Sample        *bool  `json:"sample,omitempty"`
+}
+
+func publicBenchmarkFX(fx *FXObservation) *BenchmarkFXMark {
+	mark := &BenchmarkFXMark{ObservedAt: fx.ObservedAt, Rate: fx.Rate}
+	if fx.Source == ownerFXSource {
+		mark.Source, mark.SourceVersion, mark.Sample = fx.Source, fx.ownerVersion, &fx.ownerSample
+	}
+	return mark
 }
 
 type PortfolioBenchmark struct {
@@ -133,16 +145,16 @@ func comparePortfolioBenchmark(record benchmarkSeriesRecord, portfolio *Portfoli
 		startFX := historicalXIRRFX(marks.fx, marks.fxTimes, record.Input.Currency, start, asOf)
 		endFX := historicalXIRRFX(marks.fx, marks.fxTimes, record.Input.Currency, asOf, asOf)
 		if startFX != nil {
-			row.StartFX = &BenchmarkFXMark{ObservedAt: startFX.ObservedAt, Rate: startFX.Rate}
-			row.Sample = true
+			row.StartFX = publicBenchmarkFX(startFX)
+			row.Sample = row.Sample || fxIsSample(startFX)
 		}
 		if endFX != nil {
-			row.EndFX = &BenchmarkFXMark{ObservedAt: endFX.ObservedAt, Rate: endFX.Rate}
-			row.Sample = true
+			row.EndFX = publicBenchmarkFX(endFX)
+			row.Sample = row.Sample || fxIsSample(endFX)
 		}
 		if startFX == nil || endFX == nil {
 			row.KRW = unavailableBenchmarkRate("missing_historical_fx")
-		} else if start.Sub(marks.fxTimes[startFX.ObservationID][0]) > cashFXMaxAge || asOf.Sub(marks.fxTimes[endFX.ObservationID][0]) > cashFXMaxAge {
+		} else if start.Sub(marks.fxTimes[fxTimeKey(*startFX)][0]) > cashFXMaxAge || asOf.Sub(marks.fxTimes[fxTimeKey(*endFX)][0]) > cashFXMaxAge {
 			row.KRW = unavailableBenchmarkRate("stale_historical_fx")
 		} else {
 			startRate, err := parseDecimal(startFX.Rate)
@@ -176,7 +188,11 @@ func (s *Service) portfolioBenchmarks(ctx context.Context) (*PortfolioBenchmarks
 	}
 	defer tx.Rollback()
 	asOf := s.now().UTC()
-	portfolio, appErr := s.portfolioTWRTx(ctx, tx, asOf)
+	inputs, err := readValuationFXInputs(ctx, tx, asOf)
+	if err != nil {
+		return nil, internalError(err)
+	}
+	portfolio, appErr := s.portfolioTWRTx(ctx, tx, asOf, inputs)
 	if appErr != nil {
 		return nil, appErr
 	}
@@ -185,17 +201,7 @@ func (s *Service) portfolioBenchmarks(ctx context.Context) (*PortfolioBenchmarks
 	if err != nil {
 		return nil, internalError(err)
 	}
-	var marks twrMarks
-	if portfolio.Status == "calculated" {
-		marks.fx, _, err = replayFXObservations(ctx, tx)
-		if err != nil {
-			return nil, internalError(err)
-		}
-		marks.fxTimes, err = currentFXObservationTimes(marks.fx)
-		if err != nil {
-			return nil, internalError(err)
-		}
-	}
+	marks := twrMarks{fx: inputs.observations, fxTimes: inputs.times}
 	r := &PortfolioBenchmarks{PolicyVersion: portfolioBenchmarksPolicy, MaxObservationAgeSeconds: int64(cashFXMaxAge / time.Second), Portfolio: portfolio, Benchmarks: []PortfolioBenchmark{}, Issues: []APIError{}}
 	cutoff := asOf.Format(time.RFC3339Nano)
 	rows, err := tx.QueryContext(ctx, `SELECT b.sequence,b.series_json,b.series_sha256,b.recorded_at
@@ -243,6 +249,14 @@ func (s *Service) portfolioBenchmarks(ctx context.Context) (*PortfolioBenchmarks
 			code = "no_known_benchmarks"
 		}
 		r.Issues = append(r.Issues, APIError{Code: code, Message: "no benchmark version is available at the report cutoff"})
+	}
+	if usesOwnerFX(portfolio.Issues) {
+		r.PolicyVersion = portfolioBenchmarksOwnerFXPolicy
+	}
+	for _, row := range r.Benchmarks {
+		if row.StartFX != nil && row.StartFX.Source == ownerFXSource || row.EndFX != nil && row.EndFX.Source == ownerFXSource {
+			r.PolicyVersion = portfolioBenchmarksOwnerFXPolicy
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, internalError(err)

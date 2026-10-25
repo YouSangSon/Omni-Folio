@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	currentPortfolioValuationPolicy       = "current_base_portfolio_valuation_v1"
-	currentPortfolioValuationBaseCurrency = "KRW"
+	currentPortfolioValuationPolicy        = "current_base_portfolio_valuation_v1"
+	currentPortfolioValuationOwnerFXPolicy = "current_base_portfolio_valuation_v2"
+	currentPortfolioValuationBaseCurrency  = "KRW"
 )
 
 type CurrentPortfolioValuation struct {
@@ -41,7 +42,12 @@ func (s *Service) currentPortfolioValuation(ctx context.Context) (*CurrentPortfo
 	}
 	defer tx.Rollback()
 
-	result, appErr := s.currentPortfolioValuationTx(ctx, tx, s.now().UTC())
+	asOf := s.now().UTC()
+	inputs, err := readValuationFXInputs(ctx, tx, asOf)
+	if err != nil {
+		return nil, internalError(err)
+	}
+	result, appErr := s.currentPortfolioValuationTx(ctx, tx, asOf, inputs)
 	if appErr != nil {
 		return nil, appErr
 	}
@@ -51,7 +57,10 @@ func (s *Service) currentPortfolioValuation(ctx context.Context) (*CurrentPortfo
 	return result, nil
 }
 
-func (s *Service) currentPortfolioValuationTx(ctx context.Context, tx *sql.Tx, valuationTime time.Time) (*CurrentPortfolioValuation, *appError) {
+func (s *Service) currentPortfolioValuationTx(ctx context.Context, tx *sql.Tx, valuationTime time.Time, inputs valuationFXInputs) (*CurrentPortfolioValuation, *appError) {
+	if inputs.tx != tx || !inputs.knownAt.Equal(valuationTime) {
+		return nil, internalError(errors.New("FX inputs do not belong to the valuation observation"))
+	}
 	// The server owns one cutoff inside the same read transaction as every required input.
 	valuationAsOf := valuationTime.Format(time.RFC3339Nano)
 	snapshot, err := snapshotFrom(ctx, tx)
@@ -85,14 +94,7 @@ func (s *Service) currentPortfolioValuationTx(ctx context.Context, tx *sql.Tx, v
 		return nil, internalError(errors.New("server valuation cutoff precedes ledger state"))
 	}
 
-	fxObservations, _, err := replayFXObservations(ctx, tx)
-	if err != nil {
-		return nil, internalError(err)
-	}
-	fxTimes, err := currentFXObservationTimes(fxObservations)
-	if err != nil {
-		return nil, internalError(err)
-	}
+	fxObservations, fxTimes := inputs.observations, inputs.times
 	priceObservations, _, err := replaySecurityPriceObservations(ctx, tx)
 	if err != nil {
 		return nil, internalError(err)
@@ -118,6 +120,7 @@ func (s *Service) currentPortfolioValuationTx(ctx context.Context, tx *sql.Tx, v
 	holdingsTotal := new(big.Rat)
 	available := true
 	usedSample := false
+	usedOwnerFX := false
 	for _, cash := range snapshot.Cash {
 		amount, err := parseDecimal(cash.Amount)
 		if err != nil {
@@ -135,8 +138,9 @@ func (s *Service) currentPortfolioValuationTx(ctx context.Context, tx *sql.Tx, v
 			available = false
 			continue
 		}
-		usedSample = true
-		if valuationTime.Sub(fxTimes[observation.ObservationID][0]) > cashFXMaxAge {
+		usedSample = usedSample || fxIsSample(observation)
+		usedOwnerFX = usedOwnerFX || observation.Source == ownerFXSource
+		if valuationTime.Sub(fxTimes[fxTimeKey(*observation)][0]) > cashFXMaxAge {
 			result.Issues = appendCurrentValuationIssue(result.Issues, APIError{
 				Code: "stale_direct_fx", Message: "the direct FX observation exceeds the policy age", Field: cash.Currency,
 			})
@@ -178,8 +182,9 @@ func (s *Service) currentPortfolioValuationTx(ctx context.Context, tx *sql.Tx, v
 				available = false
 				continue
 			}
-			usedSample = true
-			if valuationTime.Sub(fxTimes[fx.ObservationID][0]) > cashFXMaxAge {
+			usedSample = usedSample || fxIsSample(fx)
+			usedOwnerFX = usedOwnerFX || fx.Source == ownerFXSource
+			if valuationTime.Sub(fxTimes[fxTimeKey(*fx)][0]) > cashFXMaxAge {
 				result.Issues = appendCurrentValuationIssue(result.Issues, APIError{
 					Code: "stale_direct_fx", Message: "the direct FX observation exceeds the policy age", Field: holding.Currency,
 				})
@@ -196,6 +201,10 @@ func (s *Service) currentPortfolioValuationTx(ctx context.Context, tx *sql.Tx, v
 	}
 
 	result.Sample = usedSample
+	if usedOwnerFX {
+		result.PolicyVersion = currentPortfolioValuationOwnerFXPolicy
+		result.Issues = append(result.Issues, ownerFXIssue())
+	}
 	if !available {
 		result.Status = "unavailable"
 	} else {
@@ -225,7 +234,7 @@ func currentFXObservationTimes(observations []FXObservation) (map[string][3]time
 		if err != nil {
 			return nil, errors.New("FX observation timestamps are inconsistent")
 		}
-		times[observation.ObservationID] = parsed
+		times[fxTimeKey(observation)] = parsed
 	}
 	return times, nil
 }

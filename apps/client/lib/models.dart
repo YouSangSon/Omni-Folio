@@ -622,9 +622,21 @@ class CurrentPortfolioValuation {
       json,
       'issues',
     ).map(HoldingValuationIssue.fromJson).toList(growable: false);
+    final ownerIssues = issues
+        .where((i) => i.code == 'owner_declared_fx')
+        .toList();
+    if (ownerIssues.length > 1 || ownerIssues.any((i) => i.field != null)) {
+      throw const FormatException('Invalid declared FX notice');
+    }
+    final owner = ownerIssues.isNotEmpty;
+    final calculationIssues = issues
+        .where((i) => i.code != 'owner_declared_fx')
+        .toList();
     if (_text(json, 'scope') != 'whole_portfolio' ||
         _text(json, 'policy_version') !=
-            'current_base_portfolio_valuation_v1' ||
+            (owner
+                ? 'current_base_portfolio_valuation_v2'
+                : 'current_base_portfolio_valuation_v1') ||
         maxAge != 86400 ||
         baseCurrency != 'KRW' ||
         !RegExp(r'^rev_[0-9]{10}$').hasMatch(ledgerRevision) ||
@@ -656,7 +668,7 @@ class CurrentPortfolioValuation {
       }
     }
     final issueKeys = <String>{};
-    final validCoverageIssues = issues.every((issue) {
+    final validCoverageIssues = calculationIssues.every((issue) {
       final key = '${issue.code}:${issue.field}';
       return const {
             'missing_direct_fx',
@@ -671,14 +683,18 @@ class CurrentPortfolioValuation {
     final validState = switch (status) {
       'empty' => noValues && !sample && issues.isEmpty,
       'complete' =>
-        allValues && holdingsValue!.amount == '0' && !sample && issues.isEmpty,
+        allValues &&
+            holdingsValue!.amount == '0' &&
+            !sample &&
+            calculationIssues.isEmpty,
       'stale_sample' =>
         allValues &&
             sample &&
-            issues.length == 1 &&
-            issues.single.code == 'sample_data' &&
-            issues.single.field == null,
-      'unavailable' => noValues && issues.isNotEmpty && validCoverageIssues,
+            calculationIssues.length == 1 &&
+            calculationIssues.single.code == 'sample_data' &&
+            calculationIssues.single.field == null,
+      'unavailable' =>
+        noValues && calculationIssues.isNotEmpty && validCoverageIssues,
       _ => false,
     };
     if (!validState) {
@@ -711,6 +727,9 @@ class CurrentPortfolioValuation {
   final Money? holdingsValue;
   final Money? totalValue;
   final List<HoldingValuationIssue> issues;
+  bool get ownerDeclaredFx => issues.any((i) => i.code == 'owner_declared_fx');
+  int get missingInputCount =>
+      issues.where((i) => i.code != 'owner_declared_fx').length;
 }
 
 Money? _currentValuationMoney(Json json, String key) {
@@ -1471,8 +1490,10 @@ class PortfolioTwr {
       'net_contributions',
       'issues',
     });
-    if (_text(json, 'policy_version') !=
-            'restated_external_first_exact_timestamp_twr_v1' ||
+    if (!const {
+          'restated_external_first_exact_timestamp_twr_v1',
+          'restated_external_first_exact_timestamp_twr_v2',
+        }.contains(_text(json, 'policy_version')) ||
         _text(json, 'scope') != 'whole_portfolio_since_inception' ||
         json['valuation'] is! Json) {
       throw const FormatException('Unsupported TWR report');
@@ -1518,6 +1539,7 @@ class PortfolioTwr {
     ).map(HoldingValuationIssue.fromJson).toList(growable: false);
     const codes = {
       'sample_data',
+      'owner_declared_fx',
       'valuation_unavailable',
       'no_external_cash_flows',
       'cash_flow_limit',
@@ -1541,7 +1563,15 @@ class PortfolioTwr {
       throw const FormatException('Invalid TWR issue');
     }
     final missingValuation = seen.contains('valuation_unavailable');
-    final reasons = seen.difference(const {'sample_data'});
+    final owner = seen.contains('owner_declared_fx');
+    if (_text(json, 'policy_version') !=
+            (owner
+                ? 'restated_external_first_exact_timestamp_twr_v2'
+                : 'restated_external_first_exact_timestamp_twr_v1') ||
+        (valuation.ownerDeclaredFx && !owner)) {
+      throw const FormatException('Inconsistent TWR authority');
+    }
+    final reasons = seen.difference(const {'sample_data', 'owner_declared_fx'});
     final reason = reasons.isEmpty ? null : reasons.first;
     final unavailableInputs = switch (reason) {
       'valuation_unavailable' => count == null && boundaries == null,
@@ -1564,7 +1594,12 @@ class PortfolioTwr {
             boundaries != null &&
             boundaries <= 1000 &&
             valuation.totalValue != null &&
-            issues.every((issue) => issue.code == 'sample_data'),
+            issues.every(
+              (issue) => const {
+                'sample_data',
+                'owner_declared_fx',
+              }.contains(issue.code),
+            ),
       'empty' =>
         rate == null &&
             net == null &&
@@ -1634,6 +1669,7 @@ class PortfolioTwr {
   final String? cumulativeRate;
   final Money? netContributions;
   final List<HoldingValuationIssue> issues;
+  bool get ownerDeclaredFx => issues.any((i) => i.code == 'owner_declared_fx');
 }
 
 String _benchmarkText(
@@ -1793,6 +1829,41 @@ class BenchmarkRate {
 }
 
 typedef BenchmarkObservation = ({String observedAt, String value});
+typedef BenchmarkFxObservation = ({
+  String observedAt,
+  String value,
+  String? sourceVersion,
+  bool sample,
+});
+
+BenchmarkFxObservation? _benchmarkFxObservation(dynamic raw) {
+  if (raw == null) return null;
+  if (raw is! Json) {
+    throw const FormatException('Invalid FX observation');
+  }
+  final owner = raw.containsKey('source');
+  _requireExactKeys(
+    raw,
+    owner
+        ? {'observed_at', 'rate', 'source', 'source_version', 'sample'}
+        : {'observed_at', 'rate'},
+  );
+  if (owner && _text(raw, 'source') != 'owner_declared') {
+    throw const FormatException('Invalid FX source');
+  }
+  final point = _benchmarkObservation({
+    'observed_at': raw['observed_at'],
+    'rate': raw['rate'],
+  }, 'rate')!;
+  return (
+    observedAt: point.observedAt,
+    value: point.value,
+    sourceVersion: owner
+        ? _benchmarkText(raw, 'source_version', 128, identity: true)
+        : null,
+    sample: owner ? _bool(raw, 'sample') : true,
+  );
+}
 
 BenchmarkObservation? _benchmarkObservation(dynamic raw, String valueKey) {
   if (raw == null) return null;
@@ -1842,8 +1913,8 @@ class PortfolioBenchmark {
     final sample = _bool(json, 'sample');
     final start = _benchmarkObservation(json['start'], 'level');
     final end = _benchmarkObservation(json['end'], 'level');
-    final startFx = _benchmarkObservation(json['start_fx'], 'rate');
-    final endFx = _benchmarkObservation(json['end_fx'], 'rate');
+    final startFx = _benchmarkFxObservation(json['start_fx']);
+    final endFx = _benchmarkFxObservation(json['end_fx']);
     final native = BenchmarkRate.fromJson(json['native'] as Json);
     final krw = BenchmarkRate.fromJson(json['krw'] as Json);
     final difference = _nullableDecimal(json, 'difference_percentage_points');
@@ -1852,24 +1923,31 @@ class PortfolioBenchmark {
         ? null
         : _utcNanoseconds(portfolio.periodStart!);
     final maxAge = BigInt.from(86400) * BigInt.from(1000000000);
-    bool stale(BenchmarkObservation? mark, BigInt at) =>
-        mark != null && at - _utcNanoseconds(mark.observedAt) > maxAge;
+    bool stale(String? observedAt, BigInt at) =>
+        observedAt != null && at - _utcNanoseconds(observedAt) > maxAge;
     bool equalRates() =>
         native.status == krw.status &&
         native.rate == krw.rate &&
         native.issue == krw.issue;
     if (_utcNanoseconds(series.recordedAt) > endAt ||
-        sample != (series.sample || startFx != null || endFx != null)) {
+        sample !=
+            (series.sample ||
+                (startFx?.sample ?? false) ||
+                (endFx?.sample ?? false)) ||
+        (startFx != null &&
+            endFx != null &&
+            (startFx.sourceVersion != endFx.sourceVersion ||
+                startFx.sample != endFx.sample))) {
       throw const FormatException('Inconsistent benchmark provenance');
     }
-    for (final (mark, at) in [
-      (start, startAt),
-      (end, endAt),
-      (startFx, startAt),
-      (endFx, endAt),
+    for (final (observedAt, at) in [
+      (start?.observedAt, startAt),
+      (end?.observedAt, endAt),
+      (startFx?.observedAt, startAt),
+      (endFx?.observedAt, endAt),
     ]) {
-      if (mark != null &&
-          (at == null || _utcNanoseconds(mark.observedAt) > at)) {
+      if (observedAt != null &&
+          (at == null || _utcNanoseconds(observedAt) > at)) {
         throw const FormatException('Future benchmark observation');
       }
     }
@@ -1901,7 +1979,7 @@ class PortfolioBenchmark {
       }
       final pointIssue = start == null
           ? 'missing_benchmark_point'
-          : stale(start, startAt) || stale(end, endAt)
+          : stale(start.observedAt, startAt) || stale(end.observedAt, endAt)
           ? 'stale_benchmark_point'
           : start.value == '0'
           ? 'zero_benchmark_start'
@@ -1924,7 +2002,8 @@ class PortfolioBenchmark {
         } else {
           final fxIssue = startFx == null || endFx == null
               ? 'missing_historical_fx'
-              : stale(startFx, startAt) || stale(endFx, endAt)
+              : stale(startFx.observedAt, startAt) ||
+                    stale(endFx.observedAt, endAt)
               ? 'stale_historical_fx'
               : null;
           if ((fxIssue != null && krw.issue != fxIssue) ||
@@ -1963,9 +2042,12 @@ class PortfolioBenchmark {
   }
   final BenchmarkSeriesSummary series;
   final bool sample;
-  final BenchmarkObservation? start, end, startFx, endFx;
+  final BenchmarkObservation? start, end;
+  final BenchmarkFxObservation? startFx, endFx;
   final BenchmarkRate native, krw;
   final String? differencePercentagePoints;
+  bool get ownerDeclaredFx =>
+      startFx?.sourceVersion != null || endFx?.sourceVersion != null;
 }
 
 class PortfolioBenchmarks {
@@ -1978,8 +2060,10 @@ class PortfolioBenchmarks {
       'benchmarks',
       'issues',
     });
-    if (json['policy_version'] !=
-            'retrospective_latest_index_24h_native_and_krw_v1' ||
+    if (!const {
+          'retrospective_latest_index_24h_native_and_krw_v1',
+          'retrospective_latest_index_24h_native_and_krw_v2',
+        }.contains(json['policy_version']) ||
         _count(json, 'max_observation_age_seconds') != 86400 ||
         json['portfolio'] is! Json) {
       throw const FormatException('Unsupported portfolio benchmark policy');
@@ -2000,6 +2084,14 @@ class PortfolioBenchmarks {
         })
         .toList(growable: false);
     final ids = <String>{};
+    final owner =
+        portfolio.ownerDeclaredFx || rows.any((row) => row.ownerDeclaredFx);
+    if (json['policy_version'] !=
+        (owner
+            ? 'retrospective_latest_index_24h_native_and_krw_v2'
+            : 'retrospective_latest_index_24h_native_and_krw_v1')) {
+      throw const FormatException('Inconsistent benchmark authority');
+    }
     if (rows.any((row) => !ids.add(row.series.id)) ||
         (rows.isEmpty
             ? issues.length != 1 ||
@@ -2021,6 +2113,8 @@ class PortfolioBenchmarks {
   final List<PortfolioBenchmark> benchmarks;
   final List<HoldingValuationIssue> issues;
   bool get sample => portfolio.sample || benchmarks.any((row) => row.sample);
+  bool get ownerDeclaredFx =>
+      portfolio.ownerDeclaredFx || benchmarks.any((row) => row.ownerDeclaredFx);
 }
 
 class PortfolioXirr {
@@ -2056,8 +2150,10 @@ class PortfolioXirr {
       'net_contributions',
       'issues',
     });
-    if (_text(json, 'policy_version') !=
-            'restated_external_cash_utc_date_actual_365_v1' ||
+    if (!const {
+          'restated_external_cash_utc_date_actual_365_v1',
+          'restated_external_cash_utc_date_actual_365_v2',
+        }.contains(_text(json, 'policy_version')) ||
         _text(json, 'solver_policy') !=
             'single_change_bracket_else_log_newton_0_1_v1' ||
         _text(json, 'scope') != 'whole_portfolio_since_inception') {
@@ -2118,6 +2214,7 @@ class PortfolioXirr {
     ).map(HoldingValuationIssue.fromJson).toList(growable: false);
     const codes = {
       'sample_data',
+      'owner_declared_fx',
       'valuation_unavailable',
       'missing_historical_fx',
       'stale_historical_fx',
@@ -2142,6 +2239,14 @@ class PortfolioXirr {
       throw const FormatException('Invalid XIRR issue');
     }
     final hasSample = issues.any((issue) => issue.code == 'sample_data');
+    final owner = issues.any((issue) => issue.code == 'owner_declared_fx');
+    if (_text(json, 'policy_version') !=
+            (owner
+                ? 'restated_external_cash_utc_date_actual_365_v2'
+                : 'restated_external_cash_utc_date_actual_365_v1') ||
+        (valuation.ownerDeclaredFx && !owner)) {
+      throw const FormatException('Inconsistent XIRR authority');
+    }
     final incompleteFlows = issues.any(
       (issue) => const {
         'valuation_unavailable',
@@ -2165,7 +2270,12 @@ class PortfolioXirr {
             candidate == null &&
             changes == 1 &&
             unique == 'unique' &&
-            issues.every((issue) => issue.code == 'sample_data'),
+            issues.every(
+              (issue) => const {
+                'sample_data',
+                'owner_declared_fx',
+              }.contains(issue.code),
+            ),
       'candidate' =>
         rate == null &&
             candidate != null &&
@@ -2176,6 +2286,7 @@ class PortfolioXirr {
             issues.every(
               (issue) => const {
                 'sample_data',
+                'owner_declared_fx',
                 'uniqueness_not_proven',
               }.contains(issue.code),
             ),
@@ -2196,6 +2307,7 @@ class PortfolioXirr {
             issues.any(
               (issue) => !const {
                 'sample_data',
+                'owner_declared_fx',
                 'uniqueness_not_proven',
               }.contains(issue.code),
             ),
@@ -2245,6 +2357,7 @@ class PortfolioXirr {
   final String? candidateRate;
   final Money? netContributions;
   final List<HoldingValuationIssue> issues;
+  bool get ownerDeclaredFx => issues.any((i) => i.code == 'owner_declared_fx');
 }
 
 class MarketIssue {

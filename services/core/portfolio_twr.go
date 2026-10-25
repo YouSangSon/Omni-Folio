@@ -10,6 +10,7 @@ import (
 )
 
 const portfolioTWRPolicy = "restated_external_first_exact_timestamp_twr_v1"
+const portfolioTWROwnerFXPolicy = "restated_external_first_exact_timestamp_twr_v2"
 
 type PortfolioTWR struct {
 	PolicyVersion      string                     `json:"policy_version"`
@@ -35,7 +36,12 @@ func (s *Service) portfolioTWR(ctx context.Context) (*PortfolioTWR, *appError) {
 		return nil, internalError(err)
 	}
 	defer tx.Rollback()
-	result, appErr := s.portfolioTWRTx(ctx, tx, s.now().UTC())
+	asOf := s.now().UTC()
+	inputs, err := readValuationFXInputs(ctx, tx, asOf)
+	if err != nil {
+		return nil, internalError(err)
+	}
+	result, appErr := s.portfolioTWRTx(ctx, tx, asOf, inputs)
 	if appErr != nil {
 		return nil, appErr
 	}
@@ -45,18 +51,19 @@ func (s *Service) portfolioTWR(ctx context.Context) (*PortfolioTWR, *appError) {
 	return result, nil
 }
 
-func (s *Service) portfolioTWRTx(ctx context.Context, tx *sql.Tx, asOf time.Time) (*PortfolioTWR, *appError) {
+func (s *Service) portfolioTWRTx(ctx context.Context, tx *sql.Tx, asOf time.Time, inputs valuationFXInputs) (*PortfolioTWR, *appError) {
 	if err := requireSchemaContext(ctx, tx); err != nil {
 		return nil, internalError(err)
 	}
 	if err := proveLedgerReplayState(ctx, tx, false); err != nil {
 		return nil, internalError(err)
 	}
-	valuation, appErr := s.currentPortfolioValuationTx(ctx, tx, asOf)
+	valuation, appErr := s.currentPortfolioValuationTx(ctx, tx, asOf, inputs)
 	if appErr != nil {
 		return nil, appErr
 	}
 	r := &PortfolioTWR{PolicyVersion: portfolioTWRPolicy, Scope: "whole_portfolio_since_inception", Valuation: valuation, Status: "unavailable", Sample: valuation.Sample, PeriodEnd: asOf.Format(time.RFC3339Nano), Issues: []APIError{}}
+	marks := twrMarks{fx: inputs.observations, fxTimes: inputs.times}
 	finish := func(issue string) (*PortfolioTWR, *appError) {
 		if err := ctx.Err(); err != nil {
 			return nil, internalError(err)
@@ -66,6 +73,10 @@ func (s *Service) portfolioTWRTx(ctx context.Context, tx *sql.Tx, asOf time.Time
 		}
 		if r.Sample {
 			r.Issues = append(r.Issues, APIError{Code: "sample_data", Message: "return inputs include stored local sample observations"})
+		}
+		if usesOwnerFX(valuation.Issues) || marks.ownerUsed {
+			r.PolicyVersion = portfolioTWROwnerFXPolicy
+			r.Issues = append(r.Issues, ownerFXIssue())
 		}
 		return r, nil
 	}
@@ -123,15 +134,6 @@ func (s *Service) portfolioTWRTx(ctx context.Context, tx *sql.Tx, asOf time.Time
 	// This bounds return calculation, not the required full-ledger integrity proof.
 	if boundaries > 1000 {
 		return finish("cash_flow_limit")
-	}
-	var marks twrMarks
-	marks.fx, _, err = replayFXObservations(ctx, tx)
-	if err != nil {
-		return nil, internalError(err)
-	}
-	marks.fxTimes, err = currentFXObservationTimes(marks.fx)
-	if err != nil {
-		return nil, internalError(err)
 	}
 	marks.prices, _, err = replaySecurityPriceObservations(ctx, tx)
 	if err != nil {

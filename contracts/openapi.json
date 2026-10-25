@@ -709,7 +709,10 @@
         ],
         "properties": {
           "policy_version": {
-            "const": "retrospective_latest_index_24h_native_and_krw_v1"
+            "enum": [
+              "retrospective_latest_index_24h_native_and_krw_v1",
+              "retrospective_latest_index_24h_native_and_krw_v2"
+            ]
           },
           "max_observation_age_seconds": {
             "const": 86400
@@ -748,7 +751,162 @@
             }
           }
         },
-        "description": "One read transaction and one server clock. All stored benchmark versions are proved, including when TWR is unavailable. Select maximum append sequence per ID whose recorded_at is no later than the report cutoff. No cross-version endpoint mixing, holiday interpolation, inverse FX or provider calls. More than32 eligible IDs returns no index rows and benchmark_limit while preserving TWR."
+        "description": "One read transaction and one server clock. All stored benchmark versions are proved, including when TWR is unavailable. Select maximum append sequence per ID whose recorded_at is no later than the report cutoff. No cross-version endpoint mixing, holiday interpolation, inverse FX or provider calls. More than32 eligible IDs returns no index rows and benchmark_limit while preserving TWR. Owner v2 derives its authority notice from selected FX mark provenance or the nested portfolio notice, including partial/stale marks. Top-level issues remain list failures only; sample follows the selected series/FX sample declarations.",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "policy_version": {
+                  "const": "retrospective_latest_index_24h_native_and_krw_v2"
+                }
+              }
+            },
+            "then": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "portfolio": {
+                      "properties": {
+                        "issues": {
+                          "contains": {
+                            "type": "object",
+                            "required": [
+                              "code"
+                            ],
+                            "properties": {
+                              "code": {
+                                "const": "owner_declared_fx"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "benchmarks": {
+                      "contains": {
+                        "anyOf": [
+                          {
+                            "required": [
+                              "start_fx"
+                            ],
+                            "properties": {
+                              "start_fx": {
+                                "type": "object",
+                                "required": [
+                                  "source"
+                                ],
+                                "properties": {
+                                  "source": {
+                                    "const": "owner_declared"
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "required": [
+                              "end_fx"
+                            ],
+                            "properties": {
+                              "end_fx": {
+                                "type": "object",
+                                "required": [
+                                  "source"
+                                ],
+                                "properties": {
+                                  "source": {
+                                    "const": "owner_declared"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "else": {
+              "not": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "portfolio": {
+                        "properties": {
+                          "issues": {
+                            "contains": {
+                              "type": "object",
+                              "required": [
+                                "code"
+                              ],
+                              "properties": {
+                                "code": {
+                                  "const": "owner_declared_fx"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "benchmarks": {
+                        "contains": {
+                          "anyOf": [
+                            {
+                              "required": [
+                                "start_fx"
+                              ],
+                              "properties": {
+                                "start_fx": {
+                                  "type": "object",
+                                  "required": [
+                                    "source"
+                                  ],
+                                  "properties": {
+                                    "source": {
+                                      "const": "owner_declared"
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "required": [
+                                "end_fx"
+                              ],
+                              "properties": {
+                                "end_fx": {
+                                  "type": "object",
+                                  "required": [
+                                    "source"
+                                  ],
+                                  "properties": {
+                                    "source": {
+                                      "const": "owner_declared"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
       },
       "PortfolioBenchmark": {
         "type": "object",
@@ -972,8 +1130,51 @@
             "maxLength": 64,
             "pattern": "^(?!0$|-).+",
             "description": "Positive direct USD to KRW rate selected by the same economic/report cutoffs. Local fixture provenance remains sample even if the other endpoint is missing or stale."
+          },
+          "source": {
+            "const": "owner_declared"
+          },
+          "source_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "At most128 UTF-8 bytes, no Unicode whitespace or controls."
+          },
+          "sample": {
+            "type": "boolean"
           }
-        }
+        },
+        "oneOf": [
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "source"
+                  ]
+                },
+                {
+                  "required": [
+                    "source_version"
+                  ]
+                },
+                {
+                  "required": [
+                    "sample"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "required": [
+              "source",
+              "source_version",
+              "sample"
+            ]
+          }
+        ],
+        "description": "Two-field legacy marks mean local fixture/sample=true. Owner v2 marks explicitly contain source, immutable source_version and independent sample; unknown/null/partial provenance is invalid. Both endpoint marks for a pair use one whole version."
       },
       "BenchmarkRateResult": {
         "type": "object",
@@ -1087,7 +1288,10 @@
         ],
         "properties": {
           "policy_version": {
-            "const": "restated_external_first_exact_timestamp_twr_v1"
+            "enum": [
+              "restated_external_first_exact_timestamp_twr_v1",
+              "restated_external_first_exact_timestamp_twr_v2"
+            ]
           },
           "scope": {
             "const": "whole_portfolio_since_inception"
@@ -1158,7 +1362,56 @@
             ]
           }
         },
-        "description": "Since-inception retrospective KRW cumulative TWR, not annualized. Restated external cash groups precede internal events at each exact UTC timestamp. Links asset values immediately before external groups to previous post-flow capital, then terminal value to last positive capital. Requires positive intermediate capital; a full withdrawal is unavailable, not a total loss. Historical prices and direct FX observed by each boundary and fetched/recorded by report cutoff must be <=24h old; split marks must be strictly after the last applied split. Final cash and quantity maps and terminal total reconcile to the proved current ledger. Exact rational products are rounded once to12decimals, with8192bit product and1000boundary budgets. Missing or unsupported inputs never become0percent; no trading no-lookahead or PP daily-convention equivalence claim."
+        "description": "Since-inception retrospective KRW cumulative TWR, not annualized. Restated external cash groups precede internal events at each exact UTC timestamp. Links asset values immediately before external groups to previous post-flow capital, then terminal value to last positive capital. Requires positive intermediate capital; a full withdrawal is unavailable, not a total loss. Historical prices and direct FX observed by each boundary and fetched/recorded by report cutoff must be <=24h old; split marks must be strictly after the last applied split. Final cash and quantity maps and terminal total reconcile to the proved current ledger. Exact rational products are rounded once to12decimals, with8192bit product and1000boundary budgets. Missing or unsupported inputs never become0percent; no trading no-lookahead or PP daily-convention equivalence claim. Owner FX v2 is used only when a declared FX observation is selected. owner_declared_fx is non-blocking provenance, independent of sample_data, and remains visible for stale/unavailable results. Pair inputs use one latest-known complete version at report cutoff; a missing point never falls back to an older version.",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "policy_version": {
+                  "const": "restated_external_first_exact_timestamp_twr_v2"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "issues": {
+                  "contains": {
+                    "type": "object",
+                    "required": [
+                      "code"
+                    ],
+                    "properties": {
+                      "code": {
+                        "const": "owner_declared_fx"
+                      }
+                    }
+                  },
+                  "minContains": 1,
+                  "maxContains": 1
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "issues": {
+                  "not": {
+                    "contains": {
+                      "type": "object",
+                      "required": [
+                        "code"
+                      ],
+                      "properties": {
+                        "code": {
+                          "const": "owner_declared_fx"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
       },
       "PortfolioXIRR": {
         "type": "object",
@@ -1182,7 +1435,10 @@
         ],
         "properties": {
           "policy_version": {
-            "const": "restated_external_cash_utc_date_actual_365_v1"
+            "enum": [
+              "restated_external_cash_utc_date_actual_365_v1",
+              "restated_external_cash_utc_date_actual_365_v2"
+            ]
           },
           "solver_policy": {
             "const": "single_change_bracket_else_log_newton_0_1_v1"
@@ -1223,7 +1479,10 @@
             "minimum": 0
           },
           "sign_changes": {
-            "type": ["integer", "null"],
+            "type": [
+              "integer",
+              "null"
+            ],
             "minimum": 0,
             "maximum": 9999
           },
@@ -1273,7 +1532,56 @@
             }
           }
         },
-        "description": "Since-inception retrospective KRW XIRR. Exact event conversion before UTC-date aggregation; actual/365 and twelve-decimal numerical output. Annual rate only for one sign change; nonconventional converged values are candidates without certified uniqueness. Missing observations or numerical failures never become zero. Cash voids remove the original external flow. Historical FX observed_at <= event occurrence, fetched/recorded <= report cutoff; <=24h economic age. This is not a trading no-lookahead policy."
+        "description": "Since-inception retrospective KRW XIRR. Exact event conversion before UTC-date aggregation; actual/365 and twelve-decimal numerical output. Annual rate only for one sign change; nonconventional converged values are candidates without certified uniqueness. Missing observations or numerical failures never become zero. Cash voids remove the original external flow. Historical FX observed_at <= event occurrence, fetched/recorded <= report cutoff; <=24h economic age. This is not a trading no-lookahead policy. Owner FX v2 is used only when a declared FX observation is selected. owner_declared_fx is non-blocking provenance, independent of sample_data, and remains visible for stale/unavailable results. Pair inputs use one latest-known complete version at report cutoff; a missing point never falls back to an older version.",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "policy_version": {
+                  "const": "restated_external_cash_utc_date_actual_365_v2"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "issues": {
+                  "contains": {
+                    "type": "object",
+                    "required": [
+                      "code"
+                    ],
+                    "properties": {
+                      "code": {
+                        "const": "owner_declared_fx"
+                      }
+                    }
+                  },
+                  "minContains": 1,
+                  "maxContains": 1
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "issues": {
+                  "not": {
+                    "contains": {
+                      "type": "object",
+                      "required": [
+                        "code"
+                      ],
+                      "properties": {
+                        "code": {
+                          "const": "owner_declared_fx"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
       },
       "ResearchReportView": {
         "type": "object", "additionalProperties": false,
@@ -1537,19 +1845,96 @@
       "CashValuationFX": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["observation_id", "source", "base_currency", "quote_currency", "rate", "observed_at", "fetched_at", "recorded_at", "sample", "state"],
+        "required": [
+          "observation_id",
+          "source",
+          "base_currency",
+          "quote_currency",
+          "rate",
+          "observed_at",
+          "fetched_at",
+          "recorded_at",
+          "sample",
+          "state"
+        ],
         "properties": {
-          "observation_id": {"$ref": "#/components/schemas/OpaqueId"},
-          "source": {"const": "local_fixture"},
-          "base_currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
-          "quote_currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
-          "rate": {"$ref": "#/components/schemas/Decimal"},
-          "observed_at": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
-          "fetched_at": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
-          "recorded_at": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
-          "sample": {"const": true},
-          "state": {"const": "stale"}
-        }
+          "observation_id": {
+            "$ref": "#/components/schemas/OpaqueId"
+          },
+          "source": {
+            "enum": [
+              "local_fixture",
+              "owner_declared"
+            ]
+          },
+          "base_currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "quote_currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "rate": {
+            "$ref": "#/components/schemas/Decimal"
+          },
+          "observed_at": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp"
+          },
+          "fetched_at": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp"
+          },
+          "recorded_at": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp"
+          },
+          "sample": {
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "stale",
+              "unknown"
+            ]
+          },
+          "source_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "At most128 UTF-8 bytes, no Unicode whitespace or controls."
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "source": {
+                  "const": "local_fixture"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "sample": {
+                  "const": true
+                },
+                "state": {
+                  "const": "stale"
+                }
+              },
+              "not": {
+                "required": [
+                  "source_version"
+                ]
+              }
+            },
+            "else": {
+              "required": [
+                "source_version"
+              ]
+            }
+          }
+        ],
+        "description": "Legacy fixture fields stay unchanged. Declared source_version identifies one whole owner FX version; sample is its independent declaration. unknown means no provider freshness certification; line status separately enforces the24h age limit, and genuinely old selected marks are stale."
       },
       "CashValuationLine": {
         "type": "object",
@@ -1567,22 +1952,178 @@
       "CashValuation": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["scope", "policy_version", "max_observation_age_seconds", "base_currency", "valuation_as_of", "ledger_revision", "ledger_as_of", "ledger_recorded_at", "status", "sample", "total", "lines", "issues"],
+        "required": [
+          "scope",
+          "policy_version",
+          "max_observation_age_seconds",
+          "base_currency",
+          "valuation_as_of",
+          "ledger_revision",
+          "ledger_as_of",
+          "ledger_recorded_at",
+          "status",
+          "sample",
+          "total",
+          "lines",
+          "issues"
+        ],
         "properties": {
-          "scope": {"const": "cash_only"},
-          "policy_version": {"const": "direct_fx_cash_v1"},
-          "max_observation_age_seconds": {"const": 86400},
-          "base_currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
-          "valuation_as_of": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
-          "ledger_revision": {"type": "string", "pattern": "^rev_[0-9]{10}$"},
-          "ledger_as_of": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
-          "ledger_recorded_at": {"$ref": "#/components/schemas/LedgerActivityTimestamp", "description": "Current ledger metadata recorded time, including duplicate-only imports; not the last event timestamp. Valuation cutoff must cover this metadata and every event recorded time in the proved revision."},
-          "status": {"type": "string", "enum": ["empty", "complete", "stale_sample", "unavailable"]},
-          "sample": {"type": "boolean"},
-          "total": {"anyOf": [{"$ref": "#/components/schemas/Money"}, {"type": "null"}]},
-          "lines": {"type": "array", "items": {"$ref": "#/components/schemas/CashValuationLine"}},
-          "issues": {"type": "array", "items": {"$ref": "#/components/schemas/Error"}}
-        }
+          "scope": {
+            "const": "cash_only"
+          },
+          "policy_version": {
+            "enum": [
+              "direct_fx_cash_v1",
+              "direct_fx_cash_v2"
+            ]
+          },
+          "max_observation_age_seconds": {
+            "const": 86400
+          },
+          "base_currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "valuation_as_of": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp"
+          },
+          "ledger_revision": {
+            "type": "string",
+            "pattern": "^rev_[0-9]{10}$"
+          },
+          "ledger_as_of": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp"
+          },
+          "ledger_recorded_at": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp",
+            "description": "Current ledger metadata recorded time, including duplicate-only imports; not the last event timestamp. Valuation cutoff must cover this metadata and every event recorded time in the proved revision."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "empty",
+              "complete",
+              "stale_sample",
+              "unavailable"
+            ]
+          },
+          "sample": {
+            "type": "boolean"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CashValuationLine"
+            }
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "policy_version": {
+                  "const": "direct_fx_cash_v2"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "issues": {
+                  "contains": {
+                    "type": "object",
+                    "required": [
+                      "code"
+                    ],
+                    "properties": {
+                      "code": {
+                        "const": "owner_declared_fx"
+                      }
+                    }
+                  },
+                  "minContains": 1,
+                  "maxContains": 1
+                },
+                "lines": {
+                  "contains": {
+                    "type": "object",
+                    "required": [
+                      "fx"
+                    ],
+                    "properties": {
+                      "fx": {
+                        "type": "object",
+                        "required": [
+                          "source"
+                        ],
+                        "properties": {
+                          "source": {
+                            "const": "owner_declared"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "minContains": 1
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "issues": {
+                  "not": {
+                    "contains": {
+                      "type": "object",
+                      "required": [
+                        "code"
+                      ],
+                      "properties": {
+                        "code": {
+                          "const": "owner_declared_fx"
+                        }
+                      }
+                    }
+                  }
+                },
+                "lines": {
+                  "items": {
+                    "properties": {
+                      "fx": {
+                        "not": {
+                          "type": "object",
+                          "required": [
+                            "source"
+                          ],
+                          "properties": {
+                            "source": {
+                              "const": "owner_declared"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "description": " Owner FX v2 is used only when a declared FX observation is selected. owner_declared_fx is non-blocking provenance, independent of sample_data, and remains visible for stale/unavailable results. Pair inputs use one latest-known complete version at report cutoff; a missing point never falls back to an older version."
       },
       "HoldingValuationPrice": {
         "type": "object",
@@ -1817,23 +2358,151 @@
       "CurrentPortfolioValuation": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["scope", "policy_version", "max_observation_age_seconds", "base_currency", "valuation_as_of", "ledger_revision", "ledger_as_of", "ledger_recorded_at", "status", "sample", "cash_value", "holdings_value", "total_value", "issues"],
+        "required": [
+          "scope",
+          "policy_version",
+          "max_observation_age_seconds",
+          "base_currency",
+          "valuation_as_of",
+          "ledger_revision",
+          "ledger_as_of",
+          "ledger_recorded_at",
+          "status",
+          "sample",
+          "cash_value",
+          "holdings_value",
+          "total_value",
+          "issues"
+        ],
         "properties": {
-          "scope": {"const": "whole_portfolio"},
-          "policy_version": {"const": "current_base_portfolio_valuation_v1"},
-          "max_observation_age_seconds": {"const": 86400},
-          "base_currency": {"const": "KRW"},
-          "valuation_as_of": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
-          "ledger_revision": {"type": "string", "pattern": "^rev_[0-9]{10}$"},
-          "ledger_as_of": {"$ref": "#/components/schemas/LedgerActivityTimestamp"},
-          "ledger_recorded_at": {"$ref": "#/components/schemas/LedgerActivityTimestamp", "description": "Current ledger metadata recorded time, including duplicate-only imports; not the last event timestamp. Valuation cutoff must cover this metadata and every event recorded time in the proved revision."},
-          "status": {"type": "string", "enum": ["empty", "complete", "stale_sample", "unavailable"]},
-          "sample": {"type": "boolean"},
-          "cash_value": {"anyOf": [{"$ref": "#/components/schemas/Money"}, {"type": "null"}]},
-          "holdings_value": {"anyOf": [{"$ref": "#/components/schemas/Money"}, {"type": "null"}]},
-          "total_value": {"anyOf": [{"$ref": "#/components/schemas/Money"}, {"type": "null"}]},
-          "issues": {"type": "array", "items": {"$ref": "#/components/schemas/Error"}}
-        }
+          "scope": {
+            "const": "whole_portfolio"
+          },
+          "policy_version": {
+            "enum": [
+              "current_base_portfolio_valuation_v1",
+              "current_base_portfolio_valuation_v2"
+            ]
+          },
+          "max_observation_age_seconds": {
+            "const": 86400
+          },
+          "base_currency": {
+            "const": "KRW"
+          },
+          "valuation_as_of": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp"
+          },
+          "ledger_revision": {
+            "type": "string",
+            "pattern": "^rev_[0-9]{10}$"
+          },
+          "ledger_as_of": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp"
+          },
+          "ledger_recorded_at": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp",
+            "description": "Current ledger metadata recorded time, including duplicate-only imports; not the last event timestamp. Valuation cutoff must cover this metadata and every event recorded time in the proved revision."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "empty",
+              "complete",
+              "stale_sample",
+              "unavailable"
+            ]
+          },
+          "sample": {
+            "type": "boolean"
+          },
+          "cash_value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "holdings_value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total_value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "policy_version": {
+                  "const": "current_base_portfolio_valuation_v2"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "issues": {
+                  "contains": {
+                    "type": "object",
+                    "required": [
+                      "code"
+                    ],
+                    "properties": {
+                      "code": {
+                        "const": "owner_declared_fx"
+                      }
+                    }
+                  },
+                  "minContains": 1,
+                  "maxContains": 1
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "issues": {
+                  "not": {
+                    "contains": {
+                      "type": "object",
+                      "required": [
+                        "code"
+                      ],
+                      "properties": {
+                        "code": {
+                          "const": "owner_declared_fx"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "description": " Owner FX v2 is used only when a declared FX observation is selected. owner_declared_fx is non-blocking provenance, independent of sample_data, and remains visible for stale/unavailable results. Pair inputs use one latest-known complete version at report cutoff; a missing point never falls back to an older version."
       },
       "BrokerPositionDifference": {
         "type": "object",

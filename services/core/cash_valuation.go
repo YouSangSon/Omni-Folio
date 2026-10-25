@@ -11,13 +11,15 @@ import (
 )
 
 const (
-	cashValuationPolicy = "direct_fx_cash_v1"
-	cashFXMaxAge        = 24 * time.Hour
+	cashValuationPolicy        = "direct_fx_cash_v1"
+	cashValuationOwnerFXPolicy = "direct_fx_cash_v2"
+	cashFXMaxAge               = 24 * time.Hour
 )
 
 type CashValuationFX struct {
 	ObservationID string `json:"observation_id"`
 	Source        string `json:"source"`
+	SourceVersion string `json:"source_version,omitempty"`
 	BaseCurrency  string `json:"base_currency"`
 	QuoteCurrency string `json:"quote_currency"`
 	Rate          string `json:"rate"`
@@ -78,7 +80,7 @@ func (s *Service) cashValuation(ctx context.Context, baseCurrency, asOf string) 
 	if revision(ledgerRevision) != snapshot.LedgerRevision {
 		return nil, internalError(errors.New("ledger snapshot proof mismatch"))
 	}
-	observations, _, err := replayFXObservations(ctx, tx)
+	inputs, err := readValuationFXInputs(ctx, tx, valuationTime)
 	if err != nil {
 		return nil, internalError(err)
 	}
@@ -95,16 +97,7 @@ func (s *Service) cashValuation(ctx context.Context, baseCurrency, asOf string) 
 	if valuationTime.Before(ledgerAsOf) || valuationTime.Before(ledgerRecordedAt) || futureRecord {
 		return nil, &appError{http.StatusConflict, APIError{Code: "valuation_as_of_precedes_ledger_revision", Message: "valuation as_of precedes the current ledger state", Field: "as_of"}}
 	}
-	times := make(map[string][3]time.Time, len(observations))
-	for _, observation := range observations {
-		observedAt, observedErr := time.Parse(time.RFC3339Nano, observation.ObservedAt)
-		fetchedAt, fetchedErr := time.Parse(time.RFC3339Nano, observation.FetchedAt)
-		recordedAt, recordedErr := time.Parse(time.RFC3339Nano, observation.RecordedAt)
-		if observedErr != nil || fetchedErr != nil || recordedErr != nil || fetchedAt.Before(observedAt) || recordedAt.Before(fetchedAt) {
-			return nil, internalError(errors.New("FX observation timestamps are inconsistent"))
-		}
-		times[observation.ObservationID] = [3]time.Time{observedAt, fetchedAt, recordedAt}
-	}
+	observations, times := inputs.observations, inputs.times
 
 	result := &CashValuation{
 		Scope: "cash_only", PolicyVersion: cashValuationPolicy, MaxObservationAgeSeconds: int64(cashFXMaxAge / time.Second),
@@ -122,6 +115,7 @@ func (s *Service) cashValuation(ctx context.Context, baseCurrency, asOf string) 
 
 	total := new(big.Rat)
 	available, usedSample := true, false
+	usedOwnerFX := false
 	for _, cash := range snapshot.Cash {
 		amount, err := parseDecimal(cash.Amount)
 		if err != nil {
@@ -146,9 +140,11 @@ func (s *Service) cashValuation(ctx context.Context, baseCurrency, asOf string) 
 				break
 			}
 			line.FX = publicCashValuationFX(observation)
-			usedSample = true
-			if valuationTime.Sub(times[observation.ObservationID][0]) > cashFXMaxAge {
+			usedSample = usedSample || fxIsSample(observation)
+			usedOwnerFX = usedOwnerFX || observation.Source == ownerFXSource
+			if valuationTime.Sub(times[fxTimeKey(*observation)][0]) > cashFXMaxAge {
 				line.Status = "stale"
+				line.FX.State = "stale"
 				line.Issue = &APIError{Code: "stale_direct_fx", Message: "the direct FX observation exceeds the policy age", Field: cash.Currency}
 				result.Issues = append(result.Issues, *line.Issue)
 				available = false
@@ -170,6 +166,10 @@ func (s *Service) cashValuation(ctx context.Context, baseCurrency, asOf string) 
 		result.Lines = append(result.Lines, line)
 	}
 	result.Sample = usedSample
+	if usedOwnerFX {
+		result.PolicyVersion = cashValuationOwnerFXPolicy
+		result.Issues = append(result.Issues, ownerFXIssue())
+	}
 	if !available {
 		result.Status = "unavailable"
 	} else {
@@ -194,14 +194,14 @@ func latestEligibleCashFX(observations []FXObservation, times map[string][3]time
 	var selected *FXObservation
 	for index := range observations {
 		observation := &observations[index]
-		if observation.Source != "local_fixture" || observation.BaseCurrency != base || observation.QuoteCurrency != quote {
+		if !supportedValuationFX(*observation) || observation.BaseCurrency != base || observation.QuoteCurrency != quote {
 			continue
 		}
-		observationTimes := times[observation.ObservationID]
+		observationTimes := times[fxTimeKey(*observation)]
 		if observationTimes[0].After(asOf) || observationTimes[1].After(asOf) || observationTimes[2].After(asOf) {
 			continue
 		}
-		if selected == nil || observationTimes[0].After(times[selected.ObservationID][0]) {
+		if selected == nil || observationTimes[0].After(times[fxTimeKey(*selected)][0]) {
 			selected = observation
 		}
 	}
@@ -209,11 +209,17 @@ func latestEligibleCashFX(observations []FXObservation, times map[string][3]time
 }
 
 func publicCashValuationFX(observation *FXObservation) *CashValuationFX {
-	return &CashValuationFX{
+	result := &CashValuationFX{
 		ObservationID: observation.ObservationID, Source: observation.Source, BaseCurrency: observation.BaseCurrency,
 		QuoteCurrency: observation.QuoteCurrency, Rate: observation.Rate, ObservedAt: observation.ObservedAt,
 		FetchedAt: observation.FetchedAt, RecordedAt: observation.RecordedAt, Sample: true, State: "stale",
 	}
+	if observation.Source == ownerFXSource {
+		result.SourceVersion = observation.ownerVersion
+		result.Sample = fxIsSample(observation)
+		result.State = "unknown"
+	}
+	return result
 }
 
 func stringPointer(value string) *string { return &value }
