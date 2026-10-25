@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'csv_file.dart';
 import 'holding_valuation_page.dart';
+import 'import_apply.dart';
 import 'instrument_ledger_page.dart';
+import 'manual_entry_page.dart';
 import 'models.dart';
 import 'paper_monitor_page.dart';
 import 'research_report_page.dart';
@@ -21,11 +23,15 @@ class OmniFolioApp extends StatefulWidget {
 class _OmniFolioAppState extends State<OmniFolioApp> {
   late final PortfolioController _portfolio = PortfolioController(widget.api)
     ..refresh();
+  late final ImportApplyController _importApplies = ImportApplyController(
+    widget.api,
+  );
   var _tab = 0;
 
   @override
   void dispose() {
     _portfolio.dispose();
+    _importApplies.dispose();
     super.dispose();
   }
 
@@ -47,7 +53,7 @@ class _OmniFolioAppState extends State<OmniFolioApp> {
             onConnections: () => setState(() => _tab = 3),
           ),
           HoldingsPage(controller: _portfolio),
-          ActivityPage(api: widget.api),
+          ActivityPage(api: widget.api, applies: _importApplies),
           DataPage(api: widget.api, controller: _portfolio),
         ];
         return LayoutBuilder(
@@ -1945,8 +1951,9 @@ class _TrustBanner extends StatelessWidget {
 }
 
 class ActivityPage extends StatefulWidget {
-  const ActivityPage({super.key, required this.api});
+  const ActivityPage({super.key, required this.api, this.applies});
   final OmniApi api;
+  final ImportApplyController? applies;
 
   @override
   State<ActivityPage> createState() => _ActivityPageState();
@@ -1958,12 +1965,18 @@ class _ActivityPageState extends State<ActivityPage> {
   final _activityHistoryKey = GlobalKey();
   ImportPreview? _preview;
   ApplyReceipt? _receipt;
+  ApplyReceipt? _previousReceipt;
+  late final ImportApplyController _applies;
+  late final bool _ownsApplies;
+  late int _seenCompletion;
+  late int _seenRejection;
   LedgerActivityPage? _firstActivities;
   LedgerActivityPage? _activities;
   final List<({String cursor, String upperBoundOccurredAt})>
   _activityCursorTrail = [];
   String? _error;
-  var _busy = false;
+  var _previewBusy = false;
+  var _manualOpen = false;
   var _fileBusy = false;
   var _activityBusy = false;
   var _activityFailed = false;
@@ -1973,18 +1986,72 @@ class _ActivityPageState extends State<ActivityPage> {
   int? _queuedFirstPageEpoch;
   var _queuedFirstPageReveal = false;
 
+  bool get _busy => _previewBusy || _applies.busy;
+
   @override
   void initState() {
     super.initState();
+    _ownsApplies = widget.applies == null;
+    _applies = widget.applies ?? ImportApplyController(widget.api);
+    _seenCompletion = _applies.completionSerial;
+    _seenRejection = _applies.rejectionSerial;
+    _previousReceipt = _applies.completion?.receipt;
+    _applies.addListener(_applyStateChanged);
     _refreshActivities(revealResult: false);
   }
 
   @override
   void dispose() {
     _activityEpoch += 1;
+    _applies.removeListener(_applyStateChanged);
+    if (_ownsApplies) _applies.dispose();
     _csv.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  void _applyStateChanged() {
+    if (!mounted) return;
+    var refresh = false;
+    setState(() {
+      if (_seenCompletion != _applies.completionSerial) {
+        _seenCompletion = _applies.completionSerial;
+        final completed = _applies.completion!;
+        if (completed.csv == _csv.text) {
+          _receipt = completed.receipt;
+          _previousReceipt = null;
+          if (_preview?.previewId != completed.previewId) _preview = null;
+        } else {
+          _previousReceipt = completed.receipt;
+          _receipt = null;
+          _preview = null;
+          _error = '이전 입력의 반영이 완료됐습니다. 현재 CSV는 새로 미리보기를 만드세요.';
+        }
+        refresh = true;
+      }
+      if (_seenRejection != _applies.rejectionSerial) {
+        _seenRejection = _applies.rejectionSerial;
+        _preview = null;
+        _receipt = null;
+      }
+    });
+    if (refresh) unawaited(_refreshActivities(revealResult: false));
+  }
+
+  Future<void> _openManualEntry() async {
+    if (_busy || _fileBusy || _manualOpen || _applies.pending != null) return;
+    setState(() => _manualOpen = true);
+    try {
+      final csv = await Navigator.of(context).push<String>(
+        MaterialPageRoute(builder: (_) => const ManualEntryPage()),
+      );
+      if (!mounted || csv == null || csv == _csv.text) return;
+      _csv.text = csv;
+      _error = null;
+      _invalidatePreviewOnEdit(csv);
+    } finally {
+      if (mounted) setState(() => _manualOpen = false);
+    }
   }
 
   Future<void> _refreshActivities({bool revealResult = true}) async {
@@ -2177,7 +2244,7 @@ class _ActivityPageState extends State<ActivityPage> {
     }
     final csv = _csv.text;
     setState(() {
-      _busy = true;
+      _previewBusy = true;
       _error = null;
       _receipt = null;
     });
@@ -2189,14 +2256,14 @@ class _ActivityPageState extends State<ActivityPage> {
         setState(() => _error = 'CSV 내용이 변경되어 이전 미리보기는 무효입니다. 새 미리보기를 만드세요.');
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && _csv.text == csv) {
         setState(() {
           _error = '미리보기를 완료하지 못했습니다. 입력을 확인한 뒤 다시 시도하세요.';
           if (_preview != null) _error = '$_error\n이전 미리보기는 유지됩니다.';
         });
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _previewBusy = false);
     }
   }
 
@@ -2204,29 +2271,8 @@ class _ActivityPageState extends State<ActivityPage> {
     if (_busy || _fileBusy) return;
     final preview = _preview;
     if (preview == null || !preview.canApply) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      final receipt = await widget.api.apply(
-        preview.previewId,
-        'import-${preview.previewId}',
-      );
-      if (!mounted) return;
-      setState(() => _receipt = receipt);
-      unawaited(_refreshActivities(revealResult: false));
-    } catch (_) {
-      if (mounted) {
-        setState(
-          () => _error =
-              '거래 내역을 적용하지 못했습니다. 다시 시도하세요.\n'
-              '같은 미리보기와 멱등성 키로 다시 시도해도 중복 반영되지 않습니다.',
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    setState(() => _error = null);
+    await _applies.apply(preview, _csv.text);
   }
 
   void _invalidatePreviewOnEdit(String _) {
@@ -2274,11 +2320,31 @@ class _ActivityPageState extends State<ActivityPage> {
                   onPressed: _busy || _fileBusy ? null : _selectCsvFile,
                   icon: const Icon(Icons.file_open_outlined),
                   label: const Text('CSV 파일 선택'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 52),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed:
+                      _busy ||
+                          _fileBusy ||
+                          _manualOpen ||
+                          _applies.pending != null
+                      ? null
+                      : _openManualEntry,
+                  icon: const Icon(Icons.edit_note_outlined),
+                  label: const Text('거래 직접 입력'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 52),
+                  ),
                 ),
                 ElevatedButton.icon(
                   onPressed: _busy || _fileBusy ? null : _previewCsv,
                   icon: const Icon(Icons.preview),
                   label: const Text('미리보기 만들기'),
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(0, 52),
+                  ),
                 ),
               ],
             ),
@@ -2304,12 +2370,67 @@ class _ActivityPageState extends State<ActivityPage> {
             ),
           ),
         ),
+      if (_applies.pending != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Semantics(
+                container: true,
+                liveRegion: true,
+                child: _Notice(
+                  icon: Icons.history,
+                  color: _applies.busy
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.error,
+                  text: _applies.busy
+                      ? _applies.pending!.csv == _csv.text
+                            ? '이 입력의 반영 요청을 처리하고 있습니다.'
+                            : '이전 입력의 반영 요청을 처리하고 있습니다. 현재 CSV의 결과가 아닙니다.'
+                      : _applies.pending!.csv == _csv.text
+                      ? '거래 내역의 반영 여부를 확인하지 못했습니다. 같은 요청을 다시 시도해도 중복 반영되지 않습니다.'
+                      : '이전 CSV의 반영 여부를 확인하지 못했습니다. 현재 입력은 보존합니다. 같은 거래를 새로 작성하지 말고 이전 요청을 재시도하세요.',
+                ),
+              ),
+              if (!_applies.busy) ...[
+                const SizedBox(height: 8),
+                const Text('반영 여부를 확인할 때까지 앱을 닫거나 같은 거래를 새로 작성하지 마세요.'),
+              ],
+              if (_preview?.canApply != true ||
+                  _applies.pending!.csv != _csv.text) ...[
+                const SizedBox(height: 8),
+                const Text('재시도는 원래 요청을 사용하며, 아직 반영되지 않았다면 원장을 변경할 수 있습니다.'),
+                const SizedBox(height: 8),
+                ElevatedButton(
+                  onPressed: _busy || _fileBusy ? null : _applies.retry,
+                  child: const Text('이전 요청 재시도'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      if (_applies.failure == ImportApplyFailure.rejected)
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: _Notice(
+            icon: Icons.error_outline,
+            text: '이전 반영 요청이 거절되었습니다. 입력을 확인해 새 미리보기를 만드세요.',
+            color: Theme.of(context).colorScheme.error,
+          ),
+        ),
       if (_preview != null)
         Padding(
           padding: const EdgeInsets.only(top: 12),
           child: _PreviewCard(
             preview: _preview!,
-            onApply: _busy || _fileBusy ? null : _apply,
+            onApply:
+                _busy ||
+                    _fileBusy ||
+                    (_applies.pending != null &&
+                        _applies.pending!.csv != _csv.text)
+                ? null
+                : _apply,
           ),
         ),
       if (_receipt != null)
@@ -2317,7 +2438,13 @@ class _ActivityPageState extends State<ActivityPage> {
           padding: const EdgeInsets.only(top: 12),
           child: _ReceiptCard(receipt: _receipt!),
         ),
+      if (_previousReceipt != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: _ReceiptCard(receipt: _previousReceipt!, previousInput: true),
+        ),
       if (_receipt != null ||
+          _previousReceipt != null ||
           (_csv.text.isEmpty && _preview == null && _error == null)) ...[
         const SizedBox(height: 12),
         _ActivityHistoryCard(
@@ -3060,17 +3187,19 @@ class _PreviewCard extends StatelessWidget {
 }
 
 class _ReceiptCard extends StatelessWidget {
-  const _ReceiptCard({required this.receipt});
+  const _ReceiptCard({required this.receipt, this.previousInput = false});
   final ApplyReceipt receipt;
+  final bool previousInput;
 
   @override
   Widget build(BuildContext context) => Semantics(
     liveRegion: true,
-    label: '적용 확인 receipt ${receipt.receiptId}',
+    label:
+        '${previousInput ? '이전 입력 적용 확인' : '적용 확인'} receipt ${receipt.receiptId}',
     child: _SectionCard(
-      title: '적용 확인',
+      title: previousInput ? '이전 입력 적용 확인' : '적용 확인',
       child: Text(
-        '원자적 적용 완료\n적용 ${receipt.appliedRows}건 · 중복 제외 ${receipt.skippedDuplicateRows}건\nReceipt ${receipt.receiptId}\n원장 ${receipt.ledgerRevisionAfter} · ${_time(receipt.recordedAt)}',
+        '${previousInput ? '이전 요청의 결과이며 현재 CSV의 반영 결과가 아닙니다.\n' : ''}원자적 적용 완료\n적용 ${receipt.appliedRows}건 · 중복 제외 ${receipt.skippedDuplicateRows}건\nReceipt ${receipt.receiptId}\n원장 ${receipt.ledgerRevisionAfter} · ${_time(receipt.recordedAt)}',
         style: _tabular(context),
       ),
     ),

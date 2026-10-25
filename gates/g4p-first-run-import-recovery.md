@@ -64,3 +64,23 @@ main `4f8224b`와 동일한 client tree `5dce64f`를 가진 기존 `cd91d16` web
 관측 중 host swapout이 5,111,457→5,176,067로 증가해 두 사례 뒤에는 검사를 추가하지 않았다. 정적 서버 exit 0과 소유 PID·listener·임시 fixture 부재, 탭 종료를 확인했다. 다른 작업은 변경하지 않았고 증가 원인을 이 검증에 단정하지 않는다. 소유권·관측 기록은 `docs/_internal/skill-outputs/goal-20261025-csv-browser{,-dom}-owner.json`에 남겼다.
 
 이 브라우저 실행에서는 preview/apply·receipt, 크기 초과·동일 파일·취소, API 자동 전송 유무를 검증하지 않았다. 해당 unit/fake 105개와 실제 브라우저 증거는 범위가 다르다. 네이티브 플랫폼·실기기·수동 screen reader와 VM 검증도 계속 열려 있다.
+
+
+<a id="manual-entry"></a>
+
+## 거래 직접 입력과 반영 결과 구분
+
+Phase A의 수동 입력 후속이다. `거래 직접 입력`에서 기존 10가지 원장 유형 중 한 건을 준비하고 `검토용 초안 만들기`로 CSV 초안 전체를 바꾼다. 취소는 기존 입력·preview·receipt·오류를 보존한다. 화면 진입과 초안 작성만으로 API를 호출하거나 원장을 바꾸지 않는다. 기존 Go preview·명시적 apply·receipt만 사용하며 API·schema·dependency·주문 권한을 추가하지 않는다. 현재 mapping의 로컬 `account-main`과 `AAPL`만 기본 제공하며 실제 계좌 선택을 뜻하지 않는다. 다른 종목은 기존 Go 검토에서 미해결로 표시된다.
+
+폼 진입마다 한 번 만든 source ID를 해당 초안에서 유지한다. 새 폼은 새 거래 의도이므로 같은 거래를 다시 작성하면 자동 중복 제거를 보장하지 않는다. 금액은 입력의 선행/후행 0을 정규화하고 기존 BigInt scale 계산을 공유한다. 매수는 수량×단가+수수료의 음수, 매도는 수량×단가−수수료이며 결과가 0이나 음수인 경우도 원문대로 검토한다. 응답 parser의 canonical decimal 요구는 유지한다. 시각은 달력·시간대·최대 9자리 소수초를 검사하되 문자열을 그대로 CSV에 넣고 Go가 UTC로 정규화한다. `CASH_VOID`의 대상은 receipt가 아닌 원본 `source_event_id`이며 대상·반대 금액·계좌·통화·시각·중복 취소 여부는 Go가 검증한다.
+
+반영 중 CSV 편집은 계속 허용한다. 요청의 CSV·preview ID·멱등성 키는 앱 세션 소유자가 보존해 탭 이동으로 잃지 않는다. 다른 입력의 늦은 성공은 `이전 입력 적용 확인`으로 구분하고 현재 preview를 무효화한다. 네트워크·5xx·잘못된 응답·알 수 없는 오류는 미확정으로 남기며 새 직접 입력을 막는다. `이전 요청 재시도`는 읽기 전용 조회가 아니라 원래 요청을 같은 키로 다시 보내며 미반영이면 실제로 반영할 수 있다. HTTP status/code가 409/stale_preview 또는 400/preview_not_found·preview_has_errors·invalid_ledger일 때만 미반영 거절로 확정해 새 검토를 허용한다. 이 분류는 receipt를 먼저 찾고 이후 검증/실패 시 transaction을 rollback하는 기존 Go apply 경계에 근거한다. 앱 종료 후 durable 재시도는 이번 범위가 아니다.
+
+폼은 기존 Material theme와 48dp target을 사용하고 오류 요약에 포커스를 옮겨 필드로 연결한다. 고정된 소수의 필드를 한 스크롤 안에 유지해 하단 제출 후에도 요약을 찾아갈 수 있게 한다. 375px·가로 화면·200% 글자·키보드·양쪽 theme/reduced-motion, 중복 클릭·취소·유형 변경·늦은 응답을 widget fake로 검사한다. 실제 접근성 기기 동작과 구분한다.
+
+### 검증
+
+- RED: [40158637857](https://github.com/YouSangSon/Omni-Folio/actions/runs/40158637857)에서 직접 입력 버튼 부재, [40160552773](https://github.com/YouSangSon/Omni-Folio/actions/runs/40160552773)에서 편집 후 늦은 반영 결과의 잘못된 귀속을 재현했다. 고정 Flutter 설치와 lock 해결은 통과했고 의도한 widget assertion에서 실패했다.
+- `contracts/fixtures/manual-entry-cases.json`의 19개 공통 사례를 Flutter CSV 생성/응답 parser와 Go 실제 SQLite preview·apply·동일 키 재시도·동일 source 재검토가 함께 사용한다. 10유형, 큰 정수·소수 scale·0/음수 매도 대금, 정/역분할, FX 두 leg, 인용/한글 취소 대상, 음수 상쇄, 시간대의 날짜 경계·nanosecond를 포함한다.
+- Widget 흐름은 BUY/DEPOSIT 작성·취소·유형 전환과 요청/결과 경계를 중심으로 검사한다. 10유형 전체의 화면 조작을 검증한 것으로 표현하지 않는다.
+- GREEN: 원격 Core 전체 check와 Flutter 집중/전체·정적 분석·web release·ARM64 APK·패키지 권한/소스 identity 확인 전이다. 로컬 runtime/native build는 공유 호스트 swap 압박 때문에 실행하지 않는다. 새 client tree의 iOS 빌드·실기기·브라우저 입력·수동 screen reader·앱 재시작 복구와 VM 검증은 포함하지 않는다.

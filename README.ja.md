@@ -133,6 +133,8 @@ Preview は台帳を変更しません。返された `preview_id` を新しい 
 
 取引履歴画面ではテキストを貼り付けるか、`CSV 파일 선택` から `UTF-8`・`1MiB` 以下のファイルを読み込みます。選択だけでは送信・反映されません。内容を確認し、プレビューと反映をそれぞれ実行します。キャンセル・読み込みエラーでは既存の入力と結果を保持します。[ファイル入力の検証範囲](gates/g4p-first-run-import-recovery.md#csv-file-selection)
 
+CSV ファイルなしで1件を準備するには、`거래 직접 입력` → `검토용 초안 만들기` を使います。既存の CSV 下書き全体を置き換え、キャンセル時は入力と結果を保持します。10種類の記録に対応し、売買の現金額は正確な10進数で計算します。現在のローカル既定口座 `account-main` と既定の銘柄解決 `AAPL` を使い、注文は送信しません。下書きからプレビューと反映を個別に実行してください。反映結果が不明な場合は、アプリを閉じたり同じ取引を新規入力したりせず、同じリクエストを再試行します。CSV の変更やタブ移動後は `이전 요청 재시도` で元のリクエストを送ります。未反映なら、この再試行で台帳が変更される場合があります。再試行情報はアプリのセッション中のみ保持します。[直接入力と結果の区別](gates/g4p-first-run-import-recovery.md#manual-entry)
+
 CSV の type は `DEPOSIT`、`WITHDRAWAL`、`BUY`、`SELL`、`DIVIDEND`、`FEE`、`TAX`、`SPLIT`、`CASH_VOID`、`FX_EXCHANGE` です。金額と数量は正規化された10進数文字列で、現金イベントの符号と split の現金影響がゼロであることを apply 前に検証します。任意の `corrects_source_event_id` 列を使うのは `CASH_VOID` だけで、適用済みの同一口座・通貨の cash-like event に対して正確に逆符号の金額でなければなりません。原本は削除せず、Flutter preview には原本の source/type/currency/amount と相殺金額を併せて表示します。`FX_EXCHANGE` は、売却側の `currency`/負の `amount` と、異なる通貨の購入側の `counter_currency`/正の `counter_amount` を1行に指定する必要があります。この2つの金額は為替レートや現在の相場を意味せず、手数料は別の `FEE` 行に記録します。
 
 ```sh

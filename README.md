@@ -133,6 +133,8 @@ Preview는 원장을 변경하지 않습니다. 반환된 `preview_id`를 새 id
 
 거래 내역 화면에서 텍스트를 붙여 넣거나 `CSV 파일 선택`으로 `UTF-8`·`1MiB` 이하 파일을 불러옵니다. 선택만으로 전송·적용되지 않으며, 내용을 확인한 뒤 미리보기와 적용을 각각 실행합니다. 취소·읽기 오류는 기존 입력과 결과를 보존합니다. [파일 입력의 검증 범위](gates/g4p-first-run-import-recovery.md#csv-file-selection)
 
+CSV 없이 한 건을 준비하려면 `거래 직접 입력` → `검토용 초안 만들기`를 사용하세요. 기존 CSV 초안 전체를 바꾸며, 취소하면 기존 입력과 결과를 보존합니다. 10가지 기록 유형을 지원하고 매수·매도 현금은 정확한 소수로 계산합니다. 현재 로컬 기본 계좌 `account-main`과 기본 종목 해석 `AAPL`을 사용하며 실제 주문은 보내지 않습니다. 초안에서 미리보기와 반영을 각각 실행하세요. 반영 여부가 불확실하면 앱을 닫거나 같은 거래를 새로 작성하지 말고 같은 요청을 재시도하세요. 다른 CSV로 바꿨거나 탭을 이동했다면 `이전 요청 재시도`로 원래 요청을 보냅니다. 아직 미반영이면 이 재시도가 원장을 변경할 수 있습니다. 재시도 정보는 앱 세션 안에서만 유지됩니다. [직접 입력과 결과 구분](gates/g4p-first-run-import-recovery.md#manual-entry)
+
 CSV type은 `DEPOSIT`, `WITHDRAWAL`, `BUY`, `SELL`, `DIVIDEND`, `FEE`, `TAX`, `SPLIT`, `CASH_VOID`, `FX_EXCHANGE`입니다. 금액과 수량은 canonical decimal string이며, 현금 event 부호와 split의 zero cash impact는 apply 전에 검증됩니다. `CASH_VOID`만 optional `corrects_source_event_id` column을 사용하며, 이미 적용된 같은 계좌·통화 cash-like event의 exact 반대 금액이어야 합니다. 원본은 삭제되지 않고 Flutter preview에 원본 source/type/currency/amount와 상쇄 금액이 함께 표시됩니다. `FX_EXCHANGE`는 매도 leg의 `currency`/음수 `amount`와 서로 다른 매수 leg의 `counter_currency`/양수 `counter_amount`를 하나의 행에 요구합니다. 두 금액은 환율이나 현재 시세를 뜻하지 않으며 수수료는 별도 `FEE` 행으로 기록합니다.
 
 ```sh

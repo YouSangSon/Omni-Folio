@@ -2349,7 +2349,7 @@ void main() {
     await tester.tap(apply);
     await pumpUi(tester);
     expect(find.textContaining('중복 반영되지 않습니다'), findsOneWidget);
-    await tester.drag(find.byType(ListView), const Offset(0, -200));
+    await tester.ensureVisible(apply);
     await tester.pump();
     await tester.tap(apply);
     await pumpUi(tester);
@@ -2410,7 +2410,7 @@ void main() {
       await tester.tap(apply);
       await pumpUi(tester);
       await resize(otherWidth);
-      expect(find.textContaining('거래 내역을 적용하지 못했습니다.'), findsOneWidget);
+      expect(find.textContaining('거래 내역의 반영 여부를 확인하지 못했습니다.'), findsOneWidget);
 
       final pendingApply = Completer<ApplyReceipt>();
       api.applyCompleter = pendingApply;
@@ -2773,7 +2773,7 @@ void main() {
     await tester.tap(find.text('원자적으로 적용'));
     await pumpUi(tester);
     expect(find.textContaining(secret), findsNothing);
-    expect(find.textContaining('거래 내역을 적용하지 못했습니다.'), findsOneWidget);
+    expect(find.textContaining('거래 내역의 반영 여부를 확인하지 못했습니다.'), findsOneWidget);
     semantics.dispose();
   });
 
