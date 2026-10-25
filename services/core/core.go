@@ -330,11 +330,15 @@ func requireSchema(db *sql.DB) error {
 }
 
 func requireSchemaContext(ctx context.Context, q orderQuerier) error {
+	return requireSchemaVersionContext(ctx, q, latestSchema)
+}
+
+func requireSchemaVersionContext(ctx context.Context, q orderQuerier, expected int) error {
 	var first, latest, count int
 	if err := q.QueryRowContext(ctx, `SELECT COALESCE(MIN(version), 0), COALESCE(MAX(version), 0), COUNT(*) FROM schema_migrations`).Scan(&first, &latest, &count); err != nil {
 		return fmt.Errorf("database is not migrated; run migrate first: %w", err)
 	}
-	if first != 1 || latest != latestSchema || count != latestSchema {
+	if first != 1 || latest != expected || count != expected {
 		return fmt.Errorf("unsupported schema history %d..%d (%d migrations)", first, latest, count)
 	}
 	return nil
@@ -3303,7 +3307,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 			_ = sourceDB.Close()
 			return errors.New("source paper performance policy recovery proof mismatch")
 		}
-		runnerLease, err := provePaperRunnerLeaseRecovery(context.Background(), sourceDB)
+		runnerLease, err := provePaperRunnerLeaseRecoveryAtSchema(context.Background(), sourceDB, sourceSchema)
 		if err != nil {
 			_ = sourceDB.Close()
 			return fmt.Errorf("source paper runner lease recovery proof: %w", err)

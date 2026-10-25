@@ -217,6 +217,9 @@ func TestBenchmarkSeriesLegacyV16PreservesReplayAuthorityAndSource(t *testing.T)
 		t.Fatal(err)
 	}
 	dropBenchmarkSchemaForLegacy(t, db)
+	if _, err := provePaperRunnerLeaseRecovery(context.Background(), db); err == nil {
+		t.Fatal("current runner accepted a schema22 database")
+	}
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -269,6 +272,7 @@ func TestBenchmarkSeriesLegacyV16PreservesReplayAuthorityAndSource(t *testing.T)
 func TestBenchmarkSeriesRejectsUnexpectedTriggerAndIndexBeforeWriting(t *testing.T) {
 	for name, definition := range map[string]string{
 		"ignore":      `CREATE TRIGGER unexpected_benchmark_trigger BEFORE INSERT ON benchmark_series_versions BEGIN SELECT RAISE(IGNORE); END`,
+		"temp ignore": `CREATE TEMP TRIGGER unexpected_benchmark_trigger BEFORE INSERT ON main.benchmark_series_versions BEGIN SELECT RAISE(IGNORE); END`,
 		"side effect": `CREATE TRIGGER unexpected_benchmark_trigger AFTER INSERT ON benchmark_series_versions BEGIN INSERT INTO benchmark_trigger_probe VALUES ('changed'); END`,
 		"index":       `CREATE INDEX unexpected_benchmark_index ON benchmark_series_versions(recorded_at)`,
 	} {
@@ -298,5 +302,41 @@ func TestBenchmarkSeriesRejectsUnexpectedTriggerAndIndexBeforeWriting(t *testing
 				t.Fatal("recovery accepted extra schema object")
 			}
 		})
+	}
+}
+
+func TestBenchmarkSeriesLegacyV16CannotActivateAnActiveRunnerLease(t *testing.T) {
+	svc, _ := g38EPerformanceWindow(t, []string{"100"})
+	if _, err := svc.acquirePaperRunnerLease(context.Background(), k2aAccountRef); err != nil {
+		t.Fatal(err)
+	}
+	golden := writeCurrentSnapshot(t, svc.db)
+	backup := filepath.Join(t.TempDir(), "active-v16.db")
+	manifestPath := backup + ".manifest.json"
+	if _, err := createBackup(svc.db, backup, golden, manifestPath, svc.now, svc.id); err != nil {
+		t.Fatal(err)
+	}
+	db, err := openExistingDB(backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dropBenchmarkSchemaForLegacy(t, db)
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	fields := readJSONMap(t, manifestPath)
+	stripBenchmarkProofForLegacy(fields)
+	fields["format_version"], fields["schema_version"] = "omni-folio-backup.v16", "omni-folio.sqlite.v22"
+	sha, size, err := hashFile(backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt := fields["verification_receipt"].(map[string]any)
+	fields["db_sha256"], fields["size_bytes"], receipt["candidate_db_sha256"] = sha, size, sha
+	// A forged activation claim must not hide the actually captured active lease.
+	receipt["status"], receipt["eligible_for_activation"], receipt["errors"] = "verified", true, []string{}
+	writeJSONFile(t, manifestPath, fields)
+	if err := verifyManifest(backup, golden, manifestPath); err == nil {
+		t.Fatal("active v16 runner became eligible")
 	}
 }

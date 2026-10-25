@@ -207,13 +207,22 @@ func requireBenchmarkSeriesSchema(ctx context.Context, q queryer) error {
 			return errors.New("benchmark schema definition is incomplete")
 		}
 		var actual string
-		if err := q.QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE name=? AND type=?`, name, strings.ToLower(kind)).Scan(&actual); err != nil {
+		if err := q.QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE name=? AND type=? AND tbl_name='benchmark_series_versions'`, name, strings.ToLower(kind)).Scan(&actual); err != nil {
 			return errors.New("benchmark schema object is missing")
 		}
 		// Preserve literals as well as constraints; SQL keyword case is pinned too.
 		if strings.Join(strings.Fields(actual), " ") != strings.Join(strings.Fields(expected), " ") {
 			return errors.New("benchmark schema object changed")
 		}
+	}
+	// Include the implicit UNIQUE index and reject connection-local triggers too.
+	var auxiliaryObjects int
+	if err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM (
+        SELECT name FROM sqlite_master WHERE tbl_name='benchmark_series_versions' AND type IN ('index','trigger')
+        UNION ALL
+        SELECT name FROM sqlite_temp_master WHERE tbl_name='benchmark_series_versions' AND type IN ('index','trigger')
+    )`).Scan(&auxiliaryObjects); err != nil || auxiliaryObjects != 5 {
+		return errors.New("benchmark schema object inventory changed")
 	}
 	return nil
 }
@@ -338,8 +347,12 @@ func (s *Service) importBenchmarkSeries(ctx context.Context, raw []byte) (*Bench
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO benchmark_series_versions(sequence,benchmark_id,source_version,series_json,series_sha256,recorded_at,record_sha256) VALUES(?,?,?,?,?,?,?)`, r.Sequence, input.BenchmarkID, input.SourceVersion, string(canonical), sha, r.RecordedAt, recordSHA); err != nil {
+	result, err := tx.ExecContext(ctx, `INSERT INTO benchmark_series_versions(sequence,benchmark_id,source_version,series_json,series_sha256,recorded_at,record_sha256) VALUES(?,?,?,?,?,?,?)`, r.Sequence, input.BenchmarkID, input.SourceVersion, string(canonical), sha, r.RecordedAt, recordSHA)
+	if err != nil {
 		return nil, errors.New("benchmark series could not be stored")
+	}
+	if count, err := result.RowsAffected(); err != nil || count != 1 {
+		return nil, errors.New("benchmark series was not stored exactly once")
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err

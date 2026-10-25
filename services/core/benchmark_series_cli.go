@@ -10,6 +10,12 @@ import (
 )
 
 func runBenchmarkSeriesCommand(ctx context.Context, command string, args []string, out io.Writer) error {
+	if ctx == nil {
+		return errors.New("benchmark command context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	dbPath := fs.String("db", "", "existing SQLite database")
@@ -34,12 +40,18 @@ func runBenchmarkSeriesCommand(ctx context.Context, command string, args []strin
 		}
 		db, err := openReadWriteExistingDB(ctx, *dbPath)
 		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return errors.New("benchmark database is unavailable")
 		}
 		defer db.Close()
 		receipt, err = newService(db, time.Now, randomID).importBenchmarkSeries(ctx, raw)
 		if err != nil {
-			return err
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return errors.New("benchmark import could not verify and store the index version")
 		}
 	} else if command == "benchmark-status" {
 		if *inputPath != "" || !safeOrderID(*id) || (*version != "" && !safeOrderID(*version)) {
@@ -47,12 +59,18 @@ func runBenchmarkSeriesCommand(ctx context.Context, command string, args []strin
 		}
 		db, err := openReadOnlyExistingDB(ctx, *dbPath)
 		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return errors.New("benchmark database is unavailable")
 		}
 		defer db.Close()
 		receipt, err = readBenchmarkSeriesStatus(ctx, db, *id, *version)
 		if err != nil {
-			return err
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return errors.New("benchmark status could not verify the index version")
 		}
 	} else {
 		return errors.New("benchmark command is invalid")
