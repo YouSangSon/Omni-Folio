@@ -1796,8 +1796,9 @@ typedef BenchmarkObservation = ({String observedAt, String value});
 
 BenchmarkObservation? _benchmarkObservation(dynamic raw, String valueKey) {
   if (raw == null) return null;
-  if (raw is! Json)
+  if (raw is! Json) {
     throw const FormatException('Invalid benchmark observation');
+  }
   _requireExactKeys(raw, {'observed_at', valueKey});
   final value = _decimal(raw, valueKey);
   if (value.length > 64 ||
