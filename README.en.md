@@ -203,6 +203,18 @@ G1.10 preserves FX observations in the direction `1 base_currency = rate quote_c
 
 The writer currently exists only within Go's internal test boundary. There is no provider ingestion, public mutation, scheduler, or Flutter valuation screen. This route is therefore a foundation for verifying the storage contract, not a usable current FX feed. `PortfolioSnapshot.valuation_status` remains `unavailable`.
 
+### Annualized return adjusted for deposits and withdrawals
+
+Use `입출금을 반영한 수익률 보기` on Home to read since-inception `XIRR`. It combines dated external cash flows with the current KRW valuation, without counting trades, dividends, or costs as additional deposits or withdrawals. It annualizes actual UTC calendar days on a 365-day basis.
+
+Only a unique result appears as the main return. A result without certified uniqueness appears only as a reference candidate in details; missing prices, historical FX, or numerical failures never become 0%. Any sample observation keeps the report marked as sample. The app does not present this as verified current brokerage performance.
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/portfolio/xirr
+```
+
+[Policy, sources, and verification scope](gates/g1s-portfolio-xirr.md)
+
 ### Direct-FX cash valuation
 
 G1.11's `GET /v1/portfolio/cash-valuation` values replay-verified current ledger cash only in the requested base currency. It requires canonical UTC `as_of` and `base_currency`, validating ledger events and the entire FX series in the same read transaction. Except for matching currencies and zero balances, it uses only direct observations in the `cash currency -> base currency` direction, including the 24-hour boundary from observation time. It uses no inverse rates, cross rates, interpolation, `FX_EXCHANGE` inference, or display rounding.

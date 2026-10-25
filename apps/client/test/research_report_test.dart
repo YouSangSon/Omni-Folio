@@ -374,6 +374,10 @@ void main() {
 }
 
 class _ResearchApi implements OmniApi {
+  @override
+  Future<PortfolioXirr> portfolioXirr() =>
+      throw UnsupportedError('XIRR is loaded only from its detail page.');
+
   ResearchReport? next;
   Completer<ResearchReport>? pending;
   Object? failure;

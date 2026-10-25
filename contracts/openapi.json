@@ -6,6 +6,44 @@
     "description": "Minimal cross-runtime contract for trust status, CSV import, deterministic portfolio snapshots, explicitly labeled sample market data, sanitized ledger activity, stored broker reconciliation, and verified local order lifecycle reads. JSON decimals are canonical strings; IDs are opaque strings."
   },
   "paths": {
+    "/v1/portfolio/xirr": {
+      "get": {
+        "operationId": "getPortfolioXIRR",
+        "description": "Reads effective external deposit/withdrawal flows and current whole-portfolio valuation in one schema/transition/ledger/observation-verified read transaction at one server cutoff. Uses stored local observations only; no writes, credentials or broker calls. Query parameters are rejected. Does not compute TWR or benchmark performance.",
+        "responses": {
+          "200": {
+            "description": "Unique calculation, non-unique-possible candidate, empty or unavailable report; private identifiers omitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioXIRR"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Query parameters are not accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Durable proof or internal validation failed; fixed redacted error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/research/report": {
       "get": {
         "operationId": "getResearchReport",
@@ -583,6 +621,121 @@
       }
     },
     "schemas": {
+      "PortfolioXIRR": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "policy_version",
+          "solver_policy",
+          "scope",
+          "valuation",
+          "status",
+          "sample",
+          "period_start",
+          "period_end",
+          "external_event_count",
+          "sign_changes",
+          "uniqueness",
+          "annual_rate",
+          "candidate_rate",
+          "net_contributions",
+          "issues"
+        ],
+        "properties": {
+          "policy_version": {
+            "const": "restated_external_cash_utc_date_actual_365_v1"
+          },
+          "solver_policy": {
+            "const": "single_change_bracket_else_log_newton_0_1_v1"
+          },
+          "scope": {
+            "const": "whole_portfolio_since_inception"
+          },
+          "valuation": {
+            "$ref": "#/components/schemas/CurrentPortfolioValuation"
+          },
+          "status": {
+            "enum": [
+              "calculated",
+              "candidate",
+              "empty",
+              "unavailable"
+            ]
+          },
+          "sample": {
+            "type": "boolean"
+          },
+          "period_start": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "period_end": {
+            "type": "string",
+            "format": "date"
+          },
+          "external_event_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "sign_changes": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "maximum": 9999
+          },
+          "uniqueness": {
+            "enum": [
+              "unique",
+              "not_proven",
+              "not_applicable"
+            ]
+          },
+          "annual_rate": {
+            "maxLength": 323,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Decimal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "candidate_rate": {
+            "maxLength": 323,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Decimal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "net_contributions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Money"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "Since-inception retrospective KRW XIRR. Exact event conversion before UTC-date aggregation; actual/365 and twelve-decimal numerical output. Annual rate only for one sign change; nonconventional converged values are candidates without certified uniqueness. Missing observations or numerical failures never become zero. Cash voids remove the original external flow. Historical FX observed_at <= event occurrence, fetched/recorded <= report cutoff; <=24h economic age. This is not a trading no-lookahead policy."
+      },
       "ResearchReportView": {
         "type": "object", "additionalProperties": false,
         "required": ["schema_version", "mode", "metrics_verification", "observed_at", "report"],

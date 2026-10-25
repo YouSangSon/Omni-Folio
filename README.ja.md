@@ -203,6 +203,18 @@ G1.10 は `1 base_currency = rate quote_currency` 方向の為替観測値を sc
 
 現在の writer は Go 内部のテスト境界のみで、provider ingestion・公開の変更 API・scheduler・Flutter の評価画面はありません。この route は保存契約を検証する基盤であり、利用可能な現在の為替 feed ではありません。`PortfolioSnapshot.valuation_status` も引き続き `unavailable` です。
 
+### 入出金を反映した年率リターン
+
+ホームの `입출금을 반영한 수익률 보기` から、台帳開始以降の `XIRR` を確認できます。日付付きの外部入出金と現在の KRW 評価額を使い、売買・配当・費用を追加入出金として二重計算しません。UTC の実際の暦日数を365日基準で年率換算します。
+
+唯一性を確認した結果だけを代表リターンとして表示します。唯一性を保証できない値は詳細の参考候補とし、価格・過去の為替の不足や数値計算の失敗を 0% で代用しません。サンプル観測を一つでも使えば sample 表示を維持します。証券会社の現在の運用成績を確認したものとしては表示しません。
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/portfolio/xirr
+```
+
+[方針・出典・検証範囲](gates/g1s-portfolio-xirr.md)
+
 ### 直接為替による現金評価
 
 G1.11 の `GET /v1/portfolio/cash-valuation` は、再生検証済みの現在の台帳現金を、要求された基準通貨のみで評価します。正規の UTC `as_of` と `base_currency` が必須で、同じ読み取り transaction 内で台帳イベントと FX series 全体を検証します。同一通貨と残高0の場合を除き、`cash currency -> base currency` 方向の直接観測値のみを使い、観測時刻から24時間ちょうどまでを含めます。逆算・クロスレート・補間・`FX_EXCHANGE` による推論・表示用の丸めは行いません。

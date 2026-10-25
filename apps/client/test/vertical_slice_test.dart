@@ -21,6 +21,18 @@ Json fixture(String name) {
 }
 
 class FakeApi implements OmniApi {
+  PortfolioXirr? xirrValue;
+  Completer<PortfolioXirr>? xirrCompleter;
+  int xirrCalls = 0;
+  bool failXirr = false;
+
+  @override
+  Future<PortfolioXirr> portfolioXirr() async {
+    xirrCalls += 1;
+    if (failXirr) throw const ApiException('private-xirr-sentinel');
+    return xirrCompleter?.future ?? xirrValue!;
+  }
+
   FakeApi({
     required this.statusValue,
     required this.snapshotValue,

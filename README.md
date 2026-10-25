@@ -203,6 +203,18 @@ G1.10은 `1 base_currency = rate quote_currency` 방향의 환율 관측값을 s
 
 현재 writer는 Go 내부 테스트 경계뿐이며 provider ingestion·public mutation·scheduler·Flutter 평가 화면은 없습니다. 따라서 이 route는 저장 계약을 검증하는 기반이지 사용 가능한 현재 환율 feed가 아닙니다. `PortfolioSnapshot.valuation_status`도 계속 `unavailable`입니다.
 
+### 입출금을 반영한 연환산 수익률
+
+홈의 `입출금을 반영한 수익률 보기`에서 원장 시작 이후의 `XIRR`을 조회합니다. 입출금 날짜와 현재 KRW 평가액을 함께 사용하며, 거래·배당·비용을 추가 입출금으로 중복 계산하지 않습니다. UTC 날짜의 실제 일수를 365일 기준으로 연환산합니다.
+
+유일한 계산값만 대표 수익률로 표시합니다. 유일성을 보장하지 못한 값은 상세의 참고 후보로 구분하며, 가격·과거 환율 누락이나 수치 계산 실패는 0%로 대신하지 않습니다. 예시 관측이 하나라도 쓰이면 sample 표시를 유지합니다. 앱은 현재 증권사 성과를 확인한 것으로 표현하지 않습니다.
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/portfolio/xirr
+```
+
+[정책·출처·검증 범위](gates/g1s-portfolio-xirr.md)
+
 ### Direct-FX cash valuation
 
 G1.11의 `GET /v1/portfolio/cash-valuation`은 replay-verified 현재 원장 cash를 요청한 기준통화로만 평가합니다. canonical UTC `as_of`와 `base_currency`를 필수로 받고, 같은 읽기 transaction에서 원장 event와 FX series 전체를 검증합니다. 동일 통화와 0 잔액 외에는 `cash currency -> base currency` 방향의 직접 관측만 사용하며, 관측 시각부터 24시간 경계를 포함합니다. inverse·cross·interpolation·`FX_EXCHANGE` 추론과 표시용 반올림은 사용하지 않습니다.

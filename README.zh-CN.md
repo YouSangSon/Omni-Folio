@@ -203,6 +203,18 @@ G1.10 将方向为 `1 base_currency = rate quote_currency` 的汇率观测值保
 
 目前写入者仅存在于 Go 内部测试边界，没有 provider 数据接入、公共修改接口、scheduler 或 Flutter 估值界面。因此该路由只是验证存储契约的基础，不是可用的当前汇率数据源。`PortfolioSnapshot.valuation_status` 也继续保持 `unavailable`。
 
+### 考虑出入金的年化收益率
+
+在首页通过 `입출금을 반영한 수익률 보기` 查看账本开始以来的 `XIRR`。它结合带日期的外部现金流和当前 KRW 估值，不会将交易、股息或费用重复计为额外出入金。按 UTC 实际日历天数及一年365天进行年化。
+
+只有确认唯一的结果才显示为主要收益率。尚未证明唯一的值仅在详情中作为参考候选；缺少价格、历史汇率或数值计算失败都不会被替换为 0%。只要使用了任何样例观测，就保留 sample 标识。应用不会将其表述为已验证的券商当前投资表现。
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/portfolio/xirr
+```
+
+[政策、来源与验证范围](gates/g1s-portfolio-xirr.md)
+
 ### 使用直接汇率进行现金估值
 
 G1.11 的 `GET /v1/portfolio/cash-valuation` 仅将通过重放验证的当前账本现金换算为请求指定的基准币种。必须提供规范 UTC `as_of` 和 `base_currency`，并在同一读取事务内验证账本事件和完整 FX 序列。除相同币种和零余额外，只使用 `cash currency -> base currency` 方向的直接观测值，有效范围包含观测时间起满 24 小时的边界。不使用反向汇率、交叉汇率、插值、`FX_EXCHANGE` 推断或显示用舍入。

@@ -342,6 +342,10 @@ void main() {
 }
 
 class _PaperApi implements OmniApi {
+  @override
+  Future<PortfolioXirr> portfolioXirr() =>
+      throw UnsupportedError('XIRR is loaded only from its detail page.');
+
   PaperMonitor? next;
   Completer<PaperMonitor>? pending;
   Object? failure;
