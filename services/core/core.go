@@ -32,12 +32,12 @@ import (
 const (
 	maxBodyBytes                       = 1 << 20
 	maxImportRows                      = 10_000
-	latestSchema                       = 22
+	latestSchema                       = 23
 	zeroTime                           = "1970-01-01T00:00:00Z"
 	csvSchema                          = "omni-folio.csv.v1"
 	mappingSchema                      = "canonical-transaction.v4"
-	backupFormat                       = "omni-folio-backup.v16"
-	backupSchema                       = "omni-folio.sqlite.v22"
+	backupFormat                       = "omni-folio-backup.v17"
+	backupSchema                       = "omni-folio.sqlite.v23"
 	legacyPaperRunnerFormat            = "omni-folio-backup.v14"
 	legacyPaperRunnerSchema            = "omni-folio.sqlite.v20"
 	legacyPaperPerformancePolicyFormat = "omni-folio-backup.v13"
@@ -237,6 +237,9 @@ type BackupManifest struct {
 	InstrumentListingStateSHA256             string              `json:"instrument_listing_state_sha256"`
 	InstrumentListingEventCount              int                 `json:"instrument_listing_event_count"`
 	ActiveInstrumentListingCount             int                 `json:"active_instrument_listing_count"`
+	BenchmarkSeriesStateSHA256               string              `json:"benchmark_series_state_sha256"`
+	BenchmarkSeriesVersionCount              int                 `json:"benchmark_series_version_count"`
+	BenchmarkSeriesPointCount                int                 `json:"benchmark_series_point_count"`
 	DBSHA256                                 string              `json:"db_sha256"`
 	SizeBytes                                int64               `json:"size_bytes"`
 	ExpectedSnapshotSHA256                   string              `json:"expected_snapshot_sha256"`
@@ -262,6 +265,7 @@ type VerificationReceipt struct {
 	FXObservationCheck                           string   `json:"fx_observation_check"`
 	SecurityPriceObservationCheck                string   `json:"security_price_observation_check"`
 	InstrumentListingCheck                       string   `json:"instrument_listing_check"`
+	BenchmarkSeriesCheck                         string   `json:"benchmark_series_check"`
 	PaperPerformanceCheck                        string   `json:"paper_performance_check"`
 	PaperStrategyPerformanceCheck                string   `json:"paper_strategy_performance_check"`
 	PaperPerformancePolicyCheck                  string   `json:"paper_performance_policy_check"`
@@ -275,6 +279,9 @@ type VerificationReceipt struct {
 	CandidateFXObservationStateSHA256            string   `json:"candidate_fx_observation_state_sha256"`
 	CandidateSecurityPriceObservationStateSHA256 string   `json:"candidate_security_price_observation_state_sha256"`
 	CandidateInstrumentListingStateSHA256        string   `json:"candidate_instrument_listing_state_sha256"`
+	CandidateBenchmarkSeriesStateSHA256          string   `json:"candidate_benchmark_series_state_sha256"`
+	CandidateBenchmarkSeriesVersionCount         int      `json:"candidate_benchmark_series_version_count"`
+	CandidateBenchmarkSeriesPointCount           int      `json:"candidate_benchmark_series_point_count"`
 	CandidatePaperPerformanceStateSHA256         string   `json:"candidate_paper_performance_state_sha256"`
 	CandidatePaperStrategyPerformanceStateSHA256 string   `json:"candidate_paper_strategy_performance_state_sha256"`
 	CandidatePaperPerformancePolicyStateSHA256   string   `json:"candidate_paper_performance_policy_state_sha256"`
@@ -323,11 +330,15 @@ func requireSchema(db *sql.DB) error {
 }
 
 func requireSchemaContext(ctx context.Context, q orderQuerier) error {
+	return requireSchemaVersionContext(ctx, q, latestSchema)
+}
+
+func requireSchemaVersionContext(ctx context.Context, q orderQuerier, expected int) error {
 	var first, latest, count int
 	if err := q.QueryRowContext(ctx, `SELECT COALESCE(MIN(version), 0), COALESCE(MAX(version), 0), COUNT(*) FROM schema_migrations`).Scan(&first, &latest, &count); err != nil {
 		return fmt.Errorf("database is not migrated; run migrate first: %w", err)
 	}
-	if first != 1 || latest != latestSchema || count != latestSchema {
+	if first != 1 || latest != expected || count != expected {
 		return fmt.Errorf("unsupported schema history %d..%d (%d migrations)", first, latest, count)
 	}
 	return nil
@@ -347,6 +358,9 @@ func requireServerStartupRecovery(db *sql.DB) error {
 	if _, err := provePaperRunnerLeaseRecovery(context.Background(), db); err != nil {
 		return fmt.Errorf("paper runner lease startup recovery: %w", err)
 	}
+	if _, err := proveBenchmarkSeriesRecovery(context.Background(), db); err != nil {
+		return fmt.Errorf("benchmark series startup recovery: %w", err)
+	}
 	return nil
 }
 
@@ -365,7 +379,7 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("unsupported schema version %d", current)
 		}
 	}
-	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql", "013_instrument_listing_events.sql", "014_paper_evaluation_events.sql", "015_paper_accounting_sessions.sql", "016_paper_market_signals.sql", "017_paper_execution_authorizations.sql", "018_paper_performance_events.sql", "019_paper_strategy_performance_events.sql", "020_paper_performance_policy_events.sql", "021_paper_runner_leases.sql", "022_ledger_replay_policy.sql"}
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql", "013_instrument_listing_events.sql", "014_paper_evaluation_events.sql", "015_paper_accounting_sessions.sql", "016_paper_market_signals.sql", "017_paper_execution_authorizations.sql", "018_paper_performance_events.sql", "019_paper_strategy_performance_events.sql", "020_paper_performance_policy_events.sql", "021_paper_runner_leases.sql", "022_ledger_replay_policy.sql", "023_benchmark_series_versions.sql"}
 	for version := current + 1; version <= latestSchema; version++ {
 		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
 		if err != nil {
@@ -1793,6 +1807,10 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err != nil {
 		return nil, fmt.Errorf("source instrument listing recovery proof: %w", err)
 	}
+	sourceBenchmark, err := proveBenchmarkSeriesRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source benchmark series recovery proof: %w", err)
+	}
 	createdAt := now().UTC()
 	quoted := strings.ReplaceAll(out, "'", "''")
 	if _, err := db.Exec(`VACUUM INTO '` + quoted + `'`); err != nil {
@@ -1843,6 +1861,10 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err != nil {
 		return nil, err
 	}
+	candidateBenchmark, err := verifyBenchmarkSeriesRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
 	if sourceOrders != candidateOrders {
 		return nil, errors.New("backup order recovery proof does not match source")
 	}
@@ -1872,6 +1894,9 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	}
 	if sourceInstrumentListings != candidateInstrumentListings {
 		return nil, errors.New("backup instrument listing recovery proof does not match source")
+	}
+	if sourceBenchmark != candidateBenchmark {
+		return nil, errors.New("backup benchmark series recovery proof does not match source")
 	}
 	dbSHA, size, err := hashFile(out)
 	if err != nil {
@@ -1918,7 +1943,8 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 		SecurityPriceObservationStateSHA256: sourceSecurityPrices.SHA256, SecurityPriceObservationCount: sourceSecurityPrices.Observations,
 		InstrumentListingStateSHA256: sourceInstrumentListings.SHA256, InstrumentListingEventCount: sourceInstrumentListings.Events,
 		ActiveInstrumentListingCount: sourceInstrumentListings.Active,
-		DBSHA256:                     dbSHA, SizeBytes: size, ExpectedSnapshotSHA256: snapshotSHA,
+		BenchmarkSeriesStateSHA256:   sourceBenchmark.SHA256, BenchmarkSeriesVersionCount: sourceBenchmark.Versions, BenchmarkSeriesPointCount: sourceBenchmark.Points,
+		DBSHA256: dbSHA, SizeBytes: size, ExpectedSnapshotSHA256: snapshotSHA,
 		Encryption: BackupEncryption{Encrypted: false, Algorithm: "none"},
 		VerificationReceipt: VerificationReceipt{
 			ReceiptID: id("backup_verification"), CandidateID: id("restore_candidate"), VerifiedAt: verifiedAt.Format(time.RFC3339Nano),
@@ -1932,6 +1958,7 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 			CandidatePaperRunnerLeaseStateSHA256:         candidatePaperRunnerLease.SHA256,
 			CandidateFXObservationStateSHA256:            candidateFX.SHA256, CandidateSecurityPriceObservationStateSHA256: candidateSecurityPrices.SHA256,
 			CandidateInstrumentListingStateSHA256: candidateInstrumentListings.SHA256, EligibleForActivation: eligible, Errors: verificationErrors,
+			BenchmarkSeriesCheck: "ok", CandidateBenchmarkSeriesStateSHA256: candidateBenchmark.SHA256, CandidateBenchmarkSeriesVersionCount: candidateBenchmark.Versions, CandidateBenchmarkSeriesPointCount: candidateBenchmark.Points,
 		},
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
@@ -1992,6 +2019,10 @@ func verifyRestore(path, goldenPath string) error {
 		return err
 	}
 	_, err = verifyInstrumentListingRestoreProof(path)
+	if err != nil {
+		return err
+	}
+	_, err = verifyBenchmarkSeriesRestoreProof(path)
 	return err
 }
 
@@ -2190,6 +2221,9 @@ func verifyRestoreProofPolicy(path, goldenPath string, archival bool) (orderReco
 func requireOrderRestoreSchema(db *sql.DB) error {
 	if err := requireSchema(db); err != nil {
 		return fmt.Errorf("restore schema: %w", err)
+	}
+	if err := requireBenchmarkSeriesSchema(context.Background(), db); err != nil {
+		return fmt.Errorf("restore benchmark schema: %w", err)
 	}
 	for _, table := range []string{"events", "order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "paper_execution_authorizations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "paper_evaluation_events", "paper_accounting_sessions", "paper_market_bar_observations", "paper_signal_events", "paper_performance_events", "paper_strategy_performance_events", "paper_performance_policy_events", "fx_observations", "security_price_observations"} {
 		var strict int
@@ -3036,9 +3070,12 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err := dec.Decode(&manifest); err != nil {
 		return fmt.Errorf("backup manifest: %w", err)
 	}
-	currentV16Manifest := manifest.FormatVersion == backupFormat && manifest.SchemaVersion == backupSchema
+	currentV17Manifest := manifest.FormatVersion == backupFormat && manifest.SchemaVersion == backupSchema
+	legacyV16Manifest := manifest.FormatVersion == "omni-folio-backup.v16" && manifest.SchemaVersion == "omni-folio.sqlite.v22"
+	// Backup format is independent of ledger replay authority: v16 remains nonarchival.
+	nonArchivalManifest := currentV17Manifest || legacyV16Manifest
 	legacyV15Manifest := manifest.FormatVersion == "omni-folio-backup.v15" && manifest.SchemaVersion == "omni-folio.sqlite.v21"
-	currentManifest := currentV16Manifest || legacyV15Manifest
+	currentManifest := nonArchivalManifest || legacyV15Manifest
 	legacyV14Manifest := manifest.FormatVersion == legacyPaperRunnerFormat && manifest.SchemaVersion == legacyPaperRunnerSchema
 	legacyV13Manifest := manifest.FormatVersion == legacyPaperPerformancePolicyFormat && manifest.SchemaVersion == legacyPaperPerformancePolicySchema
 	legacyV12Manifest := manifest.FormatVersion == legacyStrategyPerformanceFormat && manifest.SchemaVersion == legacyStrategyPerformanceSchema
@@ -3062,6 +3099,9 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	var receiptFields map[string]json.RawMessage
 	if err := json.Unmarshal(fields["verification_receipt"], &receiptFields); err != nil {
 		return fmt.Errorf("backup verification receipt fields: %w", err)
+	}
+	if err := requireBenchmarkManifestFields(fields, receiptFields, currentV17Manifest); err != nil {
+		return err
 	}
 	if currentManifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
 		if fields["paper_evaluation_event_count"] == nil || fields["paper_accounting_state_sha256"] == nil ||
@@ -3255,7 +3295,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 			return err
 		}
 	}
-	if currentV16Manifest {
+	if nonArchivalManifest {
 		policy, err := provePaperPerformancePolicyRecovery(context.Background(), sourceDB)
 		if err != nil {
 			_ = sourceDB.Close()
@@ -3267,7 +3307,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 			_ = sourceDB.Close()
 			return errors.New("source paper performance policy recovery proof mismatch")
 		}
-		runnerLease, err := provePaperRunnerLeaseRecovery(context.Background(), sourceDB)
+		runnerLease, err := provePaperRunnerLeaseRecoveryAtSchema(context.Background(), sourceDB, sourceSchema)
 		if err != nil {
 			_ = sourceDB.Close()
 			return fmt.Errorf("source paper runner lease recovery proof: %w", err)
@@ -3278,6 +3318,17 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 			manifest.ActivePaperRunnerLeaseCount != runnerLease.Active {
 			_ = sourceDB.Close()
 			return errors.New("source paper runner lease recovery proof mismatch")
+		}
+	}
+	if currentV17Manifest {
+		proof, err := proveBenchmarkSeriesRecovery(context.Background(), sourceDB)
+		if err != nil {
+			_ = sourceDB.Close()
+			return err
+		}
+		if !benchmarkManifestMatches(manifest, proof) {
+			_ = sourceDB.Close()
+			return errors.New("source benchmark series proof mismatch")
 		}
 	}
 	if err := sourceDB.Close(); err != nil {
@@ -3316,7 +3367,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 		}
 	}
 
-	orders, err := verifyRestoreProofPolicy(verificationPath, goldenPath, !currentV16Manifest)
+	orders, err := verifyRestoreProofPolicy(verificationPath, goldenPath, !nonArchivalManifest)
 	if err != nil {
 		return err
 	}
@@ -3472,6 +3523,17 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	} else if instrumentListings.Events != 0 || instrumentListings.Active != 0 ||
 		instrumentListings.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
 		return errors.New("legacy backup unexpectedly contains instrument listings")
+	}
+	benchmark, err := verifyBenchmarkSeriesRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if currentV17Manifest {
+		if !benchmarkManifestMatches(manifest, benchmark) {
+			return errors.New("backup benchmark series proof mismatch")
+		}
+	} else if benchmark.Versions != 0 || benchmark.Points != 0 || benchmark.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
+		return errors.New("legacy backup unexpectedly contains benchmark series")
 	}
 	db, err := openExistingDB(verificationPath)
 	if err != nil {

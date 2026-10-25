@@ -116,6 +116,7 @@ func TestG38C3LegacyV11OwnedCopyMigration(t *testing.T) {
 	}
 	legacy := readJSONMap(t, currentManifestPath)
 	legacy["format_version"], legacy["schema_version"] = "omni-folio-backup.v11", "omni-folio.sqlite.v17"
+	stripBenchmarkProofForLegacy(legacy)
 	delete(legacy, "paper_performance_state_sha256")
 	delete(legacy, "paper_performance_event_count")
 	delete(legacy, "paper_performance_mark_count")
@@ -197,6 +198,7 @@ func TestG38DBackupLegacyV12OwnedCopyMigration(t *testing.T) {
 	}
 	legacy := readJSONMap(t, currentManifestPath)
 	legacy["format_version"], legacy["schema_version"] = "omni-folio-backup.v12", "omni-folio.sqlite.v18"
+	stripBenchmarkProofForLegacy(legacy)
 	delete(legacy, "paper_strategy_performance_state_sha256")
 	delete(legacy, "paper_strategy_performance_event_count")
 	delete(legacy, "paper_strategy_performance_sample_count")
@@ -570,6 +572,7 @@ func TestG38C1PaperAccountingBackupProofAndV9OwnedCopyMigration(t *testing.T) {
 	legacyManifest := readJSONMap(t, currentManifestPath)
 	legacyManifest["format_version"] = "omni-folio-backup.v9"
 	legacyManifest["schema_version"] = "omni-folio.sqlite.v14"
+	stripBenchmarkProofForLegacy(legacyManifest)
 	delete(legacyManifest, "paper_accounting_state_sha256")
 	delete(legacyManifest, "paper_accounting_session_count")
 	delete(legacyManifest, "paper_market_bar_observation_count")
@@ -687,6 +690,7 @@ func TestG38C2PaperMarketBackupV11AndV10OwnedCopyMigration(t *testing.T) {
 	legacyManifest := readJSONMap(t, currentManifestPath)
 	legacyManifest["format_version"] = "omni-folio-backup.v10"
 	legacyManifest["schema_version"] = "omni-folio.sqlite.v15"
+	stripBenchmarkProofForLegacy(legacyManifest)
 	legacyManifest["paper_accounting_state_sha256"] = legacyPaperProof.SHA256
 	legacyManifest["paper_accounting_session_count"] = legacyPaperProof.Sessions
 	delete(legacyManifest, "paper_market_bar_observation_count")

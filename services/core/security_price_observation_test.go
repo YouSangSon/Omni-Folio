@@ -664,6 +664,7 @@ func TestSecurityPriceObservationBackupProofAndLegacyCopyMigrations(t *testing.T
 	legacyV11Manifest := readJSONMap(t, manifestPath)
 	legacyV11Manifest["format_version"] = "omni-folio-backup.v7"
 	legacyV11Manifest["schema_version"] = "omni-folio.sqlite.v11"
+	stripBenchmarkProofForLegacy(legacyV11Manifest)
 	delete(legacyV11Manifest, "paper_evaluation_event_count")
 	delete(legacyV11Manifest, "paper_accounting_state_sha256")
 	delete(legacyV11Manifest, "paper_accounting_session_count")
@@ -710,6 +711,7 @@ func TestSecurityPriceObservationBackupProofAndLegacyCopyMigrations(t *testing.T
 	legacyManifest := readJSONMap(t, manifestPath)
 	legacyManifest["format_version"] = "omni-folio-backup.v6"
 	legacyManifest["schema_version"] = "omni-folio.sqlite.v10"
+	stripBenchmarkProofForLegacy(legacyManifest)
 	delete(legacyManifest, "paper_evaluation_event_count")
 	delete(legacyManifest, "paper_accounting_state_sha256")
 	delete(legacyManifest, "paper_accounting_session_count")

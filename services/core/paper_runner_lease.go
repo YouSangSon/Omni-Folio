@@ -305,9 +305,16 @@ func rejectIncompletePaperRunForExpiredClaim(ctx context.Context, q orderQuerier
 }
 
 func provePaperRunnerLeaseRecovery(ctx context.Context, q orderQuerier) (paperRunnerLeaseRecoveryProof, error) {
+	return provePaperRunnerLeaseRecoveryAtSchema(ctx, q, latestSchema)
+}
+
+func provePaperRunnerLeaseRecoveryAtSchema(ctx context.Context, q orderQuerier, schema int) (paperRunnerLeaseRecoveryProof, error) {
 	// Policy recovery has legacy early returns. Require current migration
-	// history before treating it as the complete runner prerequisite proof.
-	if err := requireSchemaContext(ctx, q); err != nil {
+	// history, or the exact v16 source history already declared by restore.
+	if schema != latestSchema && schema != 22 {
+		return paperRunnerLeaseRecoveryProof{}, errors.New("unsupported runner lease recovery schema")
+	}
+	if err := requireSchemaVersionContext(ctx, q, schema); err != nil {
 		return paperRunnerLeaseRecoveryProof{}, err
 	}
 	if _, err := provePaperPerformancePolicyRecovery(ctx, q); err != nil {

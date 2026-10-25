@@ -163,8 +163,8 @@ func TestBackupManifestContractFieldsMatchRuntimeAndFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 	properties := schema["properties"].(map[string]any)
-	if properties["format_version"].(map[string]any)["const"] != "omni-folio-backup.v16" ||
-		properties["schema_version"].(map[string]any)["const"] != "omni-folio.sqlite.v22" {
+	if properties["format_version"].(map[string]any)["const"] != backupFormat ||
+		properties["schema_version"].(map[string]any)["const"] != backupSchema {
 		t.Fatal("backup contract version drifted from the runtime")
 	}
 

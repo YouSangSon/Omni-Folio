@@ -336,6 +336,7 @@ func writeLegacyV5Manifest(t *testing.T, db *sql.DB, backup, golden, schema stri
 	if err := json.Unmarshal(raw, &legacy); err != nil {
 		t.Fatal(err)
 	}
+	stripBenchmarkProofForLegacy(legacy)
 	delete(legacy, "fx_observation_state_sha256")
 	delete(legacy, "fx_observation_count")
 	delete(legacy, "security_price_observation_state_sha256")

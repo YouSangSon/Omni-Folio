@@ -270,6 +270,7 @@ func TestG38PaperEvaluationBackupAndLegacySchema13Migration(t *testing.T) {
 	legacyManifest := readJSONMap(t, currentManifestPath)
 	legacyManifest["format_version"] = "omni-folio-backup.v8"
 	legacyManifest["schema_version"] = "omni-folio.sqlite.v13"
+	stripBenchmarkProofForLegacy(legacyManifest)
 	delete(legacyManifest, "paper_evaluation_event_count")
 	delete(legacyManifest, "paper_accounting_state_sha256")
 	delete(legacyManifest, "paper_accounting_session_count")

@@ -48,8 +48,8 @@ jobs:
           grep -Fx 'python 3.14.5' .tool-versions
           go version
           python --version
-      - name: Check portfolio TWR scenarios first
-        run: make test FLUTTER=true CORE_TEST_PACKAGES='-run=^TestPortfolioTWR -count=1 -timeout=10m ./...'
+      - name: Check benchmark series scenarios first
+        run: make test FLUTTER=true CORE_TEST_PACKAGES='-run=^TestBenchmarkSeries -count=1 -timeout=10m ./...'
       - name: Check core, research and contracts with owned cleanup
         # The client release workflow owns Flutter checks.
         run: make check DART=true FLUTTER=true CORE_TEST_PACKAGES='-timeout=30m ./...'

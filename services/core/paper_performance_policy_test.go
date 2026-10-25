@@ -1213,6 +1213,7 @@ func TestG38EBackupLegacyV13UsesOwnedV20MigrationWithoutChangingSource(t *testin
 	}
 	legacy := readJSONMap(t, currentBackup+".manifest.json")
 	legacy["format_version"], legacy["schema_version"] = "omni-folio-backup.v13", "omni-folio.sqlite.v19"
+	stripBenchmarkProofForLegacy(legacy)
 	for _, field := range []string{
 		"paper_performance_policy_state_sha256", "paper_performance_policy_event_count",
 		"paper_performance_policy_action_count", "paper_performance_policy_automatic_halt_count",
