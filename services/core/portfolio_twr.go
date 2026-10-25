@@ -35,7 +35,17 @@ func (s *Service) portfolioTWR(ctx context.Context) (*PortfolioTWR, *appError) {
 		return nil, internalError(err)
 	}
 	defer tx.Rollback()
-	asOf := s.now().UTC()
+	result, appErr := s.portfolioTWRTx(ctx, tx, s.now().UTC())
+	if appErr != nil {
+		return nil, appErr
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, internalError(err)
+	}
+	return result, nil
+}
+
+func (s *Service) portfolioTWRTx(ctx context.Context, tx *sql.Tx, asOf time.Time) (*PortfolioTWR, *appError) {
 	if err := requireSchemaContext(ctx, tx); err != nil {
 		return nil, internalError(err)
 	}
@@ -56,9 +66,6 @@ func (s *Service) portfolioTWR(ctx context.Context) (*PortfolioTWR, *appError) {
 		}
 		if r.Sample {
 			r.Issues = append(r.Issues, APIError{Code: "sample_data", Message: "return inputs include stored local sample observations"})
-		}
-		if err := tx.Commit(); err != nil {
-			return nil, internalError(err)
 		}
 		return r, nil
 	}

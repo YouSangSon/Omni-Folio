@@ -237,9 +237,21 @@ curl -fsS http://127.0.0.1:8080/v1/portfolio/twr
 (cd services/core && go run . benchmark-status -db ../../data/omni-folio.db -benchmark-id synthetic_usd)
 ```
 
-`authority=owner_declared` 表示所有者提供的资料，`storage_check=verified` 仅确认保存内容的完整性。同一 `source_version` 的内容或 `fetched_at` 发生变化时会作为冲突拒绝；重试旧版本不会改变最新选择。实际指数的股息、拆股口径与使用权限，同期收益比较、汇率换算及相应界面仍需后续验证。
+`authority=owner_declared` 表示所有者提供的资料，`storage_check=verified` 仅确认保存内容的完整性。同一 `source_version` 的内容或 `fetched_at` 发生变化时会作为冲突拒绝；重试旧版本不会改变最新选择。实际指数的股息、拆股定义和数据使用权限仍需单独确认。下文提供基于已保存资料的同期比较。
 
 [输入契约、恢复政策与验证范围](gates/g1u-benchmark-series.md)
+
+### 比较同一期间的指数
+
+在 TWR 详情通过 `같은 기간의 지수와 비교하기` 一起查看每个已保存指数的最新版本。一个响应统一账本、报告时点和比较期间。`KRW` 指数保持原币口径，`USD` 指数分别显示原币收益率和韩元换算收益率。
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/portfolio/benchmarks
+```
+
+差值是公开的组合收益率减去韩元口径指数收益率，单位为 `%p`。界面同时标明股息和税务口径；缺少汇率时保留原币数值。超过24小时的观测、起始指数为0或资料缺失均显示为不可计算，不把示例视为实际业绩认证。一次最多比较32个指数；刷新失败时保留上次比较整体及其时点。
+
+[政策、来源与验证范围](gates/g1v-portfolio-benchmark-comparison.md)
 
 ### 使用直接汇率进行现金估值
 

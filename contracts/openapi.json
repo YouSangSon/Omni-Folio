@@ -6,6 +6,44 @@
     "description": "Minimal cross-runtime contract for trust status, CSV import, deterministic portfolio snapshots, explicitly labeled sample market data, sanitized ledger activity, stored broker reconciliation, and verified local order lifecycle reads. JSON decimals are canonical strings; IDs are opaque strings."
   },
   "paths": {
+    "/v1/portfolio/benchmarks": {
+      "get": {
+        "operationId": "getPortfolioBenchmarks",
+        "description": "Compares stored KRW/USD normalized index versions with the same retrospective TWR period and knowledge cutoff. Native and KRW views remain independent when FX is missing. Query parameters, including an empty query marker, are rejected. Read only; no provider calls or market authority claim.",
+        "responses": {
+          "200": {
+            "description": "Same-period comparisons or explicit missing/unsupported inputs, with TWR preserved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioBenchmarks"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Query parameters are not accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Durable proof or internal validation failed; redacted error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/portfolio/twr": {
       "get": {
         "operationId": "getPortfolioTWR",
@@ -659,6 +697,377 @@
       }
     },
     "schemas": {
+      "PortfolioBenchmarks": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "policy_version",
+          "max_observation_age_seconds",
+          "portfolio",
+          "benchmarks",
+          "issues"
+        ],
+        "properties": {
+          "policy_version": {
+            "const": "retrospective_latest_index_24h_native_and_krw_v1"
+          },
+          "max_observation_age_seconds": {
+            "const": 86400
+          },
+          "portfolio": {
+            "$ref": "#/components/schemas/PortfolioTWR"
+          },
+          "benchmarks": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "$ref": "#/components/schemas/PortfolioBenchmark"
+            }
+          },
+          "issues": {
+            "type": "array",
+            "maxItems": 1,
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Error"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "no_benchmarks",
+                        "no_known_benchmarks",
+                        "benchmark_limit"
+                      ]
+                    },
+                    "field": false
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "One read transaction and one server clock. All stored benchmark versions are proved, including when TWR is unavailable. Select maximum append sequence per ID whose recorded_at is no later than the report cutoff. No cross-version endpoint mixing, holiday interpolation, inverse FX or provider calls. More than32 eligible IDs returns no index rows and benchmark_limit while preserving TWR."
+      },
+      "PortfolioBenchmark": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "series",
+          "sample",
+          "start",
+          "end",
+          "start_fx",
+          "end_fx",
+          "native",
+          "krw",
+          "difference_percentage_points"
+        ],
+        "properties": {
+          "series": {
+            "$ref": "#/components/schemas/BenchmarkSeriesSummary"
+          },
+          "sample": {
+            "type": "boolean"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BenchmarkIndexMark"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BenchmarkIndexMark"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start_fx": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BenchmarkFXMark"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "end_fx": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BenchmarkFXMark"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "native": {
+            "$ref": "#/components/schemas/BenchmarkRateResult"
+          },
+          "krw": {
+            "$ref": "#/components/schemas/BenchmarkRateResult"
+          },
+          "difference_percentage_points": {
+            "anyOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/Decimal"
+                  }
+                ],
+                "maxLength": 132,
+                "pattern": "^-?[0-9]+(?:\\.[0-9]{1,10})?$",
+                "description": "Exact difference of the published portfolio TWR and published KRW benchmark rate, times100; unit is percentage points. Not alpha or cost-adjusted excess performance."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "description": "One selected complete version. KRW native and KRW results are identical with no FX marks. USD native and KRW are independent; missing FX never erases a valid native rate. Actual selected observation timestamps may differ from the economic boundaries by at most24h for calculated views."
+      },
+      "BenchmarkSeriesSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "storage_check",
+          "authority",
+          "benchmark_id",
+          "label",
+          "currency",
+          "return_basis",
+          "source_reference",
+          "source_version",
+          "sample",
+          "data_sha256",
+          "point_count",
+          "first_observed_at",
+          "last_observed_at",
+          "fetched_at",
+          "recorded_at"
+        ],
+        "properties": {
+          "storage_check": {
+            "const": "verified",
+            "description": "Stored integrity only; not provider/market authority."
+          },
+          "authority": {
+            "const": "owner_declared"
+          },
+          "benchmark_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "At most128 UTF-8 bytes, no Unicode whitespace or controls."
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "description": "At most 160 UTF-8 bytes, trimmed and without control characters."
+          },
+          "currency": {
+            "enum": [
+              "KRW",
+              "USD"
+            ]
+          },
+          "return_basis": {
+            "enum": [
+              "price_index",
+              "gross_total_return",
+              "net_total_return"
+            ]
+          },
+          "source_reference": {
+            "type": "string",
+            "minLength": 9,
+            "maxLength": 512,
+            "pattern": "^https://",
+            "description": "At most 512 UTF-8 bytes. Public provenance reference only; never fetched by this command. No credentials, query or fragment."
+          },
+          "source_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "At most128 UTF-8 bytes, no Unicode whitespace or controls."
+          },
+          "sample": {
+            "type": "boolean"
+          },
+          "data_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "point_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "first_observed_at": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp"
+          },
+          "last_observed_at": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp"
+          },
+          "fetched_at": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp"
+          },
+          "recorded_at": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp"
+          }
+        }
+      },
+      "BenchmarkIndexMark": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "observed_at",
+          "level"
+        ],
+        "properties": {
+          "observed_at": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp"
+          },
+          "level": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Decimal"
+              }
+            ],
+            "maxLength": 64,
+            "pattern": "^[^-]",
+            "description": "Nonnegative canonical decimal; zero start is unavailable, zero terminal may represent total loss."
+          }
+        }
+      },
+      "BenchmarkFXMark": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "observed_at",
+          "rate"
+        ],
+        "properties": {
+          "observed_at": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp"
+          },
+          "rate": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Decimal"
+              }
+            ],
+            "maxLength": 64,
+            "pattern": "^(?!0$|-).+",
+            "description": "Positive direct USD to KRW rate selected by the same economic/report cutoffs. Local fixture provenance remains sample even if the other endpoint is missing or stale."
+          }
+        }
+      },
+      "BenchmarkRateResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "rate",
+          "issue"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "calculated",
+              "unavailable"
+            ]
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/Decimal"
+                  }
+                ],
+                "maxLength": 128,
+                "pattern": "^-?[0-9]+(?:\\.[0-9]{1,12})?$",
+                "description": "Published fractional rate, 12dp half-even, at least -1. Zero is a calculated value, never missing input."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "portfolio_unavailable",
+              "missing_benchmark_point",
+              "stale_benchmark_point",
+              "zero_benchmark_start",
+              "missing_historical_fx",
+              "stale_historical_fx",
+              "numerical_limit",
+              null
+            ]
+          }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "status": {
+                "const": "calculated"
+              },
+              "rate": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/Decimal"
+                  }
+                ],
+                "maxLength": 128,
+                "pattern": "^-?[0-9]+(?:\\.[0-9]{1,12})?$",
+                "description": "Published fractional rate, 12dp half-even, at least -1. Zero is a calculated value, never missing input."
+              },
+              "issue": {
+                "type": "null"
+              }
+            }
+          },
+          {
+            "properties": {
+              "status": {
+                "const": "unavailable"
+              },
+              "rate": {
+                "type": "null"
+              },
+              "issue": {
+                "enum": [
+                  "portfolio_unavailable",
+                  "missing_benchmark_point",
+                  "stale_benchmark_point",
+                  "zero_benchmark_start",
+                  "missing_historical_fx",
+                  "stale_historical_fx",
+                  "numerical_limit"
+                ]
+              }
+            }
+          }
+        ]
+      },
       "PortfolioTWR": {
         "type": "object",
         "additionalProperties": false,

@@ -237,9 +237,21 @@ Benchmark inputs support both `KRW` and `USD`. Provide a normalized index file d
 (cd services/core && go run . benchmark-status -db ../../data/omni-folio.db -benchmark-id synthetic_usd)
 ```
 
-`authority=owner_declared` identifies owner-provided data; `storage_check=verified` confirms stored integrity only. Changed content or `fetched_at` under the same `source_version` is rejected, and retrying an older version does not change the latest selection. Actual index dividend/split definitions and usage rights, same-period return comparison, currency conversion, and its screen remain follow-up verification.
+`authority=owner_declared` identifies owner-provided data; `storage_check=verified` confirms stored integrity only. Changed content or `fetched_at` under the same `source_version` is rejected, and retrying an older version does not change the latest selection. Actual index dividend/split definitions and data usage rights still need separate verification. Same-period comparison of stored inputs is available below.
 
 [Input contract, recovery policy, and verification scope](gates/g1u-benchmark-series.md)
+
+### Compare indexes over the same period
+
+Open `같은 기간의 지수와 비교하기` from TWR detail to read the latest stored version of each index together. One response owns the ledger, report cutoff, and comparison period. `KRW` indexes use their native return; `USD` indexes show both native and won-converted returns.
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/portfolio/benchmarks
+```
+
+The difference is the published portfolio return minus the won-based index return, in `%p`. Dividend and tax basis remain visible; missing FX preserves only the native value. Observations older than24hours, a zero starting index, and missing inputs are unavailable rather than zero. Sample inputs are not certified performance. Up to32 indexes are compared; failed refresh retains the entire previous comparison and cutoff.
+
+[Policy, sources, and verification scope](gates/g1v-portfolio-benchmark-comparison.md)
 
 ### Direct-FX cash valuation
 

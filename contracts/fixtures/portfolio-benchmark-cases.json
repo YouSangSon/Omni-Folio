@@ -1,0 +1,173 @@
+{
+  "reference": "Python standard Fraction; Decimal precision500, half-even12; difference from published rates times100 exact",
+  "cases": [
+    {
+      "name": "KRW gain",
+      "currency": "KRW",
+      "start": "100",
+      "end": "110",
+      "fx_start": null,
+      "fx_end": null,
+      "portfolio_rate": "0.21",
+      "native_rate": "0.1",
+      "krw_rate": "0.1",
+      "difference_percentage_points": "11"
+    },
+    {
+      "name": "USD gain FX loss",
+      "currency": "USD",
+      "start": "100",
+      "end": "110",
+      "fx_start": "1000",
+      "fx_end": "900",
+      "portfolio_rate": "0.21",
+      "native_rate": "0.1",
+      "krw_rate": "-0.01",
+      "difference_percentage_points": "22"
+    },
+    {
+      "name": "USD loss FX loss",
+      "currency": "USD",
+      "start": "100",
+      "end": "90",
+      "fx_start": "1000",
+      "fx_end": "900",
+      "portfolio_rate": "0.21",
+      "native_rate": "-0.1",
+      "krw_rate": "-0.19",
+      "difference_percentage_points": "40"
+    },
+    {
+      "name": "USD unchanged FX",
+      "currency": "USD",
+      "start": "100",
+      "end": "110",
+      "fx_start": "1300",
+      "fx_end": "1300",
+      "portfolio_rate": "0.21",
+      "native_rate": "0.1",
+      "krw_rate": "0.1",
+      "difference_percentage_points": "11"
+    },
+    {
+      "name": "USD loss FX gain",
+      "currency": "USD",
+      "start": "100",
+      "end": "90",
+      "fx_start": "1300",
+      "fx_end": "1400",
+      "portfolio_rate": "0.21",
+      "native_rate": "-0.1",
+      "krw_rate": "-0.030769230769",
+      "difference_percentage_points": "24.0769230769"
+    },
+    {
+      "name": "KRW recurring",
+      "currency": "KRW",
+      "start": "3",
+      "end": "4",
+      "fx_start": null,
+      "fx_end": null,
+      "portfolio_rate": "0.21",
+      "native_rate": "0.333333333333",
+      "krw_rate": "0.333333333333",
+      "difference_percentage_points": "-12.3333333333"
+    },
+    {
+      "name": "USD two recurring ratios",
+      "currency": "USD",
+      "start": "3",
+      "end": "4",
+      "fx_start": "3",
+      "fx_end": "1",
+      "portfolio_rate": "0.21",
+      "native_rate": "0.333333333333",
+      "krw_rate": "-0.555555555556",
+      "difference_percentage_points": "76.5555555556"
+    },
+    {
+      "name": "actual zero",
+      "currency": "KRW",
+      "start": "100",
+      "end": "100",
+      "fx_start": null,
+      "fx_end": null,
+      "portfolio_rate": "0.21",
+      "native_rate": "0",
+      "krw_rate": "0",
+      "difference_percentage_points": "21"
+    },
+    {
+      "name": "zero terminal KRW",
+      "currency": "KRW",
+      "start": "100",
+      "end": "0",
+      "fx_start": null,
+      "fx_end": null,
+      "portfolio_rate": "0.21",
+      "native_rate": "-1",
+      "krw_rate": "-1",
+      "difference_percentage_points": "121"
+    },
+    {
+      "name": "zero terminal USD",
+      "currency": "USD",
+      "start": "100",
+      "end": "0",
+      "fx_start": "1000",
+      "fx_end": "900",
+      "portfolio_rate": "0.21",
+      "native_rate": "-1",
+      "krw_rate": "-1",
+      "difference_percentage_points": "121"
+    },
+    {
+      "name": "half even lower tie",
+      "currency": "KRW",
+      "start": "2000000000000",
+      "end": "2000000000001",
+      "fx_start": null,
+      "fx_end": null,
+      "portfolio_rate": "0.21",
+      "native_rate": "0",
+      "krw_rate": "0",
+      "difference_percentage_points": "21"
+    },
+    {
+      "name": "half even upper tie",
+      "currency": "KRW",
+      "start": "2000000000000",
+      "end": "2000000000003",
+      "fx_start": null,
+      "fx_end": null,
+      "portfolio_rate": "0.21",
+      "native_rate": "0.000000000002",
+      "krw_rate": "0.000000000002",
+      "difference_percentage_points": "20.9999999998"
+    },
+    {
+      "name": "native limit but KRW calculated",
+      "currency": "USD",
+      "start": "0.0000000000000000000000000000000000000000000000000000000000003",
+      "end": "1000000000000000000000000000000000000000000000000000000000001",
+      "fx_start": "1000000000000000000000000000000000000000000000000000000000001",
+      "fx_end": "0.0000000000000000000000000000000000000000000000000000000000003",
+      "portfolio_rate": "0.21",
+      "native_rate": null,
+      "krw_rate": "0",
+      "difference_percentage_points": "21"
+    }
+  ],
+  "differences": [
+    {
+      "portfolio_rate": "-1",
+      "benchmark_rate": "99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+      "expected": "-10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "portfolio_rate": "99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+      "benchmark_rate": "-1",
+      "expected": "10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

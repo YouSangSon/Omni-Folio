@@ -6,7 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:omni_folio_client/api.dart';
-import 'package:omni_folio_client/models.dart' show PortfolioXirr, PortfolioTwr;
+import 'package:omni_folio_client/models.dart'
+    show PortfolioXirr, PortfolioTwr, PortfolioBenchmarks;
 import 'package:omni_folio_client/app.dart';
 import 'package:omni_folio_client/paper_monitor.dart';
 import 'package:omni_folio_client/paper_monitor_page.dart';
@@ -343,6 +344,10 @@ void main() {
 }
 
 class _PaperApi implements OmniApi {
+  @override
+  Future<PortfolioBenchmarks> portfolioBenchmarks() async =>
+      throw UnimplementedError();
+
   @override
   Future<PortfolioTwr> portfolioTwr() async => throw UnimplementedError();
 

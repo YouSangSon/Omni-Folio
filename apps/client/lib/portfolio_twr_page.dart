@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'models.dart';
+import 'portfolio_benchmarks_page.dart';
 
 class PortfolioTwrPage extends StatefulWidget {
   const PortfolioTwrPage({super.key, required this.api});
@@ -143,6 +144,15 @@ class _PortfolioTwrPageState extends State<PortfolioTwrPage> {
           ),
         const SizedBox(height: 12),
         const Text('입출금 사이의 자산 변화를 이어 계산한 누적 값입니다. 연환산 값인 XIRR과 계산 기준이 다릅니다.'),
+        const SizedBox(height: 12),
+        OutlinedButton(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => PortfolioBenchmarksPage(api: widget.api),
+            ),
+          ),
+          child: const Text('같은 기간의 지수와 비교하기'),
+        ),
         const SizedBox(height: 12),
         Text('시작: ${report.periodStart ?? '미확인'}'),
         Text('보고서 기준: ${report.periodEnd}'),

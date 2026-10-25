@@ -1636,6 +1636,393 @@ class PortfolioTwr {
   final List<HoldingValuationIssue> issues;
 }
 
+String _benchmarkText(
+  Json json,
+  String key,
+  int maxBytes, {
+  bool identity = false,
+  bool trimmed = false,
+}) {
+  final text = _text(json, key);
+  final controls = RegExp(r'[\u0000-\u001f\u007f-\u009f]');
+  final spaces = RegExp(
+    r'[\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]',
+  );
+  if (text.runes.any((rune) => rune >= 0xd800 && rune <= 0xdfff) ||
+      utf8.encode(text).length > maxBytes ||
+      controls.hasMatch(text) ||
+      (identity && spaces.hasMatch(text)) ||
+      (trimmed &&
+          (spaces.hasMatch(text.substring(0, 1)) ||
+              spaces.hasMatch(text.substring(text.length - 1))))) {
+    throw const FormatException('Invalid benchmark text');
+  }
+  return text;
+}
+
+class BenchmarkSeriesSummary {
+  const BenchmarkSeriesSummary._({
+    required this.id,
+    required this.label,
+    required this.currency,
+    required this.returnBasis,
+    required this.sourceReference,
+    required this.sourceVersion,
+    required this.sample,
+    required this.pointCount,
+    required this.firstObservedAt,
+    required this.lastObservedAt,
+    required this.fetchedAt,
+    required this.recordedAt,
+  });
+  factory BenchmarkSeriesSummary.fromJson(Json json) {
+    _requireExactKeys(json, const {
+      'storage_check',
+      'authority',
+      'benchmark_id',
+      'label',
+      'currency',
+      'return_basis',
+      'source_reference',
+      'source_version',
+      'sample',
+      'data_sha256',
+      'point_count',
+      'first_observed_at',
+      'last_observed_at',
+      'fetched_at',
+      'recorded_at',
+    });
+    final id = _benchmarkText(json, 'benchmark_id', 128, identity: true);
+    final label = _benchmarkText(json, 'label', 160, trimmed: true);
+    final currency = _text(json, 'currency');
+    final basis = _text(json, 'return_basis');
+    final reference = _benchmarkText(
+      json,
+      'source_reference',
+      512,
+      identity: true,
+    );
+    final uri = Uri.tryParse(reference);
+    final version = _benchmarkText(json, 'source_version', 128, identity: true);
+    final sha = _text(json, 'data_sha256');
+    final count = _count(json, 'point_count');
+    final first = _utcText(json, 'first_observed_at');
+    final last = _utcText(json, 'last_observed_at');
+    final fetched = _utcText(json, 'fetched_at');
+    final recorded = _utcText(json, 'recorded_at');
+    final firstTime = _utcNanoseconds(first);
+    final lastTime = _utcNanoseconds(last);
+    if (json['storage_check'] != 'verified' ||
+        json['authority'] != 'owner_declared' ||
+        !const {'KRW', 'USD'}.contains(currency) ||
+        !const {
+          'price_index',
+          'gross_total_return',
+          'net_total_return',
+        }.contains(basis) ||
+        !reference.startsWith('https://') ||
+        uri == null ||
+        uri.scheme != 'https' ||
+        uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasQuery ||
+        uri.hasFragment ||
+        sha.length != 64 ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(sha) ||
+        count < 1 ||
+        count > 10000 ||
+        firstTime > lastTime ||
+        ((count == 1) != (firstTime == lastTime)) ||
+        lastTime > _utcNanoseconds(fetched) ||
+        _utcNanoseconds(fetched) > _utcNanoseconds(recorded)) {
+      throw const FormatException('Invalid benchmark series summary');
+    }
+    return BenchmarkSeriesSummary._(
+      id: id,
+      label: label,
+      currency: currency,
+      returnBasis: basis,
+      sourceReference: reference,
+      sourceVersion: version,
+      sample: _bool(json, 'sample'),
+      pointCount: count,
+      firstObservedAt: first,
+      lastObservedAt: last,
+      fetchedAt: fetched,
+      recordedAt: recorded,
+    );
+  }
+  final String id, label, currency, returnBasis, sourceReference, sourceVersion;
+  final bool sample;
+  final int pointCount;
+  final String firstObservedAt, lastObservedAt, fetchedAt, recordedAt;
+}
+
+class BenchmarkRate {
+  const BenchmarkRate._(this.status, this.rate, this.issue);
+  factory BenchmarkRate.fromJson(Json json) {
+    _requireExactKeys(json, const {'status', 'rate', 'issue'});
+    final status = _text(json, 'status');
+    final rate = _nullableDecimal(json, 'rate');
+    final issue = _nullableText(json, 'issue');
+    const codes = {
+      'portfolio_unavailable',
+      'missing_benchmark_point',
+      'stale_benchmark_point',
+      'zero_benchmark_start',
+      'missing_historical_fx',
+      'stale_historical_fx',
+      'numerical_limit',
+    };
+    final calculated = status == 'calculated' && rate != null && issue == null;
+    final unavailable =
+        status == 'unavailable' && rate == null && codes.contains(issue);
+    if ((!calculated && !unavailable) ||
+        (rate != null &&
+            (rate.length > 128 ||
+                _decimalScale(rate) > 12 ||
+                (rate.startsWith('-') &&
+                    _comparePositiveDecimal(rate.substring(1), '1') > 0)))) {
+      throw const FormatException('Invalid benchmark rate');
+    }
+    return BenchmarkRate._(status, rate, issue);
+  }
+  final String status;
+  final String? rate, issue;
+}
+
+typedef BenchmarkObservation = ({String observedAt, String value});
+
+BenchmarkObservation? _benchmarkObservation(dynamic raw, String valueKey) {
+  if (raw == null) return null;
+  if (raw is! Json) {
+    throw const FormatException('Invalid benchmark observation');
+  }
+  _requireExactKeys(raw, {'observed_at', valueKey});
+  final value = _decimal(raw, valueKey);
+  if (value.length > 64 ||
+      value.startsWith('-') ||
+      (valueKey == 'rate' && value == '0')) {
+    throw const FormatException('Invalid benchmark observation value');
+  }
+  return (observedAt: _utcText(raw, 'observed_at'), value: value);
+}
+
+class PortfolioBenchmark {
+  const PortfolioBenchmark._({
+    required this.series,
+    required this.sample,
+    required this.start,
+    required this.end,
+    required this.startFx,
+    required this.endFx,
+    required this.native,
+    required this.krw,
+    required this.differencePercentagePoints,
+  });
+  factory PortfolioBenchmark.fromJson(Json json, PortfolioTwr portfolio) {
+    _requireExactKeys(json, const {
+      'series',
+      'sample',
+      'start',
+      'end',
+      'start_fx',
+      'end_fx',
+      'native',
+      'krw',
+      'difference_percentage_points',
+    });
+    if (json['series'] is! Json ||
+        json['native'] is! Json ||
+        json['krw'] is! Json) {
+      throw const FormatException('Invalid benchmark comparison');
+    }
+    final series = BenchmarkSeriesSummary.fromJson(json['series'] as Json);
+    final sample = _bool(json, 'sample');
+    final start = _benchmarkObservation(json['start'], 'level');
+    final end = _benchmarkObservation(json['end'], 'level');
+    final startFx = _benchmarkObservation(json['start_fx'], 'rate');
+    final endFx = _benchmarkObservation(json['end_fx'], 'rate');
+    final native = BenchmarkRate.fromJson(json['native'] as Json);
+    final krw = BenchmarkRate.fromJson(json['krw'] as Json);
+    final difference = _nullableDecimal(json, 'difference_percentage_points');
+    final endAt = _utcNanoseconds(portfolio.periodEnd);
+    final startAt = portfolio.periodStart == null
+        ? null
+        : _utcNanoseconds(portfolio.periodStart!);
+    final maxAge = BigInt.from(86400) * BigInt.from(1000000000);
+    bool stale(BenchmarkObservation? mark, BigInt at) =>
+        mark != null && at - _utcNanoseconds(mark.observedAt) > maxAge;
+    bool equalRates() =>
+        native.status == krw.status &&
+        native.rate == krw.rate &&
+        native.issue == krw.issue;
+    if (_utcNanoseconds(series.recordedAt) > endAt ||
+        sample != (series.sample || startFx != null || endFx != null)) {
+      throw const FormatException('Inconsistent benchmark provenance');
+    }
+    for (final (mark, at) in [
+      (start, startAt),
+      (end, endAt),
+      (startFx, startAt),
+      (endFx, endAt),
+    ]) {
+      if (mark != null &&
+          (at == null || _utcNanoseconds(mark.observedAt) > at)) {
+        throw const FormatException('Future benchmark observation');
+      }
+    }
+    for (final mark in [start, end]) {
+      if (mark != null &&
+          (_utcNanoseconds(mark.observedAt) <
+                  _utcNanoseconds(series.firstObservedAt) ||
+              _utcNanoseconds(mark.observedAt) >
+                  _utcNanoseconds(series.lastObservedAt))) {
+        throw const FormatException(
+          'Benchmark observation outside its version',
+        );
+      }
+    }
+    if (portfolio.status != 'calculated') {
+      if (native.issue != 'portfolio_unavailable' ||
+          !equalRates() ||
+          start != null ||
+          end != null ||
+          startFx != null ||
+          endFx != null) {
+        throw const FormatException('Comparison without calculated TWR');
+      }
+    } else {
+      if (startAt == null ||
+          end == null ||
+          end.observedAt != series.lastObservedAt) {
+        throw const FormatException('Missing comparison period endpoint');
+      }
+      final pointIssue = start == null
+          ? 'missing_benchmark_point'
+          : stale(start, startAt) || stale(end, endAt)
+          ? 'stale_benchmark_point'
+          : start.value == '0'
+          ? 'zero_benchmark_start'
+          : null;
+      if (pointIssue != null) {
+        if (native.issue != pointIssue ||
+            !equalRates() ||
+            startFx != null ||
+            endFx != null) {
+          throw const FormatException('Inconsistent benchmark point failure');
+        }
+      } else {
+        if (native.issue != null && native.issue != 'numerical_limit') {
+          throw const FormatException('Invalid native benchmark failure');
+        }
+        if (series.currency == 'KRW') {
+          if (!equalRates() || startFx != null || endFx != null) {
+            throw const FormatException('KRW index was converted twice');
+          }
+        } else {
+          final fxIssue = startFx == null || endFx == null
+              ? 'missing_historical_fx'
+              : stale(startFx, startAt) || stale(endFx, endAt)
+              ? 'stale_historical_fx'
+              : null;
+          if ((fxIssue != null && krw.issue != fxIssue) ||
+              (fxIssue == null &&
+                  krw.issue != null &&
+                  krw.issue != 'numerical_limit')) {
+            throw const FormatException('Inconsistent benchmark FX failure');
+          }
+        }
+      }
+    }
+    if (krw.rate == null) {
+      if (difference != null) {
+        throw const FormatException('Difference without KRW benchmark');
+      }
+    } else if (difference == null ||
+        portfolio.cumulativeRate == null ||
+        difference.length > 132 ||
+        _decimalScale(difference) > 10 ||
+        _scaledDecimal(difference, 10) !=
+            _scaledDecimal(portfolio.cumulativeRate!, 12) -
+                _scaledDecimal(krw.rate!, 12)) {
+      throw const FormatException('Invalid percentage-point difference');
+    }
+    return PortfolioBenchmark._(
+      series: series,
+      sample: sample,
+      start: start,
+      end: end,
+      startFx: startFx,
+      endFx: endFx,
+      native: native,
+      krw: krw,
+      differencePercentagePoints: difference,
+    );
+  }
+  final BenchmarkSeriesSummary series;
+  final bool sample;
+  final BenchmarkObservation? start, end, startFx, endFx;
+  final BenchmarkRate native, krw;
+  final String? differencePercentagePoints;
+}
+
+class PortfolioBenchmarks {
+  const PortfolioBenchmarks._(this.portfolio, this.benchmarks, this.issues);
+  factory PortfolioBenchmarks.fromJson(Json json) {
+    _requireExactKeys(json, const {
+      'policy_version',
+      'max_observation_age_seconds',
+      'portfolio',
+      'benchmarks',
+      'issues',
+    });
+    if (json['policy_version'] !=
+            'retrospective_latest_index_24h_native_and_krw_v1' ||
+        _count(json, 'max_observation_age_seconds') != 86400 ||
+        json['portfolio'] is! Json) {
+      throw const FormatException('Unsupported portfolio benchmark policy');
+    }
+    final portfolio = PortfolioTwr.fromJson(json['portfolio'] as Json);
+    final rawRows = _jsonList(json, 'benchmarks');
+    final rawIssues = _jsonList(json, 'issues');
+    if (rawRows.length > 32 || rawIssues.length > 1) {
+      throw const FormatException('Benchmark response exceeds its bounds');
+    }
+    final rows = rawRows
+        .map((row) => PortfolioBenchmark.fromJson(row, portfolio))
+        .toList(growable: false);
+    final issues = rawIssues
+        .map((issue) {
+          _requireExactKeys(issue, const {'code', 'message'});
+          return HoldingValuationIssue.fromJson(issue);
+        })
+        .toList(growable: false);
+    final ids = <String>{};
+    if (rows.any((row) => !ids.add(row.series.id)) ||
+        (rows.isEmpty
+            ? issues.length != 1 ||
+                  !const {
+                    'no_benchmarks',
+                    'no_known_benchmarks',
+                    'benchmark_limit',
+                  }.contains(issues.single.code)
+            : issues.isNotEmpty)) {
+      throw const FormatException('Invalid benchmark list state');
+    }
+    return PortfolioBenchmarks._(
+      portfolio,
+      List.unmodifiable(rows),
+      List.unmodifiable(issues),
+    );
+  }
+  final PortfolioTwr portfolio;
+  final List<PortfolioBenchmark> benchmarks;
+  final List<HoldingValuationIssue> issues;
+  bool get sample => portfolio.sample || benchmarks.any((row) => row.sample);
+}
+
 class PortfolioXirr {
   const PortfolioXirr._({
     required this.valuation,
