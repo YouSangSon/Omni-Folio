@@ -154,6 +154,19 @@ rm -f "$preview_file"
 
 Golden fixture 的预期结果为新增 3 行、revision `rev_0000000003`、USD 现金 `778`、AAPL 6 股、成本基础 `300.6`。动态 ID 和时间戳每次运行都会不同。
 
+### 导出账本活动 CSV
+
+将已验证账本的公开活动字段保存为 CSV。导出保留同一次数据库观察中的倒序记录，排除账户和内部 ID。数字与时间保留原始字符串，原记录与更正记录都会保留。
+
+```sh
+mkdir -p -m 700 data/exports
+(cd services/core && go run . ledger-export \
+  -db ../../data/omni-folio.db \
+  -out ../../data/exports/ledger.csv)
+```
+
+`ledger-activity-export.v1` 收据包含 revision、行数和 SHA256。不会覆盖已有输出。超过 10,000 行或 32 MiB，或存在不安全的证券标记时，导出会失败。输出文件夹必须属于当前用户、不得允许其他用户写入，并且上级路径也必须可信。此 CSV 既不是 backup，也不是重新导入格式。在电子表格中请将所有列作为文本导入。[契约与限制](gates/g1q-ledger-activity-export.md)
+
 ### 切换现有账本的时间重放策略
 
 schema22/backup v16 使用按精确 UTC 顺序重放的 FIFO v2 策略。已有账本的数据库仅执行 migrate 无法正常运行。停止旧 core、保留原始备份后，请遵循 [G1.20 的 preview → 审核 → activate → 验证新备份流程](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차)。历史备份的存档验证与当前策略的激活是两项不同的操作。

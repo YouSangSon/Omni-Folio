@@ -174,6 +174,12 @@ func (s *Service) ledgerActivities(ctx context.Context, limit int, cursor *ledge
 		return nil, err
 	}
 	defer tx.Rollback()
+	if err := requireSchemaContext(ctx, tx); err != nil {
+		return nil, err
+	}
+	if err := proveLedgerReplayState(ctx, tx, false); err != nil {
+		return nil, err
+	}
 	if _, err := snapshotFrom(ctx, tx); err != nil {
 		return nil, err
 	}

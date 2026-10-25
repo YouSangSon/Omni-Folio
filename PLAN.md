@@ -14,6 +14,8 @@
 
 ## Next
 
+- [ ] G1.21 검증된 공개 원장 활동의 읽기 전용 CSV 내보내기: 동일 관찰의 원문 decimal/time·최신 순서와 정정 행을 보존하고 계좌/내부 ID를 제외한다. 명령 부재 RED 확인, 출력 cap·수식형 종목 표기 거절·기존 파일 보존과 원격 검증 진행 중 ([gate](gates/g1q-ledger-activity-export.md)).
+
 - [x] CSV 파일 선택: UTF-8·1MiB 초안을 기존 preview·명시적 apply에 연결했다. 관련 105개·권한 반례 8개, 정적 분석과 web·Android·iOS 무서명 release를 확인하고 [PR #34](https://github.com/YouSangSon/Omni-Folio/pull/34)를 main `b82944e`에 병합했다. 동일 client tree의 실제 web 파일 입력에서 한글 파일명·BOM과 잘못된 UTF-8의 입력 보존을 확인했다. OS 대화상자·provider·실기기는 별도 미검증 ([근거·한계](gates/g4p-first-run-import-recovery.md#csv-file-selection)).
 
 - [x] G1.19 거래 내역 정렬·페이지 cursor와 현재 평가 cutoff의 소수초 역전 수정. 실제 API 미래 합산·페이지 순서 RED/GREEN과 독립 리뷰 통과 ([gate](gates/g1o-exact-activity-cutoff.md)).

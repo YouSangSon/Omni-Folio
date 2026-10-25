@@ -154,6 +154,19 @@ rm -f "$preview_file"
 
 Golden fixture의 기대값은 신규 3행, revision `rev_0000000003`, USD cash `778`, AAPL 6주, cost basis `300.6`입니다. 동적 ID와 timestamp는 매 실행마다 달라집니다.
 
+### 원장 활동 CSV 내보내기
+
+검증된 원장의 공개 거래 필드를 CSV로 저장합니다. 같은 DB 관찰의 최신 순서를 유지하고 계좌·내부 ID는 제외합니다. 숫자와 시각은 원문 문자열을 보존하며, 원본과 정정 행은 함께 남습니다.
+
+```sh
+mkdir -p -m 700 data/exports
+(cd services/core && go run . ledger-export \
+  -db ../../data/omni-folio.db \
+  -out ../../data/exports/ledger.csv)
+```
+
+`ledger-activity-export.v1` 영수증에는 revision·행 수·SHA256이 나옵니다. 기존 출력은 덮어쓰지 않습니다. 최대 10,000행·32 MiB를 넘거나 안전하지 않은 종목 표기가 있으면 실패합니다. 출력 폴더는 현재 사용자 소유이며 다른 사용자에게 쓰기가 허용되지 않아야 하고, 상위 경로도 신뢰할 수 있어야 합니다. 이 CSV는 backup·재가져오기 형식이 아닙니다. 스프레드시트에서는 모든 열을 텍스트로 가져오세요. [계약과 한계](gates/g1q-ledger-activity-export.md)
+
 ### 기존 원장의 시간 재생 정책 전환
 
 schema22/backup v16은 정확한 UTC 순서의 FIFO v2 정책을 사용합니다. 기존 원장이 있는 DB는 migrate만으로 정상 실행되지 않습니다. 구 core를 중지하고 원본 backup을 보존한 뒤 [G1.20의 preview → 검토 → activate → 새 backup 검증 절차](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차)를 따릅니다. 과거 backup의 보관 검증과 현재 정책 활성화를 구분합니다.
