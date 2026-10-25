@@ -110,3 +110,28 @@ func TestBenchmarkSeriesCLIRejectsUnsafeInputBeforeCreatingDatabase(t *testing.T
 		t.Fatalf("cancellation wrote data: %+v %v", proof, err)
 	}
 }
+
+func TestBenchmarkSeriesCLIRedactsTaintedSchemaValues(t *testing.T) {
+	svc, path := testService(t, nil, nil)
+	const sentinel = "PRIVATE_SCHEMA_SENTINEL"
+	if _, err := svc.db.Exec(`DROP TABLE schema_migrations; CREATE VIEW schema_migrations AS SELECT '` + sentinel + `' AS version`); err != nil {
+		t.Fatal(err)
+	}
+	input := filepath.Join(t.TempDir(), "input.json")
+	if err := os.WriteFile(input, []byte(benchmarkSeriesTestInput), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		command string
+		args    []string
+	}{
+		{"benchmark-import", []string{"-db", path, "-input", input}},
+		{"benchmark-status", []string{"-db", path, "-benchmark-id", "test_reference"}},
+	} {
+		var out bytes.Buffer
+		err := runBenchmarkSeriesCommand(context.Background(), test.command, test.args, &out)
+		if err == nil || strings.Contains(err.Error(), sentinel) || out.Len() != 0 {
+			t.Fatalf("%s leaked tainted database value: %v", test.command, err)
+		}
+	}
+}
