@@ -419,6 +419,7 @@ void main() {
     await pumpUi(tester);
     expect(api.applyKeys, everyElement('import-preview_manual_001'));
     expect(api.applyKeys, hasLength(2));
+    await _revealHistory(tester, find.byType(TextField), delta: -200);
     expect(
       tester.widget<TextField>(find.byType(TextField)).controller!.text,
       'new current csv',
