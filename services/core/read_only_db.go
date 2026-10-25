@@ -10,17 +10,29 @@ import (
 )
 
 func openReadOnlyExistingDB(ctx context.Context, path string) (*sql.DB, error) {
+	return openExistingFileDB(ctx, path, true)
+}
+
+func openReadWriteExistingDB(ctx context.Context, path string) (*sql.DB, error) {
+	return openExistingFileDB(ctx, path, false)
+}
+
+func openExistingFileDB(ctx context.Context, path string, readOnly bool) (*sql.DB, error) {
+	mode, lock, description := "ro", "deferred", "read-only"
+	if !readOnly {
+		mode, lock, description = "rw", "immediate", "write"
+	}
 	path, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
 	}
 	info, err := os.Stat(path)
 	if err != nil || !info.Mode().IsRegular() {
-		return nil, errors.New("read-only command requires an existing regular database")
+		return nil, errors.New(description + " command requires an existing regular database")
 	}
 	u := url.URL{Scheme: "file", Path: path}
 	u.RawQuery = url.Values{
-		"mode": {"ro"}, "_txlock": {"deferred"},
+		"mode": {mode}, "_txlock": {lock},
 		"_busy_timeout": {"5000"}, "_foreign_keys": {"on"},
 	}.Encode()
 	db, err := sql.Open("sqlite3", u.String())

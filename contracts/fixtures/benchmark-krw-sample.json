@@ -1,0 +1,21 @@
+{
+  "schema_version": "benchmark-index-series.v1",
+  "benchmark_id": "synthetic_krw",
+  "label": "Synthetic KRW test index",
+  "currency": "KRW",
+  "return_basis": "price_index",
+  "source_reference": "https://example.invalid/synthetic-index-methodology",
+  "source_version": "sample-v1",
+  "sample": true,
+  "fetched_at": "2026-01-01T00:00:00Z",
+  "points": [
+    {
+      "observed_at": "2025-01-01T00:00:00Z",
+      "level": "100"
+    },
+    {
+      "observed_at": "2026-01-01T00:00:00Z",
+      "level": "110"
+    }
+  ]
+}

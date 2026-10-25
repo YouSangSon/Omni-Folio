@@ -18,7 +18,7 @@ The Korean README is the source of truth for keeping the structure, commands, an
 | Gate | Status | Evidence |
 |---|---|---|
 | G0 Architecture and contracts | Passed locally | Versioned OpenAPI/JSON Schema, separate runtime responsibilities, repository-wide commands |
-| G1 Local ledger | Passed locally | CSV review and atomic application; exact trade, cash, split, and FX replay; FIFO cost and stored-price valuation; schema v22/backup v16 and recovery of supported older formats |
+| G1 Local ledger | Passed locally | CSV review and atomic application; exact trade, cash, split, and FX replay; FIFO cost and stored-price valuation; schema v23/backup v17 and recovery of supported older formats |
 | G2 Flutter client | Partially passed | iOS, Android, and web release builds, automated parser/widget checks, and Android emulator frame measurements. Test-plugin exclusion verified in the unsigned iOS package. Physical-device, manual screen-reader, and store checks remain |
 | G3 Research and paper execution | Partially passed | Reproducible backtests, walk-forward validation, holdouts, candidate registration, and local paper fills, performance, halt, and recovery. Long-running operation and completeness of source delivery remain unverified |
 | G4 Brokers, charts, and orders | In progress | Local sample charts, stored reconciliation and order-history views, and credential-free synthetic Kiwoom contracts. Credentialed market-data and mock-order observations, recovery of orders with unknown outcomes, and all live-trading stages remain |
@@ -171,7 +171,7 @@ The `ledger-activity-export.v1` receipt reports the revision, row count and SHA2
 
 ### Transition an existing ledger to chronological replay
 
-schema22/backup v16 uses the FIFO v2 policy with exact UTC ordering. A DB with an existing ledger cannot run normally after migration alone. Stop the old core, preserve the original backup, and follow [G1.20's preview → review → activate → verify new backup procedure](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차). Distinguish validation of archived historical backups from activation of the current policy.
+schema23/backup v17 uses the FIFO v2 policy with exact UTC ordering. A DB with an existing ledger cannot run normally after migration alone. Stop the old core, preserve the original backup, and follow [G1.20's preview → review → activate → verify new backup procedure](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차). Distinguish validation of archived historical backups from activation of the current policy.
 
 ### Local sample OHLCV chart
 
@@ -227,6 +227,20 @@ curl -fsS http://127.0.0.1:8080/v1/portfolio/twr
 
 [Calculation policy, sources, and verification scope](gates/g1t-portfolio-twr.md)
 
+### Stored KRW and USD benchmark source versions
+
+Benchmark inputs support both `KRW` and `USD`. Provide a normalized index file declaring `price_index`, `gross_total_return`, or `net_total_return`. Both files below are `sample` examples rather than actual market data.
+
+```sh
+(cd services/core && go run . benchmark-import -db ../../data/omni-folio.db -input ../../contracts/fixtures/benchmark-krw-sample.json)
+(cd services/core && go run . benchmark-import -db ../../data/omni-folio.db -input ../../contracts/fixtures/benchmark-usd-sample.json)
+(cd services/core && go run . benchmark-status -db ../../data/omni-folio.db -benchmark-id synthetic_usd)
+```
+
+`authority=owner_declared` identifies owner-provided data; `storage_check=verified` confirms stored integrity only. Changed content or `fetched_at` under the same `source_version` is rejected, and retrying an older version does not change the latest selection. Actual index dividend/split definitions and usage rights, same-period return comparison, currency conversion, and its screen remain follow-up verification.
+
+[Input contract, recovery policy, and verification scope](gates/g1u-benchmark-series.md)
+
 ### Direct-FX cash valuation
 
 G1.11's `GET /v1/portfolio/cash-valuation` values replay-verified current ledger cash only in the requested base currency. It requires canonical UTC `as_of` and `base_currency`, validating ledger events and the entire FX series in the same read transaction. Except for matching currencies and zero balances, it uses only direct observations in the `cash currency -> base currency` direction, including the 24-hour boundary from observation time. It uses no inverse rates, cross rates, interpolation, `FX_EXCHANGE` inference, or display rounding.
@@ -241,7 +255,7 @@ curl -fsS 'http://127.0.0.1:8080/v1/portfolio/cash-valuation?base_currency=KRW&a
 
 Ahead of holding valuation, G1.12 preserves local fixture security prices in the `STRICT`/insert-only series introduced in schema v11. It validates source identity, instrument ID, symbol, venue, currency, a positive canonical price, `price_adjustment=unspecified`, observed/fetched/recorded UTC timestamps, and the canonical row hash. Internal exact-as-of queries fix every identity dimension and select only observations whose three timestamps are at or before the cutoff.
 
-Backup v8 at the G4U checkpoint validates price-series digests/counts and migrated legacy artifacts to schema v13 in owned copies without changing the originals. Current schema v22/backup v16 preserves that price proof as well. An empty restore candidate must have the same table DDL, latest index, and insert-only triggers as the embedded migrations. No public API, Flutter screen, provider request, scheduler, or broker-backed holding/PnL/performance valuation was added; `PortfolioSnapshot.valuation_status` remains `unavailable`.
+Backup v8 at the G4U checkpoint validates price-series digests/counts and migrated legacy artifacts to schema v13 in owned copies without changing the originals. Current schema v23/backup v17 preserves that price proof as well. An empty restore candidate must have the same table DDL, latest index, and insert-only triggers as the embedded migrations. No public API, Flutter screen, provider request, scheduler, or broker-backed holding/PnL/performance valuation was added; `PortfolioSnapshot.valuation_status` remains `unavailable`.
 
 ### Stored-price native-currency holding valuation
 
@@ -299,7 +313,7 @@ cd services/core
 go test -run '^TestG4H' -count=1 ./...
 ```
 
-Schema v13/backup v8 at the G4U checkpoint protected ledger events, cash-void/FX guards, direct FX observations, security price observations, instrument listings, raw broker snapshots, revisioned broker reconciliation, execution-authority events, risk reservations, the strategy registry, and the then-existing synthetic/paper orders as insert-only data. Current schema v22/backup v16 preserves those proofs together with G3.8C2 paper accounting, G3.8C3 account-global performance, G3.8D strategy-window evidence, and G3.8E paper safety policy/action recovery. G4H itself does not establish credentials, broker requests, scheduling, official freshness/timezone, cash/value reconciliation, public API/UI, or live readiness.
+Schema v13/backup v8 at the G4U checkpoint protected ledger events, cash-void/FX guards, direct FX observations, security price observations, instrument listings, raw broker snapshots, revisioned broker reconciliation, execution-authority events, risk reservations, the strategy registry, and the then-existing synthetic/paper orders as insert-only data. Current schema v23/backup v17 preserves those proofs together with G3.8C2 paper accounting, G3.8C3 account-global performance, G3.8D strategy-window evidence, and G3.8E paper safety policy/action recovery. G4H itself does not establish credentials, broker requests, scheduling, official freshness/timezone, cash/value reconciliation, public API/UI, or live readiness.
 
 ### Stored broker reconciliation read view
 
@@ -353,7 +367,7 @@ Use `paper-input-status -db PATH -account ACCOUNT -selection-event EVENT -bundle
 
 The strategy-improvement runner evaluates a finite set of long-only SMA candidates using expanding walk-forward validation and opens the final holdout only once. Results can be only `paper_candidate` or `no_promotion`; they gain no credentials, order authority, or authority for live promotion.
 
-Go core registers these local results in the insert-only registry introduced in schema v13 and preserved in current schema v22. `no_promotion` is retained as rejection evidence but cannot be selected. Because direct comparison with the current champion is not implemented yet, selecting a `paper_candidate` requires an explicit CLI action and optimistic concurrency. Rollback appends a new event only to the previous selection or `no_strategy`.
+Go core registers these local results in the insert-only registry introduced in schema v13 and preserved in current schema v23. `no_promotion` is retained as rejection evidence but cannot be selected. Because direct comparison with the current champion is not implemented yet, selecting a `paper_candidate` requires an explicit CLI action and optimistic concurrency. Rollback appends a new event only to the previous selection or `no_strategy`.
 
 ```sh
 candidate_file="$(mktemp)"

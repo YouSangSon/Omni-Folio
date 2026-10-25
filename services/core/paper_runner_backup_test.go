@@ -170,6 +170,7 @@ func TestG38F2BackupLegacyV14UsesOwnedV21MigrationWithEmptyLease(t *testing.T) {
 	}
 	manifest := readJSONMap(t, current+".manifest.json")
 	manifest["format_version"], manifest["schema_version"] = "omni-folio-backup.v14", "omni-folio.sqlite.v20"
+	stripBenchmarkProofForLegacy(manifest)
 	for _, field := range []string{"paper_runner_lease_state_sha256", "paper_runner_lease_count", "active_paper_runner_lease_count"} {
 		delete(manifest, field)
 	}

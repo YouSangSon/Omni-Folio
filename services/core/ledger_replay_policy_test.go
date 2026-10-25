@@ -14,6 +14,7 @@ import (
 
 func downgradeLedgerReplayForTest(t testing.TB, db *sql.DB) {
 	t.Helper()
+	dropBenchmarkSchemaForLegacy(t, db)
 	var present int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name='ledger_replay_state'`).Scan(&present); err != nil {
 		t.Fatal(err)
@@ -276,6 +277,15 @@ func TestLedgerReplayLegacyV15ArchivePreservesSourceAndGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var legacyManifest map[string]any
+	if err := json.Unmarshal(encoded, &legacyManifest); err != nil {
+		t.Fatal(err)
+	}
+	stripBenchmarkProofForLegacy(legacyManifest)
+	encoded, err = json.Marshal(legacyManifest)
+	if err != nil {
+		t.Fatal(err)
+	}
 	manifestPath := backup + ".manifest.json"
 	if err := os.WriteFile(manifestPath, encoded, 0600); err != nil {
 		t.Fatal(err)
@@ -306,7 +316,10 @@ func TestLedgerReplayLegacyV15ArchivePreservesSourceAndGolden(t *testing.T) {
 		}
 		variant.VerificationReceipt.CandidateSnapshotSHA256 = variant.ExpectedSnapshotSHA256
 		variantManifest := filepath.Join(t.TempDir(), "historical-manifest.json")
-		writeJSONFile(t, variantManifest, variant)
+		variantFields := readJSONMap(t, manifestPath)
+		variantFields["expected_snapshot_sha256"] = variant.ExpectedSnapshotSHA256
+		variantFields["verification_receipt"].(map[string]any)["candidate_snapshot_sha256"] = variant.VerificationReceipt.CandidateSnapshotSHA256
+		writeJSONFile(t, variantManifest, variantFields)
 		err := verifyManifest(backup, variantGolden, variantManifest)
 		if (policy == "" && err != nil) || (policy != "" && err == nil) {
 			t.Fatalf("historical policy boundary %q: %v", policy, err)
