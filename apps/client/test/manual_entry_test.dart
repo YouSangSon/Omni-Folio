@@ -107,19 +107,34 @@ Future<void> _history(WidgetTester tester, FakeApi api) async {
   await pumpUi(tester);
 }
 
-Future<void> _revealForm(WidgetTester tester, Finder finder) async {
+Future<void> _tapHistory(WidgetTester tester, String label) async {
+  final target = find.text(label);
+  await tester.ensureVisible(target);
+  await tester.pump();
   await tester.scrollUntilVisible(
-    finder,
-    200,
+    target.hitTestable(),
+    tester.getCenter(target).dy < tester.view.physicalSize.height / 2
+        ? -200
+        : 200,
     maxScrolls: 30,
     scrollable: find
         .descendant(
-          of: find.byType(ManualEntryPage),
+          of: find.byType(ActivityPage),
           matching: find.byType(Scrollable),
         )
         .first,
   );
-  await pumpUi(tester);
+  await tester.tap(target);
+}
+
+Future<void> _openManual(WidgetTester tester) async {
+  await _tapHistory(tester, '거래 직접 입력');
+  await tester.pumpAndSettle();
+}
+
+Future<void> _revealForm(WidgetTester tester, Finder finder) async {
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
 }
 
 Future<void> _fill(WidgetTester tester, String field, String value) async {
@@ -137,7 +152,7 @@ Future<void> _prepareBuy(WidgetTester tester) async {
   final submit = find.text('검토용 초안 만들기');
   await _revealForm(tester, submit);
   await tester.tap(submit);
-  await pumpUi(tester);
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -241,7 +256,7 @@ void main() {
     final open = find.widgetWithText(OutlinedButton, '거래 직접 입력');
     expect(open, findsOneWidget);
     await tester.tap(open);
-    await pumpUi(tester);
+    await tester.pumpAndSettle();
     expect(find.text('거래 한 건 입력'), findsOneWidget);
     expect(api.previewInputs, isEmpty);
     expect(api.applyKeys, isEmpty);
@@ -252,8 +267,7 @@ void main() {
     (tester) async {
       final api = _manualApi()..applyFailures = 1;
       await _history(tester, api);
-      await tester.tap(find.text('거래 직접 입력'));
-      await pumpUi(tester);
+      await _openManual(tester);
       await _prepareBuy(tester);
       final csv = tester
           .widget<TextField>(find.byType(TextField))
@@ -265,7 +279,7 @@ void main() {
       expect(api.previewInputs, isEmpty);
       expect(api.applyKeys, isEmpty);
       await tester.ensureVisible(find.text('미리보기 만들기'));
-      await tester.tap(find.text('미리보기 만들기'));
+      await _tapHistory(tester, '미리보기 만들기');
       await pumpUi(tester);
       final apply = find.text('원자적으로 적용');
       await tester.ensureVisible(apply);
@@ -275,7 +289,7 @@ void main() {
       expect(api.applyKeys, ['import-preview_manual_001']);
       expect(find.textContaining('거래 내역의 반영 여부를 확인하지 못했습니다.'), findsOneWidget);
       await tester.ensureVisible(find.text('미리보기 만들기'));
-      await tester.tap(find.text('미리보기 만들기'));
+      await _tapHistory(tester, '미리보기 만들기');
       await pumpUi(tester);
       expect(api.previewInputs, [csv, csv]);
       await tester.ensureVisible(apply);
@@ -300,17 +314,16 @@ void main() {
     final api = _manualApi();
     await _history(tester, api);
     await tester.enterText(find.byType(TextField), 'original csv');
-    await tester.tap(find.text('미리보기 만들기'));
+    await _tapHistory(tester, '미리보기 만들기');
     await pumpUi(tester);
     await tester.ensureVisible(find.text('원자적으로 적용'));
     await tester.tap(find.text('원자적으로 적용'));
     await pumpUi(tester);
     await tester.ensureVisible(find.text('거래 직접 입력'));
-    await tester.tap(find.text('거래 직접 입력'));
-    await pumpUi(tester);
+    await _openManual(tester);
     await _fill(tester, 'occurred_at', 'invalid');
     await tester.pageBack();
-    await pumpUi(tester);
+    await tester.pumpAndSettle();
     expect(
       tester.widget<TextField>(find.byType(TextField)).controller!.text,
       'original csv',
@@ -325,12 +338,11 @@ void main() {
     (tester) async {
       final api = _manualApi();
       await _history(tester, api);
-      await tester.tap(find.text('거래 직접 입력'));
-      await pumpUi(tester);
+      await _openManual(tester);
       final submit = find.text('검토용 초안 만들기');
       await _revealForm(tester, submit);
       await tester.tap(submit);
-      await pumpUi(tester);
+      await tester.pumpAndSettle();
       expect(find.text('입력값을 확인하세요'), findsOneWidget);
       expect(api.previewInputs, isEmpty);
       final summary = find
@@ -348,7 +360,7 @@ void main() {
       await _fill(tester, 'amount', '12.3400');
       await _revealForm(tester, submit);
       await tester.tap(submit);
-      await pumpUi(tester);
+      await tester.pumpAndSettle();
       final csv = tester
           .widget<TextField>(find.byType(TextField))
           .controller!
@@ -366,7 +378,7 @@ void main() {
     final api = _manualApi()..applyCompleter = gate;
     await _history(tester, api);
     await tester.enterText(find.byType(TextField), 'original csv');
-    await tester.tap(find.text('미리보기 만들기'));
+    await _tapHistory(tester, '미리보기 만들기');
     await pumpUi(tester);
     await tester.ensureVisible(find.text('원자적으로 적용'));
     await tester.tap(find.text('원자적으로 적용'));
@@ -389,7 +401,7 @@ void main() {
       isNull,
     );
     await tester.enterText(find.byType(TextField), 'new current csv');
-    await tester.tap(find.text('미리보기 만들기'));
+    await _tapHistory(tester, '미리보기 만들기');
     await pumpUi(tester);
     expect(api.previewInputs, ['original csv', 'new current csv']);
     api.applyCompleter = null;
@@ -440,7 +452,7 @@ void main() {
     await tester.tap(find.text('내역'));
     await pumpUi(tester);
     await tester.enterText(find.byType(TextField), 'original csv');
-    await tester.tap(find.text('미리보기 만들기'));
+    await _tapHistory(tester, '미리보기 만들기');
     await pumpUi(tester);
     await tester.ensureVisible(find.text('원자적으로 적용'));
     await tester.tap(find.text('원자적으로 적용'));
@@ -466,7 +478,7 @@ void main() {
     api.previewCompleter = gate;
     await _history(tester, api);
     await tester.enterText(find.byType(TextField), 'original');
-    await tester.tap(find.text('미리보기 만들기'));
+    await _tapHistory(tester, '미리보기 만들기');
     await tester.pump();
     await tester.enterText(find.byType(TextField), 'edited');
     gate.completeError(const ApiException('private-preview-sentinel'));
@@ -491,7 +503,7 @@ void main() {
       );
     await _history(tester, api);
     await tester.enterText(find.byType(TextField), 'original');
-    await tester.tap(find.text('미리보기 만들기'));
+    await _tapHistory(tester, '미리보기 만들기');
     await pumpUi(tester);
     await tester.ensureVisible(find.text('원자적으로 적용'));
     await tester.tap(find.text('원자적으로 적용'));
@@ -501,7 +513,7 @@ void main() {
     expect(tester.widget<OutlinedButton>(open).onPressed, isNotNull);
     expect(find.text('이전 요청 재시도'), findsNothing);
     await tester.ensureVisible(find.text('미리보기 만들기'));
-    await tester.tap(find.text('미리보기 만들기'));
+    await _tapHistory(tester, '미리보기 만들기');
     await pumpUi(tester);
     expect(api.previewInputs, ['original', 'original']);
     expect(find.textContaining('private-rejection'), findsNothing);
@@ -517,7 +529,7 @@ void main() {
         .onPressed!;
     open();
     open();
-    await pumpUi(tester);
+    await tester.pumpAndSettle();
     expect(find.byType(ManualEntryPage), findsOneWidget);
     await _fill(tester, 'occurred_at', '2026-01-05T09:30:00+09:00');
     await _fill(tester, 'quantity', '2');
@@ -527,7 +539,7 @@ void main() {
     final callback = tester.widget<ElevatedButton>(submit).onPressed!;
     callback();
     callback();
-    await pumpUi(tester);
+    await tester.pumpAndSettle();
     expect(find.byType(ManualEntryPage), findsNothing);
     expect(find.text('거래 내역 가져오기'), findsOneWidget);
     expect(api.previewInputs, isEmpty);
@@ -556,8 +568,7 @@ void main() {
           });
           await _history(tester, _manualApi());
           await tester.ensureVisible(find.text('거래 직접 입력'));
-          await tester.tap(find.text('거래 직접 입력'));
-          await pumpUi(tester);
+          await _openManual(tester);
           tester.view.viewInsets = FakeViewPadding(
             bottom: size.width < size.height ? 240 : 120,
           );
