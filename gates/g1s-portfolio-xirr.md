@@ -1,6 +1,6 @@
 # G1.23 입출금과 현재 자산을 연결하는 XIRR
 
-상태: 구현·독립 리뷰 보완 중, 최종 원격 검증 전. [PR #44](https://github.com/YouSangSon/Omni-Folio/pull/44). 이 단위가 전체 Phase A나 Goal의 완료를 뜻하지 않는다.
+상태: 아래 범위의 구현·독립 리뷰·최종 원격 검증과 main 병합 완료. [PR #44](https://github.com/YouSangSon/Omni-Folio/pull/44). 이 단위가 전체 Phase A나 Goal의 완료를 뜻하지 않는다.
 
 ## 문제와 사용자 가치
 
@@ -51,5 +51,45 @@
 - RED [40163504930](https://github.com/YouSangSon/Omni-Folio/actions/runs/40163504930): 실제 원장 seed 뒤 보고서 route가 404임을 확인했다. focused 실패 후 전체 검사는 실행하지 않았다.
 - `portfolio-xirr-cases.json`: Python Decimal80의 직접 power NPV 참조와 공식 예제, 정확한 대수 사례를 포함한다. 이는 로컬 fixture 생성 계산이며 Go·DB·Flutter runtime을 로컬에서 실행한 것은 아니다. 상대 비교 허용치는 `1e-10`이다.
 - `golden-portfolio-xirr.json`와 nullable-state goldens를 실제 Go HTTP 응답에 대조하고 같은 JSON을 Dart parser가 읽는다. 금액·정정·경제/지식 FX 시점·24시간 경계·사건별 환산·proof 손상·단일 clock·후보·nullable fields·표시/실패 보존을 검사한다.
-- GREEN: 최종 원격 Core·Client 검사와 새 web/ARM64 release, package/source identity 확인 전이다. 공유 호스트의 로컬 runtime·native build·DB stack은 실행하지 않는다.
+- GREEN: 검증 head `5655a0932e7d76e70df5164971af6f1170cc7dfa`와 구현 main 병합 `82f1e5774c873f2d442cbcdb00a3e5ac67e047d8`은 전체 tree가 같다. Client tree는 `854b31ac6a1e27fc98403b409f160c3fec15d1ce`다. 설계·최종 코드와 4건의 수치/formatter/nullable 보완 delta 리뷰에서 차단 사항이 없음을 확인했다.
+- [Core CI 40165414246](https://github.com/YouSangSon/Omni-Folio/actions/runs/40165414246): `make test FLUTTER=true CORE_TEST_PACKAGES='-run=^TestPortfolioXIRR -count=1 -timeout=10m ./...'`의 core 집중 검사가 1.064초에 통과했다. `make check DART=true FLUTTER=true CORE_TEST_PACKAGES='-timeout=30m ./...'`는 전체 core393.909초, internal packages·Go vet/format·Python39·JSON21·소유 자원 cleanup·source identity까지 통과했다. 시간은 해당 runner의 검사 소요이며 성능 개선율이 아니다.
+- [Client CI 40165414250](https://github.com/YouSangSon/Omni-Folio/actions/runs/40165414250): 집중29·전체220개, Dart format/analyze, 새 web release와 ARM64 APK·운영 plugin 등록·권한 반례8·소스 불변이 통과했다. 테스트는 `flutter test --no-pub --concurrency=1 test/portfolio_xirr_test.dart` 및 전체 `flutter test --no-pub --concurrency=1`이다. APK는 23,415,414 bytes·SHA256 `45cd55ca5d321f4d7bb72b75e5ed5f961b877ed7346ed940cbfeb7670ca50ca5`, registrant SHA256 `5d31e4d80984b4f5254d2e6629d2cc2b16760ab4774a94faa863c48897f18326`이다. 기존 두 권한과 signature 보호 수준을 검증했으며 artifact/cache 업로드는 없다.
+- 첫 GREEN 시도에서는 근삿값 후보에 exact 문자열을 요구한 assertion과 RawTooltip을 IconButton으로 cast한 테스트가 실패했다. 둘을 실제 수치 허용 오차와 버튼 ancestor 검사로 고쳤다. 다음 정적 분석에서 기존 fake 두 곳의 새 타입 import 누락과 불필요 import를 찾아 보완했다. 이후 source는 바꾸지 않고 최종 head에서 전체 검사를 통과했다. 실패/최종 로그와 receipt는 `docs/_internal/skill-outputs/goal-20261025-xirr-*`에 보존한다.
+- 네 언어 README의 shell22·link39·inline reference224·heading32 대응을 확인했다. 공유 호스트에서는 format·JSON·diff와 가벼운 참조 데이터 계산만 실행했으며 로컬 Go/Flutter runtime·native build·DB stack은 띄우지 않았다. 기존 iOS binary는 다른 client tree이므로 새 기능의 빌드 근거로 재사용하지 않는다.
 - TWR·benchmark·historical cost/PnL·provider feed·실제 브로커 수익률·새 iOS 빌드·실기기·수동 screen reader·브라우저 runtime·VM 검증은 완료하지 않았다. 전체 Goal은 계속 열려 있다.
+
+
+### 독립 참조 계산 재현
+
+다음은 fixture를 만들 때 사용한 Decimal80 직접 power NPV 방식의 공식 Excel 사례 재현이다. Go의 log-domain/정규화 solver와 별도 구현이며 금액이나 rate를 이 명령으로 운영 반영하지 않는다. 복수 근의 전역 인증용 도구가 아니며 대수 경계 사례는 위의 별도 골든으로 확인한다.
+
+```sh
+python3 - <<'PYREF'
+import json
+from datetime import date
+from decimal import Decimal, localcontext
+
+case = next(item for item in json.load(open('contracts/fixtures/portfolio-xirr-cases.json'))['cases']
+            if item['name'] == 'excel_official')
+origin = min(date.fromisoformat(item['date']) for item in case['flows'])
+with localcontext() as context:
+    context.prec = 80
+    flows = [(Decimal(item['amount']), Decimal((date.fromisoformat(item['date']) - origin).days) / 365)
+             for item in case['flows']]
+    def npv(rate):
+        return sum((amount / (1 + rate) ** years for amount, years in flows), Decimal(0))
+    lower, upper = Decimal('-0.95'), Decimal('2')
+    left = npv(lower)
+    assert left * npv(upper) < 0
+    for _ in range(200):
+        middle = (lower + upper) / 2
+        value = npv(middle)
+        if (value < 0) == (left < 0):
+            lower, left = middle, value
+        else:
+            upper = middle
+    reference = (lower + upper) / 2
+    print(reference)
+    assert abs(reference - Decimal(case['expected_rate'])) <= Decimal('0.0000000001')
+PYREF
+```

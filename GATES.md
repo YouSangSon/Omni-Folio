@@ -35,7 +35,7 @@ G1 ledger vertical slice
 ├─ G1.20 versioned chronological FIFO and explicit legacy replay activation
 ├─ G1.21 duplicate-import valuation and complete recorded-time cutoff
 ├─ G1.22 verified public ledger activity CSV export
-└─ G1.23 retrospective portfolio XIRR (verification pending)
+└─ G1.23 retrospective portfolio XIRR and explicit root confidence
    |
 G2 client vertical slice
 ├─ G2.1 Flutter iOS/Android/web build
@@ -165,4 +165,4 @@ G6 PostgreSQL and Kubernetes promotion
 
 세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.
 
-- G1.23은 외부 입출금과 현재 KRW 자산을 같은 관찰에서 검증하는 회고 XIRR 단위다. 유일근·참고 후보·계산 불가를 구분하며 원격 검증 전이다. TWR·benchmark·실제 증권사 성과를 대신하지 않는다. [정책과 검증](gates/g1s-portfolio-xirr.md)
+- G1.23은 외부 입출금과 현재 KRW 자산을 같은 관찰에서 검증하는 회고 XIRR 단위다. 유일근·참고 후보·계산 불가를 구분하며 독립 골든·원격 Core/Client 검사와 새 web/Android 릴리스가 통과했다. TWR·benchmark·실제 증권사 성과를 대신하지 않는다. [정책과 검증](gates/g1s-portfolio-xirr.md)
