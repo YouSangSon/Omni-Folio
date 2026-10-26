@@ -147,6 +147,11 @@ class _PortfolioBenchmarksPageState extends State<PortfolioBenchmarksPage> {
             ),
           ),
         ),
+        if (report.ownerDeclaredPrice)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text('직접 입력 가격 사용 · 시세 제공자가 검증한 값이 아닙니다.'),
+          ),
         if (report.ownerDeclaredFx)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),

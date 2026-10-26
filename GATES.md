@@ -39,7 +39,8 @@ G1 ledger vertical slice
 ├─ G1.24 retrospective cash-flow-boundary cumulative TWR (gates/g1t-portfolio-twr.md)
 ├─ G1.25 immutable KRW/USD benchmark index versions and backup proof (gates/g1u-benchmark-series.md)
 ├─ G1.26 same-period native/KRW benchmark comparison (gates/g1v-portfolio-benchmark-comparison.md)
-└─ G1.27 complete owner FX versions, performance and recovery (gates/g1w-owner-fx-series.md)
+├─ G1.27 complete owner FX versions, performance and recovery (gates/g1w-owner-fx-series.md)
+└─ G1.28 owner security price versions, units and performance (gates/g1x-owner-price-series.md)
    |
 G2 client vertical slice
 ├─ G2.1 Flutter iOS/Android/web build
@@ -177,3 +178,5 @@ G6 PostgreSQL and Kubernetes promotion
 - G1.26은 TWR과 같은 관찰의 지수 비교 API/화면이다. 최신 known 버전과 실제 관측·FX 시각을 고정하며 native/KRW 미계산과 %p를 구분한다. 실제 API404 RED·테스트 입력/분석 보완·독립 리뷰 후 최종 Core 전체·Python39/JSON30·Flutter63/327·web/ARM64 release·권한/소스 일치를 통과해 병합했다. 실제 시장 자료·배포·전체 Goal 완료는 별도다. [정책과 검증](gates/g1v-portfolio-benchmark-comparison.md)
 
 - G1.27은 직접 입력 환율의 완전한 버전·수정/철회·재시도·같은 관찰의 평가/성과와 UI 출처 안내를 연결한다. source와 sample을 분리하고 schema24/backup18의 새 증명과 이전v17/v16 권한을 보존한다. 실제 RED·독립 리뷰·접근성 자원 해제 보완 후 최종 Core 전체·Python39/JSON33·Flutter36/363·web/ARM64 release·권한/소스 일치를 통과해 병합했다. 실제 시장 자료·provider·배포·전체 Goal 완료는 별도다. [정책과 검증](gates/g1w-owner-fx-series.md)
+
+- G1.28은 원장에 반영된 종목의 완전한 직접 입력 가격과 출처·sample·분할 단위를 연결하는 진행 중 단위다. 실제 CLI 부재 RED를 확인했으며 구현 리뷰·최종 Core/Client CI·병합 전에는 완료로 세지 않는다. [계약과 검증](gates/g1x-owner-price-series.md)

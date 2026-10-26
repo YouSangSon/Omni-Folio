@@ -38,6 +38,8 @@ type SecurityPriceObservation struct {
 	ObservedAt          string `json:"observed_at"`
 	FetchedAt           string `json:"fetched_at"`
 	RecordedAt          string `json:"recorded_at"`
+	ownerVersion        string
+	ownerSample         bool
 	recordSHA256        string
 }
 

@@ -2,8 +2,8 @@
   "owner_fx_series_state_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "owner_fx_series_version_count": 0,
   "owner_fx_series_point_count": 0,
-  "format_version": "omni-folio-backup.v18",
-  "schema_version": "omni-folio.sqlite.v24",
+  "format_version": "omni-folio-backup.v19",
+  "schema_version": "omni-folio.sqlite.v25",
   "created_at": "2026-01-10T15:02:00Z",
   "source_ledger_revision": "rev_0000000003",
   "order_state_sha256": "34b0bc819983f2fa08ee5e702db8aa5194bd2b2915dc389801b55cac79ed10a8",
@@ -93,9 +93,16 @@
     "benchmark_series_check": "ok",
     "candidate_benchmark_series_state_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "candidate_benchmark_series_version_count": 0,
-    "candidate_benchmark_series_point_count": 0
+    "candidate_benchmark_series_point_count": 0,
+    "owner_price_series_check": "ok",
+    "candidate_owner_price_series_state_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate_owner_price_series_version_count": 0,
+    "candidate_owner_price_series_point_count": 0
   },
   "benchmark_series_state_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "benchmark_series_version_count": 0,
-  "benchmark_series_point_count": 0
+  "benchmark_series_point_count": 0,
+  "owner_price_series_state_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "owner_price_series_version_count": 0,
+  "owner_price_series_point_count": 0
 }

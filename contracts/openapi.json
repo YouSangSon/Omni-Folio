@@ -711,7 +711,8 @@
           "policy_version": {
             "enum": [
               "retrospective_latest_index_24h_native_and_krw_v1",
-              "retrospective_latest_index_24h_native_and_krw_v2"
+              "retrospective_latest_index_24h_native_and_krw_v2",
+              "retrospective_latest_index_24h_native_and_krw_v3"
             ]
           },
           "max_observation_age_seconds": {
@@ -751,8 +752,61 @@
             }
           }
         },
-        "description": "One read transaction and one server clock. All stored benchmark versions are proved, including when TWR is unavailable. Select maximum append sequence per ID whose recorded_at is no later than the report cutoff. No cross-version endpoint mixing, holiday interpolation, inverse FX or provider calls. More than32 eligible IDs returns no index rows and benchmark_limit while preserving TWR. Owner v2 derives its authority notice from selected FX mark provenance or the nested portfolio notice, including partial/stale marks. Top-level issues remain list failures only; sample follows the selected series/FX sample declarations.",
+        "description": "One read transaction and one server clock. All stored benchmark versions are proved, including when TWR is unavailable. Select maximum append sequence per ID whose recorded_at is no later than the report cutoff. No cross-version endpoint mixing, holiday interpolation, inverse FX or provider calls. More than32 eligible IDs returns no index rows and benchmark_limit while preserving TWR. Without owner security prices, v2 derives FX authority from selected FX mark provenance or the nested portfolio notice, including partial/stale marks. Selected owner security prices use v3, deriving the nonblocking price notice from the nested portfolio. Top-level issues remain list failures only; sample follows the selected series/FX sample declarations.",
         "allOf": [
+          {
+            "if": {
+              "properties": {
+                "policy_version": {
+                  "const": "retrospective_latest_index_24h_native_and_krw_v3"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "portfolio": {
+                  "properties": {
+                    "issues": {
+                      "contains": {
+                        "type": "object",
+                        "required": [
+                          "code"
+                        ],
+                        "properties": {
+                          "code": {
+                            "const": "owner_declared_price"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "else": {
+              "not": {
+                "properties": {
+                  "portfolio": {
+                    "properties": {
+                      "issues": {
+                        "contains": {
+                          "type": "object",
+                          "required": [
+                            "code"
+                          ],
+                          "properties": {
+                            "code": {
+                              "const": "owner_declared_price"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
           {
             "if": {
               "properties": {
@@ -833,77 +887,87 @@
               ]
             },
             "else": {
-              "not": {
-                "anyOf": [
-                  {
-                    "properties": {
-                      "portfolio": {
-                        "properties": {
-                          "issues": {
-                            "contains": {
-                              "type": "object",
-                              "required": [
-                                "code"
-                              ],
-                              "properties": {
-                                "code": {
-                                  "const": "owner_declared_fx"
+              "if": {
+                "properties": {
+                  "policy_version": {
+                    "const": "retrospective_latest_index_24h_native_and_krw_v1"
+                  }
+                }
+              },
+              "then": {
+                "not": {
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "portfolio": {
+                          "properties": {
+                            "issues": {
+                              "contains": {
+                                "type": "object",
+                                "required": [
+                                  "code"
+                                ],
+                                "properties": {
+                                  "code": {
+                                    "const": "owner_declared_fx"
+                                  }
                                 }
                               }
                             }
                           }
                         }
                       }
-                    }
-                  },
-                  {
-                    "properties": {
-                      "benchmarks": {
-                        "contains": {
-                          "anyOf": [
-                            {
-                              "required": [
-                                "start_fx"
-                              ],
-                              "properties": {
-                                "start_fx": {
-                                  "type": "object",
-                                  "required": [
-                                    "source"
-                                  ],
-                                  "properties": {
-                                    "source": {
-                                      "const": "owner_declared"
+                    },
+                    {
+                      "properties": {
+                        "benchmarks": {
+                          "contains": {
+                            "anyOf": [
+                              {
+                                "required": [
+                                  "start_fx"
+                                ],
+                                "properties": {
+                                  "start_fx": {
+                                    "type": "object",
+                                    "required": [
+                                      "source"
+                                    ],
+                                    "properties": {
+                                      "source": {
+                                        "const": "owner_declared"
+                                      }
+                                    }
+                                  }
+                                }
+                              },
+                              {
+                                "required": [
+                                  "end_fx"
+                                ],
+                                "properties": {
+                                  "end_fx": {
+                                    "type": "object",
+                                    "required": [
+                                      "source"
+                                    ],
+                                    "properties": {
+                                      "source": {
+                                        "const": "owner_declared"
+                                      }
                                     }
                                   }
                                 }
                               }
-                            },
-                            {
-                              "required": [
-                                "end_fx"
-                              ],
-                              "properties": {
-                                "end_fx": {
-                                  "type": "object",
-                                  "required": [
-                                    "source"
-                                  ],
-                                  "properties": {
-                                    "source": {
-                                      "const": "owner_declared"
-                                    }
-                                  }
-                                }
-                              }
-                            }
-                          ]
+                            ]
+                          }
                         }
                       }
                     }
-                  }
-                ]
-              }
+                  ]
+                }
+              },
+              "else": {}
             }
           }
         ]
@@ -1290,7 +1354,8 @@
           "policy_version": {
             "enum": [
               "restated_external_first_exact_timestamp_twr_v1",
-              "restated_external_first_exact_timestamp_twr_v2"
+              "restated_external_first_exact_timestamp_twr_v2",
+              "restated_external_first_exact_timestamp_twr_v3"
             ]
           },
           "scope": {
@@ -1362,8 +1427,97 @@
             ]
           }
         },
-        "description": "Since-inception retrospective KRW cumulative TWR, not annualized. Restated external cash groups precede internal events at each exact UTC timestamp. Links asset values immediately before external groups to previous post-flow capital, then terminal value to last positive capital. Requires positive intermediate capital; a full withdrawal is unavailable, not a total loss. Historical prices and direct FX observed by each boundary and fetched/recorded by report cutoff must be <=24h old; split marks must be strictly after the last applied split. Final cash and quantity maps and terminal total reconcile to the proved current ledger. Exact rational products are rounded once to12decimals, with8192bit product and1000boundary budgets. Missing or unsupported inputs never become0percent; no trading no-lookahead or PP daily-convention equivalence claim. Owner FX v2 is used only when a declared FX observation is selected. owner_declared_fx is non-blocking provenance, independent of sample_data, and remains visible for stale/unavailable results. Pair inputs use one latest-known complete version at report cutoff; a missing point never falls back to an older version.",
+        "description": "Since-inception retrospective KRW cumulative TWR, not annualized. Restated external cash groups precede internal events at each exact UTC timestamp. Links asset values immediately before external groups to previous post-flow capital, then terminal value to last positive capital. Requires positive intermediate capital; a full withdrawal is unavailable, not a total loss. Historical prices and direct FX observed by each boundary and fetched/recorded by report cutoff must be <=24h old; split marks must be strictly after the last applied split. Final cash and quantity maps and terminal total reconcile to the proved current ledger. Exact rational products are rounded once to12decimals, with8192bit product and1000boundary budgets. Missing or unsupported inputs never become0percent; no trading no-lookahead or PP daily-convention equivalence claim. Without selected owner security prices, selected owner FX uses v2. owner_declared_fx is non-blocking provenance, independent of sample_data, and remains visible for stale/unavailable results. Pair inputs use one latest-known complete version at report cutoff; a missing point never falls back to an older version. Owner security price selection uses v3 with one nonblocking owner_declared_price notice and optional independent owner_declared_fx notice.",
         "allOf": [
+          {
+            "properties": {
+              "issues": {
+                "items": {
+                  "if": {
+                    "properties": {
+                      "code": {
+                        "enum": [
+                          "owner_declared_fx",
+                          "owner_declared_price"
+                        ]
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "field": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "issues": {
+                "contains": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "const": "owner_declared_fx"
+                    }
+                  }
+                },
+                "minContains": 0,
+                "maxContains": 1
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "policy_version": {
+                  "const": "restated_external_first_exact_timestamp_twr_v3"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "issues": {
+                  "contains": {
+                    "type": "object",
+                    "required": [
+                      "code"
+                    ],
+                    "properties": {
+                      "code": {
+                        "const": "owner_declared_price"
+                      }
+                    }
+                  },
+                  "minContains": 1,
+                  "maxContains": 1
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "issues": {
+                  "not": {
+                    "contains": {
+                      "type": "object",
+                      "required": [
+                        "code"
+                      ],
+                      "properties": {
+                        "code": {
+                          "const": "owner_declared_price"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
           {
             "if": {
               "properties": {
@@ -1392,23 +1546,33 @@
               }
             },
             "else": {
-              "properties": {
-                "issues": {
-                  "not": {
-                    "contains": {
-                      "type": "object",
-                      "required": [
-                        "code"
-                      ],
-                      "properties": {
-                        "code": {
-                          "const": "owner_declared_fx"
+              "if": {
+                "properties": {
+                  "policy_version": {
+                    "const": "restated_external_first_exact_timestamp_twr_v1"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "issues": {
+                    "not": {
+                      "contains": {
+                        "type": "object",
+                        "required": [
+                          "code"
+                        ],
+                        "properties": {
+                          "code": {
+                            "const": "owner_declared_fx"
+                          }
                         }
                       }
                     }
                   }
                 }
-              }
+              },
+              "else": {}
             }
           }
         ]
@@ -1437,7 +1601,8 @@
           "policy_version": {
             "enum": [
               "restated_external_cash_utc_date_actual_365_v1",
-              "restated_external_cash_utc_date_actual_365_v2"
+              "restated_external_cash_utc_date_actual_365_v2",
+              "restated_external_cash_utc_date_actual_365_v3"
             ]
           },
           "solver_policy": {
@@ -1532,8 +1697,97 @@
             }
           }
         },
-        "description": "Since-inception retrospective KRW XIRR. Exact event conversion before UTC-date aggregation; actual/365 and twelve-decimal numerical output. Annual rate only for one sign change; nonconventional converged values are candidates without certified uniqueness. Missing observations or numerical failures never become zero. Cash voids remove the original external flow. Historical FX observed_at <= event occurrence, fetched/recorded <= report cutoff; <=24h economic age. This is not a trading no-lookahead policy. Owner FX v2 is used only when a declared FX observation is selected. owner_declared_fx is non-blocking provenance, independent of sample_data, and remains visible for stale/unavailable results. Pair inputs use one latest-known complete version at report cutoff; a missing point never falls back to an older version.",
+        "description": "Since-inception retrospective KRW XIRR. Exact event conversion before UTC-date aggregation; actual/365 and twelve-decimal numerical output. Annual rate only for one sign change; nonconventional converged values are candidates without certified uniqueness. Missing observations or numerical failures never become zero. Cash voids remove the original external flow. Historical FX observed_at <= event occurrence, fetched/recorded <= report cutoff; <=24h economic age. This is not a trading no-lookahead policy. Without selected owner security prices, selected owner FX uses v2. owner_declared_fx is non-blocking provenance, independent of sample_data, and remains visible for stale/unavailable results. Pair inputs use one latest-known complete version at report cutoff; a missing point never falls back to an older version. Owner security price selection uses v3 with one nonblocking owner_declared_price notice and optional independent owner_declared_fx notice.",
         "allOf": [
+          {
+            "properties": {
+              "issues": {
+                "items": {
+                  "if": {
+                    "properties": {
+                      "code": {
+                        "enum": [
+                          "owner_declared_fx",
+                          "owner_declared_price"
+                        ]
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "field": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "issues": {
+                "contains": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "const": "owner_declared_fx"
+                    }
+                  }
+                },
+                "minContains": 0,
+                "maxContains": 1
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "policy_version": {
+                  "const": "restated_external_cash_utc_date_actual_365_v3"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "issues": {
+                  "contains": {
+                    "type": "object",
+                    "required": [
+                      "code"
+                    ],
+                    "properties": {
+                      "code": {
+                        "const": "owner_declared_price"
+                      }
+                    }
+                  },
+                  "minContains": 1,
+                  "maxContains": 1
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "issues": {
+                  "not": {
+                    "contains": {
+                      "type": "object",
+                      "required": [
+                        "code"
+                      ],
+                      "properties": {
+                        "code": {
+                          "const": "owner_declared_price"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
           {
             "if": {
               "properties": {
@@ -1562,23 +1816,33 @@
               }
             },
             "else": {
-              "properties": {
-                "issues": {
-                  "not": {
-                    "contains": {
-                      "type": "object",
-                      "required": [
-                        "code"
-                      ],
-                      "properties": {
-                        "code": {
-                          "const": "owner_declared_fx"
+              "if": {
+                "properties": {
+                  "policy_version": {
+                    "const": "restated_external_cash_utc_date_actual_365_v1"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "issues": {
+                    "not": {
+                      "contains": {
+                        "type": "object",
+                        "required": [
+                          "code"
+                        ],
+                        "properties": {
+                          "code": {
+                            "const": "owner_declared_fx"
+                          }
                         }
                       }
                     }
                   }
                 }
-              }
+              },
+              "else": {}
             }
           }
         ]
@@ -2123,7 +2387,7 @@
             }
           }
         ],
-        "description": " Owner FX v2 is used only when a declared FX observation is selected. owner_declared_fx is non-blocking provenance, independent of sample_data, and remains visible for stale/unavailable results. Pair inputs use one latest-known complete version at report cutoff; a missing point never falls back to an older version."
+        "description": " Without selected owner security prices, selected owner FX uses v2. owner_declared_fx is non-blocking provenance, independent of sample_data, and remains visible for stale/unavailable results. Pair inputs use one latest-known complete version at report cutoff; a missing point never falls back to an older version."
       },
       "HoldingValuationPrice": {
         "type": "object",
@@ -2142,7 +2406,10 @@
         ],
         "properties": {
           "source": {
-            "const": "local_fixture"
+            "enum": [
+              "local_fixture",
+              "owner_declared"
+            ]
           },
           "venue": {
             "type": "string"
@@ -2155,7 +2422,10 @@
             "$ref": "#/components/schemas/Decimal"
           },
           "price_adjustment": {
-            "const": "unspecified"
+            "enum": [
+              "unspecified",
+              "unadjusted"
+            ]
           },
           "observed_at": {
             "$ref": "#/components/schemas/LedgerActivityTimestamp"
@@ -2167,12 +2437,57 @@
             "$ref": "#/components/schemas/LedgerActivityTimestamp"
           },
           "sample": {
-            "const": true
+            "type": "boolean"
           },
           "state": {
-            "const": "stale"
+            "enum": [
+              "stale",
+              "unknown"
+            ]
+          },
+          "source_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "At most128 UTF-8 bytes, no Unicode whitespace or controls."
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "source": {
+                  "const": "owner_declared"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "source_version"
+              ],
+              "properties": {
+                "price_adjustment": {
+                  "const": "unadjusted"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "source_version": false,
+                "price_adjustment": {
+                  "const": "unspecified"
+                },
+                "sample": {
+                  "const": true
+                },
+                "state": {
+                  "const": "stale"
+                }
+              }
+            }
+          }
+        ],
+        "description": "Owner unadjusted is a unit declaration, not provider verification. Owner marks require source_version. Observation age and split basis are checked independently."
       },
       "HoldingValuationLine": {
         "type": "object",
@@ -2208,7 +2523,8 @@
               "valued",
               "missing",
               "ambiguous",
-              "stale"
+              "stale",
+              "split_basis"
             ]
           },
           "price": {
@@ -2251,7 +2567,49 @@
               }
             ]
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "split_basis"
+                }
+              }
+            },
+            "then": {
+              "allOf": [
+                {
+                  "properties": {
+                    "price": {
+                      "properties": {
+                        "source": {
+                          "const": "owner_declared"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "issue": {
+                      "type": "object",
+                      "required": [
+                        "code"
+                      ],
+                      "properties": {
+                        "code": {
+                          "const": "split_price_unavailable"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
       },
       "HoldingValuationTotal": {
         "type": "object",
@@ -2300,7 +2658,10 @@
             "const": "holdings_only"
           },
           "policy_version": {
-            "const": "native_holding_valuation_v1"
+            "enum": [
+              "native_holding_valuation_v1",
+              "native_holding_valuation_v2"
+            ]
           },
           "max_observation_age_seconds": {
             "const": 86400
@@ -2315,13 +2676,17 @@
           "ledger_as_of": {
             "$ref": "#/components/schemas/LedgerActivityTimestamp"
           },
-          "ledger_recorded_at": {"$ref": "#/components/schemas/LedgerActivityTimestamp", "description": "Current ledger metadata recorded time, including duplicate-only imports; not the last event timestamp. Valuation cutoff must cover this metadata and every event recorded time in the proved revision."},
+          "ledger_recorded_at": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp",
+            "description": "Current ledger metadata recorded time, including duplicate-only imports; not the last event timestamp. Valuation cutoff must cover this metadata and every event recorded time in the proved revision."
+          },
           "status": {
             "type": "string",
             "enum": [
               "empty",
               "unavailable",
-              "stale_sample"
+              "stale_sample",
+              "complete"
             ]
           },
           "sample": {
@@ -2353,7 +2718,126 @@
               "$ref": "#/components/schemas/Error"
             }
           }
-        }
+        },
+        "allOf": [
+          {
+            "properties": {
+              "issues": {
+                "items": {
+                  "if": {
+                    "properties": {
+                      "code": {
+                        "enum": [
+                          "owner_declared_fx",
+                          "owner_declared_price"
+                        ]
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "field": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "policy_version": {
+                  "const": "native_holding_valuation_v2"
+                }
+              }
+            },
+            "then": {
+              "allOf": [
+                {
+                  "properties": {
+                    "issues": {
+                      "contains": {
+                        "type": "object",
+                        "required": [
+                          "code"
+                        ],
+                        "properties": {
+                          "code": {
+                            "const": "owner_declared_price"
+                          }
+                        }
+                      },
+                      "minContains": 1,
+                      "maxContains": 1
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "lines": {
+                      "contains": {
+                        "properties": {
+                          "price": {
+                            "properties": {
+                              "source": {
+                                "const": "owner_declared"
+                              }
+                            },
+                            "type": "object"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "else": {
+              "allOf": [
+                {
+                  "properties": {
+                    "issues": {
+                      "not": {
+                        "contains": {
+                          "type": "object",
+                          "required": [
+                            "code"
+                          ],
+                          "properties": {
+                            "code": {
+                              "const": "owner_declared_price"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "not": {
+                    "properties": {
+                      "lines": {
+                        "contains": {
+                          "properties": {
+                            "price": {
+                              "properties": {
+                                "source": {
+                                  "const": "owner_declared"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "description": "Owner provenance is nonblocking and sample is independent. Nonsample owner marks can produce complete; unavailable totals remain null and split_basis retains the selected mark."
       },
       "CurrentPortfolioValuation": {
         "type": "object",
@@ -2381,7 +2865,8 @@
           "policy_version": {
             "enum": [
               "current_base_portfolio_valuation_v1",
-              "current_base_portfolio_valuation_v2"
+              "current_base_portfolio_valuation_v2",
+              "current_base_portfolio_valuation_v3"
             ]
           },
           "max_observation_age_seconds": {
@@ -2455,6 +2940,95 @@
         },
         "allOf": [
           {
+            "properties": {
+              "issues": {
+                "items": {
+                  "if": {
+                    "properties": {
+                      "code": {
+                        "enum": [
+                          "owner_declared_fx",
+                          "owner_declared_price"
+                        ]
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "field": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "issues": {
+                "contains": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "code": {
+                      "const": "owner_declared_fx"
+                    }
+                  }
+                },
+                "minContains": 0,
+                "maxContains": 1
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "policy_version": {
+                  "const": "current_base_portfolio_valuation_v3"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "issues": {
+                  "contains": {
+                    "type": "object",
+                    "required": [
+                      "code"
+                    ],
+                    "properties": {
+                      "code": {
+                        "const": "owner_declared_price"
+                      }
+                    }
+                  },
+                  "minContains": 1,
+                  "maxContains": 1
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "issues": {
+                  "not": {
+                    "contains": {
+                      "type": "object",
+                      "required": [
+                        "code"
+                      ],
+                      "properties": {
+                        "code": {
+                          "const": "owner_declared_price"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
             "if": {
               "properties": {
                 "policy_version": {
@@ -2482,27 +3056,37 @@
               }
             },
             "else": {
-              "properties": {
-                "issues": {
-                  "not": {
-                    "contains": {
-                      "type": "object",
-                      "required": [
-                        "code"
-                      ],
-                      "properties": {
-                        "code": {
-                          "const": "owner_declared_fx"
+              "if": {
+                "properties": {
+                  "policy_version": {
+                    "const": "current_base_portfolio_valuation_v1"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "issues": {
+                    "not": {
+                      "contains": {
+                        "type": "object",
+                        "required": [
+                          "code"
+                        ],
+                        "properties": {
+                          "code": {
+                            "const": "owner_declared_fx"
+                          }
                         }
                       }
                     }
                   }
                 }
-              }
+              },
+              "else": {}
             }
           }
         ],
-        "description": " Owner FX v2 is used only when a declared FX observation is selected. owner_declared_fx is non-blocking provenance, independent of sample_data, and remains visible for stale/unavailable results. Pair inputs use one latest-known complete version at report cutoff; a missing point never falls back to an older version."
+        "description": " Without selected owner security prices, selected owner FX uses v2. owner_declared_fx is non-blocking provenance, independent of sample_data, and remains visible for stale/unavailable results. Pair inputs use one latest-known complete version at report cutoff; a missing point never falls back to an older version. Owner security price selection uses v3 with one nonblocking owner_declared_price notice and optional independent owner_declared_fx notice."
       },
       "BrokerPositionDifference": {
         "type": "object",

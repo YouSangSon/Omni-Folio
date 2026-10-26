@@ -18,7 +18,7 @@
 | Gate | 상태 | 증거 |
 |---|---|---|
 | G0 아키텍처·계약 | 로컬 통과 | 버전이 명시된 OpenAPI/JSON Schema, 런타임 책임 분리, 저장소 공통 명령 |
-| G1 로컬 원장 | 로컬 통과 | CSV 검토·원자적 반영, 정확한 거래·현금·분할·FX 재생, FIFO 원가·저장 가격 평가, schema v24/backup v18와 지원하는 과거 형식의 복구 |
+| G1 로컬 원장 | 로컬 통과 | CSV 검토·원자적 반영, 정확한 거래·현금·분할·FX 재생, FIFO 원가·저장 가격 평가, schema v25/backup v19와 지원하는 과거 형식의 복구 |
 | G2 Flutter 클라이언트 | 부분 통과 | iOS·Android·web 릴리스 빌드, 자동 파서·위젯 검사와 Android 에뮬레이터 프레임 측정. iOS 무서명 패키지의 테스트 플러그인 제외 확인. 실기기·수동 스크린 리더·스토어 검증은 남음 |
 | G3 연구·모의 실행 | 부분 통과 | 재현 가능한 백테스트·walk-forward·홀드아웃, 후보 등록, 로컬 모의 체결·성과·중지·복구. 장기 운영·소스 전달의 완결성은 미검증 |
 | G4 브로커·차트·주문 | 진행 중 | 로컬 샘플 차트, 저장된 대조·주문 기록 조회, 자격 증명 없는 키움 합성 계약. 실제 인증을 사용하는 시세·모의주문 관찰, 결과 미확정 주문 복구와 모든 실거래 단계는 남음 |
@@ -171,7 +171,7 @@ mkdir -p -m 700 data/exports
 
 ### 기존 원장의 시간 재생 정책 전환
 
-schema24/backup v18은 정확한 UTC 순서의 FIFO v2 정책을 사용합니다. 기존 원장이 있는 DB는 migrate만으로 정상 실행되지 않습니다. 구 core를 중지하고 원본 backup을 보존한 뒤 [G1.20의 preview → 검토 → activate → 새 backup 검증 절차](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차)를 따릅니다. 과거 backup의 보관 검증과 현재 정책 활성화를 구분합니다.
+schema25/backup v19은 정확한 UTC 순서의 FIFO v2 정책을 사용합니다. 기존 원장이 있는 DB는 migrate만으로 정상 실행되지 않습니다. 구 core를 중지하고 원본 backup을 보존한 뒤 [G1.20의 preview → 검토 → activate → 새 backup 검증 절차](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차)를 따릅니다. 과거 backup의 보관 검증과 현재 정책 활성화를 구분합니다.
 
 ### Local sample OHLCV chart
 
@@ -214,6 +214,18 @@ G1.10은 `1 base_currency = rate quote_currency` 방향의 환율 관측값을 s
 이 파일은 오래된 `sample=true` 예시입니다. 실제 자료가 아니며 현재 평가의 24시간 조건을 충족하지 않습니다. 실제 파일은 [닫힌 입력 계약](contracts/owner-fx-series.schema.json)을 따릅니다. 자료를 수정할 때 새 `source_version`으로 전체 점을 제출하며, 빈 `points`는 해당 방향의 사용을 철회합니다. 빠진 점을 이전 버전에서 채우지 않으며 과거 버전 재시도도 최신 버전을 바꾸지 않습니다. 한 방향은 fixture와 직접 입력을 혼합할 수 없고 철회 후에도 출처 구분은 유지됩니다.
 
 `storage_check=verified`는 저장 무결성만 뜻합니다. `sample=false`여도 화면에는 “직접 입력 환율 사용” 안내가 남습니다. 관측·수집·기록 시각과 24시간 조건을 별도로 검증하며, 종목 가격·브로커 시세·공식 제공자의 정확성을 인증하지 않습니다. [정책·복구·검증 범위](gates/g1w-owner-fx-series.md)
+
+### 직접 입력 종목 가격으로 평가·성과 계산
+
+먼저 CSV로 반영한 종목의 가격 파일을 기존 DB에 넣습니다. 종목 ID는 원장의 canonical ID(`AAPL`은 `instrument_aapl`)를 사용하고 표시명 대소문자를 바꾸기 위해 원장을 수정하지 않습니다.
+
+```sh
+(cd services/core && go run . owner-price-import -db ../../data/omni-folio.db -input ../../contracts/fixtures/owner-price-aapl-sample.json)
+```
+
+[입력 계약](contracts/owner-price-series.schema.json)의 `unadjusted`는 관측 순간 원장 1주당 해당 통화 가격이라는 소유자 선언입니다. 과거 분할·배당을 소급 조정하지 않습니다. 분할 후 보유 수량에는 마지막 분할 시각보다 엄격히 늦은 가격이 필요합니다. 이 예시는 오래된 `sample=true` 합성 자료이므로 현재 평가의 24시간 조건을 충족하지 않습니다.
+
+한 종목·통화의 최신 파일 전체를 평가·TWR·XIRR·KRW/USD 지수 비교에 사용합니다. 새 `source_version`은 전체 교체, 빈 `points`는 철회이며 빠진 과거 점을 이전 버전에서 채우거나 옛 파일 재시도로 되살리지 않습니다. 같은 종목·통화는 기존 fixture/Kiwoom 가격과 섞을 수 없고 철회 후에도 이 구분이 남습니다. 한국어 화면의 “직접 입력 가격 사용” 안내는 `sample` 및 환율 안내와 독립적입니다. 저장 검증은 제공자의 정확성·현재 시세 인증이 아닙니다. [단위·복구·검증 범위](gates/g1x-owner-price-series.md)
 
 ### 입출금을 반영한 연환산 수익률
 
@@ -279,7 +291,7 @@ curl -fsS 'http://127.0.0.1:8080/v1/portfolio/cash-valuation?base_currency=KRW&a
 
 G1.12는 보유자산 평가에 앞서 local fixture 종목 가격을 schema v11에서 도입한 `STRICT`/insert-only series에 보존합니다. source identity, instrument ID, symbol, venue, currency, positive canonical price, `price_adjustment=unspecified`, observed/fetched/recorded UTC 시각과 canonical row hash를 검증합니다. 내부 exact-as-of 조회는 모든 identity 차원을 고정하고 세 시각이 cutoff 이하인 관측만 선택합니다.
 
-G4U checkpoint의 backup v8은 가격 series digest/count를 검증하며 legacy artifact를 원본을 바꾸지 않는 owned copy에서 schema v13으로 migration했습니다. 현재 schema v24/backup v18도 그 가격 proof를 보존합니다. 빈 restore 후보는 embedded migration과 동일한 table DDL·latest index·insert-only trigger를 요구합니다. public API, Flutter 화면, provider 요청, scheduler 또는 broker-backed 보유·손익·성과 평가는 추가하지 않았고 `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다.
+G4U checkpoint의 backup v8은 가격 series digest/count를 검증하며 legacy artifact를 원본을 바꾸지 않는 owned copy에서 schema v13으로 migration했습니다. 현재 schema v25/backup v19도 그 가격 proof를 보존합니다. 빈 restore 후보는 embedded migration과 동일한 table DDL·latest index·insert-only trigger를 요구합니다. public API, Flutter 화면, provider 요청, scheduler 또는 broker-backed 보유·손익·성과 평가는 추가하지 않았고 `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다.
 
 ### Stored-price native-currency holding valuation
 
@@ -337,7 +349,7 @@ cd services/core
 go test -run '^TestG4H' -count=1 ./...
 ```
 
-G4U checkpoint의 schema v13/backup v8은 ledger event, cash-void/FX guard, direct FX observation, security price observation, instrument listing, raw broker snapshot, revisioned broker reconciliation, execution-authority event, risk reservation, strategy registry와 당시 synthetic/paper 주문을 insert-only로 보호했습니다. 현재 schema v24/backup v18는 그 proof와 G3.8C2 paper accounting, G3.8C3 account-global performance, G3.8D strategy-window evidence, G3.8E paper safety policy/action recovery를 함께 보존합니다. G4H 자체는 credential, broker request, scheduling, 공식 freshness/timezone, 현금·평가금액 reconciliation, public API/UI 또는 live readiness를 증명하지 않습니다.
+G4U checkpoint의 schema v13/backup v8은 ledger event, cash-void/FX guard, direct FX observation, security price observation, instrument listing, raw broker snapshot, revisioned broker reconciliation, execution-authority event, risk reservation, strategy registry와 당시 synthetic/paper 주문을 insert-only로 보호했습니다. 현재 schema v25/backup v19는 그 proof와 G3.8C2 paper accounting, G3.8C3 account-global performance, G3.8D strategy-window evidence, G3.8E paper safety policy/action recovery를 함께 보존합니다. G4H 자체는 credential, broker request, scheduling, 공식 freshness/timezone, 현금·평가금액 reconciliation, public API/UI 또는 live readiness를 증명하지 않습니다.
 
 ### Stored broker reconciliation read view
 
@@ -391,7 +403,7 @@ Python `--bundle`은 제안과 계산에 사용한 원본 CSV를 함께 출력�
 
 전략 개선 runner는 유한한 long-only SMA 후보를 expanding walk-forward로 평가하고 final holdout을 한 번만 엽니다. 결과는 `paper_candidate` 또는 `no_promotion`만 만들 수 있으며 credential·주문·live 승격 권한을 얻지 못합니다.
 
-Go core는 이 로컬 결과를 schema v13에서 도입되어 현재 schema v24에도 보존된 insert-only registry에 등록합니다. `no_promotion`도 거절 evidence로 보존되지만 선택할 수 없습니다. `paper_candidate` 선택은 현재 champion과 직접 비교하는 로직이 아직 없으므로 명시적 CLI와 optimistic concurrency를 요구하며, rollback은 직전 선택이나 `no_strategy`로만 새 이벤트를 append합니다.
+Go core는 이 로컬 결과를 schema v13에서 도입되어 현재 schema v25에도 보존된 insert-only registry에 등록합니다. `no_promotion`도 거절 evidence로 보존되지만 선택할 수 없습니다. `paper_candidate` 선택은 현재 champion과 직접 비교하는 로직이 아직 없으므로 명시적 CLI와 optimistic concurrency를 요구하며, rollback은 직전 선택이나 `no_strategy`로만 새 이벤트를 append합니다.
 
 ```sh
 candidate_file="$(mktemp)"

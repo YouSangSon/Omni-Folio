@@ -11,6 +11,7 @@ import (
 
 const portfolioXIRRPolicy = "restated_external_cash_utc_date_actual_365_v1"
 const portfolioXIRROwnerFXPolicy = "restated_external_cash_utc_date_actual_365_v2"
+const portfolioXIRROwnerPricePolicy = "restated_external_cash_utc_date_actual_365_v3"
 
 type PortfolioXIRR struct {
 	PolicyVersion      string                     `json:"policy_version"`
@@ -50,7 +51,11 @@ func (s *Service) portfolioXIRR(ctx context.Context) (*PortfolioXIRR, *appError)
 	if err != nil {
 		return nil, internalError(err)
 	}
-	valuation, appErr := s.currentPortfolioValuationTx(ctx, tx, asOf, inputs)
+	prices, err := readValuationPriceInputs(ctx, tx, asOf)
+	if err != nil {
+		return nil, internalError(err)
+	}
+	valuation, appErr := s.currentPortfolioValuationTx(ctx, tx, asOf, inputs, prices)
 	if appErr != nil {
 		return nil, appErr
 	}
@@ -63,6 +68,10 @@ func (s *Service) portfolioXIRR(ctx context.Context) (*PortfolioXIRR, *appError)
 		if usedOwnerFX {
 			result.PolicyVersion = portfolioXIRROwnerFXPolicy
 			result.Issues = appendCurrentValuationIssue(result.Issues, ownerFXIssue())
+		}
+		if usesOwnerPrice(valuation.Issues) {
+			result.PolicyVersion = portfolioXIRROwnerPricePolicy
+			result.Issues = appendCurrentValuationIssue(result.Issues, ownerPriceIssue())
 		}
 		if err := tx.Commit(); err != nil {
 			return nil, internalError(err)

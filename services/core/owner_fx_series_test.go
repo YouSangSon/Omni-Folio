@@ -236,12 +236,16 @@ func TestOwnerFXFutureCaptureAndRequestBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if value, appErr := svc.currentPortfolioValuationTx(ctx, tx, at.Add(time.Nanosecond), inputs); appErr == nil || value != nil {
+	prices, err := readValuationPriceInputs(ctx, tx, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value, appErr := svc.currentPortfolioValuationTx(ctx, tx, at.Add(time.Nanosecond), inputs, prices); appErr == nil || value != nil {
 		t.Fatal("FX selection escaped its report cutoff")
 	}
 	foreign := inputs
 	foreign.tx = nil
-	if report, appErr := svc.portfolioTWRTx(ctx, tx, at, foreign); appErr == nil || report != nil {
+	if report, appErr := svc.portfolioTWRTx(ctx, tx, at, foreign, prices); appErr == nil || report != nil {
 		t.Fatal("FX selection escaped its transaction")
 	}
 }

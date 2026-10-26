@@ -60,3 +60,62 @@ func TestOwnerPriceImportFeedsCurrentAndPerformance(t *testing.T) {
 		}
 	}
 }
+
+func ownerPriceReportServiceForTest(t *testing.T, change func(*OwnerPriceSeriesInput)) *Service {
+	t.Helper()
+	svc := ownerPriceServiceForTest(t)
+	importOwnerFXForTest(t, svc, []byte(ownerFXTestInput))
+	importOwnerPriceForTest(t, svc, ownerPriceInputForTest(t, change))
+	importBenchmarkForTest(t, svc, benchmarkInputForTest(t, func(i *BenchmarkSeriesInput) { i.Currency = "USD"; i.Sample = false }))
+	return svc
+}
+
+func ownerPriceGoldenForTest(t *testing.T) map[string]json.RawMessage {
+	t.Helper()
+	var wire struct {
+		Reports map[string]json.RawMessage `json:"reports"`
+	}
+	if err := json.Unmarshal(fixture(t, "golden-owner-price-reports.json"), &wire); err != nil {
+		t.Fatal(err)
+	}
+	return wire.Reports
+}
+
+func TestOwnerPriceSharedProducerReportsAndOneClock(t *testing.T) {
+	svc := ownerPriceReportServiceForTest(t, nil)
+	golden := ownerPriceGoldenForTest(t)
+	for name, path := range map[string]string{"holding": "/v1/portfolio/holding-valuation?as_of=2026-01-01T00:00:00Z", "current": "/v1/portfolio/current-valuation", "twr": "/v1/portfolio/twr", "xirr": "/v1/portfolio/xirr", "benchmarks": "/v1/portfolio/benchmarks"} {
+		t.Run(name, func(t *testing.T) {
+			calls := 0
+			svc.now = func() time.Time { calls++; return mustTime("2026-01-01T00:00:00Z") }
+			checkOwnerFXHTTPGolden(t, svc, path, golden[name])
+			if name != "holding" && calls != 1 {
+				t.Fatalf("mixed report clocks: %d", calls)
+			}
+		})
+	}
+}
+
+func TestOwnerPriceSharedSampleStaleAndSplitProvenance(t *testing.T) {
+	golden := ownerPriceGoldenForTest(t)
+	for _, name := range []string{"sample_holding", "stale_holding", "split_holding"} {
+		t.Run(name, func(t *testing.T) {
+			svc := ownerPriceServiceForTest(t)
+			if name == "split_holding" {
+				applyTestCSV(t, svc, "split", testCSV("split,account-main,SPLIT,2025-12-31T23:00:00Z,AAPL,2,,,USD,0"))
+			}
+			importOwnerPriceForTest(t, svc, ownerPriceInputForTest(t, func(i *OwnerPriceSeriesInput) {
+				switch name {
+				case "sample_holding":
+					i.Sample = true
+				case "stale_holding":
+					i.Points[1].ObservedAt = "2025-12-30T23:59:59.999999999Z"
+				case "split_holding":
+					i.Points[1].ObservedAt = "2025-12-31T23:00:00Z"
+					i.Points[1].Price = "50"
+				}
+			}))
+			checkOwnerFXHTTPGolden(t, svc, "/v1/portfolio/holding-valuation?as_of=2026-01-01T00:00:00Z", golden[name])
+		})
+	}
+}

@@ -752,6 +752,7 @@ class _CurrentPortfolioValuationCard extends StatelessWidget {
           : '필요한 저장 가격 또는 직접 환율 ${current.missingInputCount}건을 확인하세요. 부분 합계는 표시하지 않습니다.';
       final notices = [
         if (current.ownerDeclaredFx) '직접 입력 환율 사용 · 시세 제공자가 검증한 값이 아닙니다.',
+        if (current.ownerDeclaredPrice) '직접 입력 가격 사용 · 시세 제공자가 검증한 값이 아닙니다.',
         if (current.sample) '예시 자료 포함 · 실제 계좌 평가가 아닙니다.',
         if (mismatch) '원장 갱신 전 저장 평가',
         if (busy) '새 평가 계산 중 · 현재 표시 상태 유지',
@@ -809,6 +810,7 @@ class _CurrentPortfolioValuationCard extends StatelessWidget {
     final notices = [
       authority,
       if (current.ownerDeclaredFx) '직접 입력 환율 사용 · 시세 제공자가 검증한 값이 아닙니다.',
+      if (current.ownerDeclaredPrice) '직접 입력 가격 사용 · 시세 제공자가 검증한 값이 아닙니다.',
       if (mismatch) '원장 갱신 전 저장 평가',
       if (busy) '새 평가 계산 중 · 현재 표시값 유지',
       if (retainedError) '새로고침 실패 · 마지막 정상 평가 유지',

@@ -122,11 +122,12 @@ func (b *twrBalances) matches(snapshot *PortfolioSnapshot) bool {
 }
 
 type twrMarks struct {
-	fx         []FXObservation
-	fxTimes    map[string][3]time.Time
-	prices     []SecurityPriceObservation
-	priceTimes map[string][3]time.Time
-	ownerUsed  bool
+	fx             []FXObservation
+	fxTimes        map[string][3]time.Time
+	prices         []SecurityPriceObservation
+	priceTimes     map[string][3]time.Time
+	ownerUsed      bool
+	ownerPriceUsed bool
 }
 
 func (m *twrMarks) convert(amount *big.Rat, currency string, at, knownAt time.Time) (*big.Rat, bool, string) {
@@ -179,8 +180,9 @@ func (m *twrMarks) value(ctx context.Context, b *twrBalances, at, knownAt time.T
 		if price == nil {
 			return nil, sample, holdingPriceIssue(selection, "").Code
 		}
-		sample = true
-		observed := m.priceTimes[price.ObservationID][0]
+		sample = sample || priceIsSample(price)
+		m.ownerPriceUsed = m.ownerPriceUsed || price.Source == ownerPriceSource
+		observed := m.priceTimes[priceTimeKey(*price)][0]
 		if !h.lastSplit.IsZero() && !observed.After(h.lastSplit) {
 			return nil, sample, "split_price_unavailable"
 		}
