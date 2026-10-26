@@ -507,6 +507,10 @@ void main() {
 
 class _TestApi implements OmniApi {
   @override
+  Future<PortfolioTwrCheckpoints> portfolioTwrCheckpoints() =>
+      throw UnsupportedError('Not used by this fixture.');
+
+  @override
   Future<OwnerDataPreview> previewOwnerData(String input) async =>
       throw UnimplementedError();
   @override

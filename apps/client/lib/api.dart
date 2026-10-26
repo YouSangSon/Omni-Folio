@@ -14,6 +14,7 @@ abstract interface class OmniApi {
   Future<CurrentPortfolioValuation> currentPortfolioValuation();
   Future<PortfolioXirr> portfolioXirr();
   Future<PortfolioTwr> portfolioTwr();
+  Future<PortfolioTwrCheckpoints> portfolioTwrCheckpoints();
   Future<PortfolioBenchmarks> portfolioBenchmarks();
   Future<HoldingValuation> holdingValuation();
   Future<InstrumentLedger> instrumentLedger(
@@ -80,24 +81,58 @@ class RestOmniApi implements OmniApi {
             ..headers['content-type'] = 'application/json'
             ..bodyBytes = bytes;
       final response = await _client.send(req);
-      final body = BytesBuilder(copy: false);
-      await for (final chunk in response.stream) {
-        if (body.length + chunk.length > 6 * (1 << 20) + 16 * 1024) {
-          throw const FormatException('Owner response exceeds its bound');
-        }
-        body.add(chunk);
-      }
-      return _object(
-        http.Response.bytes(
-          body.takeBytes(),
-          response.statusCode,
-          headers: {'content-type': 'application/json; charset=utf-8'},
-        ),
-      );
+      return _boundedObject(response, 6 * (1 << 20) + 16 * 1024);
     }
 
     try {
       // A waiting limit cannot prove cancellation or roll back a committed write.
+      return await request().timeout(
+        const Duration(seconds: 40),
+        onTimeout: () {
+          abort.complete();
+          throw const ApiException(apiConnectionError);
+        },
+      );
+    } catch (error) {
+      if (error is ApiException || error is FormatException) rethrow;
+      throw const ApiException(apiConnectionError);
+    }
+  }
+
+  Future<Json> _boundedObject(http.StreamedResponse response, int limit) async {
+    final body = BytesBuilder(copy: false);
+    await for (final chunk in response.stream) {
+      if (body.length + chunk.length > limit) {
+        throw const FormatException('Response exceeds its declared bound');
+      }
+      body.add(chunk);
+    }
+    return _object(
+      http.Response.bytes(
+        body.takeBytes(),
+        response.statusCode,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      ),
+    );
+  }
+
+  @override
+  Future<PortfolioTwrCheckpoints> portfolioTwrCheckpoints() async {
+    final abort = Completer<void>();
+    Future<PortfolioTwrCheckpoints> request() async {
+      final response = await _client.send(
+        http.AbortableRequest(
+          'GET',
+          _uri('/v1/portfolio/twr/checkpoints'),
+          abortTrigger: abort.future,
+        ),
+      );
+      return PortfolioTwrCheckpoints.fromJson(
+        await _boundedObject(response, 3 * (1 << 20)),
+      );
+    }
+
+    try {
       return await request().timeout(
         const Duration(seconds: 40),
         onTimeout: () {

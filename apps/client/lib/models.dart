@@ -1712,6 +1712,75 @@ class ApplyReceipt {
   final DateTime recordedAt;
 }
 
+class TwrCheckpoint {
+  const TwrCheckpoint._(this.at, this.kind, this.cumulativeRate);
+  final String at, kind, cumulativeRate;
+  BigInt get atNanoseconds => _utcNanoseconds(at);
+}
+
+class PortfolioTwrCheckpoints {
+  PortfolioTwrCheckpoints._(this.report, List<TwrCheckpoint> points)
+    : points = List.unmodifiable(points);
+
+  factory PortfolioTwrCheckpoints.fromJson(Json json) {
+    _requireExactKeys(json, {'policy_version', 'report', 'points'});
+    if (json['policy_version'] != 'twr_cash_flow_checkpoints.v1' ||
+        json['report'] is! Json) {
+      throw const FormatException('Unsupported TWR checkpoints');
+    }
+    final report = PortfolioTwr.fromJson(json['report'] as Json);
+    final raw = _jsonList(json, 'points');
+    if (report.status != 'calculated') {
+      if (raw.isNotEmpty) {
+        throw const FormatException(
+          'Uncalculated report has partial checkpoints',
+        );
+      }
+      return PortfolioTwrCheckpoints._(report, []);
+    }
+    final count = report.boundaryCount;
+    if (count == null || count < 1 || count > 1000 || raw.length != count + 1) {
+      throw const FormatException(
+        'Checkpoint count differs from TWR boundaries',
+      );
+    }
+    final points = <TwrCheckpoint>[];
+    BigInt? previous;
+    for (var index = 0; index < raw.length; index++) {
+      final value = raw[index];
+      _requireExactKeys(value, {'at', 'kind', 'cumulative_rate'});
+      final at = _utcText(value, 'at');
+      final time = _utcNanoseconds(at);
+      final rate = _decimal(value, 'cumulative_rate');
+      final terminal = index == count;
+      if (value['kind'] != (terminal ? 'valuation' : 'external_flow') ||
+          rate.length > 2500 ||
+          _decimalScale(rate) > 12 ||
+          (rate.startsWith('-') &&
+              _comparePositiveDecimal(rate.substring(1), '1') > 0) ||
+          time < _utcNanoseconds(report.periodStart!) ||
+          time > _utcNanoseconds(report.periodEnd) ||
+          (previous != null &&
+              (terminal ? time < previous : time <= previous)) ||
+          (index == 0 && (at != report.periodStart || rate != '0')) ||
+          (terminal &&
+              (at != report.periodEnd || rate != report.cumulativeRate))) {
+        throw const FormatException(
+          'Checkpoint phase, range or rate contradicts TWR report',
+        );
+      }
+      points.add(
+        TwrCheckpoint._(at, terminal ? 'valuation' : 'external_flow', rate),
+      );
+      previous = time;
+    }
+    return PortfolioTwrCheckpoints._(report, points);
+  }
+
+  final PortfolioTwr report;
+  final List<TwrCheckpoint> points;
+}
+
 class PortfolioTwr {
   const PortfolioTwr._({
     required this.valuation,

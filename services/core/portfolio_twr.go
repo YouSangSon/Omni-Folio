@@ -29,6 +29,10 @@ type PortfolioTWR struct {
 }
 
 func (s *Service) portfolioTWR(ctx context.Context) (*PortfolioTWR, *appError) {
+	return s.portfolioTWRRead(ctx, nil)
+}
+
+func (s *Service) portfolioTWRRead(ctx context.Context, points *[]PortfolioTWRCheckpoint) (*PortfolioTWR, *appError) {
 	if s == nil || s.db == nil || s.now == nil {
 		return nil, internalError(errors.New("TWR service unavailable"))
 	}
@@ -46,7 +50,7 @@ func (s *Service) portfolioTWR(ctx context.Context) (*PortfolioTWR, *appError) {
 	if err != nil {
 		return nil, internalError(err)
 	}
-	result, appErr := s.portfolioTWRTx(ctx, tx, asOf, inputs, prices)
+	result, appErr := s.portfolioTWRWithCheckpointsTx(ctx, tx, asOf, inputs, prices, points)
 	if appErr != nil {
 		return nil, appErr
 	}
@@ -57,6 +61,10 @@ func (s *Service) portfolioTWR(ctx context.Context) (*PortfolioTWR, *appError) {
 }
 
 func (s *Service) portfolioTWRTx(ctx context.Context, tx *sql.Tx, asOf time.Time, inputs valuationFXInputs, prices valuationPriceInputs) (*PortfolioTWR, *appError) {
+	return s.portfolioTWRWithCheckpointsTx(ctx, tx, asOf, inputs, prices, nil)
+}
+
+func (s *Service) portfolioTWRWithCheckpointsTx(ctx context.Context, tx *sql.Tx, asOf time.Time, inputs valuationFXInputs, prices valuationPriceInputs, points *[]PortfolioTWRCheckpoint) (*PortfolioTWR, *appError) {
 	if err := requireSchemaContext(ctx, tx); err != nil {
 		return nil, internalError(err)
 	}
@@ -211,6 +219,13 @@ func (s *Service) portfolioTWRTx(ctx context.Context, tx *sql.Tx, asOf time.Time
 			if capital.Sign() <= 0 {
 				return finish("capital_path_unavailable")
 			}
+			if points != nil {
+				rate, err := twrCheckpointRate(factor)
+				if err != nil {
+					return nil, internalError(err)
+				}
+				*points = append(*points, PortfolioTWRCheckpoint{At: events[i].OccurredAt, Kind: "external_flow", CumulativeRate: rate})
+			}
 		}
 		// External capital precedes internal events at the same exact timestamp.
 		for _, e := range events[i:j] {
@@ -257,6 +272,9 @@ func (s *Service) portfolioTWRTx(ctx context.Context, tx *sql.Tx, asOf time.Time
 	r.Status = "calculated"
 	r.CumulativeRate = &rate
 	r.NetContributions = &Money{Currency: "KRW", Amount: netText}
+	if points != nil {
+		*points = append(*points, PortfolioTWRCheckpoint{At: r.PeriodEnd, Kind: "valuation", CumulativeRate: rate})
+	}
 	return finish("")
 }
 

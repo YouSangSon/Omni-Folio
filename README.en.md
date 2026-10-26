@@ -253,6 +253,18 @@ curl -fsS http://127.0.0.1:8080/v1/portfolio/twr
 
 [Calculation policy, sources, and verification scope](gates/g1t-portfolio-twr.md)
 
+### Cash-flow checkpoint chart and table
+
+Open `입출금 구간별 성과 보기` from TWR detail for the KRW cumulative return and checkpoint chart/table in one response. Only external-flow boundaries and the report end are evaluated: one deposit gives two points. Dashed guides do not represent a daily price path. Evaluation boundary times differ from market observation times.
+
+Price/FX provenance and sample warnings remain visible. A failed refresh retains the entire prior observation and its original cutoff. The table exposes server-rounded ratios and processing phases at the same timestamp. Actual market data, daily history, and deployment remain separate.
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/portfolio/twr/checkpoints
+```
+
+[Contract, calculation, and verification scope](gates/g1z-twr-checkpoints.md)
+
 ### Stored KRW and USD benchmark source versions
 
 Benchmark inputs support both `KRW` and `USD`. Provide a normalized index file declaring `price_index`, `gross_total_return`, or `net_total_return`. Both files below are `sample` examples rather than actual market data.

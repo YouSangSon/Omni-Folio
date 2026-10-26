@@ -14,9 +14,10 @@ func TestPortfolioTWRIndependentChainFixtures(t *testing.T) {
 	}
 	var fixture struct {
 		Cases []struct {
-			Name     string
-			Pairs    [][2]string
-			Expected string
+			Name           string
+			Pairs          [][2]string
+			Expected       string
+			PrefixExpected []string `json:"prefix_expected"`
 		}
 	}
 	if err := json.Unmarshal(data, &fixture); err != nil {
@@ -25,7 +26,10 @@ func TestPortfolioTWRIndependentChainFixtures(t *testing.T) {
 	for _, test := range fixture.Cases {
 		t.Run(test.Name, func(t *testing.T) {
 			factor := big.NewRat(1, 1)
-			for _, pair := range test.Pairs {
+			if len(test.PrefixExpected) != len(test.Pairs) {
+				t.Fatal("missing independent prefix expectations")
+			}
+			for index, pair := range test.Pairs {
 				v, _ := new(big.Rat).SetString(pair[0])
 				c, _ := new(big.Rat).SetString(pair[1])
 				if v == nil || c == nil {
@@ -34,6 +38,9 @@ func TestPortfolioTWRIndependentChainFixtures(t *testing.T) {
 				factor = twrChain(factor, v, c)
 				if factor == nil {
 					t.Fatal("valid reference rejected")
+				}
+				if got, err := twrCheckpointRate(factor); err != nil || got != test.PrefixExpected[index] {
+					t.Fatalf("prefix%d got %s %v want %s", index, got, err, test.PrefixExpected[index])
 				}
 			}
 			got, err := formatDecimal(quantizeHalfEven(new(big.Rat).Sub(factor, big.NewRat(1, 1)), 12))

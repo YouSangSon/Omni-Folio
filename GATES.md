@@ -41,7 +41,8 @@ G1 ledger vertical slice
 ├─ G1.26 same-period native/KRW benchmark comparison (gates/g1v-portfolio-benchmark-comparison.md)
 ├─ G1.27 complete owner FX versions, performance and recovery (gates/g1w-owner-fx-series.md)
 ├─ G1.28 owner security price versions, units and performance (gates/g1x-owner-price-series.md)
-└─ G1.29 app owner-data review, explicit storage and immutable retry (gates/g1y-owner-data-import.md)
+├─ G1.29 app owner-data review, explicit storage and immutable retry (gates/g1y-owner-data-import.md)
+└─ G1.30 same-observation TWR checkpoints, chart and accessible table (gates/g1z-twr-checkpoints.md)
    |
 G2 client vertical slice
 ├─ G2.1 Flutter iOS/Android/web build
@@ -185,3 +186,5 @@ G6 PostgreSQL and Kubernetes promotion
 - 실제 KRW·USD 벤치마크 도입 기준은 [G1.25 source owner](gates/g1u-benchmark-series.md#benchmark-source-policy)에 둔다. 세전 TR 후보의 정의와 데이터 저장/표시 권한을 구분했으며 실제 파일·시각·사용권 확보는 미완료다. 이 문서 보완을 실제 자료 검증이나 전체 Goal 완료로 세지 않는다.
 
 - G1.29는 앱의 가격·환율·KRW/USD 지수 파일 입력 검토와 명시적 저장을 연결했다. 불확실한 원본은 후속4xx에도 일치 확인서까지 유지하며 관련 조회 완료 후 갱신한다. 실제 HTTP RED·독립 리뷰와 최종 Core 전체450.130s·Python39/JSON37·Flutter15/418·분석·web/ARM64·권한/소스 일치를 통과해 테스트 tree와 같은 main에 병합했다. 실제 자료·권리·앱 재시작·실기기·VM/배포·전체 Goal 완료는 별도 ([gate](gates/g1y-owner-data-import.md)).
+
+- G1.30은 같은 read transaction/cutoff의 TWR 계산점과 차트·표를 구현 중이다. 실제 HTTP404 RED 확인, 필수 원격 검증·독립 구현 리뷰는 미완료다. 일별 이력과 전체 Goal 완료가 아니다 ([gate](gates/g1z-twr-checkpoints.md)).
