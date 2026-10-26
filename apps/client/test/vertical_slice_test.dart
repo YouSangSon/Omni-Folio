@@ -1715,6 +1715,7 @@ void main() {
 
     expect(find.text('대조 결과를 불러오지 못했습니다'), findsOneWidget);
     api.failReconciliation = false;
+    await tester.scrollUntilVisible(find.text('대조 결과 다시 불러오기'), 120);
     await tester.tap(find.text('대조 결과 다시 불러오기'));
     await pumpUi(tester);
     await tester.scrollUntilVisible(find.textContaining('불일치 · 2/2종목'), 120);
