@@ -1684,10 +1684,7 @@ void main() {
         await pumpUi(tester);
 
         await tester.scrollUntilVisible(find.text('증권사 10 · 원장 7 · 차이 3'), 120);
-        await tester.ensureVisible(
-          find.text('증권사 10 · 원장 7 · 차이 3'),
-          alignment: 0.5,
-        );
+        await pumpUi(tester);
         expect(find.textContaining('마지막 저장 스냅샷 · 현재 상태 아님'), findsOneWidget);
         expect(find.textContaining('불일치 · 2/2종목'), findsOneWidget);
         expect(find.text('증권사 10 · 원장 7 · 차이 3'), findsOneWidget);
@@ -1716,9 +1713,11 @@ void main() {
     expect(find.text('대조 결과를 불러오지 못했습니다'), findsOneWidget);
     api.failReconciliation = false;
     await tester.scrollUntilVisible(find.text('대조 결과 다시 불러오기'), 120);
+    await pumpUi(tester);
     await tester.tap(find.text('대조 결과 다시 불러오기'));
     await pumpUi(tester);
     await tester.scrollUntilVisible(find.textContaining('불일치 · 2/2종목'), 120);
+    await pumpUi(tester);
     expect(find.textContaining('불일치 · 2/2종목'), findsOneWidget);
   });
 
@@ -1834,6 +1833,7 @@ void main() {
           find.textContaining('취소 결과를 아직 확인하지 못했습니다'),
           200,
         );
+        await pumpUi(tester);
 
         expect(find.text('체결됨 · 취소 결과 확인 중'), findsOneWidget);
         expect(find.textContaining('추가 조작 금지'), findsOneWidget);
