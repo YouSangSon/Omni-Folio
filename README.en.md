@@ -255,6 +255,8 @@ curl -fsS http://127.0.0.1:8080/v1/portfolio/twr
 
 Benchmark inputs support both `KRW` and `USD`. Provide a normalized index file declaring `price_index`, `gross_total_return`, or `net_total_return`. Both files below are `sample` examples rather than actual market data.
 
+For dividend-reinvested comparisons, the priority candidates are KOSPI 200 TR in KRW and S&P 500 Total Return in USD. An input file needs confirmed series identity, currency variant, observation time, and storage/display rights. Actual datasets and permissions have not been secured. See the [official definitions, use conditions, and adoption steps](gates/g1u-benchmark-series.md#benchmark-source-policy).
+
 ```sh
 (cd services/core && go run . benchmark-import -db ../../data/omni-folio.db -input ../../contracts/fixtures/benchmark-krw-sample.json)
 (cd services/core && go run . benchmark-import -db ../../data/omni-folio.db -input ../../contracts/fixtures/benchmark-usd-sample.json)

@@ -255,6 +255,8 @@ curl -fsS http://127.0.0.1:8080/v1/portfolio/twr
 
 比较输入同时支持 `KRW` 和 `USD`。请提供明确声明 `price_index`、`gross_total_return` 或 `net_total_return` 的标准化指数文件。下列两个文件均为 `sample` 示例，并非实际市场数据。
 
+对于包含股息再投资的比较，优先评估KRW版KOSPI 200 TR与USD版S&P 500 Total Return。输入文件需要确认准确序列、货币版本、观测时刻及存储/展示权限。目前尚未取得实际数据与使用权限。参见[官方定义、使用条件及导入步骤](gates/g1u-benchmark-series.md#benchmark-source-policy)。
+
 ```sh
 (cd services/core && go run . benchmark-import -db ../../data/omni-folio.db -input ../../contracts/fixtures/benchmark-krw-sample.json)
 (cd services/core && go run . benchmark-import -db ../../data/omni-folio.db -input ../../contracts/fixtures/benchmark-usd-sample.json)

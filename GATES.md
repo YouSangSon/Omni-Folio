@@ -180,3 +180,5 @@ G6 PostgreSQL and Kubernetes promotion
 - G1.27은 직접 입력 환율의 완전한 버전·수정/철회·재시도·같은 관찰의 평가/성과와 UI 출처 안내를 연결한다. source와 sample을 분리하고 schema24/backup18의 새 증명과 이전v17/v16 권한을 보존한다. 실제 RED·독립 리뷰·접근성 자원 해제 보완 후 최종 Core 전체·Python39/JSON33·Flutter36/363·web/ARM64 release·권한/소스 일치를 통과해 병합했다. 실제 시장 자료·provider·배포·전체 Goal 완료는 별도다. [정책과 검증](gates/g1w-owner-fx-series.md)
 
 - G1.28은 원장에 반영된 종목의 완전한 직접 입력 가격과 출처·sample·분할 단위를 평가/성과/UI에 연결했다. 독립 리뷰와 실제 CLI RED·계약/명령 전달 보완 후 최종 Core 전체·Python39/JSON36·Flutter40/403·web/ARM64·권한/소스 일치를 통과해 테스트 tree와 동일한 main에 병합했다. 실제 시장 자료·provider·배포와 전체 Goal 완료는 별도다. [계약과 검증](gates/g1x-owner-price-series.md)
+
+- 실제 KRW·USD 벤치마크 도입 기준은 [G1.25 source owner](gates/g1u-benchmark-series.md#benchmark-source-policy)에 둔다. 세전 TR 후보의 정의와 데이터 저장/표시 권한을 구분했으며 실제 파일·시각·사용권 확보는 미완료다. 이 문서 보완을 실제 자료 검증이나 전체 Goal 완료로 세지 않는다.
