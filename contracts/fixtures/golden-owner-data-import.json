@@ -1,0 +1,160 @@
+[
+  {
+    "preview": {
+      "kind": "security_price",
+      "summary": {
+        "source_version": "price-v1",
+        "instrument_id": "instrument_aapl",
+        "symbol": "AAPL",
+        "venue": "XNAS",
+        "currency": "USD",
+        "price_adjustment": "unadjusted",
+        "sample": false,
+        "fetched_at": "2026-01-01T00:00:00Z",
+        "authority": "owner_declared",
+        "data_sha256": "9b3a77cbfa13e73fd13722277b4ad9c3b6532e8f778cf2722d1bd2a91e1a28e0",
+        "point_count": 2,
+        "first_observed_at": "2025-01-01T00:00:00Z",
+        "last_observed_at": "2026-01-01T00:00:00Z"
+      },
+      "input": "{\"schema_version\":\"owner-price-series.v1\",\"source_version\":\"price-v1\",\"instrument_id\":\"instrument_aapl\",\"symbol\":\"AAPL\",\"venue\":\"XNAS\",\"currency\":\"USD\",\"price_adjustment\":\"unadjusted\",\"sample\":false,\"fetched_at\":\"2026-01-01T00:00:00Z\",\"points\":[{\"observed_at\":\"2025-01-01T00:00:00Z\",\"price\":\"100\"},{\"observed_at\":\"2026-01-01T00:00:00Z\",\"price\":\"200\"}]}"
+    },
+    "result": {
+      "kind": "security_price",
+      "receipt": {
+        "source_version": "price-v1",
+        "instrument_id": "instrument_aapl",
+        "symbol": "AAPL",
+        "venue": "XNAS",
+        "currency": "USD",
+        "price_adjustment": "unadjusted",
+        "sample": false,
+        "fetched_at": "2026-01-01T00:00:00Z",
+        "authority": "owner_declared",
+        "data_sha256": "9b3a77cbfa13e73fd13722277b4ad9c3b6532e8f778cf2722d1bd2a91e1a28e0",
+        "point_count": 2,
+        "first_observed_at": "2025-01-01T00:00:00Z",
+        "last_observed_at": "2026-01-01T00:00:00Z",
+        "storage_check": "verified",
+        "recorded_at": "2026-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "preview": {
+      "kind": "fx",
+      "summary": {
+        "source_version": "manual-v1",
+        "base_currency": "USD",
+        "quote_currency": "KRW",
+        "sample": false,
+        "fetched_at": "2026-01-01T00:00:00Z",
+        "authority": "owner_declared",
+        "data_sha256": "6ab6f469c0da65d21b3d50dd35bc2f024cf5aa80d4cbeea615c22d01cd1c08bc",
+        "point_count": 2,
+        "first_observed_at": "2025-01-01T00:00:00Z",
+        "last_observed_at": "2026-01-01T00:00:00Z"
+      },
+      "input": "{\"schema_version\":\"owner-fx-series.v1\",\"source_version\":\"manual-v1\",\"base_currency\":\"USD\",\"quote_currency\":\"KRW\",\"sample\":false,\"fetched_at\":\"2026-01-01T00:00:00Z\",\"points\":[{\"observed_at\":\"2025-01-01T00:00:00Z\",\"rate\":\"1000\"},{\"observed_at\":\"2026-01-01T00:00:00Z\",\"rate\":\"900\"}]}"
+    },
+    "result": {
+      "kind": "fx",
+      "receipt": {
+        "source_version": "manual-v1",
+        "base_currency": "USD",
+        "quote_currency": "KRW",
+        "sample": false,
+        "fetched_at": "2026-01-01T00:00:00Z",
+        "authority": "owner_declared",
+        "data_sha256": "6ab6f469c0da65d21b3d50dd35bc2f024cf5aa80d4cbeea615c22d01cd1c08bc",
+        "point_count": 2,
+        "first_observed_at": "2025-01-01T00:00:00Z",
+        "last_observed_at": "2026-01-01T00:00:00Z",
+        "storage_check": "verified",
+        "recorded_at": "2026-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "preview": {
+      "kind": "benchmark",
+      "summary": {
+        "benchmark_id": "test_reference",
+        "label": "Synthetic test reference",
+        "currency": "KRW",
+        "return_basis": "gross_total_return",
+        "source_reference": "https://example.invalid/test-methodology",
+        "source_version": "test-v1",
+        "sample": true,
+        "fetched_at": "2026-01-01T00:00:00Z",
+        "authority": "owner_declared",
+        "data_sha256": "d317bf0352b1214201bb5787a9fcd66c13bf2ce711e7be000c469740ca149f02",
+        "point_count": 2,
+        "first_observed_at": "2025-01-01T00:00:00Z",
+        "last_observed_at": "2026-01-01T00:00:00Z"
+      },
+      "input": "{\n \"schema_version\":\"benchmark-index-series.v1\",\n \"benchmark_id\":\"test_reference\",\n \"label\":\"Synthetic test reference\",\n \"currency\":\"KRW\",\n \"return_basis\":\"gross_total_return\",\n \"source_reference\":\"https://example.invalid/test-methodology\",\n \"source_version\":\"test-v1\",\n \"sample\":true,\n \"fetched_at\":\"2026-01-01T00:00:00Z\",\n \"points\":[{\"observed_at\":\"2025-01-01T00:00:00Z\",\"level\":\"100\"},{\"observed_at\":\"2026-01-01T00:00:00Z\",\"level\":\"110\"}]\n}"
+    },
+    "result": {
+      "kind": "benchmark",
+      "receipt": {
+        "benchmark_id": "test_reference",
+        "label": "Synthetic test reference",
+        "currency": "KRW",
+        "return_basis": "gross_total_return",
+        "source_reference": "https://example.invalid/test-methodology",
+        "source_version": "test-v1",
+        "sample": true,
+        "fetched_at": "2026-01-01T00:00:00Z",
+        "authority": "owner_declared",
+        "data_sha256": "d317bf0352b1214201bb5787a9fcd66c13bf2ce711e7be000c469740ca149f02",
+        "point_count": 2,
+        "first_observed_at": "2025-01-01T00:00:00Z",
+        "last_observed_at": "2026-01-01T00:00:00Z",
+        "storage_check": "verified",
+        "recorded_at": "2026-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "preview": {
+      "kind": "benchmark",
+      "summary": {
+        "benchmark_id": "usd_reference",
+        "label": "Synthetic test reference",
+        "currency": "USD",
+        "return_basis": "gross_total_return",
+        "source_reference": "https://example.invalid/test-methodology",
+        "source_version": "test-v1",
+        "sample": true,
+        "fetched_at": "2026-01-01T00:00:00Z",
+        "authority": "owner_declared",
+        "data_sha256": "66219156e2aa4f65d164960ea525cdf7acf59c5725370295156489203c3b5b34",
+        "point_count": 2,
+        "first_observed_at": "2025-01-01T00:00:00Z",
+        "last_observed_at": "2026-01-01T00:00:00Z"
+      },
+      "input": "{\"schema_version\":\"benchmark-index-series.v1\",\"benchmark_id\":\"usd_reference\",\"label\":\"Synthetic test reference\",\"currency\":\"USD\",\"return_basis\":\"gross_total_return\",\"source_reference\":\"https://example.invalid/test-methodology\",\"source_version\":\"test-v1\",\"sample\":true,\"fetched_at\":\"2026-01-01T00:00:00Z\",\"points\":[{\"observed_at\":\"2025-01-01T00:00:00Z\",\"level\":\"100\"},{\"observed_at\":\"2026-01-01T00:00:00Z\",\"level\":\"110\"}]}"
+    },
+    "result": {
+      "kind": "benchmark",
+      "receipt": {
+        "benchmark_id": "usd_reference",
+        "label": "Synthetic test reference",
+        "currency": "USD",
+        "return_basis": "gross_total_return",
+        "source_reference": "https://example.invalid/test-methodology",
+        "source_version": "test-v1",
+        "sample": true,
+        "fetched_at": "2026-01-01T00:00:00Z",
+        "authority": "owner_declared",
+        "data_sha256": "66219156e2aa4f65d164960ea525cdf7acf59c5725370295156489203c3b5b34",
+        "point_count": 2,
+        "first_observed_at": "2025-01-01T00:00:00Z",
+        "last_observed_at": "2026-01-01T00:00:00Z",
+        "storage_check": "verified",
+        "recorded_at": "2026-01-01T00:00:00Z"
+      }
+    }
+  }
+]

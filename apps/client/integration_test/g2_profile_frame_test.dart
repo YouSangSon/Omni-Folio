@@ -170,6 +170,14 @@ double _p95(Iterable<Duration> values) {
 
 class _ProfileApi implements OmniApi {
   @override
+  Future<OwnerDataPreview> previewOwnerData(String input) =>
+      throw UnsupportedError('Not used by this profile fixture.');
+
+  @override
+  Future<OwnerDataReceipt> applyOwnerData(OwnerDataPreview review) =>
+      throw UnsupportedError('Not used by this profile fixture.');
+
+  @override
   Future<PortfolioBenchmarks> portfolioBenchmarks() async =>
       throw UnimplementedError();
 

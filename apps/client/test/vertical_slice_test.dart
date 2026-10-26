@@ -21,6 +21,13 @@ Json fixture(String name) {
 }
 
 class FakeApi implements OmniApi {
+  @override
+  Future<OwnerDataPreview> previewOwnerData(String input) async =>
+      throw UnimplementedError();
+  @override
+  Future<OwnerDataReceipt> applyOwnerData(OwnerDataPreview review) async =>
+      throw UnimplementedError();
+
   PortfolioBenchmarks? benchmarksValue;
   Completer<PortfolioBenchmarks>? benchmarksCompleter;
   int benchmarksCalls = 0;
