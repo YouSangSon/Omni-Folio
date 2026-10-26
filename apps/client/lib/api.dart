@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -26,6 +28,8 @@ abstract interface class OmniApi {
   Future<LedgerActivityPage> ledgerActivities({String? cursor});
   Future<ImportPreview> preview(String csv);
   Future<ApplyReceipt> apply(String previewId, String idempotencyKey);
+  Future<OwnerDataPreview> previewOwnerData(String input);
+  Future<OwnerDataReceipt> applyOwnerData(OwnerDataPreview review);
 }
 
 const defaultApiUrl = String.fromEnvironment(
@@ -59,6 +63,64 @@ class RestOmniApi implements OmniApi {
 
   final http.Client _client;
   final String baseUrl;
+
+  Future<Json> _ownerDataPost(String action, String input) async {
+    final abort = Completer<void>();
+    Future<Json> request() async {
+      final bytes = utf8.encode(input);
+      if (bytes.isEmpty || bytes.length > 1 << 20) {
+        throw const FormatException('Owner input must be at most 1MiB');
+      }
+      final req =
+          http.AbortableRequest(
+              'POST',
+              _uri('/v1/market-data/imports/$action'),
+              abortTrigger: abort.future,
+            )
+            ..headers['content-type'] = 'application/json'
+            ..bodyBytes = bytes;
+      final response = await _client.send(req);
+      final body = BytesBuilder(copy: false);
+      await for (final chunk in response.stream) {
+        if (body.length + chunk.length > 6 * (1 << 20) + 16 * 1024) {
+          throw const FormatException('Owner response exceeds its bound');
+        }
+        body.add(chunk);
+      }
+      return _object(
+        http.Response.bytes(
+          body.takeBytes(),
+          response.statusCode,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        ),
+      );
+    }
+
+    try {
+      // A waiting limit cannot prove cancellation or roll back a committed write.
+      return await request().timeout(
+        const Duration(seconds: 40),
+        onTimeout: () {
+          abort.complete();
+          throw const ApiException(apiConnectionError);
+        },
+      );
+    } catch (error) {
+      if (error is ApiException || error is FormatException) rethrow;
+      throw const ApiException(apiConnectionError);
+    }
+  }
+
+  @override
+  Future<OwnerDataPreview> previewOwnerData(String input) async =>
+      OwnerDataPreview.fromJson(await _ownerDataPost('preview', input), input);
+
+  @override
+  Future<OwnerDataReceipt> applyOwnerData(OwnerDataPreview review) async =>
+      OwnerDataReceipt.fromJson(
+        await _ownerDataPost('apply', review.input),
+        review,
+      );
 
   Uri _uri(String path) => Uri.parse('$baseUrl$path');
 

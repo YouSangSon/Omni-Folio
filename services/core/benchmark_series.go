@@ -317,7 +317,7 @@ func (s *Service) importBenchmarkSeries(ctx context.Context, raw []byte) (*Bench
 	}
 	if prior != nil {
 		if prior.DataSHA256 != sha {
-			return nil, errors.New("benchmark version is already bound to different data")
+			return nil, errOwnerDataConflict
 		}
 		if err := tx.Commit(); err != nil {
 			return nil, err
@@ -332,17 +332,13 @@ func (s *Service) importBenchmarkSeries(ctx context.Context, raw []byte) (*Bench
 		return nil, err
 	}
 	if err == nil && (currency != input.Currency || basis != input.ReturnBasis || reference != input.SourceReference || sample != input.Sample) {
-		return nil, errors.New("benchmark identity cannot be redefined")
+		return nil, errOwnerDataConflict
 	}
-	r := benchmarkSeriesRecord{Sequence: int64(proof.Versions + 1), Input: *input, DataSHA256: sha, RecordedAt: s.now().UTC().Format(time.RFC3339Nano)}
-	if !canonicalUTCString(r.RecordedAt) {
-		return nil, errors.New("benchmark record time is invalid")
+	recorded, err := ownerDataRecordTime(ctx, tx, ownerDataBenchmarkKind, s.now, input.FetchedAt)
+	if err != nil {
+		return nil, err
 	}
-	recorded, _ := time.Parse(time.RFC3339Nano, r.RecordedAt)
-	fetched, _ := time.Parse(time.RFC3339Nano, input.FetchedAt)
-	if recorded.Before(fetched) {
-		return nil, errors.New("benchmark capture is in the future")
-	}
+	r := benchmarkSeriesRecord{Sequence: int64(proof.Versions + 1), Input: *input, DataSHA256: sha, RecordedAt: recorded}
 	recordSHA, err := benchmarkRecordSHA(r)
 	if err != nil {
 		return nil, err

@@ -284,7 +284,8 @@ func (s *Service) importOwnerFXSeries(ctx context.Context, raw []byte) (*OwnerFX
 	if err := requireSchemaContext(ctx, tx); err != nil {
 		return nil, err
 	}
-	if _, _, err := replayFXObservations(ctx, tx); err != nil {
+	legacy, _, err := replayFXObservations(ctx, tx)
+	if err != nil {
 		return nil, err
 	}
 	prior, proof, err := replayOwnerFXSeries(ctx, tx, input.BaseCurrency, input.QuoteCurrency, input.SourceVersion)
@@ -293,19 +294,23 @@ func (s *Service) importOwnerFXSeries(ctx context.Context, raw []byte) (*OwnerFX
 	}
 	if prior != nil {
 		if prior.DataSHA256 != sha {
-			return nil, errors.New("owner FX version is already bound to different data")
+			return nil, errOwnerDataConflict
 		}
 		if err := tx.Commit(); err != nil {
 			return nil, err
 		}
 		return ownerFXReceipt(prior), nil
 	}
-	r := ownerFXSeriesRecord{Sequence: int64(proof.Versions + 1), Input: *input, DataSHA256: sha, RecordedAt: s.now().UTC().Format(time.RFC3339Nano)}
-	recorded, err := time.Parse(time.RFC3339Nano, r.RecordedAt)
-	fetched, _ := time.Parse(time.RFC3339Nano, input.FetchedAt)
-	if err != nil || !canonicalUTCString(r.RecordedAt) || recorded.Before(fetched) {
-		return nil, errors.New("owner FX capture is in the future")
+	for _, mark := range legacy {
+		if mark.BaseCurrency == input.BaseCurrency && mark.QuoteCurrency == input.QuoteCurrency {
+			return nil, errOwnerDataConflict
+		}
 	}
+	recorded, err := ownerDataRecordTime(ctx, tx, ownerDataFXKind, s.now, input.FetchedAt)
+	if err != nil {
+		return nil, err
+	}
+	r := ownerFXSeriesRecord{Sequence: int64(proof.Versions + 1), Input: *input, DataSHA256: sha, RecordedAt: recorded}
 	recordSHA, err := ownerFXRecordSHA(r)
 	if err != nil {
 		return nil, err

@@ -2,6 +2,177 @@ import 'dart:convert';
 
 typedef Json = Map<String, dynamic>;
 
+// Correlates a server input-only review with the exact posted text, not a local hash proof.
+class OwnerDataPreview {
+  OwnerDataPreview._(this.kind, this.input, Json summary)
+    : summary = Map.unmodifiable(summary);
+
+  factory OwnerDataPreview.fromJson(Json json, String input) {
+    _requireExactKeys(json, {'kind', 'input', 'summary'});
+    final kind = _text(json, 'kind');
+    if (json['input'] != input || json['summary'] is! Json) {
+      throw const FormatException('Owner input review does not match request');
+    }
+    final summary = json['summary'] as Json;
+    final source = decodeObject(input);
+    final schema = switch (kind) {
+      'security_price' => 'owner-price-series.v1',
+      'fx' => 'owner-fx-series.v1',
+      'benchmark' => 'benchmark-index-series.v1',
+      _ => throw const FormatException('Unknown owner data kind'),
+    };
+    final identityKeys = switch (kind) {
+      'security_price' => {
+        'instrument_id',
+        'symbol',
+        'venue',
+        'currency',
+        'price_adjustment',
+      },
+      'fx' => {'base_currency', 'quote_currency'},
+      _ => {
+        'benchmark_id',
+        'label',
+        'currency',
+        'return_basis',
+        'source_reference',
+      },
+    };
+    _requireExactKeys(summary, {
+      ...identityKeys,
+      'authority',
+      'source_version',
+      'sample',
+      'data_sha256',
+      'point_count',
+      'first_observed_at',
+      'last_observed_at',
+      'fetched_at',
+    });
+    if (source['schema_version'] != schema ||
+        summary['authority'] != 'owner_declared') {
+      throw const FormatException('Invalid owner data authority');
+    }
+    for (final key in {
+      ...identityKeys,
+      'source_version',
+      'sample',
+      'fetched_at',
+    }) {
+      if (summary[key] != source[key]) {
+        throw const FormatException('Owner metadata does not match input');
+      }
+    }
+    _benchmarkText(summary, 'source_version', 128, identity: true);
+    _bool(summary, 'sample');
+    for (final key in identityKeys) {
+      if (key.contains('currency')) {
+        _currency(summary, key);
+      } else {
+        _benchmarkText(
+          summary,
+          key,
+          key == 'source_reference'
+              ? 512
+              : key == 'label'
+              ? 160
+              : 128,
+          identity: key != 'label',
+          trimmed: key == 'label',
+        );
+      }
+    }
+    if (kind == 'security_price' &&
+        (summary['price_adjustment'] != 'unadjusted' ||
+            summary['symbol'] != (summary['symbol'] as String).toUpperCase() ||
+            summary['venue'] != (summary['venue'] as String).toUpperCase())) {
+      throw const FormatException('Invalid owner price identity');
+    }
+    if (kind == 'fx' && summary['base_currency'] == summary['quote_currency']) {
+      throw const FormatException('Invalid FX direction');
+    }
+    if (kind == 'benchmark') {
+      final uri = Uri.tryParse(summary['source_reference'] as String);
+      if (!const {'KRW', 'USD'}.contains(summary['currency']) ||
+          !const {
+            'price_index',
+            'gross_total_return',
+            'net_total_return',
+          }.contains(summary['return_basis']) ||
+          uri == null ||
+          uri.scheme != 'https' ||
+          uri.host.isEmpty ||
+          uri.userInfo.isNotEmpty ||
+          uri.hasQuery ||
+          uri.hasFragment) {
+        throw const FormatException('Invalid benchmark metadata');
+      }
+    }
+    final fetched = _utcText(summary, 'fetched_at');
+    final count = _count(summary, 'point_count');
+    final points = source['points'];
+    if (points is! List ||
+        points.length != count ||
+        count > 10000 ||
+        (kind == 'benchmark' && count == 0) ||
+        !RegExp(r'^[0-9a-f]{64}$').hasMatch(_text(summary, 'data_sha256'))) {
+      throw const FormatException('Invalid owner data point summary');
+    }
+    if (count == 0) {
+      if (summary['first_observed_at'] != null ||
+          summary['last_observed_at'] != null) {
+        throw const FormatException('Empty owner series has observations');
+      }
+    } else {
+      final first = _utcText(summary, 'first_observed_at');
+      final last = _utcText(summary, 'last_observed_at');
+      if (points.first is! Json ||
+          points.last is! Json ||
+          points.first['observed_at'] != first ||
+          points.last['observed_at'] != last ||
+          _utcNanoseconds(first) > _utcNanoseconds(last) ||
+          ((count == 1) != (first == last)) ||
+          _utcNanoseconds(last) > _utcNanoseconds(fetched)) {
+        throw const FormatException(
+          'Owner observation range does not match input',
+        );
+      }
+    }
+    return OwnerDataPreview._(kind, input, summary);
+  }
+
+  final String kind, input;
+  final Json summary;
+}
+
+class OwnerDataReceipt {
+  const OwnerDataReceipt._(this.review, this.recordedAt);
+  factory OwnerDataReceipt.fromJson(Json json, OwnerDataPreview review) {
+    _requireExactKeys(json, {'kind', 'receipt'});
+    if (json['kind'] != review.kind || json['receipt'] is! Json) {
+      throw const FormatException('Owner receipt kind does not match review');
+    }
+    final receipt = json['receipt'] as Json;
+    _requireExactKeys(receipt, {
+      ...review.summary.keys,
+      'storage_check',
+      'recorded_at',
+    });
+    if (receipt['storage_check'] != 'verified' ||
+        review.summary.keys.any((key) => receipt[key] != review.summary[key])) {
+      throw const FormatException('Owner receipt does not match review');
+    }
+    final recorded = _utcText(receipt, 'recorded_at');
+    if (_utcNanoseconds(recorded) <
+        _utcNanoseconds(review.summary['fetched_at'] as String)) {
+      throw const FormatException('Owner receipt predates capture');
+    }
+    return OwnerDataReceipt._(review, recorded);
+  }
+  final OwnerDataPreview review;
+  final String recordedAt;
+}
+
 void _requireExactKeys(Json value, Set<String> keys) {
   if (value.length != keys.length || !value.keys.every(keys.contains)) {
     throw const FormatException('Unexpected object fields');

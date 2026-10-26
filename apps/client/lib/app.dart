@@ -9,6 +9,8 @@ import 'import_apply.dart';
 import 'instrument_ledger_page.dart';
 import 'manual_entry_page.dart';
 import 'models.dart';
+import 'owner_data_import.dart';
+import 'owner_data_import_page.dart';
 import 'paper_monitor_page.dart';
 import 'portfolio_xirr_page.dart';
 import 'research_report_page.dart';
@@ -27,12 +29,18 @@ class _OmniFolioAppState extends State<OmniFolioApp> {
   late final ImportApplyController _importApplies = ImportApplyController(
     widget.api,
   );
+  late final OwnerDataImportController _ownerImports =
+      OwnerDataImportController(
+        widget.api,
+        onStored: _portfolio.refreshAfterMarketDataImport,
+      );
   var _tab = 0;
 
   @override
   void dispose() {
     _portfolio.dispose();
     _importApplies.dispose();
+    _ownerImports.dispose();
     super.dispose();
   }
 
@@ -55,7 +63,11 @@ class _OmniFolioAppState extends State<OmniFolioApp> {
           ),
           HoldingsPage(controller: _portfolio),
           ActivityPage(api: widget.api, applies: _importApplies),
-          DataPage(api: widget.api, controller: _portfolio),
+          DataPage(
+            api: widget.api,
+            controller: _portfolio,
+            ownerImports: _ownerImports,
+          ),
         ];
         return LayoutBuilder(
           builder: (context, constraints) {
@@ -299,6 +311,23 @@ class PortfolioController extends ChangeNotifier {
   var currentValuationBusy = false;
   var orderLogBusy = false;
   var _disposed = false;
+  var _marketDataRefreshPending = false;
+
+  void refreshAfterMarketDataImport() {
+    _marketDataRefreshPending = true;
+    _drainMarketDataRefresh();
+  }
+
+  void _drainMarketDataRefresh() {
+    if (_disposed ||
+        !_marketDataRefreshPending ||
+        busy ||
+        currentValuationBusy) {
+      return;
+    }
+    _marketDataRefreshPending = false;
+    unawaited(refresh());
+  }
 
   Future<void> refresh() async {
     if (busy) return;
@@ -321,7 +350,9 @@ class PortfolioController extends ChangeNotifier {
     error = statusResult.error ?? snapshotResult.error;
     busy = false;
     _notify();
+    _drainMarketDataRefresh();
     await Future.wait(optionalRefreshes);
+    _drainMarketDataRefresh();
   }
 
   Future<void> refreshCurrentValuation() async {
@@ -336,6 +367,7 @@ class PortfolioController extends ChangeNotifier {
     } finally {
       currentValuationBusy = false;
       _notify();
+      _drainMarketDataRefresh();
     }
   }
 
@@ -2698,9 +2730,15 @@ String _activityType(String type) => switch (type) {
 };
 
 class DataPage extends StatelessWidget {
-  const DataPage({super.key, required this.api, required this.controller});
+  const DataPage({
+    super.key,
+    required this.api,
+    required this.controller,
+    this.ownerImports,
+  });
   final OmniApi api;
   final PortfolioController controller;
+  final OwnerDataImportController? ownerImports;
 
   @override
   Widget build(BuildContext context) {
@@ -2712,7 +2750,7 @@ class DataPage extends StatelessWidget {
       children: [
         _Notice(
           icon: Icons.block,
-          text: '실전 주문 꺼짐 · 현재는 로컬 거래 내역 가져오기만 사용할 수 있어요.',
+          text: '실전 주문 꺼짐 · 로컬 거래 내역 가져오기와 가격·환율·지수 파일을 지원합니다.',
           color: _warningColor(context),
         ),
         const SizedBox(height: 12),
@@ -2730,6 +2768,22 @@ class DataPage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
+        if (ownerImports != null) ...[
+          _SectionCard(
+            title: '가격·환율·비교 지수',
+            child: OutlinedButton.icon(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      OwnerDataImportPage(controller: ownerImports!),
+                ),
+              ),
+              icon: const Icon(Icons.file_open_outlined),
+              label: const Text('가격·환율·지수 파일 가져오기'),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         _buildReconciliation(context),
         const SizedBox(height: 12),
         _buildLocalOrders(context),

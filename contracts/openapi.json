@@ -681,6 +681,154 @@
           }
         }
       }
+    },
+    "/v1/market-data/imports/preview": {
+      "post": {
+        "operationId": "previewOwnerData",
+        "description": "Stateless input-only review using the existing strict file decoder; no database admission, currentness or storage claim. Exact input echo correlates the captured request, not an independently verified canonical hash. No query (including an empty ?). Raw UTF-8 JSON <=1MiB. Browser Origin, when present, must be exactly the configured origin; no-Origin native/local requests remain allowed under the existing single-owner boundary, not authentication. Preview response <=6MiB+16KiB; Cache-Control: no-store.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "x-max-bytes": 1048576,
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "./owner-price-series.schema.json"
+                  },
+                  {
+                    "$ref": "./owner-fx-series.schema.json"
+                  },
+                  {
+                    "$ref": "./benchmark-index-series.schema.json"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Input-only metadata with exact raw text.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerDataPreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "owner_data_invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "owner_data_origin_rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "owner_data_unavailable — unresolved storage outcome; retry immutable original.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/market-data/imports/apply": {
+      "post": {
+        "operationId": "applyOwnerData",
+        "description": "Explicit atomic storage using the existing importer and native receipt. Same identity/version/payload returns its original receipt before reading the record clock; old retries do not reactivate versions. A failed/lost response may follow commit. Once uncertain, retain the same raw request until a matching receipt resolves it, even after a later 4xx. No query (including an empty ?). Raw UTF-8 JSON <=1MiB. Browser Origin, when present, must be exactly the configured origin; no-Origin native/local requests remain allowed under the existing single-owner boundary, not authentication. Preview response <=6MiB+16KiB; Cache-Control: no-store.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "x-max-bytes": 1048576,
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "./owner-price-series.schema.json"
+                  },
+                  {
+                    "$ref": "./owner-fx-series.schema.json"
+                  },
+                  {
+                    "$ref": "./benchmark-index-series.schema.json"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored native receipt; not provider certification or proof of latest active version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnerDataResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "owner_data_invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "owner_data_origin_rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "owner_data_conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "owner_data_unavailable — unresolved storage outcome; retry immutable original.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3842,6 +3990,674 @@
             "$ref": "#/components/schemas/SnapshotProvenance"
           }
         }
+      },
+      "OwnerPriceIdentity": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+        "description": "At most128 UTF-8 bytes, without Unicode whitespace or control characters."
+      },
+      "OwnerPriceCurrency": {
+        "type": "string",
+        "pattern": "^[A-Z]{3}$"
+      },
+      "OwnerPriceTimestamp": {
+        "type": "string",
+        "minLength": 20,
+        "maxLength": 30,
+        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{0,8}[1-9])?Z$",
+        "description": "Canonical UTC RFC3339Nano; server rejects invalid dates."
+      },
+      "OwnerPriceReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "storage_check",
+          "authority",
+          "source_version",
+          "sample",
+          "data_sha256",
+          "point_count",
+          "first_observed_at",
+          "last_observed_at",
+          "fetched_at",
+          "recorded_at",
+          "instrument_id",
+          "symbol",
+          "venue",
+          "currency",
+          "price_adjustment"
+        ],
+        "properties": {
+          "storage_check": {
+            "const": "verified"
+          },
+          "authority": {
+            "const": "owner_declared"
+          },
+          "source_version": {
+            "$ref": "#/components/schemas/OwnerPriceIdentity"
+          },
+          "sample": {
+            "type": "boolean"
+          },
+          "data_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "point_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "first_observed_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OwnerPriceTimestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_observed_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OwnerPriceTimestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "$ref": "#/components/schemas/OwnerPriceTimestamp"
+          },
+          "recorded_at": {
+            "$ref": "#/components/schemas/OwnerPriceTimestamp"
+          },
+          "instrument_id": {
+            "$ref": "#/components/schemas/OwnerPriceIdentity"
+          },
+          "symbol": {
+            "$ref": "#/components/schemas/OwnerPriceIdentity"
+          },
+          "venue": {
+            "$ref": "#/components/schemas/OwnerPriceIdentity"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/OwnerPriceCurrency"
+          },
+          "price_adjustment": {
+            "const": "unadjusted"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "point_count": {
+                  "const": 0
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "first_observed_at": {
+                  "type": "null"
+                },
+                "last_observed_at": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "first_observed_at": {
+                  "$ref": "#/components/schemas/OwnerPriceTimestamp"
+                },
+                "last_observed_at": {
+                  "$ref": "#/components/schemas/OwnerPriceTimestamp"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "OwnerFXIdentity": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+        "description": "At most128 UTF-8 bytes, without Unicode whitespace or control characters."
+      },
+      "OwnerFXCurrency": {
+        "type": "string",
+        "pattern": "^[A-Z]{3}$"
+      },
+      "OwnerFXTimestamp": {
+        "type": "string",
+        "minLength": 20,
+        "maxLength": 30,
+        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{0,8}[1-9])?Z$",
+        "description": "Canonical UTC RFC3339Nano; server rejects invalid dates."
+      },
+      "OwnerFXReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "storage_check",
+          "authority",
+          "source_version",
+          "base_currency",
+          "quote_currency",
+          "sample",
+          "data_sha256",
+          "point_count",
+          "first_observed_at",
+          "last_observed_at",
+          "fetched_at",
+          "recorded_at"
+        ],
+        "properties": {
+          "storage_check": {
+            "const": "verified"
+          },
+          "authority": {
+            "const": "owner_declared"
+          },
+          "source_version": {
+            "$ref": "#/components/schemas/OwnerFXIdentity"
+          },
+          "base_currency": {
+            "$ref": "#/components/schemas/OwnerFXCurrency"
+          },
+          "quote_currency": {
+            "$ref": "#/components/schemas/OwnerFXCurrency"
+          },
+          "sample": {
+            "type": "boolean"
+          },
+          "data_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "point_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "first_observed_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OwnerFXTimestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_observed_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OwnerFXTimestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "$ref": "#/components/schemas/OwnerFXTimestamp"
+          },
+          "recorded_at": {
+            "$ref": "#/components/schemas/OwnerFXTimestamp"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "point_count": {
+                  "const": 0
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "first_observed_at": {
+                  "type": "null"
+                },
+                "last_observed_at": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "first_observed_at": {
+                  "$ref": "#/components/schemas/OwnerFXTimestamp"
+                },
+                "last_observed_at": {
+                  "$ref": "#/components/schemas/OwnerFXTimestamp"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "OwnerDataSecurityPriceSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "authority",
+          "source_version",
+          "sample",
+          "data_sha256",
+          "point_count",
+          "first_observed_at",
+          "last_observed_at",
+          "fetched_at",
+          "instrument_id",
+          "symbol",
+          "venue",
+          "currency",
+          "price_adjustment"
+        ],
+        "properties": {
+          "authority": {
+            "const": "owner_declared"
+          },
+          "source_version": {
+            "$ref": "#/components/schemas/OwnerPriceIdentity"
+          },
+          "sample": {
+            "type": "boolean"
+          },
+          "data_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "point_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "first_observed_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OwnerPriceTimestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_observed_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OwnerPriceTimestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "$ref": "#/components/schemas/OwnerPriceTimestamp"
+          },
+          "instrument_id": {
+            "$ref": "#/components/schemas/OwnerPriceIdentity"
+          },
+          "symbol": {
+            "$ref": "#/components/schemas/OwnerPriceIdentity"
+          },
+          "venue": {
+            "$ref": "#/components/schemas/OwnerPriceIdentity"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/OwnerPriceCurrency"
+          },
+          "price_adjustment": {
+            "const": "unadjusted"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "point_count": {
+                  "const": 0
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "first_observed_at": {
+                  "type": "null"
+                },
+                "last_observed_at": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "first_observed_at": {
+                  "$ref": "#/components/schemas/OwnerPriceTimestamp"
+                },
+                "last_observed_at": {
+                  "$ref": "#/components/schemas/OwnerPriceTimestamp"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "OwnerDataFxSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "authority",
+          "source_version",
+          "base_currency",
+          "quote_currency",
+          "sample",
+          "data_sha256",
+          "point_count",
+          "first_observed_at",
+          "last_observed_at",
+          "fetched_at"
+        ],
+        "properties": {
+          "authority": {
+            "const": "owner_declared"
+          },
+          "source_version": {
+            "$ref": "#/components/schemas/OwnerFXIdentity"
+          },
+          "base_currency": {
+            "$ref": "#/components/schemas/OwnerFXCurrency"
+          },
+          "quote_currency": {
+            "$ref": "#/components/schemas/OwnerFXCurrency"
+          },
+          "sample": {
+            "type": "boolean"
+          },
+          "data_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "point_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "first_observed_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OwnerFXTimestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_observed_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OwnerFXTimestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fetched_at": {
+            "$ref": "#/components/schemas/OwnerFXTimestamp"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "point_count": {
+                  "const": 0
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "first_observed_at": {
+                  "type": "null"
+                },
+                "last_observed_at": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "first_observed_at": {
+                  "$ref": "#/components/schemas/OwnerFXTimestamp"
+                },
+                "last_observed_at": {
+                  "$ref": "#/components/schemas/OwnerFXTimestamp"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "OwnerDataBenchmarkSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "authority",
+          "benchmark_id",
+          "label",
+          "currency",
+          "return_basis",
+          "source_reference",
+          "source_version",
+          "sample",
+          "data_sha256",
+          "point_count",
+          "first_observed_at",
+          "last_observed_at",
+          "fetched_at"
+        ],
+        "properties": {
+          "authority": {
+            "const": "owner_declared"
+          },
+          "benchmark_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "At most128 UTF-8 bytes, no Unicode whitespace or controls."
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "description": "At most 160 UTF-8 bytes, trimmed and without control characters."
+          },
+          "currency": {
+            "enum": [
+              "KRW",
+              "USD"
+            ]
+          },
+          "return_basis": {
+            "enum": [
+              "price_index",
+              "gross_total_return",
+              "net_total_return"
+            ]
+          },
+          "source_reference": {
+            "type": "string",
+            "minLength": 9,
+            "maxLength": 512,
+            "pattern": "^https://",
+            "description": "At most 512 UTF-8 bytes. Public provenance reference only; never fetched by this command. No credentials, query or fragment."
+          },
+          "source_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "At most128 UTF-8 bytes, no Unicode whitespace or controls."
+          },
+          "sample": {
+            "type": "boolean"
+          },
+          "data_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "point_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "first_observed_at": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp"
+          },
+          "last_observed_at": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp"
+          },
+          "fetched_at": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp"
+          }
+        }
+      },
+      "OwnerDataPreview": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "summary",
+              "input"
+            ],
+            "properties": {
+              "kind": {
+                "const": "security_price"
+              },
+              "summary": {
+                "$ref": "#/components/schemas/OwnerDataSecurityPriceSummary"
+              },
+              "input": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1048576,
+                "description": "Exact valid UTF-8 request text, not reserialized JSON. At most 1048576 encoded bytes."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "summary",
+              "input"
+            ],
+            "properties": {
+              "kind": {
+                "const": "fx"
+              },
+              "summary": {
+                "$ref": "#/components/schemas/OwnerDataFxSummary"
+              },
+              "input": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1048576,
+                "description": "Exact valid UTF-8 request text, not reserialized JSON. At most 1048576 encoded bytes."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "summary",
+              "input"
+            ],
+            "properties": {
+              "kind": {
+                "const": "benchmark"
+              },
+              "summary": {
+                "$ref": "#/components/schemas/OwnerDataBenchmarkSummary"
+              },
+              "input": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1048576,
+                "description": "Exact valid UTF-8 request text, not reserialized JSON. At most 1048576 encoded bytes."
+              }
+            }
+          }
+        ]
+      },
+      "OwnerDataResult": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "receipt"
+            ],
+            "properties": {
+              "kind": {
+                "const": "security_price"
+              },
+              "receipt": {
+                "$ref": "#/components/schemas/OwnerPriceReceipt"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "receipt"
+            ],
+            "properties": {
+              "kind": {
+                "const": "fx"
+              },
+              "receipt": {
+                "$ref": "#/components/schemas/OwnerFXReceipt"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "receipt"
+            ],
+            "properties": {
+              "kind": {
+                "const": "benchmark"
+              },
+              "receipt": {
+                "$ref": "#/components/schemas/BenchmarkSeriesSummary"
+              }
+            }
+          }
+        ]
       }
     }
   }

@@ -40,7 +40,8 @@ G1 ledger vertical slice
 ├─ G1.25 immutable KRW/USD benchmark index versions and backup proof (gates/g1u-benchmark-series.md)
 ├─ G1.26 same-period native/KRW benchmark comparison (gates/g1v-portfolio-benchmark-comparison.md)
 ├─ G1.27 complete owner FX versions, performance and recovery (gates/g1w-owner-fx-series.md)
-└─ G1.28 owner security price versions, units and performance (gates/g1x-owner-price-series.md)
+├─ G1.28 owner security price versions, units and performance (gates/g1x-owner-price-series.md)
+└─ G1.29 app owner-data review, explicit storage and immutable retry (gates/g1y-owner-data-import.md)
    |
 G2 client vertical slice
 ├─ G2.1 Flutter iOS/Android/web build
@@ -182,3 +183,5 @@ G6 PostgreSQL and Kubernetes promotion
 - G1.28은 원장에 반영된 종목의 완전한 직접 입력 가격과 출처·sample·분할 단위를 평가/성과/UI에 연결했다. 독립 리뷰와 실제 CLI RED·계약/명령 전달 보완 후 최종 Core 전체·Python39/JSON36·Flutter40/403·web/ARM64·권한/소스 일치를 통과해 테스트 tree와 동일한 main에 병합했다. 실제 시장 자료·provider·배포와 전체 Goal 완료는 별도다. [계약과 검증](gates/g1x-owner-price-series.md)
 
 - 실제 KRW·USD 벤치마크 도입 기준은 [G1.25 source owner](gates/g1u-benchmark-series.md#benchmark-source-policy)에 둔다. 세전 TR 후보의 정의와 데이터 저장/표시 권한을 구분했으며 실제 파일·시각·사용권 확보는 미완료다. 이 문서 보완을 실제 자료 검증이나 전체 Goal 완료로 세지 않는다.
+
+- G1.29는 앱의 가격·환율·KRW/USD 지수 파일 검토와 명시적 저장을 연결한다. 입력 검토와 DB admission을 구분하고 불확실한 요청은 일치 확인서까지 원본을 유지한다. 구현·최종 원격 검증 진행 중 ([gate](gates/g1y-owner-data-import.md)).

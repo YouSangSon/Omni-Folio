@@ -227,6 +227,8 @@ In the [input contract](contracts/owner-price-series.schema.json), `unadjusted` 
 
 The latest complete file per instrument and currency feeds valuation, TWR, XIRR, and KRW/USD index comparison. A new `source_version` replaces all points; empty `points` withdraws them. Missing historical points never fall back, and retrying an old file does not reactivate it. Existing fixture/Kiwoom prices cannot share that instrument/currency, even after withdrawal. The Korean app's owner-price warning is independent of sample and FX warnings. Storage verification does not certify provider accuracy or current market prices. [Units, recovery, and verification scope](gates/g1x-owner-price-series.md)
 
+In the Korean app, open **Connections → Import price, FX and index files**, select UTF-8 JSON (up to 1MiB), then explicitly **Review input → Store reviewed file**. Both KRW and USD benchmark series are supported. Review checks input format only; it does not certify admission, currentness or provider authority. New versions replace the complete series; empty price/FX series withdraw observations. If storage is uncertain, retry the same original until a matching receipt arrives. Pending requests survive navigation during the app session, but not app termination. Confirm perpetual storage rights for the file. [Contract and verification scope](gates/g1y-owner-data-import.md)
+
 ### Annualized return adjusted for deposits and withdrawals
 
 Use `입출금을 반영한 수익률 보기` on Home to read since-inception `XIRR`. It combines dated external cash flows with the current KRW valuation, without counting trades, dividends, or costs as additional deposits or withdrawals. It annualizes actual UTC calendar days on a 365-day basis.

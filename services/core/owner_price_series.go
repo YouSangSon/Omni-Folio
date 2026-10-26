@@ -285,7 +285,8 @@ func (s *Service) importOwnerPriceSeries(ctx context.Context, raw []byte) (*Owne
 	if err := requireSchemaContext(ctx, tx); err != nil {
 		return nil, err
 	}
-	if _, _, err := replaySecurityPriceObservations(ctx, tx); err != nil {
+	legacy, _, err := replaySecurityPriceObservations(ctx, tx)
+	if err != nil {
 		return nil, err
 	}
 	admitted, err := admittedOwnerPriceIdentities(ctx, tx)
@@ -293,7 +294,7 @@ func (s *Service) importOwnerPriceSeries(ctx context.Context, raw []byte) (*Owne
 		return nil, err
 	}
 	if _, ok := admitted[ownerPriceKey(input.InstrumentID, input.Currency)]; !ok {
-		return nil, errors.New("owner price identity has no admitted ledger instrument")
+		return nil, errOwnerDataRejected
 	}
 	prior, proof, err := replayOwnerPriceSeries(ctx, tx, input.InstrumentID, input.Currency, input.SourceVersion)
 	if err != nil {
@@ -301,19 +302,23 @@ func (s *Service) importOwnerPriceSeries(ctx context.Context, raw []byte) (*Owne
 	}
 	if prior != nil {
 		if prior.DataSHA256 != sha {
-			return nil, errors.New("owner price version is already bound to different data")
+			return nil, errOwnerDataConflict
 		}
 		if err := tx.Commit(); err != nil {
 			return nil, err
 		}
 		return ownerPriceReceipt(prior), nil
 	}
-	r := ownerPriceSeriesRecord{Sequence: int64(proof.Versions + 1), Input: *input, DataSHA256: sha, RecordedAt: s.now().UTC().Format(time.RFC3339Nano)}
-	recorded, err := time.Parse(time.RFC3339Nano, r.RecordedAt)
-	fetched, _ := time.Parse(time.RFC3339Nano, input.FetchedAt)
-	if err != nil || !canonicalUTCString(r.RecordedAt) || recorded.Before(fetched) {
-		return nil, errors.New("owner price capture is in the future")
+	for _, mark := range legacy {
+		if mark.InstrumentID == input.InstrumentID && mark.Currency == input.Currency {
+			return nil, errOwnerDataConflict
+		}
 	}
+	recorded, err := ownerDataRecordTime(ctx, tx, ownerDataPriceKind, s.now, input.FetchedAt)
+	if err != nil {
+		return nil, err
+	}
+	r := ownerPriceSeriesRecord{Sequence: int64(proof.Versions + 1), Input: *input, DataSHA256: sha, RecordedAt: recorded}
 	recordSHA, err := ownerPriceRecordSHA(r)
 	if err != nil {
 		return nil, err

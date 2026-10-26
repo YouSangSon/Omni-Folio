@@ -507,6 +507,13 @@ void main() {
 
 class _TestApi implements OmniApi {
   @override
+  Future<OwnerDataPreview> previewOwnerData(String input) async =>
+      throw UnimplementedError();
+  @override
+  Future<OwnerDataReceipt> applyOwnerData(OwnerDataPreview review) async =>
+      throw UnimplementedError();
+
+  @override
   Future<PortfolioBenchmarks> portfolioBenchmarks() async =>
       throw UnimplementedError();
 

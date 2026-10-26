@@ -852,6 +852,8 @@ func (s *Service) routes() http.Handler {
 	mux.HandleFunc("GET /v1/ledger/activities", s.handleLedgerActivities)
 	mux.HandleFunc("POST /v1/imports/preview", s.handlePreview)
 	mux.HandleFunc("POST /v1/imports/apply", s.handleApply)
+	mux.HandleFunc("POST /v1/market-data/imports/preview", s.handleOwnerDataPreview)
+	mux.HandleFunc("POST /v1/market-data/imports/apply", s.handleOwnerDataApply)
 	mux.HandleFunc("GET /v1/portfolio/snapshot", s.handleSnapshot)
 	return mux
 }
@@ -877,10 +879,19 @@ func validateAllowedOrigin(origin string) error {
 }
 
 func withCORS(next http.Handler, allowedOrigin string) http.Handler {
-	if allowedOrigin == "" {
-		return next
-	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isOwnerDataImportPath(r.URL.Path) {
+			// CORS headers alone do not prevent writes from an unapproved browser origin.
+			origins, present := r.Header[http.CanonicalHeaderKey("Origin")]
+			if present && (len(origins) != 1 || origins[0] == "" || allowedOrigin == "" || origins[0] != allowedOrigin) {
+				writeError(w, &appError{http.StatusForbidden, APIError{Code: "owner_data_origin_rejected", Message: "owner data origin is not allowed"}})
+				return
+			}
+		}
+		if allowedOrigin == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
 		w.Header().Add("Vary", "Origin")
 		if r.Header.Get("Origin") != allowedOrigin {
 			next.ServeHTTP(w, r)
