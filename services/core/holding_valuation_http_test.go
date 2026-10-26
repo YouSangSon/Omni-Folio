@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -69,7 +70,17 @@ func TestHoldingValuationHTTPStoredPriceView(t *testing.T) {
 	} {
 		schema := schemas[name].(map[string]any)
 		properties := schema["properties"].(map[string]any)
-		if schema["additionalProperties"] != false || len(properties) != len(response) || len(schema["required"].([]any)) != len(response) {
+		propertyCount := len(response)
+		if name == "HoldingValuationPrice" {
+			propertyCount++ // Owner marks add source_version; legacy fixture marks still forbid it.
+			branch := schema["allOf"].([]any)[0].(map[string]any)
+			if branch["if"].(map[string]any)["properties"].(map[string]any)["source"].(map[string]any)["const"] != ownerPriceSource ||
+				!jsonStringSet(branch["then"].(map[string]any)["required"])["source_version"] ||
+				branch["else"].(map[string]any)["properties"].(map[string]any)["source_version"] != false {
+				t.Fatal("price source_version must be owner-only")
+			}
+		}
+		if schema["additionalProperties"] != false || len(properties) != propertyCount || !reflect.DeepEqual(jsonStringSet(schema["required"]), jsonKeySet(response)) {
 			t.Fatalf("%s must match closed runtime view", name)
 		}
 		for key := range response {

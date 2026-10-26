@@ -1,17 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://omni-folio.local/contracts/backup-manifest.v18.schema.json",
-  "title": "Omni-Folio Backup Manifest v18",
-  "description": "Current artifacts require the explicit v2 chronological FIFO policy and recomputed immutable replay-transition evidence. v16/schema-v22, v17/schema-v23 and v18/schema-v24 preserve v2 replay authority; v15 and older verification remains archival. CLI contract for a separately restored schema-v24 backup candidate. Legacy v5/schema-v8 or schema-v9 through v17/schema-v23 artifacts are accepted only through an owned migrated copy. Schema validity never authorizes replacing the active DB: database, ledger snapshot, replayable order state, execution authority, risk reservations, paper execution authorizations, known-good broker snapshots, strategy-registry including paper operational evaluations, immutable paper-accounting sessions, closed paper bars and signal cutoffs, immutable paper performance, strategy-window paper performance, paper performance policy, paper runner lease, direct FX-observation, security-price-observation, instrument-listing, immutable benchmark-series and owner FX-series proofs must match and verification_receipt must be verified and eligible_for_activation before replacement. A candidate containing an active paper runner lease is preserved for audit but rejected for activation.",
+  "$id": "https://omni-folio.local/contracts/backup-manifest.v19.schema.json",
+  "title": "Omni-Folio Backup Manifest v19",
+  "description": "Current schema-v25 candidates require independently recomputed ledger, order, broker, registry, lease, listing, legacy observation, benchmark, owner-FX and owner-price journal proofs. v19/schema25, v18/schema24, v17/schema23 and v16/schema22 retain chronological FIFO v2 replay authority; v15 and older remain archival. Legacy sources are verified at their own schema and migrated only in owned copies. New owner-price identity membership is checked against the verified canonical ledger. Schema validity is not activation authority: all proofs must match and the receipt must be verified and eligible_for_activation; an active runner lease blocks activation.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["format_version", "schema_version", "created_at", "source_ledger_revision", "order_state_sha256", "order_count", "order_event_count", "execution_authority_sha256", "execution_authority_event_count", "risk_reservation_sha256", "risk_reservation_count", "broker_state_sha256", "broker_snapshot_count", "broker_reconciliation_count", "strategy_registry_sha256", "strategy_evidence_count", "strategy_selection_event_count", "paper_evaluation_event_count", "paper_accounting_state_sha256", "paper_accounting_session_count", "paper_market_bar_observation_count", "paper_signal_event_count", "paper_execution_authorization_count", "paper_capitalized_fill_count", "paper_performance_state_sha256", "paper_performance_event_count", "paper_performance_mark_count", "paper_strategy_performance_state_sha256", "paper_strategy_performance_event_count", "paper_strategy_performance_sample_count", "paper_performance_policy_state_sha256", "paper_performance_policy_event_count", "paper_performance_policy_action_count", "paper_performance_policy_automatic_halt_count", "paper_runner_lease_state_sha256", "paper_runner_lease_count", "active_paper_runner_lease_count", "selected_strategy_result_sha256", "fx_observation_state_sha256", "fx_observation_count", "security_price_observation_state_sha256", "security_price_observation_count", "instrument_listing_state_sha256", "instrument_listing_event_count", "active_instrument_listing_count", "benchmark_series_state_sha256", "benchmark_series_version_count", "benchmark_series_point_count", "owner_fx_series_state_sha256", "owner_fx_series_version_count", "owner_fx_series_point_count", "db_sha256", "size_bytes", "expected_snapshot_sha256", "encryption", "verification_receipt"],
+  "required": ["format_version", "schema_version", "created_at", "source_ledger_revision", "order_state_sha256", "order_count", "order_event_count", "execution_authority_sha256", "execution_authority_event_count", "risk_reservation_sha256", "risk_reservation_count", "broker_state_sha256", "broker_snapshot_count", "broker_reconciliation_count", "strategy_registry_sha256", "strategy_evidence_count", "strategy_selection_event_count", "paper_evaluation_event_count", "paper_accounting_state_sha256", "paper_accounting_session_count", "paper_market_bar_observation_count", "paper_signal_event_count", "paper_execution_authorization_count", "paper_capitalized_fill_count", "paper_performance_state_sha256", "paper_performance_event_count", "paper_performance_mark_count", "paper_strategy_performance_state_sha256", "paper_strategy_performance_event_count", "paper_strategy_performance_sample_count", "paper_performance_policy_state_sha256", "paper_performance_policy_event_count", "paper_performance_policy_action_count", "paper_performance_policy_automatic_halt_count", "paper_runner_lease_state_sha256", "paper_runner_lease_count", "active_paper_runner_lease_count", "selected_strategy_result_sha256", "fx_observation_state_sha256", "fx_observation_count", "security_price_observation_state_sha256", "security_price_observation_count", "instrument_listing_state_sha256", "instrument_listing_event_count", "active_instrument_listing_count", "benchmark_series_state_sha256", "benchmark_series_version_count", "benchmark_series_point_count", "owner_fx_series_state_sha256", "owner_fx_series_version_count", "owner_fx_series_point_count", "db_sha256", "size_bytes", "expected_snapshot_sha256", "encryption", "verification_receipt", "owner_price_series_state_sha256", "owner_price_series_version_count", "owner_price_series_point_count"],
   "properties": {
     "format_version": {
-      "const": "omni-folio-backup.v18"
+      "const": "omni-folio-backup.v19"
     },
     "schema_version": {
-      "const": "omni-folio.sqlite.v24"
+      "const": "omni-folio.sqlite.v25"
     },
     "created_at": {
       "$ref": "#/$defs/timestamp"
@@ -204,12 +204,25 @@
     "owner_fx_series_state_sha256": {
       "$ref": "#/$defs/sha256"
     },
+    "owner_price_series_state_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
     "owner_fx_series_version_count": {
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991
     },
+    "owner_price_series_version_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
     "owner_fx_series_point_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "owner_price_series_point_count": {
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991
@@ -287,7 +300,7 @@
       "description": "Verification is performed against a separately restored candidate. Candidate database, ledger snapshot, order-state, known-good broker-state, strategy-registry, paper-accounting state, paper-performance state, strategy-window paper-performance state, paper-performance policy, paper-runner lease, direct FX-observation, security-price-observation, instrument-listing, and immutable benchmark-series proofs must equal the manifest before active DB replacement.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["receipt_id", "candidate_id", "verified_at", "status", "integrity_check", "golden_snapshot_check", "order_state_check", "broker_state_check", "strategy_registry_check", "fx_observation_check", "security_price_observation_check", "instrument_listing_check", "benchmark_series_check", "paper_performance_check", "paper_strategy_performance_check", "paper_performance_policy_check", "paper_runner_lease_check", "candidate_db_sha256", "candidate_snapshot_sha256", "candidate_order_state_sha256", "candidate_broker_state_sha256", "candidate_strategy_registry_sha256", "candidate_paper_accounting_state_sha256", "candidate_paper_performance_state_sha256", "candidate_paper_strategy_performance_state_sha256", "candidate_paper_performance_policy_state_sha256", "candidate_paper_runner_lease_state_sha256", "candidate_fx_observation_state_sha256", "candidate_security_price_observation_state_sha256", "candidate_instrument_listing_state_sha256", "candidate_benchmark_series_state_sha256", "candidate_benchmark_series_version_count", "candidate_benchmark_series_point_count", "owner_fx_series_check", "candidate_owner_fx_series_state_sha256", "candidate_owner_fx_series_version_count", "candidate_owner_fx_series_point_count", "eligible_for_activation", "errors"],
+      "required": ["receipt_id", "candidate_id", "verified_at", "status", "integrity_check", "golden_snapshot_check", "order_state_check", "broker_state_check", "strategy_registry_check", "fx_observation_check", "security_price_observation_check", "instrument_listing_check", "benchmark_series_check", "paper_performance_check", "paper_strategy_performance_check", "paper_performance_policy_check", "paper_runner_lease_check", "candidate_db_sha256", "candidate_snapshot_sha256", "candidate_order_state_sha256", "candidate_broker_state_sha256", "candidate_strategy_registry_sha256", "candidate_paper_accounting_state_sha256", "candidate_paper_performance_state_sha256", "candidate_paper_strategy_performance_state_sha256", "candidate_paper_performance_policy_state_sha256", "candidate_paper_runner_lease_state_sha256", "candidate_fx_observation_state_sha256", "candidate_security_price_observation_state_sha256", "candidate_instrument_listing_state_sha256", "candidate_benchmark_series_state_sha256", "candidate_benchmark_series_version_count", "candidate_benchmark_series_point_count", "owner_fx_series_check", "candidate_owner_fx_series_state_sha256", "candidate_owner_fx_series_version_count", "candidate_owner_fx_series_point_count", "eligible_for_activation", "errors", "owner_price_series_check", "candidate_owner_price_series_state_sha256", "candidate_owner_price_series_version_count", "candidate_owner_price_series_point_count"],
       "properties": {
         "receipt_id": {
           "$ref": "#/$defs/opaque_id"
@@ -400,7 +413,17 @@
             "failed"
           ]
         },
+        "owner_price_series_check": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "failed"
+          ]
+        },
         "candidate_owner_fx_series_state_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "candidate_owner_price_series_state_sha256": {
           "$ref": "#/$defs/sha256"
         },
         "candidate_owner_fx_series_version_count": {
@@ -408,7 +431,17 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "candidate_owner_price_series_version_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
         "candidate_owner_fx_series_point_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "candidate_owner_price_series_point_count": {
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
@@ -447,6 +480,7 @@
             },
             "benchmark_series_check": {"const": "ok"},
             "owner_fx_series_check": {"const": "ok"},
+            "owner_price_series_check": {"const": "ok"},
             "paper_performance_check": {
               "const": "ok"
             },

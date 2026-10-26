@@ -12,6 +12,7 @@ import (
 
 func dropOwnerFXSchemaForLegacy(t testing.TB, db *sql.DB) {
 	t.Helper()
+	dropOwnerPriceSchemaForLegacy(t, db)
 	var present int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='owner_fx_series_versions'`).Scan(&present); err != nil {
 		t.Fatal(err)
@@ -34,6 +35,7 @@ func dropOwnerFXSchemaForLegacy(t testing.TB, db *sql.DB) {
 }
 
 func stripOwnerFXProofForLegacy(manifest map[string]any) {
+	stripOwnerPriceProofForLegacy(manifest)
 	for _, key := range []string{"owner_fx_series_state_sha256", "owner_fx_series_version_count", "owner_fx_series_point_count"} {
 		delete(manifest, key)
 	}

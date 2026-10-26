@@ -139,6 +139,14 @@ class _ValuationHeader extends StatelessWidget {
             : '저장된 평가 증거 · 실시간/현재 시세 아님',
         color: Theme.of(context).colorScheme.tertiary,
       ),
+      if (valuation.ownerDeclaredPrice) ...[
+        const SizedBox(height: 12),
+        _ValuationNotice(
+          icon: Icons.info_outline,
+          text: '직접 입력 가격 사용 · 시세 제공자가 검증한 값이 아닙니다.',
+          color: Theme.of(context).colorScheme.tertiary,
+        ),
+      ],
       if (valuation.status == 'empty') ...[
         const SizedBox(height: 12),
         _ValuationNotice(
@@ -260,6 +268,14 @@ class _ValuationLineCard extends StatelessWidget {
         : _pnlText(line.unrealizedPnl!, line.currency);
     final issueText = _issueText(line.status);
     final price = line.price;
+    final priceNote = price != null && price.source == 'owner_declared'
+        ? [
+            '직접 입력한 무조정 가격',
+            if (price.sample) '예시 자료',
+            if (price.state == 'stale') '24시간 초과',
+            '제공자 미검증',
+          ].join(' · ')
+        : '샘플 · 오래된 가격 · 현재 시세 아님';
     final semantics = [
       line.symbol,
       '수량 ${line.quantity}',
@@ -271,7 +287,8 @@ class _ValuationLineCard extends StatelessWidget {
         '저장 가격 ${price.currency} ${price.price}, 원천 ${price.source}, '
             '거래소 ${price.venue}, 관측 ${_readableTime(price.observedAt)}, '
             '가져옴 ${_readableTime(price.fetchedAt)}, 저장 ${_readableTime(price.recordedAt)}, '
-            '샘플이며 오래된 상태',
+            '${price.sourceVersion == null ? '' : '입력 버전 ${price.sourceVersion}, '}'
+            '$priceNote',
     ].join(', ');
     return Semantics(
       container: true,
@@ -319,19 +336,20 @@ class _ValuationLineCard extends StatelessWidget {
                   Text('저장 가격 ${price.currency} ${price.price}'),
                   const SizedBox(height: 4),
                   Text(
-                    '${price.source} · ${price.venue} · ${price.priceAdjustment}',
+                    price.source == 'owner_declared'
+                        ? '직접 입력 · ${price.venue} · 무조정 선언'
+                        : '${price.source} · ${price.venue} · ${price.priceAdjustment}',
                   ),
                   const SizedBox(height: 4),
+                  if (price.sourceVersion != null)
+                    Text('입력 버전: ${price.sourceVersion}'),
                   Text('관측 ${_readableTime(price.observedAt)}'),
                   const SizedBox(height: 4),
                   Text('가져옴 ${_readableTime(price.fetchedAt)}'),
                   const SizedBox(height: 4),
                   Text('저장 ${_readableTime(price.recordedAt)}'),
                   const SizedBox(height: 4),
-                  Text(
-                    '샘플 · 오래된 가격 · 현재 시세 아님',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                  Text(priceNote, style: Theme.of(context).textTheme.bodySmall),
                 ],
               ],
             ),
@@ -433,6 +451,7 @@ String? _issueText(String status) => switch (status) {
   'missing' => '저장된 적격 가격이 없습니다.',
   'ambiguous' => '가격의 거래소가 하나로 결정되지 않았습니다.',
   'stale' => '저장 가격이 최대 24시간 정책을 초과했습니다.',
+  'split_basis' => '분할 이후 단위가 맞는 새 가격이 필요합니다.',
   _ => null,
 };
 

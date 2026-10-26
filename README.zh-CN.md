@@ -18,7 +18,7 @@
 | Gate | 状态 | 证据 |
 |---|---|---|
 | G0 架构与契约 | 本地通过 | 带版本的 OpenAPI/JSON Schema、运行时职责分离、仓库统一命令 |
-| G1 本地账本 | 本地通过 | CSV 审核与原子应用，精确重放交易、现金、拆股和 FX，FIFO 成本与存储价格估值，schema v24/backup v18 及受支持历史格式的恢复 |
+| G1 本地账本 | 本地通过 | CSV 审核与原子应用，精确重放交易、现金、拆股和 FX，FIFO 成本与存储价格估值，schema v25/backup v19 及受支持历史格式的恢复 |
 | G2 Flutter 客户端 | 部分通过 | iOS、Android、web 发布构建、自动解析器和组件检查，以及 Android 模拟器帧性能测量。已验证未签名 iOS 包排除测试插件。真机、手动屏幕阅读器及应用商店验证仍待完成 |
 | G3 研究与模拟执行 | 部分通过 | 可复现的回测、walk-forward、留出集评估、候选注册、本地模拟成交、绩效、停止与恢复。长期运行和源数据传递的完整性尚未验证 |
 | G4 券商、图表与订单 | 进行中 | 本地样本图表、已存储的对账和订单记录查询、不使用凭据的 Kiwoom 合成契约。使用真实认证的行情与模拟订单观察、结果未确定订单的恢复及所有实盘阶段仍待完成 |
@@ -171,7 +171,7 @@ mkdir -p -m 700 data/exports
 
 ### 切换现有账本的时间重放策略
 
-schema24/backup v18 使用按精确 UTC 顺序重放的 FIFO v2 策略。已有账本的数据库仅执行 migrate 无法正常运行。停止旧 core、保留原始备份后，请遵循 [G1.20 的 preview → 审核 → activate → 验证新备份流程](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차)。历史备份的存档验证与当前策略的激活是两项不同的操作。
+schema25/backup v19 使用按精确 UTC 顺序重放的 FIFO v2 策略。已有账本的数据库仅执行 migrate 无法正常运行。停止旧 core、保留原始备份后，请遵循 [G1.20 的 preview → 审核 → activate → 验证新备份流程](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차)。历史备份的存档验证与当前策略的激活是两项不同的操作。
 
 ### 本地样本 OHLCV 图表
 
@@ -214,6 +214,18 @@ G1.10 将方向为 `1 base_currency = rate quote_currency` 的汇率观测值保
 这个过时的 `sample=true` 示例为合成资料，不能满足当前估值的24小时条件。实际输入遵循[封闭输入契约](contracts/owner-fx-series.schema.json)。修正时使用新的 `source_version` 提交全部数据点；空的 `points` 撤回该方向的使用。缺失点不会从旧版本补齐，重试旧版本也不会重新激活它。同一方向不能混合 fixture 和直接输入，撤回后仍保留来源归属。
 
 `storage_check=verified` 仅证明存储完整性。即使 `sample=false`，韩语应用仍显示直接输入汇率的提示。观测、获取、记录时间和24小时条件分别验证，不认证证券价格、券商行情或提供者数据的准确性。[策略、恢复和验证范围](gates/g1w-owner-fx-series.md)
+
+### 使用直接输入的证券价格计算估值与收益
+
+针对已通过CSV录入账本的证券，将价格文件导入现有DB。使用账本的canonical ID（`AAPL`对应`instrument_aapl`）；不为显示名称的大小写修改账本。
+
+```sh
+(cd services/core && go run . owner-price-import -db ../../data/omni-folio.db -input ../../contracts/fixtures/owner-price-aapl-sample.json)
+```
+
+[输入契约](contracts/owner-price-series.schema.json)中的`unadjusted`表示所有者声明的观测时刻账本每股、以指定货币计价的价格，不追溯调整拆股或股息。拆股后的持仓需要严格晚于最后一次拆股时刻的价格。这个过时的`sample=true`合成示例不满足当前估值的24小时条件。
+
+每个证券与货币使用最新文件的全部数据点，连接估值、TWR、XIRR及KRW/USD指数比较。新的`source_version`替换所有点，空的`points`撤回使用；缺失的历史点不从旧版本补齐，重试旧文件也不会重新激活它。同一证券与货币不能混合现有fixture/Kiwoom价格，撤回后仍保留此区分。韩语应用中的直接输入价格提示独立于sample和汇率提示。存储验证不认证提供者的准确性或当前市场价格。[单位、恢复与验证范围](gates/g1x-owner-price-series.md)
 
 ### 考虑出入金的年化收益率
 
@@ -279,7 +291,7 @@ curl -fsS 'http://127.0.0.1:8080/v1/portfolio/cash-valuation?base_currency=KRW&a
 
 G1.12 在持仓估值之前，将 local fixture 的证券价格保存在 schema v11 引入的 `STRICT`/仅插入序列中。验证 source identity、instrument ID、symbol、venue、currency、正数规范价格、`price_adjustment=unspecified`、observed/fetched/recorded UTC 时间和规范行哈希。内部精确 as-of 查询固定所有标识维度，只选择三个时间均不晚于 cutoff 的观测值。
 
-G4U checkpoint 的 backup v8 验证价格序列的 digest/count，并在不修改原件的自有副本中将 legacy artifact 迁移到 schema v13。当前 schema v24/backup v18 也保留该价格证明。空恢复候选必须具有与内嵌 migration 相同的表 DDL、latest index 和仅插入 trigger。未增加公共 API、Flutter 界面、provider 请求、scheduler 或基于券商数据的持仓、盈亏、绩效估值；`PortfolioSnapshot.valuation_status` 继续保持 `unavailable`。
+G4U checkpoint 的 backup v8 验证价格序列的 digest/count，并在不修改原件的自有副本中将 legacy artifact 迁移到 schema v13。当前 schema v25/backup v19 也保留该价格证明。空恢复候选必须具有与内嵌 migration 相同的表 DDL、latest index 和仅插入 trigger。未增加公共 API、Flutter 界面、provider 请求、scheduler 或基于券商数据的持仓、盈亏、绩效估值；`PortfolioSnapshot.valuation_status` 继续保持 `unavailable`。
 
 ### 使用存储价格进行原币持仓估值
 
@@ -337,7 +349,7 @@ cd services/core
 go test -run '^TestG4H' -count=1 ./...
 ```
 
-G4U checkpoint 的 schema v13/backup v8 以仅插入方式保护 ledger event、cash-void/FX guard、直接 FX 观测、证券价格观测、证券挂牌关系、券商原始快照、带 revision 的券商对账、执行权限事件、风险预留、策略注册表，以及当时的合成/模拟订单。当前 schema v24/backup v18 同时保留这些证明，以及 G3.8C2 模拟记账、G3.8C3 账户全局绩效、G3.8D 策略窗口证据和 G3.8E 模拟安全策略/动作恢复。G4H 本身不证明凭据、券商请求、调度、官方时效性/timezone、现金与估值金额对账、公共 API/UI 或实盘就绪。
+G4U checkpoint 的 schema v13/backup v8 以仅插入方式保护 ledger event、cash-void/FX guard、直接 FX 观测、证券价格观测、证券挂牌关系、券商原始快照、带 revision 的券商对账、执行权限事件、风险预留、策略注册表，以及当时的合成/模拟订单。当前 schema v25/backup v19 同时保留这些证明，以及 G3.8C2 模拟记账、G3.8C3 账户全局绩效、G3.8D 策略窗口证据和 G3.8E 模拟安全策略/动作恢复。G4H 本身不证明凭据、券商请求、调度、官方时效性/timezone、现金与估值金额对账、公共 API/UI 或实盘就绪。
 
 ### 已存储券商对账的只读视图
 
@@ -391,7 +403,7 @@ Python 的 `--bundle` 会一起输出提案和计算所用的原始 CSV。通过
 
 策略改进 runner 使用 expanding walk-forward 评估有限的仅做多 SMA 候选，且只打开最终留出集一次。结果只能为 `paper_candidate` 或 `no_promotion`，不会获得凭据、下单或晋级实盘的权限。
 
-Go core 将这些本地结果注册到 schema v13 引入、并保留到当前 schema v24 的仅插入 registry 中。`no_promotion` 也会作为拒绝证据保留，但不可被选中。由于尚无与当前 champion 直接比较的逻辑，选择 `paper_candidate` 需要显式 CLI 和乐观并发控制；rollback 只能向日志追加新事件，退回前一次选择或 `no_strategy`。
+Go core 将这些本地结果注册到 schema v13 引入、并保留到当前 schema v25 的仅插入 registry 中。`no_promotion` 也会作为拒绝证据保留，但不可被选中。由于尚无与当前 champion 直接比较的逻辑，选择 `paper_candidate` 需要显式 CLI 和乐观并发控制；rollback 只能向日志追加新事件，退回前一次选择或 `no_strategy`。
 
 ```sh
 candidate_file="$(mktemp)"

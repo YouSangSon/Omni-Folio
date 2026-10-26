@@ -32,6 +32,9 @@ func (s *Service) handleHoldingValuation(w http.ResponseWriter, r *http.Request)
 				"observed_at": p.ObservedAt, "fetched_at": p.FetchedAt, "recorded_at": p.RecordedAt,
 				"sample": p.Sample, "state": p.State,
 			}
+			if p.Source == ownerPriceSource {
+				price.(map[string]any)["source_version"] = p.SourceVersion
+			}
 		}
 		lines = append(lines, map[string]any{
 			"symbol": line.Symbol, "quantity": line.Quantity, "cost_basis": line.CostBasis,

@@ -129,7 +129,8 @@ class _PortfolioTwrPageState extends State<PortfolioTwrPage> {
                 for (final issue in report.issues.where(
                   (issue) =>
                       issue.code != 'sample_data' &&
-                      issue.code != 'owner_declared_fx',
+                      issue.code != 'owner_declared_fx' &&
+                      issue.code != 'owner_declared_price',
                 ))
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
@@ -139,6 +140,11 @@ class _PortfolioTwrPageState extends State<PortfolioTwrPage> {
             ),
           ),
         ),
+        if (report.ownerDeclaredPrice)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text('직접 입력 가격 사용 · 시세 제공자가 검증한 값이 아닙니다.'),
+          ),
         if (report.ownerDeclaredFx)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),

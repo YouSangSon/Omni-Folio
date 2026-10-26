@@ -10,9 +10,10 @@ import (
 )
 
 const (
-	currentPortfolioValuationPolicy        = "current_base_portfolio_valuation_v1"
-	currentPortfolioValuationOwnerFXPolicy = "current_base_portfolio_valuation_v2"
-	currentPortfolioValuationBaseCurrency  = "KRW"
+	currentPortfolioValuationPolicy           = "current_base_portfolio_valuation_v1"
+	currentPortfolioValuationOwnerFXPolicy    = "current_base_portfolio_valuation_v2"
+	currentPortfolioValuationOwnerPricePolicy = "current_base_portfolio_valuation_v3"
+	currentPortfolioValuationBaseCurrency     = "KRW"
 )
 
 type CurrentPortfolioValuation struct {
@@ -47,7 +48,11 @@ func (s *Service) currentPortfolioValuation(ctx context.Context) (*CurrentPortfo
 	if err != nil {
 		return nil, internalError(err)
 	}
-	result, appErr := s.currentPortfolioValuationTx(ctx, tx, asOf, inputs)
+	prices, err := readValuationPriceInputs(ctx, tx, asOf)
+	if err != nil {
+		return nil, internalError(err)
+	}
+	result, appErr := s.currentPortfolioValuationTx(ctx, tx, asOf, inputs, prices)
 	if appErr != nil {
 		return nil, appErr
 	}
@@ -57,9 +62,12 @@ func (s *Service) currentPortfolioValuation(ctx context.Context) (*CurrentPortfo
 	return result, nil
 }
 
-func (s *Service) currentPortfolioValuationTx(ctx context.Context, tx *sql.Tx, valuationTime time.Time, inputs valuationFXInputs) (*CurrentPortfolioValuation, *appError) {
+func (s *Service) currentPortfolioValuationTx(ctx context.Context, tx *sql.Tx, valuationTime time.Time, inputs valuationFXInputs, prices valuationPriceInputs) (*CurrentPortfolioValuation, *appError) {
 	if inputs.tx != tx || !inputs.knownAt.Equal(valuationTime) {
 		return nil, internalError(errors.New("FX inputs do not belong to the valuation observation"))
+	}
+	if prices.tx != tx || !prices.knownAt.Equal(valuationTime) {
+		return nil, internalError(errors.New("price inputs do not belong to the valuation observation"))
 	}
 	// The server owns one cutoff inside the same read transaction as every required input.
 	valuationAsOf := valuationTime.Format(time.RFC3339Nano)
@@ -95,14 +103,7 @@ func (s *Service) currentPortfolioValuationTx(ctx context.Context, tx *sql.Tx, v
 	}
 
 	fxObservations, fxTimes := inputs.observations, inputs.times
-	priceObservations, _, err := replaySecurityPriceObservations(ctx, tx)
-	if err != nil {
-		return nil, internalError(err)
-	}
-	priceTimes, err := currentPriceObservationTimes(priceObservations)
-	if err != nil {
-		return nil, internalError(err)
-	}
+	priceObservations, priceTimes := prices.observations, prices.times
 
 	result := &CurrentPortfolioValuation{
 		Scope: "whole_portfolio", PolicyVersion: currentPortfolioValuationPolicy,
@@ -121,6 +122,7 @@ func (s *Service) currentPortfolioValuationTx(ctx context.Context, tx *sql.Tx, v
 	available := true
 	usedSample := false
 	usedOwnerFX := false
+	usedOwnerPrice := false
 	for _, cash := range snapshot.Cash {
 		amount, err := parseDecimal(cash.Amount)
 		if err != nil {
@@ -161,8 +163,14 @@ func (s *Service) currentPortfolioValuationTx(ctx context.Context, tx *sql.Tx, v
 			available = false
 			continue
 		}
-		usedSample = true
-		if valuationTime.Sub(priceTimes[observation.ObservationID][0]) > holdingPriceMaxAge {
+		usedSample = usedSample || priceIsSample(observation)
+		usedOwnerPrice = usedOwnerPrice || observation.Source == ownerPriceSource
+		if !prices.afterLastSplit(observation) {
+			result.Issues = appendCurrentValuationIssue(result.Issues, *holdingPriceIssue("split_basis", holding.Symbol))
+			available = false
+			continue
+		}
+		if valuationTime.Sub(priceTimes[priceTimeKey(*observation)][0]) > holdingPriceMaxAge {
 			result.Issues = appendCurrentValuationIssue(result.Issues, *holdingPriceIssue("stale", holding.Symbol))
 			available = false
 			continue
@@ -205,6 +213,10 @@ func (s *Service) currentPortfolioValuationTx(ctx context.Context, tx *sql.Tx, v
 		result.PolicyVersion = currentPortfolioValuationOwnerFXPolicy
 		result.Issues = append(result.Issues, ownerFXIssue())
 	}
+	if usedOwnerPrice {
+		result.PolicyVersion = currentPortfolioValuationOwnerPricePolicy
+		result.Issues = append(result.Issues, ownerPriceIssue())
+	}
 	if !available {
 		result.Status = "unavailable"
 	} else {
@@ -246,7 +258,7 @@ func currentPriceObservationTimes(observations []SecurityPriceObservation) (map[
 		if err != nil {
 			return nil, errors.New("security price observation timestamps are inconsistent")
 		}
-		times[observation.ObservationID] = parsed
+		times[priceTimeKey(observation)] = parsed
 	}
 	return times, nil
 }

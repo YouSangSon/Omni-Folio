@@ -192,7 +192,11 @@ func (s *Service) portfolioBenchmarks(ctx context.Context) (*PortfolioBenchmarks
 	if err != nil {
 		return nil, internalError(err)
 	}
-	portfolio, appErr := s.portfolioTWRTx(ctx, tx, asOf, inputs)
+	prices, err := readValuationPriceInputs(ctx, tx, asOf)
+	if err != nil {
+		return nil, internalError(err)
+	}
+	portfolio, appErr := s.portfolioTWRTx(ctx, tx, asOf, inputs, prices)
 	if appErr != nil {
 		return nil, appErr
 	}
@@ -257,6 +261,9 @@ func (s *Service) portfolioBenchmarks(ctx context.Context) (*PortfolioBenchmarks
 		if row.StartFX != nil && row.StartFX.Source == ownerFXSource || row.EndFX != nil && row.EndFX.Source == ownerFXSource {
 			r.PolicyVersion = portfolioBenchmarksOwnerFXPolicy
 		}
+	}
+	if usesOwnerPrice(portfolio.Issues) {
+		r.PolicyVersion = "retrospective_latest_index_24h_native_and_krw_v3"
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, internalError(err)

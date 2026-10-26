@@ -10,13 +10,15 @@ import (
 )
 
 const (
-	holdingValuationPolicy = "native_holding_valuation_v1"
-	holdingPriceMaxAge     = 24 * time.Hour
+	holdingValuationPolicy           = "native_holding_valuation_v1"
+	holdingValuationOwnerPricePolicy = "native_holding_valuation_v2"
+	holdingPriceMaxAge               = 24 * time.Hour
 )
 
 type HoldingValuationPrice struct {
 	ObservationID   string `json:"observation_id"`
 	Source          string `json:"source"`
+	SourceVersion   string `json:"source_version,omitempty"`
 	Venue           string `json:"venue"`
 	Currency        string `json:"currency"`
 	Price           string `json:"price"`
@@ -102,20 +104,11 @@ func (s *Service) holdingValuation(ctx context.Context, asOf string) (*HoldingVa
 		return nil, &appError{http.StatusConflict, APIError{Code: "valuation_as_of_precedes_ledger_revision", Message: "valuation as_of precedes the current ledger state", Field: "as_of"}}
 	}
 
-	observations, _, err := replaySecurityPriceObservations(ctx, tx)
+	inputs, err := readValuationPriceInputs(ctx, tx, valuationTime)
 	if err != nil {
 		return nil, internalError(err)
 	}
-	times := make(map[string][3]time.Time, len(observations))
-	for _, observation := range observations {
-		observedAt, observedErr := time.Parse(time.RFC3339Nano, observation.ObservedAt)
-		fetchedAt, fetchedErr := time.Parse(time.RFC3339Nano, observation.FetchedAt)
-		recordedAt, recordedErr := time.Parse(time.RFC3339Nano, observation.RecordedAt)
-		if observedErr != nil || fetchedErr != nil || recordedErr != nil || fetchedAt.Before(observedAt) || recordedAt.Before(fetchedAt) {
-			return nil, internalError(errors.New("security price observation timestamps are inconsistent"))
-		}
-		times[observation.ObservationID] = [3]time.Time{observedAt, fetchedAt, recordedAt}
-	}
+	observations, times := inputs.observations, inputs.times
 
 	result := &HoldingValuation{
 		Scope: "holdings_only", PolicyVersion: holdingValuationPolicy,
@@ -135,6 +128,7 @@ func (s *Service) holdingValuation(ctx context.Context, asOf string) (*HoldingVa
 	marketTotals := map[string]*big.Rat{}
 	pnlTotals := map[string]*big.Rat{}
 	available := true
+	usedOwnerPrice := false
 	for _, holding := range snapshot.Holdings {
 		line := HoldingValuationLine{
 			InstrumentID: holding.InstrumentID, Symbol: holding.Symbol, Quantity: holding.Quantity,
@@ -150,9 +144,22 @@ func (s *Service) holdingValuation(ctx context.Context, asOf string) (*HoldingVa
 			continue
 		}
 		line.Price = publicHoldingValuationPrice(observation)
-		result.Sample = true
-		if valuationTime.Sub(times[observation.ObservationID][0]) > holdingPriceMaxAge {
+		if valuationTime.Sub(times[priceTimeKey(*observation)][0]) > holdingPriceMaxAge {
+			line.Price.State = "stale"
+		}
+		result.Sample = result.Sample || priceIsSample(observation)
+		usedOwnerPrice = usedOwnerPrice || observation.Source == ownerPriceSource
+		if !inputs.afterLastSplit(observation) {
+			line.Status = "split_basis"
+			line.Issue = holdingPriceIssue("split_basis", holding.Symbol)
+			result.Issues = append(result.Issues, *line.Issue)
+			result.Lines = append(result.Lines, line)
+			available = false
+			continue
+		}
+		if valuationTime.Sub(times[priceTimeKey(*observation)][0]) > holdingPriceMaxAge {
 			line.Status = "stale"
+			line.Price.State = "stale"
 			line.Issue = holdingPriceIssue("stale", holding.Symbol)
 			result.Issues = append(result.Issues, *line.Issue)
 			result.Lines = append(result.Lines, line)
@@ -182,6 +189,10 @@ func (s *Service) holdingValuation(ctx context.Context, asOf string) (*HoldingVa
 		result.Lines = append(result.Lines, line)
 	}
 
+	if usedOwnerPrice {
+		result.PolicyVersion = holdingValuationOwnerPricePolicy
+		result.Issues = append(result.Issues, ownerPriceIssue())
+	}
 	if !available {
 		result.Status = "unavailable"
 	} else {
@@ -215,16 +226,24 @@ func latestEligibleHoldingPriceAt(observations []SecurityPriceObservation, times
 	var selected *SecurityPriceObservation
 	for index := range observations {
 		observation := &observations[index]
-		if observation.Source != "local_fixture" || observation.InstrumentID != holding.InstrumentID || observation.Symbol != holding.Symbol ||
-			observation.Currency != holding.Currency || observation.PriceAdjustment != marketDataAdjustmentUnspecified {
+		owner := observation.Source == ownerPriceSource && observation.PriceAdjustment == ownerPriceAdjustment
+		fixture := observation.Source == "local_fixture" && observation.PriceAdjustment == marketDataAdjustmentUnspecified
+		if (!owner && !fixture) || observation.InstrumentID != holding.InstrumentID || observation.Currency != holding.Currency {
 			continue
 		}
-		observationTimes := times[observation.ObservationID]
+		if owner {
+			if instrumentIDForSymbol(holding.Symbol) != observation.InstrumentID {
+				continue
+			}
+		} else if observation.Symbol != holding.Symbol {
+			continue
+		}
+		observationTimes := times[priceTimeKey(*observation)]
 		if observationTimes[0].After(economicAt) || observationTimes[1].After(knownAt) || observationTimes[2].After(knownAt) {
 			continue
 		}
 		venues[observation.Venue] = struct{}{}
-		if selected == nil || observationTimes[0].After(times[selected.ObservationID][0]) {
+		if selected == nil || observationTimes[0].After(times[priceTimeKey(*selected)][0]) {
 			selected = observation
 		}
 	}
@@ -241,6 +260,8 @@ func holdingPriceIssue(status, symbol string) *APIError {
 	switch status {
 	case "ambiguous":
 		return &APIError{Code: "ambiguous_security_price_venue", Message: "security price venue identity is ambiguous", Field: symbol}
+	case "split_basis":
+		return &APIError{Code: "split_price_unavailable", Message: "an owner price strictly after the latest stock split is required", Field: symbol}
 	case "stale":
 		return &APIError{Code: "stale_security_price", Message: "the security price observation exceeds the policy age", Field: symbol}
 	default:
@@ -249,10 +270,12 @@ func holdingPriceIssue(status, symbol string) *APIError {
 }
 
 func publicHoldingValuationPrice(observation *SecurityPriceObservation) *HoldingValuationPrice {
-	return &HoldingValuationPrice{
-		ObservationID: observation.ObservationID, Source: observation.Source, Venue: observation.Venue,
-		Currency: observation.Currency, Price: observation.Price, PriceAdjustment: observation.PriceAdjustment,
-		ObservedAt: observation.ObservedAt, FetchedAt: observation.FetchedAt, RecordedAt: observation.RecordedAt,
-		Sample: true, State: "stale",
+	p := &HoldingValuationPrice{
+		ObservationID: observation.ObservationID, Source: observation.Source, Venue: observation.Venue, Currency: observation.Currency, Price: observation.Price, PriceAdjustment: observation.PriceAdjustment, ObservedAt: observation.ObservedAt, FetchedAt: observation.FetchedAt, RecordedAt: observation.RecordedAt, Sample: priceIsSample(observation), State: "stale",
 	}
+	if observation.Source == ownerPriceSource {
+		p.SourceVersion = observation.ownerVersion
+		p.State = "unknown"
+	}
+	return p
 }
