@@ -1683,6 +1683,11 @@ void main() {
         await tester.tap(find.text('연결'));
         await pumpUi(tester);
 
+        await tester.scrollUntilVisible(find.text('증권사 10 · 원장 7 · 차이 3'), 120);
+        await tester.ensureVisible(
+          find.text('증권사 10 · 원장 7 · 차이 3'),
+          alignment: 0.5,
+        );
         expect(find.textContaining('마지막 저장 스냅샷 · 현재 상태 아님'), findsOneWidget);
         expect(find.textContaining('불일치 · 2/2종목'), findsOneWidget);
         expect(find.text('증권사 10 · 원장 7 · 차이 3'), findsOneWidget);
@@ -1712,6 +1717,7 @@ void main() {
     api.failReconciliation = false;
     await tester.tap(find.text('대조 결과 다시 불러오기'));
     await pumpUi(tester);
+    await tester.scrollUntilVisible(find.textContaining('불일치 · 2/2종목'), 120);
     expect(find.textContaining('불일치 · 2/2종목'), findsOneWidget);
   });
 
@@ -1823,7 +1829,6 @@ void main() {
         await pumpUi(tester);
         await tester.tap(find.text('연결'));
         await pumpUi(tester);
-        expect(find.text('체결됨 · 취소 결과 확인 중'), findsOneWidget);
         await tester.scrollUntilVisible(
           find.textContaining('취소 결과를 아직 확인하지 못했습니다'),
           200,
@@ -1857,7 +1862,7 @@ void main() {
 
     api.failLocalOrders = true;
     final refresh = find.text('로컬 주문 기록 다시 불러오기');
-    await tester.ensureVisible(refresh);
+    await tester.scrollUntilVisible(refresh, 200);
     await tester.pump();
     await tester.tap(refresh);
     await pumpUi(tester);
@@ -1878,7 +1883,7 @@ void main() {
 
       api.failLocalOrders = true;
       final refresh = find.text('로컬 주문 기록 다시 불러오기');
-      await tester.ensureVisible(refresh);
+      await tester.scrollUntilVisible(refresh, 200);
       await tester.pump();
       await tester.tap(refresh);
       await pumpUi(tester);

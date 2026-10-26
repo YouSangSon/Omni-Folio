@@ -2750,7 +2750,7 @@ class DataPage extends StatelessWidget {
       children: [
         _Notice(
           icon: Icons.block,
-          text: '실전 주문 꺼짐 · 거래 내역과 소유자 데이터 파일을 가져올 수 있어요.',
+          text: '실전 주문 꺼짐 · 로컬 거래 내역 가져오기와 가격·환율·지수 파일을 지원합니다.',
           color: _warningColor(context),
         ),
         const SizedBox(height: 12),
