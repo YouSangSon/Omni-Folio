@@ -184,4 +184,4 @@ G6 PostgreSQL and Kubernetes promotion
 
 - 실제 KRW·USD 벤치마크 도입 기준은 [G1.25 source owner](gates/g1u-benchmark-series.md#benchmark-source-policy)에 둔다. 세전 TR 후보의 정의와 데이터 저장/표시 권한을 구분했으며 실제 파일·시각·사용권 확보는 미완료다. 이 문서 보완을 실제 자료 검증이나 전체 Goal 완료로 세지 않는다.
 
-- G1.29는 앱의 가격·환율·KRW/USD 지수 파일 검토와 명시적 저장을 연결한다. 입력 검토와 DB admission을 구분하고 불확실한 요청은 일치 확인서까지 원본을 유지한다. 구현·최종 원격 검증 진행 중 ([gate](gates/g1y-owner-data-import.md)).
+- G1.29는 앱의 가격·환율·KRW/USD 지수 파일 입력 검토와 명시적 저장을 연결했다. 불확실한 원본은 후속4xx에도 일치 확인서까지 유지하며 관련 조회 완료 후 갱신한다. 실제 HTTP RED·독립 리뷰와 최종 Core 전체450.130s·Python39/JSON37·Flutter15/418·분석·web/ARM64·권한/소스 일치를 통과해 테스트 tree와 같은 main에 병합했다. 실제 자료·권리·앱 재시작·실기기·VM/배포·전체 Goal 완료는 별도 ([gate](gates/g1y-owner-data-import.md)).

@@ -1,6 +1,6 @@
 # G1.29 앱에서 가격·환율·지수 파일 검토와 명시적 저장
 
-상태: 구현·원격 검증 진행 중. PR #57. 전체 Goal 완료나 배포 완료를 뜻하지 않는다.
+상태: 구현·필수 원격 검증·main 병합 완료 ([PR #57](https://github.com/YouSangSon/Omni-Folio/pull/57)). 전체 Goal 완료나 배포 완료를 뜻하지 않는다.
 
 ## 계약과 판단
 
@@ -21,6 +21,25 @@
 
 ## 검증
 
-실제 원격 RED: `46fd9b90666867d404cf48b73fcc7d884d38da8a`, Core run `40292011521`, job `121469041449`에서 새 preview가 HTTP404로 실패했다. full/source identity는 skipped다. 구현 후 기존 무료 표준 Ubuntu Core/Client workflow에서 집중 검사→필수 전체 검사·분석·web/ARM64·권한/소스 일치를 확인한다. 실패/cancel은 통과로 재사용하지 않는다.
+실제 원격 RED: `46fd9b90666867d404cf48b73fcc7d884d38da8a`, Core run `40292011521`, job `121469041449`에서 새 preview가 HTTP404로 실패했다. full/source identity는 skipped다. 구현 후 기존 무료 표준 Ubuntu Core/Client workflow에서 집중 검사→필수 전체 검사·분석·web/ARM64·권한/소스 일치를 통과했다. 실패/cancel은 통과로 재사용하지 않는다.
 
-로컬은 문서/JSON/Go·Dart 형식/Git만 확인한다. 새 iOS·실기기·수동 screen reader/OS 파일 대화상자·실제 provider/파일 사용권·VM/배포는 별도다. 서버·앱의 최종 SHA와 검증 결과는 완료 후 기록한다.
+로컬은 문서/JSON/Go·Dart 형식/Git만 확인한다. 새 iOS·실기기·수동 screen reader/OS 파일 대화상자·실제 provider/파일 사용권·VM/배포는 별도다. 실제 시장 파일/사용권 확보를 완료했다고 주장하지 않는다. KOSPI 200 TR·S&P 500 TR 도입 조건은 [기존 source owner](g1u-benchmark-series.md#benchmark-source-policy)에 남긴다.
+
+
+## 최종 검증과 병합 근거
+
+검증 head `283dc37fbdcb7c70be70d7f3fb5ad4477a948ec4`를 main `55f39e8814ee86740e2987a1732a1965ef853544`에 병합했다. 전체 tree `53d212172df55be1efc57ff1dbff368918e5663d`가 동일하고 ancestry를 확인했다. 문서 후속 변경은 이 runtime 근거와 소스/계약/workflow 동일성을 대조해 재사용하며 전체 suite를 중복 실행하지 않는다.
+
+| 검증 | 최종 근거 | 결과 |
+| --- | --- | --- |
+| Core 집중/전체 | [run40296837285](https://github.com/YouSangSon/Omni-Folio/actions/runs/40296837285), job121484838821 | 새 HTTP 집중1.015s, root 전체450.130s와 내부5 package, vet/형식, Python39, JSON37, 소유 자원 정리·source identity 통과 |
+| Client | [run40296837322](https://github.com/YouSangSon/Omni-Folio/actions/runs/40296837322), job121484841313 | 집중15/전체418, format34파일0변경, analyze, web 및 ARM64 release, 권한 반례8·source identity 통과 |
+| APK | client tree `592cc946c155b3466955740813c024087ee622cd` | 23546634 bytes, SHA256 `ca19ac80f72ed2e84fab72e7f8e11ee0947923959a90ffe72448e0838af7f20c` |
+| Plugin/권한 | registrant SHA256 `5d31e4d80984b4f5254d2e6629d2cc2b16760ab4774a94faa863c48897f18326` | Android file selector 등록, IntegrationTestPlugin 제외, INTERNET 및 signature receiver 권한만 허용 |
+| 로컬 정적 확인 | JSON37/로컬 OpenAPI ref/변경 Markdown 경로/4개 README | 실행 shell block27개가 KO/JA/EN/ZH에서 동일하고 기존 명령을 보존, gofmt·고정 Dart formatter·diff 통과. 로컬 runtime 검사 없음 |
+
+독립 설계/구현 리뷰에서 무관한 reconciliation/order 조회가 저장 후 갱신을 막는 문제와 integration profile fake의 새 API 누락을 수정했다. `busy=false` 직후와 current 조회 완료 시점에서 pending refresh를 drain하며, 무관한 조회를 미완료로 둔 회귀 검사로 확인한다. 입력 검토의 raw echo는 독립 SHA 검증으로 과장하지 않는다.
+
+중간 실패도 보존한다. `762f166` Client 집중15는 통과했으나 중괄호 lint6건으로 analyze가 실패했다. `c30b5b5`는 집중/분석 통과 뒤 기존 연결 화면 전체412통과/6실패였다. 새 카드로 바뀐 viewport와 안내 문구를 반영하고 기존 상태/오류/semantics 단언은 유지했다. `ab71111`은 테스트 보완에 SDK에 없는 `WidgetTester.ensureVisible(alignment:)`를 사용해 compile 단계에서 실패했고 검사는0개였다. `a5f1c7e`의 obsolete run과 이전 Core 전체 run들은 취소했으며 성공으로 세지 않는다. 고정 SDK의 실제 wrapper signature와 scroll 내부 코드를 확인해 중복 호출을 제거하고 scroll→frame→tap/semantics 순서로 보완한 뒤 독립 재리뷰에서 잔여 차단 없음, 최종 head 전체 CI에서 통과했다.
+
+이 검사는 실제 HTTP producer와 공유 합성 wire를 strict Flutter consumer에 연결한 자동 근거다. 실제 제공사·시장 자료 정확성, 앱 재시작 복구, 새 iOS/실기기/수동 screen reader/OS 파일 대화상자와 VM/배포는 증명하지 않는다. 전체 로그와 중간 실패·취소 분류는 ignored `docs/_internal/skill-outputs/goal-20261026-owner-data-import-*.log` 및 unit receipt에 보존한다.
