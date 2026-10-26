@@ -42,9 +42,9 @@ Portfolio Performance의 [historical prices](https://help.portfolio-performance.
 
 - 첫 RED head `67e549a294f0017d91695a3186ad9633e8cf1a8e`, [Core40280331004](https://github.com/YouSangSon/Omni-Folio/actions/runs/40280331004)는005930 BUY fixture가 기존 resolver에서 반영되지 않아 CLI 도달 전에 실패했다. 이 결과를 기능 RED로 세지 않는다.
 - admitted AAPL/USD와 기존 owner FX로 fixture를 고친 head `e1982c2a5557627e48085114a65122b17310934e`, [Core40280642296](https://github.com/YouSangSon/Omni-Folio/actions/runs/40280642296)는 실제 `unknown command "owner-price-import"`로 실패했다. 두 전체 로그와 입력/원인 수정 근거를 내부 receipt에 보존한다.
-- 독립 설계 리뷰의 canonical 소속 recovery·mixed-case 연결·native complete parser·oldv18 FX 권한 지적을 설계/구현에 반영했다. 구현 리뷰에서 unused Go import와 새 complete 상태의 통화별 totals 검사 누락을 발견해 제거/검사 확장과 반례를 추가했다. 최종 독립 리뷰와 원격 CI는 진행 중이다.
-- 구현 candidate는 아직 실행 검증 전이다. 공유8개 실제 HTTP producer fixture를 Flutter parser와 같이 검사하며 split exact/1ns·과거점 제거·withdraw/retry·namespace·소속·manifest 변조·oldv18 권한·엄격 parser·화면200%/두 theme·semantics cleanup·refresh 보존을 포함한다. 합성 입력 검사이며 실제 provider 정확성의 증거가 아니다.
-- 로컬은 Go/Dart format·JSON/schema ref·README4언어 명령/링크·diff 정적 검사만 허용한다. Go/Flutter runtime·전체 check·web/ARM64 build와 source identity는 기존 공개 무료 Ubuntu CI에서 확인한다. **최종 결과·commit/merge tree는 아직 없음.**
+- 독립 설계 리뷰의 canonical 소속 recovery·mixed-case 연결·native complete parser·oldv18 FX 권한 지적을 설계/구현에 반영했다. 구현 리뷰에서 unused Go import와 새 complete 상태의 통화별 totals 검사 누락을 발견해 제거/검사 확장과 반례를 추가했다. 독립 최종 정적 리뷰는 추가 차단 결함 없음으로 끝났고, mixed-case 회귀는 소문자 BUY를 경제 시각상 먼저 두어 실제 소문자 line label을 assert하도록 보강했다. 원격 CI는 진행 중이다.
+- 첫 구현 candidate의 Core/Client 집중 검사·Flutter 분석/전체·web build는 통과했으며 전체 Core와 ARM64 build는 진행 중이다. 최종 candidate에는 mixed-case 회귀 보강도 포함한다. 공유8개 실제 HTTP producer fixture를 Flutter parser와 같이 검사하며 split exact/1ns·과거점 제거·withdraw/retry·namespace·소속·manifest 변조·oldv18 권한·엄격 parser·화면200%/두 theme·semantics cleanup·refresh 보존을 포함한다. 합성 입력 검사이며 실제 provider 정확성의 증거가 아니다.
+- 로컬 Go format·pinned Dart31files zero delta·JSON36/local refs·README4언어 shell26blocks/로컬 링크·diff 정적 검사를 통과했다. Go/Flutter runtime·전체 check·web/ARM64 build와 source identity는 기존 공개 무료 Ubuntu CI에서 확인한다. **최종 결과·commit/merge tree는 아직 없음.**
 
 ## 남는 경계
 

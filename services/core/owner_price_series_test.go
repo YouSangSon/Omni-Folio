@@ -130,12 +130,12 @@ func TestOwnerPriceLedgerMembershipAndMixedCaseHolding(t *testing.T) {
 	if _, err := svc.importOwnerPriceSeries(context.Background(), ownerPriceInputForTest(t, func(i *OwnerPriceSeriesInput) { i.Symbol = "MSFT"; i.InstrumentID = "instrument_msft" })); err == nil {
 		t.Fatal("unadmitted instrument accepted")
 	}
-	if _, err := svc.db.Exec(`INSERT INTO events(event_id,source_event_id,account_id,type,occurred_at,instrument_id,symbol,quantity,price,fee,currency,amount,receipt_id,recorded_at) VALUES('legacy-case','legacy-case','account-main','BUY','2025-01-03T00:00:00Z','instrument_aapl','aapl','1','10','0','USD','-10','receipt-case','2026-01-01T00:00:00Z'); UPDATE ledger_meta SET revision=3,recorded_at='2026-01-01T00:00:00Z' WHERE singleton=1`); err != nil {
+	if _, err := svc.db.Exec(`INSERT INTO events(event_id,source_event_id,account_id,type,occurred_at,instrument_id,symbol,quantity,price,fee,currency,amount,receipt_id,recorded_at) VALUES('legacy-case','legacy-case','account-main','BUY','2025-01-01T12:00:00Z','instrument_aapl','aapl','1','10','0','USD','-10','receipt-case','2026-01-01T00:00:00Z'); UPDATE ledger_meta SET revision=3,recorded_at='2026-01-01T00:00:00Z' WHERE singleton=1`); err != nil {
 		t.Fatal(err)
 	}
 	importOwnerPriceForTest(t, svc, []byte(ownerPriceTestInput))
 	value, appErr := svc.holdingValuation(context.Background(), "2026-01-01T00:00:00Z")
-	if appErr != nil || len(value.Lines) != 1 || value.Lines[0].MarketValue == nil || *value.Lines[0].MarketValue != "400" || value.Sample || value.Status != "complete" {
+	if appErr != nil || len(value.Lines) != 1 || value.Lines[0].Symbol != "aapl" || value.Lines[0].MarketValue == nil || *value.Lines[0].MarketValue != "400" || value.Sample || value.Status != "complete" {
 		t.Fatalf("canonical mixed-case identity lost: %+v %v", value, appErr)
 	}
 	// A self-consistent rewrite still needs canonical ledger membership during recovery.
