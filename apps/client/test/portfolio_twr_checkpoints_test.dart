@@ -299,7 +299,11 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: PortfolioTwrPage(api: api)));
       await tester.pumpAndSettle();
       final action = find.text('입출금 구간별 성과 보기');
-      await tester.scrollUntilVisible(action, 180);
+      await tester.scrollUntilVisible(
+        action,
+        180,
+        scrollable: find.byType(Scrollable).first,
+      );
       await pumpUi(tester);
       await tester.tap(action);
       await tester.pumpAndSettle();
@@ -309,14 +313,22 @@ void main() {
         findsOneWidget,
       );
       final table = find.text('같은 계산점 표로 보기');
-      await tester.scrollUntilVisible(table, 180);
+      await tester.scrollUntilVisible(
+        table,
+        180,
+        scrollable: find.byType(Scrollable).first,
+      );
       await pumpUi(tester);
       await tester.tap(table);
       await tester.pumpAndSettle();
       expect(api.calls, 1);
       expect(find.text('입출금 경계 1'), findsOneWidget);
       expect(find.text('서버 비율: 0'), findsOneWidget);
-      await tester.scrollUntilVisible(find.text('조회 기말'), 120);
+      await tester.scrollUntilVisible(
+        find.text('조회 기말'),
+        120,
+        scrollable: find.byType(Scrollable).first,
+      );
       await pumpUi(tester);
       expect(find.text('서버 비율: 0.21'), findsOneWidget);
     },
@@ -428,7 +440,11 @@ void main() {
       expect(find.textContaining('직접 입력 환율 사용'), findsOneWidget);
       expect(find.textContaining('예시 가격·환율 포함'), findsOneWidget);
       final table = find.text('같은 계산점 표로 보기');
-      await tester.scrollUntilVisible(table, 180);
+      await tester.scrollUntilVisible(
+        table,
+        180,
+        scrollable: find.byType(Scrollable).first,
+      );
       await pumpUi(tester);
       await tester.tap(table);
       await tester.pumpAndSettle();
@@ -471,12 +487,20 @@ void main() {
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
           final table = find.text('같은 계산점 표로 보기');
-          await tester.scrollUntilVisible(table, 180);
+          await tester.scrollUntilVisible(
+            table,
+            180,
+            scrollable: find.byType(Scrollable).first,
+          );
           await pumpUi(tester);
           await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
           await tester.tap(table);
           await tester.pumpAndSettle();
-          await tester.scrollUntilVisible(find.text('조회 기말'), 180);
+          await tester.scrollUntilVisible(
+            find.text('조회 기말'),
+            180,
+            scrollable: find.byType(Scrollable).first,
+          );
           await pumpUi(tester);
           expect(find.text('서버 비율: 0.21'), findsOneWidget);
           expect(tester.takeException(), isNull);
@@ -499,12 +523,20 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       final table = find.text('같은 계산점 표로 보기');
-      await tester.scrollUntilVisible(table, 180);
+      await tester.scrollUntilVisible(
+        table,
+        180,
+        scrollable: find.byType(Scrollable).first,
+      );
       await pumpUi(tester);
       await tester.tap(table);
       await tester.pumpAndSettle();
       final source = find.text('큰 서버 계산값 원문 보기');
-      await tester.scrollUntilVisible(source, 120);
+      await tester.scrollUntilVisible(
+        source,
+        120,
+        scrollable: find.byType(Scrollable).first,
+      );
       await pumpUi(tester);
       await tester.tap(source);
       await tester.pumpAndSettle();
