@@ -38,13 +38,15 @@ Future<String> readCsvFile(XFile file) async {
 }
 
 Future<String> readUtf8File(XFile file) async {
-  if (await file.length() > maxCsvFileBytes)
+  if (await file.length() > maxCsvFileBytes) {
     throw RangeError('File exceeds 1MiB');
+  }
   final bytes = BytesBuilder(copy: false);
   // Do not use metadata as the endpoint: a file may grow after length().
   await for (final chunk in file.openRead()) {
-    if (bytes.length + chunk.length > maxCsvFileBytes)
+    if (bytes.length + chunk.length > maxCsvFileBytes) {
       throw RangeError('File exceeds 1MiB');
+    }
     bytes.add(chunk);
   }
   return utf8.decode(bytes.takeBytes());

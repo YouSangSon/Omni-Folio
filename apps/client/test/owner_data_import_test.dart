@@ -224,12 +224,13 @@ void main() {
         posted.add(request.input);
         attempt++;
         if (attempt == 1) throw const ApiException('network');
-        if (attempt == 2)
+        if (attempt == 2) {
           throw const ApiException(
             'rejected',
             statusCode: 409,
             code: 'owner_data_conflict',
           );
+        }
         return OwnerDataReceipt.fromJson(c['result'] as Json, request);
       };
       final ctl = OwnerDataImportController(api, onStored: () => stored++);

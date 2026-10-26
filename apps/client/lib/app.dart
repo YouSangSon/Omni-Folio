@@ -319,8 +319,12 @@ class PortfolioController extends ChangeNotifier {
   }
 
   void _drainMarketDataRefresh() {
-    if (_disposed || !_marketDataRefreshPending || busy || currentValuationBusy)
+    if (_disposed ||
+        !_marketDataRefreshPending ||
+        busy ||
+        currentValuationBusy) {
       return;
+    }
     _marketDataRefreshPending = false;
     unawaited(refresh());
   }

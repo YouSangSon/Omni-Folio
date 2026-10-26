@@ -62,8 +62,9 @@ class OwnerDataImportController extends ChangeNotifier {
         original == null ||
         selecting ||
         reviewing ||
-        pending != null)
+        pending != null) {
       return;
+    }
     final generation = ++_generation;
     reviewing = true;
     message = null;
@@ -71,8 +72,9 @@ class OwnerDataImportController extends ChangeNotifier {
     try {
       final response = await api.previewOwnerData(original);
       if (!_disposed && generation == _generation) {
-        if (response.input != original)
+        if (response.input != original) {
           throw const FormatException('Wrong input review');
+        }
         review = response;
       }
     } catch (_) {
