@@ -255,6 +255,8 @@ curl -fsS http://127.0.0.1:8080/v1/portfolio/twr
 
 비교 기준은 `KRW`와 `USD`를 모두 지원합니다. 원본은 `price_index`, `gross_total_return`, `net_total_return` 중 하나를 선언한 정규화 지수 파일이어야 합니다. 아래 두 파일은 `sample` 예제이며 실제 시장 자료가 아닙니다.
 
+배당 재투자를 포함하는 실제 비교 자료는 KRW의 KOSPI 200 TR과 USD의 S&P 500 Total Return을 우선 검토합니다. 정확한 시리즈·통화 판·관측 시각·저장/표시 사용권을 확인한 파일이 필요합니다. 현재 실제 파일과 사용권은 확보하지 않았습니다. [공식 정의·사용 조건·도입 절차](gates/g1u-benchmark-series.md#benchmark-source-policy)를 확인하세요.
+
 ```sh
 (cd services/core && go run . benchmark-import -db ../../data/omni-folio.db -input ../../contracts/fixtures/benchmark-krw-sample.json)
 (cd services/core && go run . benchmark-import -db ../../data/omni-folio.db -input ../../contracts/fixtures/benchmark-usd-sample.json)

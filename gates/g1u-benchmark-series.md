@@ -32,7 +32,39 @@ backup16/schema22는 기존 chronological FIFO v2 권한을 유지한다. backup
 - [Portfolio Performance benchmark 문서](https://help.portfolio-performance.info/en/how-to/benchmarking/)의 같은 기간 정규화와 가격/배당 기준 구분을 참고한다. 코드·원문·시장 자료를 복제하지 않았다.
 - [FRED SP500 공식 주석](https://fred.stlouisfed.org/series/SP500)은 배당을 포함하지 않는 가격지수라고 밝히고, 자료 재현의 사전 서면 허가 조건을 표시한다. 사이트에서 값을 볼 수 있는 것만으로 공개 fixture 배포 권한을 인정하지 않는다.
 - [KRX OPEN API 이용약관](https://openapi.krx.co.kr/contents/OPP/INFO/OPPINFO002.jsp)은 API의 인증키·비상업적 이용·화면 출처 표시·제3자 제공 제한을 규정한다. 이 API 약관을 별도 수동 다운로드의 계약으로 확대하지 않는다. KOSPI의 실제 다운로드 경로·통화/수익 기준의 원문과 사용 권한은 아직 확정하지 않았다.
-- 이 단위는 실제 KOSPI/S&P500 자료·API key·자동 수집기를 추가하지 않는다. 실제 지수 선정과 사용 가능한 owner dataset을 확인한 뒤 비교를 연결한다. 날짜·시장 마감 시각이나 분할/배당 의미를 추측해 metadata를 채우지 않는다.
+- 이 단위는 실제 KOSPI/S&P500 자료·API key·자동 수집기를 추가하지 않는다. 실제 자료 도입은 아래 기준과 사용 가능한 owner dataset을 확인한 뒤 기존 비교에 연결한다. 날짜·시장 마감 시각이나 분할/배당 의미를 추측해 metadata를 채우지 않는다.
+
+<a id="benchmark-source-policy"></a>
+
+### KRW·USD 실제 자료 도입 기준 (2026-10-26)
+
+사용자 요청에 따라 두 통화를 함께 유지한다. 배당을 포함하는 비교를 위한 **우선 검토 대상**은 아래와 같다. 이는 지수 정의를 고르는 단계이며 실제 파일·사용권은 아직 확보하지 않았다. 어떤 파일도 자동으로 내려받거나 등록하지 않는다.
+
+| 비교 영역 | 우선 검토 대상 | 목표 입력 통화·기준 | 실제 입력 전 남은 확인 |
+|---|---|---|---|
+| 한국 주식 | KOSPI 200 TR의 KRW 판 | `KRW` · `gross_total_return` | 원화 판의 정확한 제공자 코드·원본 metadata·시각·다운로드 경로와 사용 조건 |
+| 미국 대형주 | S&P 500 Total Return의 USD 판 | `USD` · `gross_total_return` | 정확한 TR 시리즈 코드·원본 metadata·시각·저장/앱 표시를 허용하는 공급 계약 |
+
+배당이 있는 포트폴리오와 가격 변화만 반영한 지수를 기본 총수익 비교로 섞지 않기 위해 TR을 우선 검토한다. 다만 비용·세금을 포함한 포트폴리오와 세전 TR의 차이는 세후 초과성과가 아니다. NTR도 제공자 원천징수 가정이 사용자의 실제 과세와 같다고 볼 수 없어 자동 선택하지 않는다. 기존 입력의 price/gross/net 세 기준은 그대로 지원하며 실제 파일의 확인된 기준을 선언해야 한다. 종목 adjusted close나 ETF NAV를 이 지수의 level로 바꾸어 넣지 않는다.
+
+**정의에 대한 근거와 확인 수준**
+
+- [KRX Total Return 안내](https://eindex.krx.co.kr/contents/GLB/05/0502/0502050600/GLB0502050600.jsp)의 검색 색인은 배당 재투자와 KOSPI 200 TR/NTR 계열을 설명한다. 직접 본문 조회는403이었다. [RISE 발행사 공개 설명](https://eng.riseetf.co.kr/prod/finderDetail/44A5)의 검색 색인은 KOSPI 200 TR을 세전 현금배당 재투자로 설명한다. 직접 영어 본문은 timeout, 한국어 경로는 접근 불가 redirect였다. 이 색인 근거만으로 실제 원화 파일의 통화·코드·현재 값을 확정하지 않는다. ETF 발행사 설명도 KRX 원본 dataset metadata를 대신하지 않는다.
+- [S&P U.S. Indices Methodology](https://www.spglobal.com/spdji/en/documents/methodologies/methodology-sp-us-indices.pdf)는 확인 시 July2026 판이며 문서p18은 USD 산출, p21은 PR·정기 현금배당의 세전 재투자 TR·원천징수 후 NTR을 구분한다. [Index Mathematics](https://www.spglobal.com/spdji/en/documents/methodologies/methodology-index-math.pdf)의 September2026 판 p21–22도 TR/NTR 계산을 구분한다. 이 문서는 계산 정의의 근거이며 실제 시리즈 파일의 획득 증거가 아니다.
+
+**사용 조건에 대한 근거와 실행 결정**
+
+- [S&P DJI Legal Disclaimers](https://www.spglobal.com/spdji/en/disclaimers/)는 사전 서면 허가 없는 재현·배포·DB/검색 시스템 저장을 제한한다. [Data & Index Licensing](https://www.spglobal.com/spdji/en/about-us/data-index-licensing/)은 데이터 패키지와 구독 경로를 설명한다. 따라서 사이트 열람 또는 일반적인 개인용 다운로드 문구만으로 이 앱의 저장·표시·공개 재배포를 허용했다고 간주하지 않는다. 실제 허용 범위를 확인할 공급 계약/권한이 필요하며 유료 구독을 시작하지 않는다.
+- [KRX OPEN API 약관](https://openapi.krx.co.kr/contents/OPP/INFO/OPPINFO002.jsp)의 제3·5조는 인증키, 제6조는 비상업적 사용, 제10조는 화면 출처 표시, 제11조는 제3자 제공 제한을 규정한다. 이 약관에서 별도 수동 다운로드·상업 앱·공개 저장소 재배포 허가를 추론하지 않는다. Data Marketplace 본문은 이번 도구에서 추출되지 않아 수동 파일 경로와 그 사용 조건은 미확인이다. 기존 로그인/키·유료 실행을 새로 요구하거나 접근 차단을 우회하지 않는다.
+
+**실제 파일을 기존 계약에 연결할 때**
+
+1. 정확한 지수명·통화 판·gross/net 기준·provider code와 release를 원본 metadata로 확인하고, 저장·개인 앱 표시·공개 demo/재배포 각각의 허용 범위와 보관기간·계약 종료 후 사용 조건을 구분한다. 현재 benchmark journal은 과거 버전도 전체 재검증/백업하며 개별 삭제 경로가 없으므로 이 보관 계약과 제공 조건의 양립을 입력 전에 확인해야 한다. KRX API 제11조③의 계약 종료 후 이용 금지도 이 확인에 포함한다. 일반 `sample=false`와 receipt의 저장 hash는 사용권 확인을 대신하지 않는다.
+2. 날짜만 있는 종가 자료에는 공식 관측 시각·timezone/휴장·조기 마감·공표 시각을 먼저 정의한다. 날짜를 임의의 UTC 자정이나 다운로드 시각으로 바꾸지 않는다. 관측·수집·기록 세 시각과 기존24시간 정책을 유지하며 휴일 자료를 보간하거나 freshness 제한을 늘려 성공시키지 않는다.
+3. 허용된 자료를 기존 [benchmark-index-series.v1](../contracts/benchmark-index-series.schema.json)의 전체 버전으로 준비한다. 실제 자료는 sample identity와 다른 `benchmark_id`를 사용하고, 통화·basis·출처·sample이 달라지면 별도 identity로 둔다. `source_reference`는 credential/query/fragment 없는 공개 HTTPS 참조이며 CLI가 가져오지 않는다. 정규화 payload hash의 일치와 제공자 원본의 정확성을 구분한다.
+4. 기존 `benchmark-import` → `benchmark-status` → [같은 관찰의 비교](g1v-portfolio-benchmark-comparison.md)를 사용한다. USD native에는 지수 양 끝점이, KRW 환산에는 추가로 직접 USD→KRW 환율 양 끝점이 필요하다. FX가 없어도 유효한 native 결과는 유지한다. 원본을 KRW로 환산한 판에 USD 태그를 붙이거나 FX를 두 번 적용하지 않는다. 이 절차의 실제 시장 파일 실행은 아직 미검증이다.
+
+예를 들어 USD TR이10% 오르고 USD→KRW가10% 내리면 원화 수익은−1%다. 사용권이 확인된 파일이라도 시작 관측이24시간 조건을 넘거나 UTC 시각을 확정하지 못하면 비교 불가를 유지해야 한다. 확인일은 문서 조사일이며 시세 관측일을 뜻하지 않는다.
 
 ## 검증과 다음 작업
 
