@@ -48,8 +48,8 @@ jobs:
           grep -Fx 'python 3.14.5' .tool-versions
           go version
           python --version
-      - name: Check automatic paper promotion first
-        run: make test FLUTTER=true CORE_TEST_PACKAGES='-run=^TestPaperPromotion -count=1 -timeout=10m ./...'
+      - name: Check paper promotion and migration compatibility first
+        run: make test FLUTTER=true CORE_TEST_PACKAGES="-run='^(TestPaperPromotion|TestG38EMigration20PreservesNonemptyV19JournalsProofsAndForeignKeys)' -count=1 -timeout=10m ./..."
       - name: Check core, research and contracts with owned cleanup
         # The client release workflow owns Flutter checks.
         run: make check DART=true FLUTTER=true CORE_TEST_PACKAGES='-timeout=30m ./...'
