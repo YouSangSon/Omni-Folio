@@ -14,7 +14,7 @@
 
 ## Next
 
-- [ ] G3AI 모의 체결 계산과 호환되는 연구 v2: 기존 v1을 보존하고 정수 수량·정확한 비용·부분체결·공통 Go/Python 사례를 검증한다. 구현과 독립 리뷰 진행 중이며 원격 전체 CI·병합 전이다. 자동 승격은 별도다 ([gate](gates/g3ai-paper-compatible-research.md)).
+- [x] G3AI 모의 체결 계산과 호환되는 연구 v2: 기존 v1을 보존하고 정수 수량·정확한 비용·부분체결·단일 입력 캡처를 연결했다. 실제 RED·독립 리뷰 후 공통 Go/Python49사례, Core 전체444.742s·Python48/JSON43·Flutter22/457·분석·web/ARM64·권한/소스 일치를 통과해 main에 병합했다. v2 registry 거절을 유지하며 자동 승격은 별도다 ([gate](gates/g3ai-paper-compatible-research.md), [PR #63](https://github.com/YouSangSon/Omni-Folio/pull/63)).
 
 - [x] G4Y 관심종목 등록·삭제와 저장 가격 상태: 원장과 별도의 서버 목록, KRW/USD 원통화 가격·출처·누락·지연, 충돌/불확실 재시도와 schema26/backup20 복구를 구현했다. 실제 API404 RED·독립 리뷰·중간 테스트/분석 실패 보완 후 Core 전체446.025s·Python39/JSON39·Flutter22/457·분석·web/ARM64·권한/소스 일치를 통과해 main에 병합했다. Core는 동일 Git 객체의 통과 근거를 재사용했고 중복 취소는 통과로 세지 않는다. 실제 시세·실기기·VM/배포는 별도다 ([gate](gates/g4y-stored-watchlist.md), [PR #61](https://github.com/YouSangSon/Omni-Folio/pull/61)).
 

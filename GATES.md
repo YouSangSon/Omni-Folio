@@ -108,6 +108,8 @@ G6 PostgreSQL and Kubernetes promotion
 
 ## Root completion evidence
 
+- G3AI는 기존 v1 계약을 유지하는 별도 연구 v2의 정수 수량·정확한 비용·부분체결·단일 입력 캡처를 검증한다. 실제 Go/Python 공통49사례·전체 CI와 v2 registry 거절을 통과했으며 자동 승격·운영 runner 전체 동등성은 별도다. [계산 계약과 최종 근거](gates/g3ai-paper-compatible-research.md).
+
 - `make check` 또는 동등한 단일 명령이 각 활성 서브프로젝트의 format, lint, unit, contract test를 실행한다.
 - 검증 명령은 성공·실패·중단 뒤 자신이 만든 프로세스, 임시 파일, Podman/Kind/Testcontainers 리소스를 소유 label·세션·명시적 ID 기준으로 회수하며 전역 prune을 사용하지 않는다.
 - 2026-09-08 프로세스 관측 불가 사전 차단 40개 하위 사례, 실제 smoke build failure 자손 회수, 성공·실패·SIGINT·SIGTERM 11개 process-tree matrix를 통과했다. 최종 `make check`는 Go 전체·Flutter 98개·Python 34개·JSON 17개를, 실제 `make smoke`는 build/migrate/server/API와 종료 후 소유 자원 부재를 통과했다. SIGKILL·host crash guardian은 미증명이다. [세부 gate](gates/g0-resource-preflight.md)
