@@ -2,7 +2,9 @@
 
 ## 상태와 범위
 
-**독립 리뷰 완료·원격 CI 검증 대기.** [G3AJ 자동 비교](g3aj-automatic-paper-promotion.md)의 최신 비교 요청과 결정을 읽는 API, Flutter 연결 화면을 추가한다. schema v27/backup v21과 비교·선택·실행 권한의 기존 기록을 그대로 사용한다.
+**원격 CI 통과·main 병합.** [G3AJ 자동 비교](g3aj-automatic-paper-promotion.md)의 최신 비교 요청과 결정을 읽는 API, Flutter 연결 화면을 추가했다. schema v27/backup v21과 비교·선택·실행 권한의 기존 기록을 그대로 사용한다.
+
+테스트 head는 `06e76dd8589566b8925d33e0dee38060fac87e4f`, [PR #68](https://github.com/YouSangSon/Omni-Folio/pull/68)의 main은 `7e5271a71752c3fa3eb3bbdf3c95c75ef43c9474`다. head가 main의 조상이며 전체 Git tree가 같다. 이후 검증 기록 변경은 이 gate·`PLAN.md`·`GATES.md`만 바꾸므로 동일한 실행 입력의 통과 근거를 재사용한다.
 
 실제 RED는 head `774bf923a9be641d1f3f78ed5b9e9c99bd80d476`, [Core40657897797 job122713314657](https://github.com/YouSangSon/Omni-Folio/actions/runs/40657897797/job/122713314657)에서 새 경로가 HTTP404를 반환한 실패다. 이 실패를 구현 검증 통과로 세지 않는다.
 
@@ -40,11 +42,16 @@ curl -fsS http://127.0.0.1:8080/v1/paper/promotion-report
 
 완료 비교가 있을 때만 `metrics_verification=recomputed_from_stored_input`을 보낸다. 기록 시각은 UTC RFC3339Nano로 정규화한다. 비교 종료 ≤ 요청 기록 ≤ 결정 기록과 구간 순서를 보존하되, 서버 시계가 뒤로 이동할 수 있으므로 관측 시각이 과거 기록보다 뒤라는 조건은 추가하지 않는다. [Flutter 파서](../apps/client/lib/paper_promotion_report.dart)는 나노초를 잃지 않는 검증된 UTC 문자열 비교와 정확한 수량·지표 검증을 사용한다.
 
-## 검증과 남은 범위
+## 검증 근거
 
 - 독립 리뷰에서 OpenAPI가 비교 구간의 소수 초를 허용해 Flutter와 불일치한 지적을 보완했다. 네 구간 경계는 정수 초로 제한하고 관측·요청·결정 시각의 나노초 지원은 유지하며, 수정분 재검토를 마쳤다.
 - [공유 응답 8사례](../contracts/fixtures/paper-promotion-report-cases.json)를 실제 claim·비교·오류·중단·선택·rollback 흐름에서 생성한 서버 응답과 비교하고 Flutter에서도 소비한다. 최신 미결정 우선, 과거 지표 위조, 시계 역행, 읽기 전후 journal·권한·schema 불변과 비공개 오류를 검사한다.
-- UI 검사는 이전 관측 보존, 결정별 문구, 정확한 지표, 320px·200% 글자, light/dark, 키보드·semantics·reduced motion과 페이지 종료 후 응답을 다룬다. 필수 공개 Ubuntu CI의 집중 검사·전체 검사·분석·web/ARM64 release 결과는 완료 후 이 문서에 남긴다.
-- 로컬은 소스·JSON·상대 링크·번역 구조·gofmt 검토만 수행한다. 로컬 앱·테스트·빌드·Dart/Flutter 실행은 하지 않는다. CI에서 포맷이 실패하면 실패 job이 출력한 diff로 수정하며 실패 결과를 숨기지 않는다.
+- 첫 [Client40662139310](https://github.com/YouSangSon/Omni-Folio/actions/runs/40662139310)은 집중15개 중14개가 통과하고 화면 진입 검사가 실패했다. 스크롤 반영 전에 화면 밖 버튼을 누른 테스트 문제를 기존 `pumpAndSettle`·`hitTestable` 패턴으로 수정했다. 실패 job이 출력한 고정 SDK의 포맷 diff도 적용했다. 이 실패와 위 RED를 통과로 세지 않는다.
+- [Core40662911669](https://github.com/YouSangSon/Omni-Folio/actions/runs/40662911669), job122732346570: 집중 검사19.973초, `make check DART=true FLUTTER=true CORE_TEST_PACKAGES='-timeout=30m ./...'`의 Core 전체406.978초·내부6패키지·Python48·JSON44 파싱·Go vet/format·소유 자원 cleanup·소스 일치가 통과했다. Ubuntu24.04, Go1.24.5, Python3.14.5, Go 병렬도2/빌드 병렬도1의 기존 무료 CI다. 실행 시간은 성능 개선율이나 p95 측정이 아니다.
+- [Client40662911694](https://github.com/YouSangSon/Omni-Folio/actions/runs/40662911694), job122730096020: 집중15/전체472·Dart format45파일 변경0·analyze·web/ARM64 release·권한 반례8·패키지/소스 일치가 통과했다. 이전 관측 보존, 결정별 문구, 정확한 지표, 320px·200% 글자, light/dark, 키보드·semantics·reduced motion과 페이지 종료 후 응답을 포함한다. client tree는 `d8f8ad1e62cf2e11e5c7f8cba843c62087577740`이다.
+- APK는23,677,950bytes, SHA256 `4535557eb66d1bc442afab90680cbad41ea9ace9bf3d2bfbd51f220b9787d210`, registrant SHA256 `5d31e4d80984b4f5254d2e6629d2cc2b16760ab4774a94faa863c48897f18326`이다. 기존 INTERNET·signature-protected receiver 권한만 허용했다. cache/artifact 업로드는 없으며 소스 일치를 APK byte 재현성으로 확대하지 않는다.
+- 로컬은 gofmt·diff·JSON 파싱·OpenAPI 참조343개·README 네 언어의 동일 shell31개(sh30·bash1)·상대 링크312개를 정적으로 확인했다. JSON 파싱은 JSON Schema 의미 검증 실행이 아니다. 로컬 앱·테스트·빌드·Dart/Flutter는 실행하지 않았다. CI 로그와 실행 입력의 Git 객체는 `docs/_internal/skill-outputs/goal-20261028-promotion-report-*`에 보존했다.
+
+## 남은 범위
 
 기존 SQLite `BEGIN IMMEDIATE` 읽기는 writer lock을 잡고 전체 복구는 비교 이력에 비례해 비용이 늘 수 있다. polling을 추가하지 않았으며 대량 이력에서의 지연은 측정하지 않았다. 저장 입력 재계산은 데이터 사용권·가격 조정·거래소·현재 시세·실제 지수 검증이 아니다. KRW/USD benchmark는 별도 계약을 유지한다. 실제 제공자·VM 배포·새 iOS·실기기·실주문 검증은 포함하지 않는다.
