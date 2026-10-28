@@ -1636,7 +1636,11 @@ void main() {
       expect(api.reconciliationCalls, 1);
       final refresh = find.byTooltip('데이터 새로고침');
       expect(
-        tester.widget<IconButton>(find.byType(IconButton)).onPressed,
+        tester
+            .widget<IconButton>(
+              find.ancestor(of: refresh, matching: find.byType(IconButton)),
+            )
+            .onPressed,
         isNotNull,
       );
       await tester.tap(refresh);
