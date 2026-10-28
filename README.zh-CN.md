@@ -431,9 +431,11 @@ Python 的 `--bundle` 会一起输出提案和计算所用的原始 CSV。通过
 
 `--watch --bundle` 可通过 stdin pipe 连接单独的 `paper-execute-stream -arm-paper`。此命令只激活一次，在输入间隔中也会续租所有权 lease，并在停止、EOF 或错误时清理 reader 和权限。它不是自动重新激活机制或持久队列；请通过数据库记录而非 stdout 确认执行情况。[连续 fixture 使用方法](docs/local-paper-workflow.md#명시적으로-연속-fixture-소비하기)、[验证 gate](gates/g3w-paper-input-stream.md)
 
-策略改进 runner 使用 expanding walk-forward 评估有限的仅做多 SMA 候选，且只打开最终留出集一次。结果只能为 `paper_candidate` 或 `no_promotion`，不会获得凭据、下单或晋级实盘的权限。
+策略改进 runner 使用 expanding walk-forward 评估有限的仅做多 SMA 候选，且每次运行只打开最终留出集一次。结果只能为 `paper_candidate` 或 `no_promotion`，不会获得凭据、下单或晋级实盘的权限。
 
-Go core 将这些本地结果注册到 schema v13 引入、并保留到当前 schema v26 的仅插入 registry 中。`no_promotion` 也会作为拒绝证据保留，但不可被选中。由于尚无与当前 champion 直接比较的逻辑，选择 `paper_candidate` 需要显式 CLI 和乐观并发控制；rollback 只能向日志追加新事件，退回前一次选择或 `no_strategy`。
+如需使用整数股的 paper 成交、手续费、税费和部分成交进行评估，请向同一 CLI 传入 `--config contracts/fixtures/strategy-improvement-paper-config.json`。此 v2 精确计算金额，将比率按 half-even 舍入到小数点后28位，并与现有 v1 结果区分。下方注册示例仅适用于 v1。当前 registry 和信号提交均拒绝 v2；其结果不代表自动晋级，也不证明与完整 paper runner 等价。参见[计算契约与验证](gates/g3ai-paper-compatible-research.md)。
+
+Go core 将 v1 本地结果注册到 schema v13 引入、并保留到当前 schema v26 的仅插入 registry 中。`no_promotion` 也会作为拒绝证据保留，但不可被选中。由于尚无与当前 champion 直接比较的逻辑，选择 `paper_candidate` 需要显式 CLI 和乐观并发控制；rollback 只能向日志追加新事件，退回前一次选择或 `no_strategy`。
 
 ```sh
 candidate_file="$(mktemp)"

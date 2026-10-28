@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from decimal import Decimal
+from fractions import Fraction
+from math import floor
 from pathlib import Path
 from typing import Any
 
@@ -18,10 +20,11 @@ from .engine import (
     decimal_input,
     decimal_string,
     fill,
-    load_bars,
+    parse_bars,
     object_value,
     request_execution,
 )
+from . import paper_fill
 
 MINIMUM_FOLD_BARS = 30
 EVALUATION_POLICY_VERSION = "sma-expanding-walk-forward.v1"
@@ -57,6 +60,7 @@ class ExperimentConfig:
     minimum_holdout_return: Decimal
     maximum_holdout_drawdown: Decimal
     minimum_holdout_trades: int
+    paper_compatible: bool = False
 
 
 def integer(value: Any, field: str, *, minimum: int = 0) -> int:
@@ -76,8 +80,9 @@ def parameter_values(value: Any, field: str) -> tuple[int, ...]:
 
 def parse_config(config: dict[str, Any]) -> ExperimentConfig:
     required = {"schema_version", "experiment_id", "data", "strategy", "execution", "splits", "promotion"}
-    if not isinstance(config, dict) or set(config) != required or config["schema_version"] != "strategy-improvement.v1":
-        raise ValueError("config must be a strategy-improvement.v1 object")
+    if not isinstance(config, dict) or set(config) != required or config["schema_version"] not in ("strategy-improvement.v1", "strategy-improvement.v2"):
+        raise ValueError("config must be a strategy-improvement.v1 or v2 object")
+    paper_compatible = config["schema_version"] == "strategy-improvement.v2"
     experiment_id = config["experiment_id"]
     if not isinstance(experiment_id, str) or not experiment_id:
         raise ValueError("experiment_id is required")
@@ -97,6 +102,8 @@ def parse_config(config: dict[str, Any]) -> ExperimentConfig:
     candidates = tuple(Parameters(fast, slow) for fast in fast_windows for slow in slow_windows)
     if len(candidates) > 64 or any(item.fast_window >= item.slow_window for item in candidates):
         raise ValueError("strategy grid must contain at most 64 fast windows strictly below every slow window")
+    if paper_compatible and (strategy["version"] != "1.0.0" or quantity != int(quantity) or quantity > paper_fill.MAX_QUANTITY or max(slow_windows) > 365):
+        raise ValueError("paper evaluation requires strategy 1.0.0, capitalized whole shares, and SMA windows at most 365")
 
     execution, starting_cash, fee, tax_rate, slippage_bps, delay_bars, participation = request_execution({"execution": config["execution"]})
     if tax_rate > ONE or slippage_bps >= BPS_DENOMINATOR:
@@ -149,14 +156,15 @@ def parse_config(config: dict[str, Any]) -> ExperimentConfig:
         minimum_holdout_return=minimum_holdout_return,
         maximum_holdout_drawdown=maximum_holdout_drawdown,
         minimum_holdout_trades=integer(promotion["minimum_holdout_trade_count"], "promotion.minimum_holdout_trade_count", minimum=1),
+        paper_compatible=paper_compatible,
     )
 
 
-def average(closes: list[Decimal], end: int, window: int) -> Decimal:
-    return sum(closes[end - window + 1 : end + 1], ZERO) / Decimal(window)
+def average(closes: list[Decimal] | list[Fraction], end: int, window: int) -> Decimal | Fraction:
+    return sum(closes[end - window + 1 : end + 1]) / window
 
 
-def sma_crossover(closes: list[Decimal], end: int, parameters: Parameters) -> str:
+def sma_crossover(closes: list[Decimal] | list[Fraction], end: int, parameters: Parameters) -> str:
     if end < parameters.slow_window:
         return "none"
     previous_fast = average(closes, end - 1, parameters.fast_window)
@@ -184,17 +192,22 @@ def simulate_fold(
         raise ValueError("fold has insufficient bars for the SMA window and delayed liquidation")
     from .engine import Order
 
-    cash = config.starting_cash
-    position = ZERO
-    fees = taxes = slippage_cost = turnover = ZERO
+    number = Fraction if config.paper_compatible else Decimal
+    render = paper_fill.exact_decimal if config.paper_compatible else decimal_string
+    ratio = paper_fill.ratio_string if config.paper_compatible else decimal_string
+    starting_cash = number(config.starting_cash)
+    fee = number(config.fee)
+    cash = starting_cash
+    position = number(0)
+    fees = taxes = slippage_cost = turnover = number(0)
     orders: list[Order] = []
     trade_trace: list[dict[str, str]] = []
     equity_marks = [cash]
-    closes = [bar.close for bar in series]
+    closes = [number(bar.close) for bar in series]
     liquidation_signal_index = len(series) - config.delay_bars - 1
     order_number = 0
 
-    def schedule(side: str, quantity: Decimal, signal_index: int) -> None:
+    def schedule(side: str, quantity: Decimal | Fraction, signal_index: int) -> None:
         nonlocal order_number
         eligible_index = signal_index + config.delay_bars
         if eligible_index <= signal_index:
@@ -204,39 +217,54 @@ def simulate_fold(
 
     for index in range(evaluation_start, len(series)):
         bar = series[index]
-        capacity = bar.volume * config.participation
+        capacity = number(bar.volume) * number(config.participation)
+        if config.paper_compatible:
+            capacity = Fraction(floor(capacity))
+        initial_capacity = capacity
         for order in orders:
             if order.remaining == ZERO or index < order.eligible_index or capacity <= ZERO:
                 continue
-            price = bar.open * (ONE + config.slippage_bps / BPS_DENOMINATOR if order.side == "BUY" else ONE - config.slippage_bps / BPS_DENOMINATOR)
-            quantity = min(order.remaining, capacity)
-            if order.side == "BUY":
-                quantity = min(quantity, max(ZERO, (cash - config.fee) / price))
+            if config.paper_compatible:
+                filled = paper_fill.calculate_fill(config.execution, {
+                    "side": order.side, "open": decimal_string(bar.open), "volume": decimal_string(bar.volume),
+                    "remaining_quantity": render(order.remaining), "cash": render(cash),
+                    "position_quantity": render(position), "consumed_capacity": render(initial_capacity - capacity),
+                })
+                if filled is None:
+                    continue
+                price, quantity, notional, tax, slippage = (Fraction(filled[key]) for key in ("price", "quantity", "notional", "tax", "slippage"))
+                order.remaining -= quantity
+                order.fills.append({"fill_state": "partial" if order.remaining else "complete"})
             else:
-                quantity = min(quantity, position)
-            if quantity <= ZERO:
-                continue
-            notional, tax, slippage = fill(order, bar, quantity, config.fee, config.tax_rate, config.slippage_bps)
+                price = bar.open * (ONE + config.slippage_bps / BPS_DENOMINATOR if order.side == "BUY" else ONE - config.slippage_bps / BPS_DENOMINATOR)
+                quantity = min(order.remaining, capacity)
+                if order.side == "BUY":
+                    quantity = min(quantity, max(ZERO, (cash - fee) / price))
+                else:
+                    quantity = min(quantity, position)
+                if quantity <= ZERO:
+                    continue
+                notional, tax, slippage = fill(order, bar, quantity, fee, config.tax_rate, config.slippage_bps)
             capacity -= quantity
-            fees += config.fee
+            fees += fee
             taxes += tax
             slippage_cost += slippage
             turnover += notional
             if order.side == "BUY":
-                cash -= notional + config.fee
+                cash -= notional + fee
                 position += quantity
             else:
-                cash += notional - config.fee - tax
+                cash += notional - fee - tax
                 position -= quantity
             trade_trace.append({
                 "signal_at": series[order.signal_index].at,
                 "eligible_at": series[order.eligible_index].at,
                 "fill_at": bar.at,
                 "side": order.side,
-                "quantity": decimal_string(quantity),
-                "price": decimal_string(price),
+                "quantity": render(quantity),
+                "price": render(price),
             })
-        equity_marks.append(cash + position * bar.close)
+        equity_marks.append(cash + position * number(bar.close))
         pending = any(order.remaining != ZERO for order in orders)
         if index == liquidation_signal_index:
             if not pending and position > ZERO:
@@ -246,34 +274,34 @@ def simulate_fold(
             continue
         if parameters is None:
             if index == evaluation_start and position == ZERO:
-                schedule("BUY", config.quantity, index)
+                schedule("BUY", number(config.quantity), index)
             continue
         crossover = sma_crossover(closes, index, parameters)
         if position == ZERO and crossover == "golden_cross":
-            schedule("BUY", config.quantity, index)
+            schedule("BUY", number(config.quantity), index)
         elif position > ZERO and crossover == "death_cross":
             schedule("SELL", position, index)
 
     if any(order.remaining != ZERO for order in orders) or position != ZERO:
         raise ValueError("fold cannot complete every delayed long-only order")
     peak = equity_marks[0]
-    max_drawdown = ZERO
+    max_drawdown = number(0)
     for equity in equity_marks:
         peak = max(peak, equity)
         max_drawdown = max(max_drawdown, (peak - equity) / peak)
     partial_fills = sum(1 for order in orders for item in order.fills if item["fill_state"] == "partial")
     completed_round_trips = sum(1 for order in orders if order.side == "BUY" and order.remaining == ZERO)
     return {
-        "after_cost_return": decimal_string((cash - config.starting_cash) / config.starting_cash),
-        "max_drawdown": decimal_string(max_drawdown),
-        "trade_count": decimal_string(Decimal(completed_round_trips)),
+        "after_cost_return": ratio((cash - starting_cash) / starting_cash),
+        "max_drawdown": ratio(max_drawdown),
+        "trade_count": str(completed_round_trips),
         "trade_count_definition": "completed_long_only_round_trips",
-        "fill_count": decimal_string(Decimal(len(trade_trace))),
-        "turnover": decimal_string(turnover / config.starting_cash),
-        "fees": decimal_string(fees),
-        "taxes": decimal_string(taxes),
-        "slippage_cost": decimal_string(slippage_cost),
-        "partial_fill_count": decimal_string(Decimal(partial_fills)),
+        "fill_count": str(len(trade_trace)),
+        "turnover": ratio(turnover / starting_cash),
+        "fees": render(fees),
+        "taxes": render(taxes),
+        "slippage_cost": render(slippage_cost),
+        "partial_fill_count": str(partial_fills),
         "lookahead_violations": "0",
     }, trade_trace
 
@@ -282,7 +310,15 @@ def fold_description(name: str, bars: list[Bar]) -> dict[str, str | int]:
     return {"name": name, "first_bar_at": bars[0].at, "last_bar_at": bars[-1].at, "bar_count": len(bars)}
 
 
-def aggregate_validation(folds: list[dict[str, str]]) -> dict[str, str]:
+def aggregate_validation(folds: list[dict[str, str]], *, paper_compatible: bool = False) -> dict[str, str]:
+    if paper_compatible:
+        totals = {key: sum(Fraction(fold[key]) for fold in folds) for key in folds[0] if key != "trade_count_definition"}
+        return {
+            **{key: paper_fill.exact_decimal(value) for key, value in totals.items()},
+            "after_cost_return": paper_fill.ratio_string(totals["after_cost_return"] / len(folds)),
+            "max_drawdown": paper_fill.ratio_string(max(Fraction(fold["max_drawdown"]) for fold in folds)),
+            "trade_count_definition": "sum_of_completed_long_only_round_trips_across_walk_forward_folds",
+        }
     count = Decimal(len(folds))
     return {
         "after_cost_return": decimal_string(sum((Decimal(fold["after_cost_return"]) for fold in folds), ZERO) / count),
@@ -301,7 +337,11 @@ def aggregate_validation(folds: list[dict[str, str]]) -> dict[str, str]:
 
 def run_experiment(bars_path: Path, raw_config: dict[str, Any]) -> dict[str, Any]:
     config = parse_config(raw_config)
-    bars = load_bars(bars_path)
+    raw_bars = bars_path.read_bytes()
+    bars = parse_bars(raw_bars)
+    number = Fraction if config.paper_compatible else Decimal
+    if config.paper_compatible and any(bar.close >= Decimal("1000000000000") or -bar.close.as_tuple().exponent > 8 for bar in bars):
+        raise ValueError("paper SMA closes must be below 1e12 with at most 8 decimal places")
     if len(bars) != config.train_bars + config.validation_bars + config.holdout_bars:
         raise ValueError("bars must exactly match the configured chronological train, validation, and holdout folds")
     validation_end = config.train_bars + config.validation_bars
@@ -322,8 +362,8 @@ def run_experiment(bars_path: Path, raw_config: dict[str, Any]) -> dict[str, Any
         return min(
             evaluated,
             key=lambda item: (
-                -Decimal(item["metrics"]["after_cost_return"]),
-                Decimal(item["metrics"]["max_drawdown"]),
+                -number(item["metrics"]["after_cost_return"]),
+                number(item["metrics"]["max_drawdown"]),
                 item["parameters"]["fast_window"],
                 item["parameters"]["slow_window"],
             ),
@@ -361,7 +401,7 @@ def run_experiment(bars_path: Path, raw_config: dict[str, Any]) -> dict[str, Any
         warmup=pre_holdout,
     )
     baseline_metrics, _ = simulate_fold(holdout, config, None, warmup=pre_holdout)
-    walk_forward_metrics = aggregate_validation([item["validation_metrics"] for item in walk_forward_folds])
+    walk_forward_metrics = aggregate_validation([item["validation_metrics"] for item in walk_forward_folds], paper_compatible=config.paper_compatible)
     walk_forward_ok = (
         Decimal(walk_forward_metrics["after_cost_return"]) >= config.minimum_validation_return
         and Decimal(walk_forward_metrics["trade_count"]) >= config.minimum_validation_trades
@@ -378,13 +418,13 @@ def run_experiment(bars_path: Path, raw_config: dict[str, Any]) -> dict[str, Any
     )
     baseline_ok = Decimal(holdout_metrics["after_cost_return"]) > Decimal(baseline_metrics["after_cost_return"])
     target = "paper_candidate" if walk_forward_ok and holdout_ok and baseline_ok else "no_promotion"
-    input_sha256 = hashlib.sha256(bars_path.read_bytes()).hexdigest()
+    input_sha256 = hashlib.sha256(raw_bars).hexdigest()
     selected_parameters = {
         "quantity": decimal_string(config.quantity),
         **challenger["parameters"],
     }
     body = {
-        "schema_version": "strategy-improvement-result.v1",
+        "schema_version": "strategy-improvement-result.v2" if config.paper_compatible else "strategy-improvement-result.v1",
         "experiment_id": config.experiment_id,
         "input_sha256": input_sha256,
         "config_sha256": canonical_hash(raw_config),
@@ -396,8 +436,8 @@ def run_experiment(bars_path: Path, raw_config: dict[str, Any]) -> dict[str, Any
                 "parameter_hash": canonical_hash(selected_parameters),
             },
             "data": {"version": config.data_version, "input_sha256": input_sha256},
-            "engine": {"name": "omni-folio-reference", "version": ENGINE_VERSION},
-            "evaluation_policy": {"version": EVALUATION_POLICY_VERSION},
+            "engine": {"name": "omni-folio-paper-reference", "version": "1.0.0"} if config.paper_compatible else {"name": "omni-folio-reference", "version": ENGINE_VERSION},
+            "evaluation_policy": {"version": paper_fill.EVALUATION_POLICY_VERSION if config.paper_compatible else EVALUATION_POLICY_VERSION},
         },
         "execution": config.execution,
         "evaluation": {

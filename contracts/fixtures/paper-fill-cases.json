@@ -1,0 +1,347 @@
+{
+  "cases": [
+    {
+      "name": "BUY floors five volume at half participation to two",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": {"quantity": "2", "reference_price": "100", "price": "100.1", "notional": "200.2", "fee": "1", "tax": "0", "slippage": "0.2", "cash_delta": "-201.2"},
+      "error": false
+    },
+    {
+      "name": "BUY subtracts consumed capacity after flooring",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "1"},
+      "expected": {"quantity": "1", "reference_price": "100", "price": "100.1", "notional": "100.1", "fee": "1", "tax": "0", "slippage": "0.1", "cash_delta": "-101.1"},
+      "error": false
+    },
+    {
+      "name": "BUY caps fill at remaining quantity",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "1", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": {"quantity": "1", "reference_price": "100", "price": "100.1", "notional": "100.1", "fee": "1", "tax": "0", "slippage": "0.1", "cash_delta": "-101.1"},
+      "error": false
+    },
+    {
+      "name": "BUY exact adverse price plus fixed fee is affordable",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "101.1", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": {"quantity": "1", "reference_price": "100", "price": "100.1", "notional": "100.1", "fee": "1", "tax": "0", "slippage": "0.1", "cash_delta": "-101.1"},
+      "error": false
+    },
+    {
+      "name": "SELL caps fill at position and taxes slipped notional",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "SELL", "open": "120", "volume": "5", "remaining_quantity": "10", "cash": "0", "position_quantity": "1", "consumed_capacity": "0"},
+      "expected": {"quantity": "1", "reference_price": "120", "price": "119.88", "notional": "119.88", "fee": "1", "tax": "0.11988", "slippage": "0.12", "cash_delta": "118.76012"},
+      "error": false
+    },
+    {
+      "name": "SELL caps fill at remaining quantity",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "SELL", "open": "120", "volume": "5", "remaining_quantity": "1", "cash": "0", "position_quantity": "10", "consumed_capacity": "0"},
+      "expected": {"quantity": "1", "reference_price": "120", "price": "119.88", "notional": "119.88", "fee": "1", "tax": "0.11988", "slippage": "0.12", "cash_delta": "118.76012"},
+      "error": false
+    },
+    {
+      "name": "SELL charges one fixed fee for multiple units",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "SELL", "open": "120", "volume": "5", "remaining_quantity": "10", "cash": "0", "position_quantity": "10", "consumed_capacity": "0"},
+      "expected": {"quantity": "2", "reference_price": "120", "price": "119.88", "notional": "239.76", "fee": "1", "tax": "0.23976", "slippage": "0.24", "cash_delta": "238.52024"},
+      "error": false
+    },
+    {
+      "name": "SELL permits exactly zero net proceeds",
+      "policy": {"fee": "1", "tax": "0", "slippage_bps": "0", "max_participation": "1"},
+      "input": {"side": "SELL", "open": "1", "volume": "1", "remaining_quantity": "1", "cash": "0", "position_quantity": "1", "consumed_capacity": "0"},
+      "expected": {"quantity": "1", "reference_price": "1", "price": "1", "notional": "1", "fee": "1", "tax": "0", "slippage": "0", "cash_delta": "0"},
+      "error": false
+    },
+    {
+      "name": "SELL permits a tax rate of one",
+      "policy": {"fee": "0", "tax": "1", "slippage_bps": "0", "max_participation": "1"},
+      "input": {"side": "SELL", "open": "1", "volume": "1", "remaining_quantity": "1", "cash": "0", "position_quantity": "1", "consumed_capacity": "0"},
+      "expected": {"quantity": "1", "reference_price": "1", "price": "1", "notional": "1", "fee": "0", "tax": "1", "slippage": "0", "cash_delta": "0"},
+      "error": false
+    },
+    {
+      "name": "BUY preserves more than twenty eight significant money digits",
+      "policy": {"fee": "0.02", "tax": "0", "slippage_bps": "0", "max_participation": "1"},
+      "input": {"side": "BUY", "open": "12345678901234567890123456789.01", "volume": "1", "remaining_quantity": "1", "cash": "12345678901234567890123456789.03", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": {"quantity": "1", "reference_price": "12345678901234567890123456789.01", "price": "12345678901234567890123456789.01", "notional": "12345678901234567890123456789.01", "fee": "0.02", "tax": "0", "slippage": "0", "cash_delta": "-12345678901234567890123456789.03"},
+      "error": false
+    },
+    {
+      "name": "BUY preserves more than twenty eight slippage digits",
+      "policy": {"fee": "0", "tax": "0.001", "slippage_bps": "0.12345678901234567890123456789", "max_participation": "1"},
+      "input": {"side": "BUY", "open": "10000", "volume": "1", "remaining_quantity": "1", "cash": "10000.12345678901234567890123456789", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": {"quantity": "1", "reference_price": "10000", "price": "10000.12345678901234567890123456789", "notional": "10000.12345678901234567890123456789", "fee": "0", "tax": "0", "slippage": "0.12345678901234567890123456789", "cash_delta": "-10000.12345678901234567890123456789"},
+      "error": false
+    },
+    {
+      "name": "SELL preserves more than twenty eight tax digits",
+      "policy": {"fee": "0", "tax": "0.12345678901234567890123456789", "slippage_bps": "0", "max_participation": "1"},
+      "input": {"side": "SELL", "open": "1", "volume": "1", "remaining_quantity": "1", "cash": "0", "position_quantity": "1", "consumed_capacity": "0"},
+      "expected": {"quantity": "1", "reference_price": "1", "price": "1", "notional": "1", "fee": "0", "tax": "0.12345678901234567890123456789", "slippage": "0", "cash_delta": "0.87654321098765432109876543211"},
+      "error": false
+    },
+    {
+      "name": "BUY preserves more than twenty eight fixed fee digits",
+      "policy": {"fee": "12345678901234567890123456789.01", "tax": "0", "slippage_bps": "0", "max_participation": "1"},
+      "input": {"side": "BUY", "open": "1", "volume": "1", "remaining_quantity": "1", "cash": "12345678901234567890123456790.01", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": {"quantity": "1", "reference_price": "1", "price": "1", "notional": "1", "fee": "12345678901234567890123456789.01", "tax": "0", "slippage": "0", "cash_delta": "-12345678901234567890123456790.01"},
+      "error": false
+    },
+    {
+      "name": "BUY below adverse price plus fixed fee has no fill",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "101.09", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": false
+    },
+    {
+      "name": "BUY cash below fixed fee has no fill or charge",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "0.99", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": false
+    },
+    {
+      "name": "Zero volume has no fill or charge",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "0", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": false
+    },
+    {
+      "name": "Participation below one unit has no fill or charge",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "1", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": false
+    },
+    {
+      "name": "Zero remaining quantity has no fill or charge",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "0", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": false
+    },
+    {
+      "name": "Exhausted capacity has no fill or charge",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "2"},
+      "expected": null,
+      "error": false
+    },
+    {
+      "name": "SELL zero position has no fill or charge even with a large fee",
+      "policy": {"fee": "1000", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "SELL", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "0", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": false
+    },
+    {
+      "name": "BUY high precision cash below exact total has no fill",
+      "policy": {"fee": "0.02", "tax": "0", "slippage_bps": "0", "max_participation": "1"},
+      "input": {"side": "BUY", "open": "12345678901234567890123456789.01", "volume": "1", "remaining_quantity": "1", "cash": "12345678901234567890123456789.02", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": false
+    },
+    {
+      "name": "SELL negative net proceeds is an error",
+      "policy": {"fee": "1000", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "SELL", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "0", "position_quantity": "10", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Consumed capacity above floored capacity is an error",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "3"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Fractional remaining quantity is an error",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "1.5", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Fractional consumed capacity is an error",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0.5"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Fractional SELL position is an error",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "SELL", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "0", "position_quantity": "1.5", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Fractional SELL position is an error before zero capacity exit",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "SELL", "open": "100", "volume": "0", "remaining_quantity": "10", "cash": "0", "position_quantity": "1.5", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Unknown side is an error",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "HOLD", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Negative fee is an error",
+      "policy": {"fee": "-1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Negative tax rate is an error",
+      "policy": {"fee": "1", "tax": "-0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Tax rate above one is an error",
+      "policy": {"fee": "1", "tax": "1.0001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Negative slippage is an error",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "-1", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Slippage at ten thousand basis points is an error",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10000", "max_participation": "0.5"},
+      "input": {"side": "SELL", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "0", "position_quantity": "10", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Zero participation is an error",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Participation above one is an error",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "1.01"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Zero open is an error",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "0", "volume": "5", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Negative volume is an error",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "-1", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "BUY negative cash is an error",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "-1", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Negative remaining quantity is an error",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "-1", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Negative SELL position is an error",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "SELL", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "0", "position_quantity": "-1", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Negative consumed capacity is an error",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "-1"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Fee with a trailing decimal zero is noncanonical",
+      "policy": {"fee": "1.0", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Open with a leading zero is noncanonical",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "0100", "volume": "5", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Volume in exponent notation is noncanonical",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5e0", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Signed zero consumed capacity is noncanonical",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "-0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Slippage without an integer part is noncanonical",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": ".5", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "Integer remaining quantity with a decimal zero is noncanonical",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "1.0", "cash": "10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "BUY cash with whitespace is noncanonical",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "BUY", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": " 10000", "position_quantity": "0", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    },
+    {
+      "name": "SELL position with a plus sign is noncanonical",
+      "policy": {"fee": "1", "tax": "0.001", "slippage_bps": "10", "max_participation": "0.5"},
+      "input": {"side": "SELL", "open": "100", "volume": "5", "remaining_quantity": "10", "cash": "0", "position_quantity": "+2", "consumed_capacity": "0"},
+      "expected": null,
+      "error": true
+    }
+  ]
+}
