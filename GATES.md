@@ -90,6 +90,7 @@ G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4O local daily chart display-range selection
 ├─ G4W chart source identity/currency and unknown time basis disclosure
 ├─ G4X revision-consistent instrument ledger average cost and original trades
+├─ G4Y persistent watchlist with native stored-price and partial-availability states
 ├─ G4P first-run empty-snapshot import recovery
 ├─ G4Q Kiwoom credential-free latest-trade normalization
 ├─ G4R Kiwoom credential-free 0B realtime-price frame contract

@@ -9,6 +9,8 @@ import 'paper_monitor.dart';
 import 'research_report.dart';
 
 abstract interface class OmniApi {
+  Future<WatchlistReport> watchlist();
+  Future<WatchlistState> updateWatchlist(WatchlistChange change);
   Future<ServiceStatus> status();
   Future<PortfolioSnapshot> snapshot();
   Future<CurrentPortfolioValuation> currentPortfolioValuation();
@@ -64,6 +66,50 @@ class RestOmniApi implements OmniApi {
 
   final http.Client _client;
   final String baseUrl;
+
+  Future<Json> _watchlistRequest([WatchlistChange? change]) async {
+    final abort = Completer<void>();
+    Future<Json> request() async {
+      final req = http.AbortableRequest(
+        change == null ? 'GET' : 'POST',
+        _uri('/v1/watchlist'),
+        abortTrigger: abort.future,
+      );
+      if (change != null) {
+        final bytes = utf8.encode(jsonEncode(change.toJson()));
+        if (bytes.length > 16 * 1024)
+          throw const FormatException('Watchlist request too large');
+        req.headers['content-type'] = 'application/json';
+        req.bodyBytes = bytes;
+      }
+      return _boundedObject(await _client.send(req), 128 * 1024);
+    }
+
+    try {
+      return await request().timeout(
+        const Duration(seconds: 40),
+        onTimeout: () {
+          abort.complete();
+          throw const ApiException(apiConnectionError);
+        },
+      );
+    } catch (error) {
+      if (error is ApiException || error is FormatException) rethrow;
+      throw const ApiException(apiConnectionError);
+    }
+  }
+
+  @override
+  Future<WatchlistReport> watchlist() async =>
+      WatchlistReport.fromJson(await _watchlistRequest());
+
+  @override
+  Future<WatchlistState> updateWatchlist(WatchlistChange change) async {
+    final state = WatchlistState.fromJson(await _watchlistRequest(change));
+    if (!change.matchesAck(state))
+      throw const FormatException('Watchlist acknowledgement mismatch');
+    return state;
+  }
 
   Future<Json> _ownerDataPost(String action, String input) async {
     final abort = Completer<void>();

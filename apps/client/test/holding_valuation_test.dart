@@ -507,6 +507,18 @@ void main() {
 
 class _TestApi implements OmniApi {
   @override
+  Future<WatchlistReport> watchlist() async => WatchlistReport.fromJson({
+    'policy_version': 'watchlist_stored_prices_24h.v1',
+    'max_observation_age_seconds': 86400,
+    'observed_at': '2026-01-01T00:00:00Z',
+    'watchlist': {'revision': 0, 'updated_at': null, 'entries': <Json>[]},
+    'quotes': <Json>[],
+  });
+  @override
+  Future<WatchlistState> updateWatchlist(WatchlistChange change) async =>
+      throw UnimplementedError();
+
+  @override
   Future<PortfolioTwrCheckpoints> portfolioTwrCheckpoints() =>
       throw UnsupportedError('Not used by this fixture.');
 

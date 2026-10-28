@@ -6,6 +6,137 @@
     "description": "Minimal cross-runtime contract for trust status, CSV import, deterministic portfolio snapshots, explicitly labeled sample market data, sanitized ledger activity, stored broker reconciliation, and verified local order lifecycle reads. JSON decimals are canonical strings; IDs are opaque strings."
   },
   "paths": {
+    "/v1/watchlist": {
+      "get": {
+        "operationId": "getWatchlist",
+        "description": "Read persisted preferences and stored-price states. Reject every query including bare ?. No provider/network refresh. Browser Origin must exactly match configured origin, or be absent for native/local clients. Private service profile only; CORS is not authentication.",
+        "responses": {
+          "200": {
+            "description": "Current saved list with independently unavailable quote rows.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "x-max-bytes": 131072,
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "watchlist_invalid: unsupported query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "watchlist_origin_rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "watchlist_unavailable: fixed redacted error; no partial response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "replaceWatchlist",
+        "description": "Explicit whole-list CAS replacement; does not mutate ledger, prices, listing authority or orders. Reject query, non-JSON content, oversized body, duplicate JSON keys and invalid entries before mutation. One SQLite transaction, exact row count and stored-state readback before commit. Returns state-only ACK without performing a post-commit price read. Uncertain transport/5xx/malformed ACK retains the original expected_revision and entries for explicit retry/reload. A reload at a greater revision fences that original CAS; at the same revision only identical desired entries reconcile it. A lower revision must not acknowledge it. App-session pending intent is not durable across app restart.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "x-max-bytes": 16384,
+              "schema": {
+                "$ref": "#/components/schemas/WatchlistChange"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact stored state; new revision, unchanged no-op, or duplicate acknowledgement.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "x-max-bytes": 131072,
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "watchlist_invalid: this attempt rejected before commit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "watchlist_origin_rejected: this attempt rejected before handler",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "watchlist_changed: this CAS attempt did not commit; reload current list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "watchlist_unavailable: commit outcome uncertain; retain intent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/portfolio/benchmarks": {
       "get": {
         "operationId": "getPortfolioBenchmarks",
@@ -884,6 +1015,300 @@
       }
     },
     "schemas": {
+      "WatchlistEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "venue",
+          "symbol",
+          "currency"
+        ],
+        "properties": {
+          "venue": {
+            "enum": [
+              "XKRX",
+              "XNAS",
+              "XNYS"
+            ]
+          },
+          "symbol": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "currency": {
+            "enum": [
+              "KRW",
+              "USD"
+            ]
+          }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "venue": {
+                "const": "XKRX"
+              },
+              "symbol": {
+                "pattern": "^[0-9]{6}$"
+              },
+              "currency": {
+                "const": "KRW"
+              }
+            }
+          },
+          {
+            "properties": {
+              "venue": {
+                "enum": [
+                  "XNAS",
+                  "XNYS"
+                ]
+              },
+              "symbol": {
+                "pattern": "^[A-Z0-9][A-Z0-9.-]{0,31}$"
+              },
+              "currency": {
+                "const": "USD"
+              }
+            }
+          }
+        ],
+        "description": "Owner-entered watch preference only. Does not verify listing existence, grant broker capture authority, create a holding, or admit owner price input."
+      },
+      "WatchlistState": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "revision",
+          "updated_at",
+          "entries"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "updated_at": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OwnerPriceTimestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "entries": {
+            "type": "array",
+            "maxItems": 50,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/WatchlistEntry"
+            }
+          }
+        },
+        "description": "One mandatory mutable singleton, independent of the ledger. Canonical tuple-sorted entries; revision zero only with null updated_at and empty entries. Every changed list advances revision once; no-op keeps it. Revisions are not a cross-backup-restoration epoch."
+      },
+      "WatchlistChange": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expected_revision",
+          "entries"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "entries": {
+            "type": "array",
+            "maxItems": 50,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/WatchlistEntry"
+            }
+          }
+        },
+        "description": "At most16KiB UTF-8; unknown, duplicate/escaped duplicate keys, null values, invalid identity and duplicates are rejected. Input order is canonicalized. Compare-and-swap against expected_revision. Same current list at expected revision is a no-op; same list at expected+1 acknowledges a retry. Any other stale revision conflicts. No implicit retry; retain exact intent after uncertain responses."
+      },
+      "WatchlistPrice": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source",
+          "source_version",
+          "price",
+          "price_adjustment",
+          "observed_at",
+          "fetched_at",
+          "recorded_at",
+          "sample"
+        ],
+        "properties": {
+          "source": {
+            "enum": [
+              "local_fixture",
+              "owner_declared"
+            ]
+          },
+          "source_version": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$"
+          },
+          "price_adjustment": {
+            "enum": [
+              "unspecified",
+              "unadjusted"
+            ]
+          },
+          "observed_at": {
+            "$ref": "#/components/schemas/OwnerPriceTimestamp"
+          },
+          "fetched_at": {
+            "$ref": "#/components/schemas/OwnerPriceTimestamp"
+          },
+          "recorded_at": {
+            "$ref": "#/components/schemas/OwnerPriceTimestamp"
+          },
+          "sample": {
+            "type": "boolean"
+          }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "source": {
+                "const": "local_fixture"
+              },
+              "source_version": {
+                "type": "null"
+              },
+              "price_adjustment": {
+                "const": "unspecified"
+              },
+              "sample": {
+                "const": true
+              }
+            }
+          },
+          {
+            "properties": {
+              "source": {
+                "const": "owner_declared"
+              },
+              "source_version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "price_adjustment": {
+                "const": "unadjusted"
+              }
+            }
+          }
+        ],
+        "description": "Exact native-currency saved price only. observed_at <= fetched_at <= recorded_at <= report observed_at. Source version is at most128 UTF-8 bytes with no whitespace/control. Never a broker/live quote or valuation."
+      },
+      "WatchlistQuote": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "venue",
+          "symbol",
+          "currency",
+          "status",
+          "price"
+        ],
+        "properties": {
+          "venue": {
+            "enum": [
+              "XKRX",
+              "XNAS",
+              "XNYS"
+            ]
+          },
+          "symbol": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "currency": {
+            "enum": [
+              "KRW",
+              "USD"
+            ]
+          },
+          "status": {
+            "enum": [
+              "unknown",
+              "stale",
+              "missing",
+              "ambiguous"
+            ]
+          },
+          "price": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WatchlistPrice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "description": "Identity must equal its same-position watchlist entry. Missing/ambiguous have null price. Fixture always stale/sample. Owner price is unknown through exactly24h, stale thereafter: unknown never means current-market verified. Ambiguous identity or tied latest timestamp with different displayed provenance has no chosen price. Ignore Kiwoom sources, future observations and other tuples; choose latest whole owner version before tuple filtering, preserving withdrawal/venue changes."
+      },
+      "WatchlistReport": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "policy_version",
+          "max_observation_age_seconds",
+          "observed_at",
+          "watchlist",
+          "quotes"
+        ],
+        "properties": {
+          "policy_version": {
+            "const": "watchlist_stored_prices_24h.v1"
+          },
+          "max_observation_age_seconds": {
+            "const": 86400
+          },
+          "observed_at": {
+            "$ref": "#/components/schemas/OwnerPriceTimestamp"
+          },
+          "watchlist": {
+            "$ref": "#/components/schemas/WatchlistState"
+          },
+          "quotes": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/WatchlistQuote"
+            }
+          }
+        },
+        "description": "One transaction and server cutoff captured after transaction acquisition; one quote per entry in identical order, no private/account/observation IDs. updated_at is not after observed_at. Independent row absence/ambiguity preserves other rows, while stored proof corruption fails the entire response. Transport/parser failure retains the whole prior report and original cutoff; successful missing replaces old price. Encoded response at most128KiB."
+      },
       "PortfolioBenchmarks": {
         "type": "object",
         "additionalProperties": false,
