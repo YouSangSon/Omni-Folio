@@ -375,7 +375,7 @@ func (s *Service) finishPaperPromotion(ctx context.Context, claim paperPromotion
 		decision.SelectionEventID = s.id("strategy_selection")
 		event = StrategySelectionEvent{EventID: decision.SelectionEventID, EventType: "SELECT", CandidateResultSHA256: claim.CandidateResultSHA256,
 			ExpectedCurrentEventID: claim.ExpectedCurrentEventID, PreviousSelectedResultSHA256: claim.IncumbentResultSHA256, SelectedResultSHA256: claim.CandidateResultSHA256,
-			ReasonCode: "auto_comparison", PaperEvaluationSequence: sequence, PaperPromotionAttemptID: claim.AttemptID, RecordedAt: decision.RecordedAt}
+			ReasonCode: "auto_comparison", PaperEvaluationSequence: sequence, PaperPromotionAttemptID: claim.AttemptID, RecordedAt: now.Format(time.RFC3339Nano)}
 	}
 	canonical, sha, err := orderJSONHash(decision)
 	if err != nil {

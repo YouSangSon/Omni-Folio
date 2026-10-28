@@ -2976,11 +2976,11 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 	if foreignKeys != 1 || matchingForeignKeys != 1 {
 		return errors.New("restore broker reconciliations lack the required snapshot foreign key")
 	}
-	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(("table"='strategy_research_evidence' AND "from"='candidate_result_sha256' AND "to"='result_sha256') OR ("table"='strategy_selection_events' AND "from"='source_event_id' AND "to"='event_id') OR ("table"='paper_performance_policy_events' AND "from"='paper_performance_policy_event_id' AND "to"='policy_event_id')), 0) FROM pragma_foreign_key_list(?)`, "strategy_selection_events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(("table"='strategy_research_evidence' AND "from"='candidate_result_sha256' AND "to"='result_sha256') OR ("table"='strategy_selection_events' AND "from"='source_event_id' AND "to"='event_id') OR ("table"='paper_performance_policy_events' AND "from"='paper_performance_policy_event_id' AND "to"='policy_event_id') OR ("table"='paper_promotion_decisions' AND "from"='paper_promotion_attempt_id' AND "to"='attempt_id')), 0) FROM pragma_foreign_key_list(?)`, "strategy_selection_events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
 		return fmt.Errorf("restore strategy selection foreign keys: %w", err)
 	}
-	if foreignKeys != 3 || matchingForeignKeys != 3 {
-		return errors.New("restore strategy selection events lack required evidence, source, or policy foreign keys")
+	if foreignKeys != 4 || matchingForeignKeys != 4 {
+		return errors.New("restore strategy selection events lack required evidence, source, policy, or promotion foreign keys")
 	}
 	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM("table"='paper_performance_policy_events' AND "from"='paper_performance_policy_event_id' AND "to"='policy_event_id'), 0) FROM pragma_foreign_key_list(?)`, "execution_authority_events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
 		return fmt.Errorf("restore execution authority policy foreign key: %w", err)
@@ -3150,6 +3150,14 @@ func requireOrderRestoreSchema(db *sql.DB) error {
 			return fmt.Errorf("restore paper performance policy trigger %s: %w", name, err)
 		}
 		policyTriggerSQL[name] = definition
+	}
+	promotionMigration, err := migrationFiles.ReadFile("migrations/027_paper_promotion.sql")
+	if err != nil {
+		return err
+	}
+	policyTriggerSQL["strategy_selection_events_state_guard"], err = migrationTriggerDefinition(string(promotionMigration), "strategy_selection_events_state_guard")
+	if err != nil {
+		return err
 	}
 	guardSQL := map[string]struct {
 		table string

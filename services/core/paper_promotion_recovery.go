@@ -416,8 +416,9 @@ func validateStoredPaperPromotionDecision(ctx context.Context, q orderQuerier, c
 	if json.Unmarshal([]byte(raw), &event) != nil {
 		return errors.New("automatic selection is invalid")
 	}
+	eventAt, eventTimeOK := canonicalUTCTime(event.RecordedAt)
 	canonical, actualSHA, err := orderJSONHash(event)
-	if err != nil || string(canonical) != raw || actualSHA != sha || event.EventID != d.SelectionEventID || event.EventType != "SELECT" || event.CandidateResultSHA256 != c.CandidateResultSHA256 || event.ExpectedCurrentEventID != c.ExpectedCurrentEventID || event.PreviousSelectedResultSHA256 != c.IncumbentResultSHA256 || event.SelectedResultSHA256 != c.CandidateResultSHA256 || event.PaperPromotionAttemptID != c.AttemptID || event.RecordedAt != d.RecordedAt {
+	if err != nil || string(canonical) != raw || actualSHA != sha || event.EventID != d.SelectionEventID || event.EventType != "SELECT" || event.CandidateResultSHA256 != c.CandidateResultSHA256 || event.ExpectedCurrentEventID != c.ExpectedCurrentEventID || event.PreviousSelectedResultSHA256 != c.IncumbentResultSHA256 || event.SelectedResultSHA256 != c.CandidateResultSHA256 || event.PaperPromotionAttemptID != c.AttemptID || !eventTimeOK || !eventAt.Equal(at) {
 		return errors.New("automatic selection comparison link is invalid")
 	}
 	return nil
