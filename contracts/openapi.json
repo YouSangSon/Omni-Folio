@@ -829,6 +829,45 @@
           }
         }
       }
+    },
+    "/v1/portfolio/twr/checkpoints": {
+      "get": {
+        "operationId": "getPortfolioTWRCheckpoints",
+        "description": "Read the existing TWR calculation checkpoints without changing scalar/benchmark policy. No query, including an empty ?. Flow points neutralize external capital before internal events at the same timestamp; the terminal includes all events. Selected marks may precede boundary time by up to24hours under the existing policy. No provider/credential/network/write or new history table. One deposit yields only start+terminal points, not daily performance. Encoded response <=3MiB and Cache-Control:no-store.",
+        "responses": {
+          "200": {
+            "description": "One coherent aggregate report and bounded checkpoint trace.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "x-max-bytes": 3145728,
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioTWRCheckpoints"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "500": {
+            "description": "Stored input/proof/cancellation/transport or internal trace bound could not be confirmed; fixed public error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4654,6 +4693,88 @@
               },
               "receipt": {
                 "$ref": "#/components/schemas/BenchmarkSeriesSummary"
+              }
+            }
+          }
+        ]
+      },
+      "PortfolioTWRCheckpoint": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "at",
+          "kind",
+          "cumulative_rate"
+        ],
+        "properties": {
+          "at": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp",
+            "description": "Evaluation boundary time, not the selected market price/FX observation time."
+          },
+          "kind": {
+            "enum": [
+              "external_flow",
+              "valuation"
+            ]
+          },
+          "cumulative_rate": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2500,
+            "pattern": "^(?:-1|-0\\.[0-9]{0,11}[1-9]|(?:0|[1-9][0-9]*)(?:\\.[0-9]{0,11}[1-9])?)$",
+            "description": "Canonical cumulative ratio >= -1; independently rounded from exact prefix to12places. Intermediate -1 may be rounding, not depleted capital. Prefix length is independent of the scalar final128char bound."
+          }
+        }
+      },
+      "PortfolioTWRCheckpoints": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "policy_version",
+          "report",
+          "points"
+        ],
+        "properties": {
+          "policy_version": {
+            "const": "twr_cash_flow_checkpoints.v1"
+          },
+          "report": {
+            "$ref": "#/components/schemas/PortfolioTWR"
+          },
+          "points": {
+            "type": "array",
+            "maxItems": 1001,
+            "items": {
+              "$ref": "#/components/schemas/PortfolioTWRCheckpoint"
+            }
+          }
+        },
+        "description": "One server cutoff/read transaction. Calculated: exactly boundary_count external_flow points followed by one valuation; first at=period_start/rate0, last at=period_end/rate=report.cumulative_rate. Flow times strictly increase in UTC nanoseconds. Only final flow and valuation may share a timestamp, in that order. Noncalculated reports have no partial prefix. Authority/sample apply to the entire observation. No daily path or interpolation claim.",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "report": {
+                  "properties": {
+                    "status": {
+                      "const": "calculated"
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "points": {
+                  "minItems": 2
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "points": {
+                  "maxItems": 0
+                }
               }
             }
           }

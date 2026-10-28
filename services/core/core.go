@@ -844,6 +844,7 @@ func (s *Service) routes() http.Handler {
 	mux.HandleFunc("GET /v1/portfolio/current-valuation", s.handleCurrentPortfolioValuation)
 	mux.HandleFunc("GET /v1/portfolio/xirr", s.handlePortfolioXIRR)
 	mux.HandleFunc("GET /v1/portfolio/twr", s.handlePortfolioTWR)
+	mux.HandleFunc("GET /v1/portfolio/twr/checkpoints", s.handlePortfolioTWRCheckpoints)
 	mux.HandleFunc("GET /v1/portfolio/benchmarks", s.handlePortfolioBenchmarks)
 	mux.HandleFunc("GET /v1/broker-reconciliation/latest", s.handleLatestBrokerReconciliation)
 	mux.HandleFunc("GET /v1/orders", s.handleLocalOrders)
