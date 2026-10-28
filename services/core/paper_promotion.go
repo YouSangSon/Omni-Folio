@@ -167,6 +167,16 @@ func (s *Service) claimPaperPromotion(ctx context.Context, account, candidateSHA
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE((SELECT attempt_id FROM paper_promotion_claims ORDER BY sequence DESC LIMIT 1),'no_attempt')`).Scan(&claim.ExpectedPreviousAttemptID); err != nil {
 		return nil, nil, err
 	}
+	if claim.ExpectedPreviousAttemptID != "no_attempt" {
+		var previousAt string
+		if err := tx.QueryRowContext(ctx, `SELECT recorded_at FROM paper_promotion_decisions WHERE attempt_id=?`, claim.ExpectedPreviousAttemptID).Scan(&previousAt); err != nil {
+			return nil, nil, err
+		}
+		previous, ok := parsePaperTime(previousAt)
+		if !ok || now.Before(previous) {
+			return nil, nil, errors.New("paper promotion clock regressed")
+		}
+	}
 	if err := validateStoredPaperPromotionClaim(ctx, tx, claim, 0); err != nil {
 		return nil, nil, err
 	}
@@ -493,13 +503,13 @@ func validatePaperPromotionFreshRange(ctx context.Context, q orderQuerier, claim
 			if !firstOK || !lastOK || last.Before(first) {
 				return errors.New("registered research interval cannot be verified")
 			}
-			if !start.After(last) && !end.Before(first) {
-				return errors.New("paper comparison overlaps registered research data")
+			if !start.After(last) {
+				return errors.New("paper comparison must follow all registered research data")
 			}
 		}
 	}
 	var overlap int
-	if err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM paper_promotion_claims WHERE (?=0 OR sequence<?) AND json_extract(record_json,'$.comparison_start')<=? AND json_extract(record_json,'$.comparison_end')>=?`, sequence, sequence, claim.ComparisonEnd, claim.ComparisonStart).Scan(&overlap); err != nil {
+	if err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM paper_promotion_claims WHERE (?=0 OR sequence<?) AND json_extract(record_json,'$.comparison_end')>=?`, sequence, sequence, claim.ComparisonStart).Scan(&overlap); err != nil {
 		return err
 	}
 	if overlap != 0 {

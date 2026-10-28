@@ -18,7 +18,7 @@
 | Gate | 状態 | 根拠 |
 |---|---|---|
 | G0 アーキテクチャ・契約 | ローカル検証通過 | バージョンを明示した OpenAPI/JSON Schema、ランタイムごとの責任分離、リポジトリ共通コマンド |
-| G1 ローカル台帳 | 自動検証通過 | CSV の確認と原子的な反映、取引・現金・株式分割・FX の正確な再生、FIFO 原価・保存価格による評価、schema v26/backup v20 と対応する旧形式の復元 |
+| G1 ローカル台帳 | 従来範囲は通過、v27 は検証待ち | CSV の確認と原子的な反映、取引・現金・株式分割・FX の正確な再生、FIFO 原価・保存価格による評価。schema v27/backup v21 と旧形式の復元は新変更の検証待ち |
 | G2 Flutter クライアント | 一部検証通過 | iOS・Android・web のリリースビルド、自動パーサー・ウィジェット検査、Android エミュレーターでのフレーム計測。未署名 iOS パッケージのテストプラグイン除外を確認。実機・手動スクリーンリーダー・ストア検証は未完了 |
 | G3 研究・模擬実行 | 一部検証通過 | 再現可能なバックテスト・walk-forward・ホールドアウト、候補登録、ローカル模擬約定・成績・停止・復旧。長期運用とソース引き渡しの完全性は未検証 |
 | G4 ブローカー・チャート・注文 | 進行中 | ローカルのサンプルチャート、保存済み照合・注文記録の参照、認証情報を使わない Kiwoom の合成契約。実際の認証を伴う相場・模擬注文の観察、結果未確定注文の復旧、すべての実取引段階は未完了 |
@@ -171,7 +171,7 @@ mkdir -p -m 700 data/exports
 
 ### 既存台帳の時系列再生ポリシーへの切り替え
 
-schema26/backup v20 は、正確な UTC 順序による FIFO v2 ポリシーを使用します。既存の台帳がある DB は、migrate だけでは正常に実行できません。旧 core を停止して原本の backup を保全したうえで、[G1.20 の preview → 確認 → activate → 新 backup の検証手順](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차)に従います。過去の backup の保管検証と、現在のポリシーの有効化は区別します。
+schema27/backup v21 は、正確な UTC 順序による FIFO v2 ポリシーを使用します。既存の台帳がある DB は、migrate だけでは正常に実行できません。旧 core を停止して原本の backup を保全したうえで、[G1.20 の preview → 確認 → activate → 新 backup の検証手順](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차)に従います。過去の backup の保管検証と、現在のポリシーの有効化は区別します。
 
 ### ローカルサンプルの OHLCV チャート
 
@@ -321,7 +321,7 @@ curl -fsS 'http://127.0.0.1:8080/v1/portfolio/cash-valuation?base_currency=KRW&a
 
 G1.12 は保有資産評価に先立ち、local fixture の銘柄価格を schema v11 で導入した `STRICT`/insert-only series に保存します。source identity、instrument ID、symbol、venue、currency、正の正規化価格、`price_adjustment=unspecified`、observed/fetched/recorded の UTC 時刻、正規化した行の hash を検証します。内部の exact-as-of 取得は、すべての identity 次元を固定し、3つの時刻が cutoff 以下の観測値だけを選びます。
 
-G4U checkpoint の backup v8 は価格 series の digest/count を検証し、legacy artifact を原本を変更しない所有下のコピーで schema v13 に migration しました。現在の schema v26/backup v20 もその価格の検証根拠を保全します。空の復元候補にも、embedded migration と同一の table DDL・latest index・insert-only trigger が必要です。公開 API、Flutter 画面、provider リクエスト、scheduler、ブローカーに基づく保有・損益・成績評価は追加しておらず、`PortfolioSnapshot.valuation_status` は引き続き `unavailable` です。
+G4U checkpoint の backup v8 は価格 series の digest/count を検証し、legacy artifact を原本を変更しない所有下のコピーで schema v13 に migration しました。現在の schema v27/backup v21 もその価格の検証根拠を保全します。空の復元候補にも、embedded migration と同一の table DDL・latest index・insert-only trigger が必要です。公開 API、Flutter 画面、provider リクエスト、scheduler、ブローカーに基づく保有・損益・成績評価は追加しておらず、`PortfolioSnapshot.valuation_status` は引き続き `unavailable` です。
 
 ### 保存価格による原通貨建て保有資産評価
 
@@ -379,7 +379,7 @@ cd services/core
 go test -run '^TestG4H' -count=1 ./...
 ```
 
-G4U checkpoint の schema v13/backup v8 は、ledger event、cash-void/FX guard、直接為替観測、銘柄価格観測、instrument listing、raw broker snapshot、revision ごとの broker 照合、execution-authority event、risk reservation、strategy registry と当時の synthetic/paper 注文を insert-only で保護しました。現在の schema v26/backup v20 は、その検証根拠と G3.8C2 paper accounting、G3.8C3 account-global performance、G3.8D strategy-window evidence、G3.8E paper safety policy/action recovery を併せて保全します。G4H 自体は認証情報、broker リクエスト、スケジューリング、公式 freshness/timezone、現金・評価額の照合、公開 API/UI、live readiness を証明しません。
+G4U checkpoint の schema v13/backup v8 は、ledger event、cash-void/FX guard、直接為替観測、銘柄価格観測、instrument listing、raw broker snapshot、revision ごとの broker 照合、execution-authority event、risk reservation、strategy registry と当時の synthetic/paper 注文を insert-only で保護しました。現在の schema v27/backup v21 は、その検証根拠と G3.8C2 paper accounting、G3.8C3 account-global performance、G3.8D strategy-window evidence、G3.8E paper safety policy/action recovery を併せて保全します。G4H 自体は認証情報、broker リクエスト、スケジューリング、公式 freshness/timezone、現金・評価額の照合、公開 API/UI、live readiness を証明しません。
 
 ### 保存済み broker 照合結果の参照画面
 
@@ -435,7 +435,7 @@ Python の `--bundle` は、提案と計算に使った原本 CSV をまとめ�
 
 整数株の paper 約定・手数料・税・部分約定で評価するには、同じ CLI に `--config contracts/fixtures/strategy-improvement-paper-config.json` を渡します。この v2 は金額を厳密に計算し、比率を小数点以下28桁の half-even で丸め、既存の v1 結果と区別します。下の登録例は v1 専用です。現在の registry とシグナル提出は v2 を拒否します。v2 は自動昇格や paper runner 全体との同等性を証明しません。[計算契約と検証](gates/g3ai-paper-compatible-research.md)を参照してください。
 
-Go core は v1 のローカル結果を、schema v13 で導入し現在の schema v26 でも保全している insert-only registry に登録します。`no_promotion` も却下の根拠として保全しますが、選択はできません。`paper_candidate` の選択には、現在の champion と直接比較するロジックがまだないため、明示的な CLI と optimistic concurrency が必要です。rollback は直前の選択または `no_strategy` に戻す新しいイベントの追記のみです。
+Go core は v1 のローカル結果を、schema v13 で導入し schema v27 にも保全する insert-only registry に登録します。`paper_candidate` は提案であり、`no_promotion` は却下の根拠として残りますが選択できません。手動選択には明示的な CLI と現在の選択イベントを使います。rollback は直前の選択または `no_strategy` に戻すイベントを追記します。
 
 ```sh
 candidate_file="$(mktemp)"
@@ -451,6 +451,33 @@ rm -f "$candidate_file"
 ```
 
 登録結果の `result_sha256` を選択する場合は `strategy-select -result-sha256 ... -expected-current-event ...` を使います。最初の expected event は `no_event`、以後は `strategy-status` または直前の出力の `current_event_id` です。取り消す場合は `strategy-rollback` に現在の event ID を `-expected-current-event` と `-source-event` の両方で渡します。この手動 rollback は、同じ transaction 内ですべての有効な execution authority を halt/fence してから選択履歴を追記し、どれか1つでも記録に失敗すれば全体をロールバックします。選択状態だけで注文権限が付与されることはありません。
+
+### ローカル paper 候補の自動比較
+
+ローカル実装の `paper-promote` は、登録済み v1 候補を現在の選択戦略と同じ入力の buy-and-hold に比較します。Go が固定された2つの戦略を、新しい30本ずつの3区間で、同じ数量・開始現金・約定コストを使って独立に計算します。Python の候補探索結果自体はこの比較の証明ではありません。評価区間は登録済みのすべての研究と過去の比較の終了時刻より後でなければなりません。
+
+DB に既存の paper 口座セッションがちょうど1つあり、現在の選択が必要です。口座は保有ポジションと進行中の注文がない状態にします。すべての execution authority を停止し、グローバル runner lease と未完了チェーンのガードを満たす必要があります。比較区間は登録済みの研究区間や使用済みの比較区間と重複できません。以下のパスと ID を実際の値に置き換えてください。
+
+```sh
+(cd services/core && go run . paper-promote \
+  -db ../../data/omni-folio.db \
+  -account '<EXISTING_PAPER_ACCOUNT>' \
+  -candidate-result-sha '<REGISTERED_RESULT_SHA256>' \
+  -expected-selection-event '<CURRENT_EVENT_ID>' \
+  -attempt-id paper_compare_001 \
+  -bars /absolute/path/to/fresh-forward-bars.csv)
+
+(cd services/core && go run . paper-promotion-status \
+  -db ../../data/omni-folio.db -attempt-id paper_compare_001)
+
+# Only if the pending attempt should be aborted:
+(cd services/core && go run . paper-promotion-abort \
+  -db ../../data/omni-folio.db -attempt-id paper_compare_001)
+```
+
+結果が不明な場合は、まず同じ attempt ID で状態を確認します。同じリクエストの再試行は保存済みの `PENDING` または完了結果を返し、再計算しません。中止が必要な場合だけ明示的に `abort` します。記録済みの比較区間は `HOLD`、`ERROR`、中止、プロセス終了後も再利用できず、経過時間の推測だけで `PENDING` を失効させません。自動選択された候補の後続シグナルは比較終了時刻より厳密に後でなければならず、rollback 後に再選択しても制限は続きます。
+
+自動有効化、口座の新規作成・初期化、実取引は行いません。CSV の利用権限、提供者、銘柄 metadata は未検証で、buy-and-hold は実際の指数データではありません。receipt に原本 CSV は含まれませんが、DB と backup には保存されます。[コマンド・復旧契約と検証状態](gates/g3aj-automatic-paper-promotion.md)
 
 ### 認証情報を使わない paper 会計と成績の検証根拠
 

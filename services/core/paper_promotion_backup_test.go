@@ -190,6 +190,40 @@ func TestPaperPromotionMigration27FailureRestoresTriggersAndForeignKeys(t *testi
 	}
 }
 
+func TestPaperPromotionMigration27RejectsUnknownSelectionTriggerBeforeDDL(t *testing.T) {
+	svc, _ := testService(t, nil, nil)
+	dropPaperPromotionSchemaForLegacy(t, svc.db)
+	const triggerName = "user_strategy_selection_guard"
+	if _, err := svc.db.Exec(`CREATE TRIGGER user_strategy_selection_guard BEFORE INSERT ON strategy_selection_events
+		BEGIN SELECT RAISE(ABORT, 'user selection guard'); END;`); err != nil {
+		t.Fatal(err)
+	}
+	var beforeSQL string
+	if err := svc.db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?`, triggerName).Scan(&beforeSQL); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(svc.db); err == nil || !strings.Contains(err.Error(), "migration 27 pre-rebuild proof") || !strings.Contains(err.Error(), triggerName) {
+		t.Fatal("unknown selection trigger did not stop migration before DDL", err)
+	}
+	var afterSQL string
+	if err := svc.db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?`, triggerName).Scan(&afterSQL); err != nil || afterSQL != beforeSQL {
+		t.Fatal("rejected migration changed user trigger", err)
+	}
+	if err := requireSchemaVersionContext(context.Background(), svc.db, 26); err != nil {
+		t.Fatal("rejected migration changed schema history", err)
+	}
+	var foreignKeys, promotionTables, newColumn int
+	if err := svc.db.QueryRow(`PRAGMA foreign_keys`).Scan(&foreignKeys); err != nil || foreignKeys != 1 {
+		t.Fatal("rejected migration left foreign keys disabled", err)
+	}
+	if err := svc.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('paper_promotion_claims','paper_promotion_decisions')`).Scan(&promotionTables); err != nil || promotionTables != 0 {
+		t.Fatal("rejected migration created promotion tables", err)
+	}
+	if err := svc.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('strategy_selection_events') WHERE name='paper_promotion_attempt_id'`).Scan(&newColumn); err != nil || newColumn != 0 {
+		t.Fatal("rejected migration changed selection schema", err)
+	}
+}
+
 func TestPaperPromotionMigration27EnforcesBoundsAndAppendOnly(t *testing.T) {
 	svc, _ := testService(t, nil, nil)
 	const recordedAt = "2026-01-10T15:00:00.000000000Z"

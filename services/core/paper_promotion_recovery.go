@@ -146,9 +146,10 @@ func provePaperPromotionRecovery(ctx context.Context, q orderQuerier) (paperProm
 		return proof, err
 	}
 	linked := map[string]string{}
+	completed := map[string]paperPromotionDecision{}
 	for _, item := range decisions {
 		stored, ok := byID[item.decision.AttemptID]
-		if !ok {
+		if !ok || item.sequence != stored.sequence {
 			return proof, errors.New("paper promotion decision has no claim")
 		}
 		if err := validateStoredPaperPromotionDecision(ctx, q, stored.claim, stored.sha, item.decision); err != nil {
@@ -158,12 +159,21 @@ func provePaperPromotionRecovery(ctx context.Context, q orderQuerier) (paperProm
 			linked[item.selection.String] = item.decision.AttemptID
 		}
 		delete(byID, item.decision.AttemptID)
+		completed[item.decision.AttemptID] = item.decision
 		if err := encoder.Encode([]any{"decision", item.sequence, item.sha, item.raw}); err != nil {
 			return proof, err
 		}
 	}
 	if len(byID) > 1 {
 		return proof, errors.New("paper promotion has multiple pending claims")
+	}
+	for index := 1; index < len(claims); index++ {
+		previous, ok := completed[claims[index-1].claim.AttemptID]
+		at, _ := parsePaperTime(claims[index].claim.RecordedAt)
+		previousAt, _ := parsePaperTime(previous.RecordedAt)
+		if !ok || at.Before(previousAt) {
+			return proof, errors.New("paper promotion claims cross an unfinished or later decision")
+		}
 	}
 	rows, err = q.QueryContext(ctx, `SELECT event_id,paper_promotion_attempt_id FROM strategy_selection_events WHERE paper_promotion_attempt_id IS NOT NULL OR reason_code='auto_comparison'`)
 	if err != nil {
@@ -231,7 +241,7 @@ func validateStoredPaperPromotionClaim(ctx context.Context, q orderQuerier, c pa
 		return errors.New("paper promotion incumbent binding is invalid")
 	}
 	var count int
-	if err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM strategy_research_evidence WHERE result_sha256 IN (?,?) AND sequence<=? AND julianday(recorded_at)<=julianday(?)`, c.CandidateResultSHA256, c.IncumbentResultSHA256, c.ResearchSequenceCutoff, c.RecordedAt).Scan(&count); err != nil {
+	if err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM strategy_research_evidence WHERE result_sha256 IN (?,?) AND sequence<=?`, c.CandidateResultSHA256, c.IncumbentResultSHA256, c.ResearchSequenceCutoff).Scan(&count); err != nil {
 		return err
 	}
 	if count != 2 {
@@ -251,11 +261,27 @@ func validateStoredPaperPromotionClaim(ctx context.Context, q orderQuerier, c pa
 			return errors.New("paper promotion order cutoff is missing")
 		}
 	}
-	if err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM order_events e JOIN order_idempotency o ON o.order_id=e.order_id JOIN paper_market_bar_observations b ON b.observation_id=json_extract(e.event_json,'$.paper_bar_observation_id') WHERE e.sequence<=? AND o.account_ref=? AND julianday(b.close_at)>julianday(?)`, c.OrderSequenceCutoff, c.AccountRef, c.RecordedAt).Scan(&count); err != nil {
+	if err := validatePaperPromotionJournalCutoffs(ctx, q, c); err != nil {
 		return err
 	}
-	if count != 0 {
-		return errors.New("paper promotion accounting cutoff excludes a recorded fill")
+	fillRows, err := q.QueryContext(ctx, `SELECT b.close_at FROM order_events e JOIN order_idempotency o ON o.order_id=e.order_id JOIN paper_market_bar_observations b ON b.observation_id=json_extract(e.event_json,'$.paper_bar_observation_id') WHERE e.sequence<=? AND o.account_ref=?`, c.OrderSequenceCutoff, c.AccountRef)
+	if err != nil {
+		return err
+	}
+	for fillRows.Next() {
+		var raw string
+		if err := fillRows.Scan(&raw); err != nil {
+			fillRows.Close()
+			return err
+		}
+		closeAt, ok := parsePaperTime(raw)
+		if !ok || closeAt.After(claimedAt) {
+			fillRows.Close()
+			return errors.New("paper promotion accounting cutoff excludes a recorded fill")
+		}
+	}
+	if err := closeRows(fillRows); err != nil {
+		return err
 	}
 	session, found, err := loadPaperAccountingSession(ctx, q, c.AccountRef)
 	if err != nil {
@@ -282,6 +308,60 @@ func validateStoredPaperPromotionClaim(ctx context.Context, q orderQuerier, c pa
 		}
 	}
 	return validatePaperPromotionFreshRange(ctx, q, c, sequence)
+}
+
+// Later appends must not make a claimed chronological prefix ambiguous.
+func requirePaperPromotionAppendTime(ctx context.Context, q orderQuerier, recordedAt string) error {
+	var schema int
+	if err := q.QueryRowContext(ctx, `SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&schema); err != nil {
+		return err
+	}
+	if schema < 27 {
+		return nil
+	}
+	var latest sql.NullString
+	if err := q.QueryRowContext(ctx, `SELECT MAX(recorded_at) FROM paper_promotion_claims`).Scan(&latest); err != nil {
+		return err
+	}
+	if !latest.Valid {
+		return nil
+	}
+	at, ok := canonicalUTCTime(recordedAt)
+	cutoff, cutoffOK := parsePaperTime(latest.String)
+	if !ok || !cutoffOK || !at.After(cutoff) {
+		return errors.New("journal append must follow the latest paper comparison claim time")
+	}
+	return nil
+}
+
+func validatePaperPromotionJournalCutoffs(ctx context.Context, q orderQuerier, c paperPromotionClaim) error {
+	claimedAt, _ := parsePaperTime(c.RecordedAt)
+	for _, journal := range []struct {
+		table  string
+		cutoff int64
+	}{{"order_events", c.OrderSequenceCutoff}, {"strategy_research_evidence", c.ResearchSequenceCutoff}} {
+		rows, err := q.QueryContext(ctx, `SELECT sequence,recorded_at FROM `+journal.table+` ORDER BY sequence`)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var sequence int64
+			var raw string
+			if err := rows.Scan(&sequence, &raw); err != nil {
+				rows.Close()
+				return err
+			}
+			at, ok := canonicalUTCTime(raw)
+			if !ok || (sequence <= journal.cutoff) != (!at.After(claimedAt)) {
+				rows.Close()
+				return errors.New("paper promotion journal cutoff differs from its claimed time")
+			}
+		}
+		if err := closeRows(rows); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func validateStoredPaperPromotionDecision(ctx context.Context, q orderQuerier, c paperPromotionClaim, claimSHA string, d paperPromotionDecision) error {

@@ -909,6 +909,13 @@ func migration27SchemaInventory(ctx context.Context, q orderQuerier) ([]migratio
 			return nil, nil, nil, err
 		}
 		if object.Table == "strategy_selection_events" {
+			if object.Type == "trigger" {
+				switch object.Name {
+				case "strategy_selection_events_no_update", "strategy_selection_events_no_delete", "strategy_selection_events_state_guard":
+				default:
+					return nil, nil, nil, fmt.Errorf("unsupported strategy selection trigger %q", object.Name)
+				}
+			}
 			if object.Type == "index" && object.SQL != "" {
 				indexes = append(indexes, object)
 			}

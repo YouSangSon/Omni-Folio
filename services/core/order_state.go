@@ -681,6 +681,9 @@ func insertOrderEvent(ctx context.Context, tx *sql.Tx, event OrderEvent, recorde
 }
 
 func insertOrderEventRow(ctx context.Context, tx *sql.Tx, event OrderEvent, eventSHA, eventJSON, recordedAt string) error {
+	if err := requirePaperPromotionAppendTime(ctx, tx, recordedAt); err != nil {
+		return err
+	}
 	var hasPaperAuthorizationColumn int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('order_events') WHERE name='paper_authorization_id'`).Scan(&hasPaperAuthorizationColumn); err != nil {
 		return err

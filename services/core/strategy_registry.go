@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"os"
 	"regexp"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -148,6 +149,9 @@ func (s *Service) registerStrategyEvidence(ctx context.Context, artifact []byte)
 		return nil, err
 	}
 	evidence.RecordedAt = s.now().UTC().Format(time.RFC3339Nano)
+	if err := requirePaperPromotionAppendTime(ctx, tx, evidence.RecordedAt); err != nil {
+		return nil, err
+	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO strategy_research_evidence(
 		result_sha256,artifact_sha256,strategy_name,strategy_version,parameter_sha256,target,artifact_json,recorded_at
 	) VALUES(?,?,?,?,?,?,?,?)`, evidence.ResultSHA256, evidence.ArtifactSHA256, evidence.StrategyName,
