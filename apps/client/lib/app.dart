@@ -12,6 +12,7 @@ import 'models.dart';
 import 'owner_data_import.dart';
 import 'owner_data_import_page.dart';
 import 'paper_monitor_page.dart';
+import 'paper_promotion_report_page.dart';
 import 'portfolio_xirr_page.dart';
 import 'research_report_page.dart';
 import 'watchlist.dart';
@@ -2818,6 +2819,26 @@ class DataPage extends StatelessWidget {
                 ),
                 icon: const Icon(Icons.analytics_outlined),
                 label: const Text('백테스트 보고서 보기'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _SectionCard(
+          title: '모의 전략 비교',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('저장된 모의 비교 기록을 요청할 때만 불러옵니다.'),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => PaperPromotionReportPage(api: api),
+                  ),
+                ),
+                icon: const Icon(Icons.compare_arrows),
+                label: const Text('모의 전략 비교 보기'),
               ),
             ],
           ),

@@ -13,6 +13,7 @@ import 'package:omni_folio_client/api.dart';
 import 'package:omni_folio_client/app.dart';
 import 'package:omni_folio_client/models.dart';
 import 'package:omni_folio_client/paper_monitor.dart';
+import 'package:omni_folio_client/paper_promotion_report.dart';
 import 'package:omni_folio_client/research_report.dart';
 
 Json fixture(String name) {
@@ -202,6 +203,10 @@ class FakeApi implements OmniApi {
   @override
   Future<PaperMonitor> paperMonitor() =>
       throw UnsupportedError('Loaded only from the monitor detail page.');
+
+  @override
+  Future<PaperPromotionReport> paperPromotionReport() =>
+      throw UnsupportedError('Loaded only from the paper comparison page.');
 
   @override
   Future<ResearchReport> researchReport() =>

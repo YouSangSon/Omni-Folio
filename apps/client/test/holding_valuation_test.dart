@@ -10,6 +10,7 @@ import 'package:omni_folio_client/app.dart';
 import 'package:omni_folio_client/holding_valuation_page.dart';
 import 'package:omni_folio_client/models.dart';
 import 'package:omni_folio_client/paper_monitor.dart';
+import 'package:omni_folio_client/paper_promotion_report.dart';
 import 'package:omni_folio_client/research_report.dart';
 
 Json holdingValuationJson({
@@ -620,6 +621,10 @@ class _TestApi implements OmniApi {
 
   @override
   Future<PaperMonitor> paperMonitor() =>
+      throw UnsupportedError('Not used by this fixture.');
+
+  @override
+  Future<PaperPromotionReport> paperPromotionReport() =>
       throw UnsupportedError('Not used by this fixture.');
 
   @override

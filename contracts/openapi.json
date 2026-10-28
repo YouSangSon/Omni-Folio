@@ -6,6 +6,52 @@
     "description": "Minimal cross-runtime contract for trust status, CSV import, deterministic portfolio snapshots, explicitly labeled sample market data, sanitized ledger activity, stored broker reconciliation, and verified local order lifecycle reads. JSON decimals are canonical strings; IDs are opaque strings."
   },
   "paths": {
+    "/v1/paper/promotion-report": {
+      "get": {
+        "operationId": "getPaperPromotionReport",
+        "description": "Returns the highest-sequence stored paper comparison CLAIM, including PENDING, from one verified database read snapshot. No query parameters are accepted. Full registry/promotion recovery re-scores stored completed comparisons before explicit public projection. Corruption anywhere fails the whole response; no fallback to an older result. Current selection status compares exact selection events, not strategy/result equality. No account/session/attempt/selection IDs, hashes, raw inputs, cash, cost amounts, execution controls or live authority are exposed. GET also inherits HEAD handling and allowed-origin CORS OPTIONS from the existing transport; POST/PUT/DELETE are not supported. Reading takes the existing SQLite writer lock; no polling or automatic refresh is implied.",
+        "responses": {
+          "200": {
+            "description": "Verified latest comparison claim, or attempt=null only when the verified journal has no claims.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Do not store this observation.",
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperPromotionReportView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Query parameters are not accepted (invalid_query).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Storage, recovery or public projection failed; generic redacted internal_error only, without partial results or fallback.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/watchlist": {
       "get": {
         "operationId": "getWatchlist",
@@ -1015,6 +1061,509 @@
       }
     },
     "schemas": {
+      "PaperPromotionReportView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "mode",
+          "observed_at",
+          "attempt"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": "paper-promotion-report.v1"
+          },
+          "mode": {
+            "const": "paper_comparison_only"
+          },
+          "observed_at": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp",
+            "description": "Server observation time, captured once inside this snapshot. Clock regression is possible; this is not market freshness."
+          },
+          "attempt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StoredPaperPromotionReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "StoredPaperPromotionReport": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "symbol",
+          "claimed_at",
+          "decided_at",
+          "comparison_start",
+          "comparison_end",
+          "candidate",
+          "incumbent",
+          "decision",
+          "reason_code",
+          "promotion_selection_status",
+          "comparison"
+        ],
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$"
+          },
+          "claimed_at": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp"
+          },
+          "decided_at": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LedgerActivityTimestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "comparison_start": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp",
+            "maxLength": 20
+          },
+          "comparison_end": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp",
+            "maxLength": 20
+          },
+          "candidate": {
+            "$ref": "#/components/schemas/PaperPromotionReportStrategy"
+          },
+          "incumbent": {
+            "$ref": "#/components/schemas/PaperPromotionReportStrategy"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "PROMOTE",
+              "HOLD",
+              "STALE",
+              "ERROR",
+              "ABORTED"
+            ]
+          },
+          "reason_code": {
+            "type": "string",
+            "enum": [
+              "comparison_claimed",
+              "all_forward_gates_passed",
+              "insufficient_round_trips",
+              "candidate_negative_return",
+              "candidate_return_below_incumbent",
+              "candidate_drawdown_above_incumbent",
+              "candidate_turnover_above_incumbent",
+              "holdout_not_better_than_incumbent",
+              "holdout_not_better_than_buy_and_hold",
+              "account_or_selection_changed",
+              "comparison_failed",
+              "explicit_abort"
+            ]
+          },
+          "promotion_selection_status": {
+            "type": "string",
+            "enum": [
+              "not_promoted",
+              "current",
+              "superseded"
+            ]
+          },
+          "comparison": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PaperPromotionReportComparison"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "description": "Latest claim by sequence, never the latest successful decision. comparison_end <= claimed_at <= decided_at when decided; no ordering against observed_at is required. PENDING is absence of a decision record, not process liveness. STALE means the pre-application state check did not pass; its reason does not diagnose a specific mutation. PROMOTE current means its exact selection event is still current; rollback/manual reselection of the same strategy remains superseded. Candidate/incumbent identify fixed SMA parameters at claim time; quantities match. No execution authority is granted.",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "decision": {
+                  "const": "PENDING"
+                }
+              },
+              "required": [
+                "decision"
+              ]
+            },
+            "then": {
+              "properties": {
+                "reason_code": {
+                  "const": "comparison_claimed"
+                },
+                "decided_at": {
+                  "type": "null"
+                },
+                "promotion_selection_status": {
+                  "const": "not_promoted"
+                },
+                "comparison": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "decision": {
+                  "const": "PROMOTE"
+                }
+              },
+              "required": [
+                "decision"
+              ]
+            },
+            "then": {
+              "properties": {
+                "reason_code": {
+                  "const": "all_forward_gates_passed"
+                },
+                "decided_at": {
+                  "$ref": "#/components/schemas/LedgerActivityTimestamp"
+                },
+                "promotion_selection_status": {
+                  "type": "string",
+                  "enum": [
+                    "current",
+                    "superseded"
+                  ]
+                },
+                "comparison": {
+                  "$ref": "#/components/schemas/PaperPromotionReportComparison",
+                  "properties": {
+                    "decision": {
+                      "const": "PROMOTE"
+                    }
+                  },
+                  "description": "Final HOLD/PROMOTE decision and reason_code equal the stored comparison decision and reason_code."
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "decision": {
+                  "const": "HOLD"
+                }
+              },
+              "required": [
+                "decision"
+              ]
+            },
+            "then": {
+              "properties": {
+                "reason_code": {
+                  "type": "string",
+                  "enum": [
+                    "insufficient_round_trips",
+                    "candidate_negative_return",
+                    "candidate_return_below_incumbent",
+                    "candidate_drawdown_above_incumbent",
+                    "candidate_turnover_above_incumbent",
+                    "holdout_not_better_than_incumbent",
+                    "holdout_not_better_than_buy_and_hold"
+                  ]
+                },
+                "decided_at": {
+                  "$ref": "#/components/schemas/LedgerActivityTimestamp"
+                },
+                "promotion_selection_status": {
+                  "const": "not_promoted"
+                },
+                "comparison": {
+                  "$ref": "#/components/schemas/PaperPromotionReportComparison",
+                  "properties": {
+                    "decision": {
+                      "const": "HOLD"
+                    }
+                  },
+                  "description": "Final HOLD/PROMOTE decision and reason_code equal the stored comparison decision and reason_code."
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "decision": {
+                  "const": "STALE"
+                }
+              },
+              "required": [
+                "decision"
+              ]
+            },
+            "then": {
+              "properties": {
+                "reason_code": {
+                  "const": "account_or_selection_changed"
+                },
+                "decided_at": {
+                  "$ref": "#/components/schemas/LedgerActivityTimestamp"
+                },
+                "promotion_selection_status": {
+                  "const": "not_promoted"
+                },
+                "comparison": {
+                  "$ref": "#/components/schemas/PaperPromotionReportComparison"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "decision": {
+                  "const": "ERROR"
+                }
+              },
+              "required": [
+                "decision"
+              ]
+            },
+            "then": {
+              "properties": {
+                "reason_code": {
+                  "const": "comparison_failed"
+                },
+                "decided_at": {
+                  "$ref": "#/components/schemas/LedgerActivityTimestamp"
+                },
+                "promotion_selection_status": {
+                  "const": "not_promoted"
+                },
+                "comparison": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "decision": {
+                  "const": "ABORTED"
+                }
+              },
+              "required": [
+                "decision"
+              ]
+            },
+            "then": {
+              "properties": {
+                "reason_code": {
+                  "const": "explicit_abort"
+                },
+                "decided_at": {
+                  "$ref": "#/components/schemas/LedgerActivityTimestamp"
+                },
+                "promotion_selection_status": {
+                  "const": "not_promoted"
+                },
+                "comparison": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "PaperPromotionReportStrategy": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fast_window",
+          "slow_window",
+          "quantity"
+        ],
+        "properties": {
+          "fast_window": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 364
+          },
+          "slow_window": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 365
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$",
+            "maxLength": 19,
+            "description": "Exact positive whole-share quantity <= 4611686018427387903."
+          }
+        },
+        "description": "Fixed long_only_sma_crossover 1.0.0 parameters with fast_window < slow_window. The two strategies use identical quantity and execution policy."
+      },
+      "PaperPromotionReportComparison": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "policy_version",
+          "metrics_verification",
+          "decision",
+          "reason_code",
+          "windows"
+        ],
+        "properties": {
+          "policy_version": {
+            "const": "paper-forward-comparison.v1"
+          },
+          "metrics_verification": {
+            "const": "recomputed_from_stored_input"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "PROMOTE",
+              "HOLD"
+            ]
+          },
+          "reason_code": {
+            "type": "string",
+            "enum": [
+              "all_forward_gates_passed",
+              "insufficient_round_trips",
+              "candidate_negative_return",
+              "candidate_return_below_incumbent",
+              "candidate_drawdown_above_incumbent",
+              "candidate_turnover_above_incumbent",
+              "holdout_not_better_than_incumbent",
+              "holdout_not_better_than_buy_and_hold"
+            ]
+          },
+          "windows": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {
+              "$ref": "#/components/schemas/PaperPromotionReportWindow"
+            }
+          }
+        },
+        "description": "These returned modeled metrics were checked by recomputing the stored input. Three independent 30-bar windows reset to the same captured paper cash; the third is the final holdout. They are not a continuous-account return and must not be summed. A STALE final decision can preserve a PROMOTE comparison without changing selection.",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "decision": {
+                  "const": "PROMOTE"
+                }
+              },
+              "required": [
+                "decision"
+              ]
+            },
+            "then": {
+              "properties": {
+                "reason_code": {
+                  "const": "all_forward_gates_passed"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "reason_code": {
+                  "type": "string",
+                  "enum": [
+                    "insufficient_round_trips",
+                    "candidate_negative_return",
+                    "candidate_return_below_incumbent",
+                    "candidate_drawdown_above_incumbent",
+                    "candidate_turnover_above_incumbent",
+                    "holdout_not_better_than_incumbent",
+                    "holdout_not_better_than_buy_and_hold"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "PaperPromotionReportWindow": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "start",
+          "end",
+          "candidate",
+          "incumbent",
+          "buy_and_hold"
+        ],
+        "properties": {
+          "start": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp",
+            "maxLength": 20
+          },
+          "end": {
+            "$ref": "#/components/schemas/LedgerActivityTimestamp",
+            "maxLength": 20
+          },
+          "candidate": {
+            "$ref": "#/components/schemas/PaperPromotionReportMetrics"
+          },
+          "incumbent": {
+            "$ref": "#/components/schemas/PaperPromotionReportMetrics"
+          },
+          "buy_and_hold": {
+            "$ref": "#/components/schemas/PaperPromotionReportMetrics"
+          }
+        },
+        "description": "Canonical whole-second UTC bar bounds, start < end; ordered non-overlapping windows exactly cover the outer comparison bounds. Buy-and-hold uses the same modeled bars/cash/costs, not an external market index."
+      },
+      "PaperPromotionReportMetrics": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "after_cost_return",
+          "max_drawdown",
+          "round_trips",
+          "turnover"
+        ],
+        "properties": {
+          "after_cost_return": {
+            "$ref": "#/components/schemas/Decimal",
+            "maxLength": 128,
+            "description": "Cost-inclusive signed modeled return ratio, preserved exactly; no magnitude bound."
+          },
+          "max_drawdown": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^(?:0|[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$",
+            "description": "Canonical nonnegative modeled drawdown ratio; no upper bound is inferred."
+          },
+          "round_trips": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^(?:0|[1-9][0-9]*)$",
+            "description": "Completed long-only round trips as an exact nonnegative integer string."
+          },
+          "turnover": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^(?:0|[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$",
+            "description": "Modeled turnover ratio with original precision, not a monetary amount; no upper bound."
+          }
+        }
+      },
       "WatchlistEntry": {
         "type": "object",
         "additionalProperties": false,
