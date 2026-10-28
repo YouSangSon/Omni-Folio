@@ -77,8 +77,9 @@ class RestOmniApi implements OmniApi {
       );
       if (change != null) {
         final bytes = utf8.encode(jsonEncode(change.toJson()));
-        if (bytes.length > 16 * 1024)
+        if (bytes.length > 16 * 1024) {
           throw const FormatException('Watchlist request too large');
+        }
         req.headers['content-type'] = 'application/json';
         req.bodyBytes = bytes;
       }
@@ -106,8 +107,9 @@ class RestOmniApi implements OmniApi {
   @override
   Future<WatchlistState> updateWatchlist(WatchlistChange change) async {
     final state = WatchlistState.fromJson(await _watchlistRequest(change));
-    if (!change.matchesAck(state))
+    if (!change.matchesAck(state)) {
       throw const FormatException('Watchlist acknowledgement mismatch');
+    }
     return state;
   }
 

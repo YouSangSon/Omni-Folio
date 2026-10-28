@@ -232,8 +232,9 @@ class _WatchlistPageState extends State<WatchlistPage> {
                     ),
                     onChanged: (value) {
                       controller.draftSymbol = value;
-                      if (_symbolError != null)
+                      if (_symbolError != null) {
                         setState(() => _symbolError = null);
+                      }
                     },
                     onSubmitted: (_) => _add(),
                   ),
