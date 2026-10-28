@@ -7,14 +7,14 @@
 - [x] 제품·안전 목표와 조사 기준선
 - [x] Flutter/Go/Python 및 state-authority ADR
 - [x] G0 contracts와 monorepo 실행 명령
-- [x] G1 CSV preview → atomic apply → ledger snapshot/receipt, exact cash-flow·split·두 통화 환전 replay, append-only `CASH_VOID`, direct FX observation, cash-only direct-FX valuation, durable security price observation, internal native-currency holding valuation, current KRW whole-portfolio valuation과 versioned FIFO residual allocation, owner-declared instrument listing, paper operational evaluation, schema v26/backup v20 및 supported legacy owned-copy migration/restore proof
+- [x] G1 CSV preview → atomic apply → ledger snapshot/receipt, exact cash-flow·split·두 통화 환전 replay, append-only `CASH_VOID`, direct FX observation, cash-only direct-FX valuation, durable security price observation, internal native-currency holding valuation, current KRW whole-portfolio valuation과 versioned FIFO residual allocation, owner-declared instrument listing, paper operational evaluation, schema v27/backup v21 및 supported legacy owned-copy migration/restore proof
 - [ ] G2 동일 fixture를 표시하는 Flutter client와 iOS·Android·web build 완료; 실제 import API 기반 demo seed, 모바일 bottom navigation·desktop rail, bounded Overview·lazy Holdings, provenance count·signed PnL·단일 actionable semantics를 포함한 자동 검증 통과, chart 포함 Android emulator profile 2회 통과, 수동 screen-reader·physical-device profile 증거 남음
 - [x] G3 동일 market fixture를 읽는 deterministic Python backtest와 walk-forward 개선 runner
 - [x] local OCI/Compose 정의와 root check/smoke
 
 ## Next
 
-- [ ] G3AJ 고정 후보의 paper 자동 비교: 등록된 후보와 현재 전략을 새 세 구간에서 재계산하고, 소비한 구간·결정·선택을 schema27/backup21에 보존한다. 시간 경계와 복구 위조 반례를 보완했으며 최종 CI 대기 중이다. 자동 arm·계좌 초기화·실거래는 포함하지 않는다 ([gate](gates/g3aj-automatic-paper-promotion.md), [PR #65](https://github.com/YouSangSon/Omni-Folio/pull/65)).
+- [x] G3AJ 고정 후보의 paper 자동 비교: 실제 계좌 현금으로 새 세 구간을 재계산하고 소비 구간·결정·선택을 schema27/backup21에 보존한다. 실제 RED·독립 리뷰 후 집중33·Core 전체444.051초/내부6패키지·Python48/JSON43·Flutter22/457·분석·web/ARM64·권한/소스 일치를 통과해 main에 병합했다. 자동 arm·계좌 초기화·실거래는 포함하지 않는다 ([gate](gates/g3aj-automatic-paper-promotion.md), [PR #65](https://github.com/YouSangSon/Omni-Folio/pull/65)).
 
 - [x] G3AI 모의 체결 계산과 호환되는 연구 v2: 기존 v1을 보존하고 정수 수량·정확한 비용·부분체결·단일 입력 캡처를 연결했다. 실제 RED·독립 리뷰 후 공통 Go/Python49사례, Core 전체444.742s·Python48/JSON43·Flutter22/457·분석·web/ARM64·권한/소스 일치를 통과해 main에 병합했다. v2 registry 거절을 유지하며 자동 승격은 별도다 ([gate](gates/g3ai-paper-compatible-research.md), [PR #63](https://github.com/YouSangSon/Omni-Folio/pull/63)).
 
