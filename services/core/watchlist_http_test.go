@@ -243,7 +243,7 @@ func TestWatchlistClosedInputBoundsAndOrigin(t *testing.T) {
 
 func watchlistRecordFixture(t testing.TB, svc *Service, id string, e WatchlistEntry, price, at string) {
 	t.Helper()
-	_, err := svc.recordSecurityPriceObservation(context.Background(), SecurityPriceObservationInput{Source: "local_fixture", SourceObservationID: id, InstrumentID: "instrument_" + strings.ToLower(e.Symbol), Symbol: e.Symbol, Venue: e.Venue, Currency: e.Currency, Price: price, PriceAdjustment: "unspecified", ObservedAt: at, FetchedAt: at})
+	_, err := svc.recordSecurityPriceObservation(context.Background(), SecurityPriceObservationInput{Source: "local_fixture", SourceObservationID: id, InstrumentID: "instrument_" + id, Symbol: e.Symbol, Venue: e.Venue, Currency: e.Currency, Price: price, PriceAdjustment: "unspecified", ObservedAt: at, FetchedAt: at})
 	if err != nil {
 		t.Fatal(err)
 	}

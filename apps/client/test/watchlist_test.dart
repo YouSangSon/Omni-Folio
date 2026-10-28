@@ -590,6 +590,8 @@ void main() {
         200,
         scrollable: find.byType(Scrollable).first,
       );
+      await tester.pumpAndSettle();
+      expect(remove.hitTestable(), findsOneWidget);
       expect(tester.getSize(remove).shortestSide, greaterThanOrEqualTo(48));
       await tester.tap(remove);
       await tester.pumpAndSettle();
