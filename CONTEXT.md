@@ -47,6 +47,7 @@
 - **Fencing token**: 현재 실행 권한을 가진 runner 세대만 주문을 전송하게 하는 단조 증가 토큰.
 - **Strategy manifest**: 전략 버전, 파라미터, 데이터 snapshot, 실행 환경을 재현 가능하게 묶는 식별 계약.
 - **Promotion evidence**: paper, shadow, canary, limited-live 단계의 검증 결과와 승인 기록.
+- **Research handoff**: `paper-improve`는 저장된 v1 연구 결과를 등록하고 캡처한 현재 선택과 기존 fresh paper 비교로 연결한다. 등록과 비교 claim은 별도 저장이며 ID는 claim부터 입력에 묶인다. Python 실행·정기 탐색·실행 권한 활성화는 포함하지 않는다. 계약과 검증 상태는 `gates/g3al-paper-improvement-handoff.md`가 소유한다.
 - **Research evidence**: Python이 만든 immutable `strategy-improvement-result.v1`. 재현 가능한 평가 산출물이지 실행 권한이 아니다.
 - **Strategy execution policy**: 연구 산출물의 시작 현금, 수수료, 세금, slippage, bar 지연, 최대 참여율과 close-signal/next-open-fill 의미를 묶은 계약. Python 생성 성공이나 result hash만으로 신뢰하지 않고 Go registry·복구 경계가 독립 검증한다.
 - **Paper accounting session**: G3.8C1의 계좌 전역 불변 starting-capital authority. 최초 현재 선택의 immutable research artifact에서 starting cash와 complete execution-policy JSON/hash를 파생하며 이후 전략 변경으로 reset하지 않는다. G3.8C2는 같은 policy SHA인 capitalized order만 이 session의 cash와 lot을 공유하게 하며 legacy paper order는 replay-only·uncapitalized로 유지한다.

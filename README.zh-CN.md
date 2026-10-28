@@ -479,6 +479,22 @@ rm -f "$candidate_file"
 
 此操作不会自动激活、创建或重置账户，也不会执行实盘交易。CSV 使用权、提供方和证券 metadata 均未验证，buy-and-hold 并非真实指数数据。receipt 不包含原始 CSV，但数据库和备份会保留。[命令、恢复契约与验证状态](gates/g3aj-automatic-paper-promotion.md)
 
+### 交接一份已保存的研究结果
+
+将已通过 `improve_cli --output` 保存的 v1 研究 JSON 交给 `paper-improve`。Go 会注册结果；需要比较时，将候选策略与捕获的当前策略在新的 forward K 线上评估，并在满足条件时选择候选策略。无需手动复制 SHA 和选择事件，上述手动命令仍可使用。此命令不运行 Python、不定期搜索、不自动激活执行权限，也不创建或初始化新数据库或账户，并继续拒绝 v2。
+
+```sh
+(cd services/core && go run . paper-improve \
+  -db ../../data/omni-folio.db -account '<EXISTING_ACCOUNT_REF>' \
+  -artifact /absolute/path/to/research-result.json \
+  -bars /absolute/path/to/fresh-forward-bars.csv \
+  -attempt-id paper_improve_001)
+```
+
+`research_not_candidate` 表示研究自身报告了 `no_promotion`，不是 Go 比较的 `HOLD`。`already_selected` 表示捕获状态时已选中相同结果。两种情况均返回 `registered=true`、`attempt_recorded=false`、`comparison=null`，不预留 ID，也不消耗区间。只有保存比较 claim 后，ID 才与输入绑定。
+
+注册后即使比较失败，注册仍可能保留。结果不确定时，请用 `strategy-status` 检查策略状态，并用相同 attempt ID 的 `paper-promotion-status` 检查比较状态。使用相同文件、账户和 ID 重试时，从已保存的 claim 开始按幂等方式处理。[交接契约](gates/g3al-paper-improvement-handoff.md)
+
 ### 查看已保存的模拟策略比较
 
 在应用中打开 `연결` → `모의 전략 비교 보기`，即可查看最近一条比较请求。如果已保存比较结果，页面会按计入成本的指标比较候选策略、请求时选中的策略，以及同一证券的买入并持有模型。三个区间各含30根 K 线，彼此独立；服务器会根据已保存的输入重新计算并验证指标。如果最近请求尚无决定，页面显示 `결정 기록 없음`，而不会显示较早的成功结果。

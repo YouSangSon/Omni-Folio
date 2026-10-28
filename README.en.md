@@ -479,6 +479,22 @@ If the result is uncertain, check status using the same attempt ID first. An exa
 
 This does not automatically arm, create or reset an account, or execute live trades. CSV usage rights, provider, and instrument metadata are unverified, and buy-and-hold is not a real index series. The receipt excludes raw CSV, but the database and its backups retain it. [Command, recovery contract, and verification status](gates/g3aj-automatic-paper-promotion.md)
 
+### Hand off one stored research result
+
+Pass a v1 research JSON already saved with `improve_cli --output` to `paper-improve`. Go registers the result and, when comparison is needed, evaluates the candidate against the captured current strategy on fresh forward bars and selects it if the conditions pass. There is no need to copy the SHA or selection event manually; the manual commands above remain available. This command does not run Python, schedule searches, automatically arm execution, or create or initialize a database or account, and it continues to reject v2.
+
+```sh
+(cd services/core && go run . paper-improve \
+  -db ../../data/omni-folio.db -account '<EXISTING_ACCOUNT_REF>' \
+  -artifact /absolute/path/to/research-result.json \
+  -bars /absolute/path/to/fresh-forward-bars.csv \
+  -attempt-id paper_improve_001)
+```
+
+`research_not_candidate` means the research reported `no_promotion`; it is not a `HOLD` from Go's comparison. `already_selected` means the same result was selected when the state was captured. Both return `registered=true`, `attempt_recorded=false`, and `comparison=null`, without reserving the ID or consuming the interval. Only a stored comparison claim binds the ID to its input.
+
+Registration can remain saved if the subsequent comparison fails. If the outcome is uncertain, check `strategy-status` and check `paper-promotion-status` with the same attempt ID. Retrying the same files, account, and ID is idempotent from the saved claim onward. [Handoff contract](gates/g3al-paper-improvement-handoff.md)
+
 ### View the stored paper strategy comparison
 
 In the app, open `연결` → `모의 전략 비교 보기` to see the latest comparison request. When a comparison is stored, it shows cost-inclusive metrics for the candidate, the strategy selected at request time, and a buy-and-hold model for the same instrument. Three independent windows each use 30 bars, and the server verifies the metrics by recomputing them from the stored input. If the latest request has no decision, the page shows `결정 기록 없음` instead of an earlier successful result.

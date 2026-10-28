@@ -479,6 +479,22 @@ DB に既存の paper 口座セッションがちょうど1つあり、現在の
 
 自動有効化、口座の新規作成・初期化、実取引は行いません。CSV の利用権限、提供者、銘柄 metadata は未検証で、buy-and-hold は実際の指数データではありません。receipt に原本 CSV は含まれませんが、DB と backup には保存されます。[コマンド・復旧契約と検証状態](gates/g3aj-automatic-paper-promotion.md)
 
+### 保存済みの研究結果を1件引き渡す
+
+`improve_cli --output` で保存済みの v1 研究 JSON を `paper-improve` に渡します。Go が結果を登録し、比較が必要な候補を取得時点の選択戦略と新しい forward 足で評価して、条件を満たせば選択します。SHA と選択イベントを手動でコピーする必要はなく、上記の手動コマンドも引き続き使えます。このコマンドは Python の実行、定期探索、自動有効化、新しい DB・口座の作成や初期化を行わず、v2 は引き続き拒否します。
+
+```sh
+(cd services/core && go run . paper-improve \
+  -db ../../data/omni-folio.db -account '<EXISTING_ACCOUNT_REF>' \
+  -artifact /absolute/path/to/research-result.json \
+  -bars /absolute/path/to/fresh-forward-bars.csv \
+  -attempt-id paper_improve_001)
+```
+
+`research_not_candidate` は研究が報告した `no_promotion` であり、Go 比較の `HOLD` ではありません。`already_selected` は状態を取得した時点で同じ結果が選択されていた場合です。どちらも `registered=true`、`attempt_recorded=false`、`comparison=null` を返し、ID の予約や区間の消費はしません。比較 claim が保存された場合のみ、ID が入力に結び付けられます。
+
+登録後に比較が失敗しても登録は残る場合があります。結果が不明な場合は `strategy-status` で戦略を、同じ attempt ID を指定した `paper-promotion-status` で比較を確認してください。同じファイル・口座・ID での再試行は、保存済み claim から冪等に処理されます。[引き渡し契約](gates/g3al-paper-improvement-handoff.md)
+
 ### 保存済みの模擬戦略比較を表示
 
 アプリの `연결` → `모의 전략 비교 보기` で最新の比較リクエストを1件表示します。比較が保存されている場合、候補、リクエスト時に選択されていた戦略、同じ銘柄の買い持ちモデルを、コスト込みの指標で比較します。各30本の足からなる3区間を独立して評価し、サーバーが保存済みの入力から指標を再計算して検証します。最新リクエストに決定がない場合は、以前の成功結果ではなく `결정 기록 없음` を表示します。
