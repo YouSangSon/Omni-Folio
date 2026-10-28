@@ -14,6 +14,8 @@
 
 ## Next
 
+- [ ] G3AI 모의 체결 계산과 호환되는 연구 v2: 기존 v1을 보존하고 정수 수량·정확한 비용·부분체결·공통 Go/Python 사례를 검증한다. 구현과 독립 리뷰 진행 중이며 원격 전체 CI·병합 전이다. 자동 승격은 별도다 ([gate](gates/g3ai-paper-compatible-research.md)).
+
 - [x] G4Y 관심종목 등록·삭제와 저장 가격 상태: 원장과 별도의 서버 목록, KRW/USD 원통화 가격·출처·누락·지연, 충돌/불확실 재시도와 schema26/backup20 복구를 구현했다. 실제 API404 RED·독립 리뷰·중간 테스트/분석 실패 보완 후 Core 전체446.025s·Python39/JSON39·Flutter22/457·분석·web/ARM64·권한/소스 일치를 통과해 main에 병합했다. Core는 동일 Git 객체의 통과 근거를 재사용했고 중복 취소는 통과로 세지 않는다. 실제 시세·실기기·VM/배포는 별도다 ([gate](gates/g4y-stored-watchlist.md), [PR #61](https://github.com/YouSangSon/Omni-Folio/pull/61)).
 
 - [x] G1.24 입출금 경계별 과거 평가의 누적 TWR: 정정·동일 시각 외부 흐름 우선·과거 가격/환율의 두 시점·분할 단위·중간 자본 소진과 기말 전액손실을 구분한다. 독립 금융 리뷰와 보완분 재검토·수치11사례·공유 응답7상태·원격 Core 전체/Python39/JSON24·Flutter 집중44/전체264·분석·web/Android release·권한/소스 일치 확인 후 main에 병합했다. 실제 시세·benchmark·소진 후 재투자·새 iOS/실기기·VM은 별도 ([gate](gates/g1t-portfolio-twr.md), [PR #46](https://github.com/YouSangSon/Omni-Folio/pull/46)).

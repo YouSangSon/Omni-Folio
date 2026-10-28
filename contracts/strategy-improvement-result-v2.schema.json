@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omni-folio.local/contracts/strategy-improvement-result.v2.schema.json",
+  "title": "Omni-Folio Strategy Improvement Result v2 (paper fill arithmetic)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "experiment_id",
+    "input_sha256",
+    "config_sha256",
+    "manifest",
+    "execution",
+    "evaluation",
+    "candidates",
+    "challenger",
+    "promotion",
+    "disclaimer",
+    "result_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "strategy-improvement-result.v2"
+    },
+    "experiment_id": {
+      "$ref": "strategy-improvement-result.schema.json#/properties/experiment_id"
+    },
+    "input_sha256": {
+      "$ref": "strategy-improvement-result.schema.json#/properties/input_sha256"
+    },
+    "config_sha256": {
+      "$ref": "strategy-improvement-result.schema.json#/properties/config_sha256"
+    },
+    "result_sha256": {
+      "$ref": "strategy-improvement-result.schema.json#/properties/result_sha256"
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy",
+        "data",
+        "engine",
+        "evaluation_policy"
+      ],
+      "properties": {
+        "strategy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "version",
+            "parameters",
+            "parameter_hash"
+          ],
+          "properties": {
+            "name": {
+              "const": "long_only_sma_crossover"
+            },
+            "version": {
+              "const": "1.0.0"
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "quantity",
+                "fast_window",
+                "slow_window"
+              ],
+              "properties": {
+                "quantity": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+                },
+                "fast_window": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 364
+                },
+                "slow_window": {
+                  "type": "integer",
+                  "minimum": 2,
+                  "maximum": 365
+                }
+              }
+            },
+            "parameter_hash": {
+              "$ref": "strategy-improvement-result.schema.json#/$defs/sha256"
+            }
+          }
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "input_sha256"
+          ],
+          "properties": {
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "input_sha256": {
+              "$ref": "strategy-improvement-result.schema.json#/$defs/sha256"
+            }
+          }
+        },
+        "engine": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "version"
+          ],
+          "properties": {
+            "name": {
+              "const": "omni-folio-paper-reference"
+            },
+            "version": {
+              "const": "1.0.0"
+            }
+          }
+        },
+        "evaluation_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version"
+          ],
+          "properties": {
+            "version": {
+              "const": "sma-paper-fill-walk-forward.v1"
+            }
+          }
+        }
+      }
+    },
+    "execution": {
+      "$ref": "strategy-improvement-result.schema.json#/properties/execution"
+    },
+    "evaluation": {
+      "$ref": "strategy-improvement-result.schema.json#/properties/evaluation"
+    },
+    "candidates": {
+      "$ref": "strategy-improvement-result.schema.json#/properties/candidates"
+    },
+    "challenger": {
+      "$ref": "strategy-improvement-result.schema.json#/properties/challenger"
+    },
+    "promotion": {
+      "$ref": "strategy-improvement-result.schema.json#/properties/promotion"
+    },
+    "disclaimer": {
+      "$ref": "strategy-improvement-result.schema.json#/properties/disclaimer"
+    }
+  }
+}

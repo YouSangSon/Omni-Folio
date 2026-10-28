@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omni-folio.local/contracts/strategy-improvement-config.v2.schema.json",
+  "title": "Omni-Folio Strategy Improvement Config v2 (paper fill arithmetic)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "experiment_id",
+    "data",
+    "strategy",
+    "execution",
+    "splits",
+    "promotion"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "strategy-improvement.v2"
+    },
+    "experiment_id": {
+      "$ref": "strategy-improvement-config.schema.json#/properties/experiment_id"
+    },
+    "data": {
+      "$ref": "strategy-improvement-config.schema.json#/properties/data"
+    },
+    "strategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "quantity",
+        "fast_windows",
+        "slow_windows"
+      ],
+      "properties": {
+        "name": {
+          "const": "long_only_sma_crossover"
+        },
+        "version": {
+          "const": "1.0.0"
+        },
+        "quantity": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,18}$",
+          "description": "Whole shares, at most 4611686018427387903 (semantic validation)."
+        },
+        "fast_windows": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365
+          }
+        },
+        "slow_windows": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365
+          }
+        }
+      }
+    },
+    "execution": {
+      "$ref": "strategy-improvement-config.schema.json#/properties/execution"
+    },
+    "splits": {
+      "$ref": "strategy-improvement-config.schema.json#/properties/splits"
+    },
+    "promotion": {
+      "$ref": "strategy-improvement-config.schema.json#/properties/promotion"
+    }
+  }
+}

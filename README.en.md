@@ -431,9 +431,11 @@ Use `paper-input-status -db PATH -account ACCOUNT -selection-event EVENT -bundle
 
 `--watch --bundle` can pipe into stdin of a separate `paper-execute-stream -arm-paper`. This command arms once, renews its ownership lease between inputs, and cleans up the reader and authority on stop, EOF, or error. It provides neither automatic rearming nor a durable queue; confirm execution through DB records rather than stdout. [Continuous fixture usage](docs/local-paper-workflow.md#명시적으로-연속-fixture-소비하기), [verification gate](gates/g3w-paper-input-stream.md)
 
-The strategy-improvement runner evaluates a finite set of long-only SMA candidates using expanding walk-forward validation and opens the final holdout only once. Results can be only `paper_candidate` or `no_promotion`; they gain no credentials, order authority, or authority for live promotion.
+The strategy-improvement runner evaluates a finite set of long-only SMA candidates using expanding walk-forward validation and opens the final holdout once per run. Results can be only `paper_candidate` or `no_promotion`; they gain no credentials, order authority, or authority for live promotion.
 
-Go core registers these local results in the insert-only registry introduced in schema v13 and preserved in current schema v26. `no_promotion` is retained as rejection evidence but cannot be selected. Because direct comparison with the current champion is not implemented yet, selecting a `paper_candidate` requires an explicit CLI action and optimistic concurrency. Rollback appends a new event only to the previous selection or `no_strategy`.
+To evaluate with whole-share paper fills, fees, taxes, and partial fills, pass `--config contracts/fixtures/strategy-improvement-paper-config.json` to the same CLI. This v2 uses exact money arithmetic and ratios rounded half-even to 28 decimal places, separately from v1 results. The registration example below is for v1 only. The current registry and signal submission reject v2; its results establish neither automatic promotion nor equivalence to the complete paper runner. See the [calculation contract and verification](gates/g3ai-paper-compatible-research.md).
+
+Go core registers v1 local results in the insert-only registry introduced in schema v13 and preserved in current schema v26. `no_promotion` is retained as rejection evidence but cannot be selected. Because direct comparison with the current champion is not implemented yet, selecting a `paper_candidate` requires an explicit CLI action and optimistic concurrency. Rollback appends a new event only to the previous selection or `no_strategy`.
 
 ```sh
 candidate_file="$(mktemp)"

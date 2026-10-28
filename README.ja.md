@@ -431,9 +431,11 @@ Python の `--bundle` は、提案と計算に使った原本 CSV をまとめ�
 
 `--watch --bundle` は、別の `paper-execute-stream -arm-paper` の stdin pipe に接続できます。このコマンドは一度だけ有効化し、入力の合間にも所有 lease を更新し、停止・EOF・エラー時に reader と権限を片付けます。自動再有効化や durable queue ではなく、実行は stdout の代わりに DB 記録で確認します。[連続 fixture の使い方](docs/local-paper-workflow.md#명시적으로-연속-fixture-소비하기)、[検証 gate](gates/g3w-paper-input-stream.md)
 
-戦略改善 runner は有限個の long-only SMA 候補を expanding walk-forward で評価し、final holdout を一度だけ開きます。結果は `paper_candidate` または `no_promotion` だけで、認証情報・注文・live 昇格の権限は得られません。
+戦略改善 runner は有限個の long-only SMA 候補を expanding walk-forward で評価し、1回の実行内で final holdout を一度だけ開きます。結果は `paper_candidate` または `no_promotion` だけで、認証情報・注文・live 昇格の権限は得られません。
 
-Go core はこのローカル結果を、schema v13 で導入し現在の schema v26 でも保全している insert-only registry に登録します。`no_promotion` も却下の根拠として保全しますが、選択はできません。`paper_candidate` の選択には、現在の champion と直接比較するロジックがまだないため、明示的な CLI と optimistic concurrency が必要です。rollback は直前の選択または `no_strategy` に戻す新しいイベントの追記のみです。
+整数株の paper 約定・手数料・税・部分約定で評価するには、同じ CLI に `--config contracts/fixtures/strategy-improvement-paper-config.json` を渡します。この v2 は金額を厳密に計算し、比率を小数点以下28桁の half-even で丸め、既存の v1 結果と区別します。下の登録例は v1 専用です。現在の registry とシグナル提出は v2 を拒否します。v2 は自動昇格や paper runner 全体との同等性を証明しません。[計算契約と検証](gates/g3ai-paper-compatible-research.md)を参照してください。
+
+Go core は v1 のローカル結果を、schema v13 で導入し現在の schema v26 でも保全している insert-only registry に登録します。`no_promotion` も却下の根拠として保全しますが、選択はできません。`paper_candidate` の選択には、現在の champion と直接比較するロジックがまだないため、明示的な CLI と optimistic concurrency が必要です。rollback は直前の選択または `no_strategy` に戻す新しいイベントの追記のみです。
 
 ```sh
 candidate_file="$(mktemp)"

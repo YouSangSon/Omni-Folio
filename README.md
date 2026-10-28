@@ -431,9 +431,11 @@ Python `--bundle`은 제안과 계산에 사용한 원본 CSV를 함께 출력�
 
 `--watch --bundle`은 별도 `paper-execute-stream -arm-paper`의 stdin pipe로 연결할 수 있습니다. 이 명령은 한 번만 활성화하고 입력 사이에도 소유 임대를 갱신하며, 중지·EOF·오류에서 reader와 권한을 정리합니다. 자동 재활성화나 durable queue는 아니며 stdout 대신 DB 기록으로 실행을 확인합니다. [연속 fixture 사용법](docs/local-paper-workflow.md#명시적으로-연속-fixture-소비하기), [검증 gate](gates/g3w-paper-input-stream.md)
 
-전략 개선 runner는 유한한 long-only SMA 후보를 expanding walk-forward로 평가하고 final holdout을 한 번만 엽니다. 결과는 `paper_candidate` 또는 `no_promotion`만 만들 수 있으며 credential·주문·live 승격 권한을 얻지 못합니다.
+전략 개선 runner는 유한한 long-only SMA 후보를 expanding walk-forward로 평가하고 한 실행 안에서 final holdout을 한 번만 엽니다. 결과는 `paper_candidate` 또는 `no_promotion`만 만들 수 있으며 credential·주문·live 승격 권한을 얻지 못합니다.
 
-Go core는 이 로컬 결과를 schema v13에서 도입되어 현재 schema v26에도 보존된 insert-only registry에 등록합니다. `no_promotion`도 거절 evidence로 보존되지만 선택할 수 없습니다. `paper_candidate` 선택은 현재 champion과 직접 비교하는 로직이 아직 없으므로 명시적 CLI와 optimistic concurrency를 요구하며, rollback은 직전 선택이나 `no_strategy`로만 새 이벤트를 append합니다.
+모의 체결의 정수 주·수수료·세금·부분체결 계산으로 평가하려면 같은 CLI에 `--config contracts/fixtures/strategy-improvement-paper-config.json`을 전달합니다. 이 v2는 정확한 금액 계산과 소수 28자리 half-even 수익률 정책을 사용하며 기존 v1 결과와 구분됩니다. 아래 등록 예제는 v1 전용입니다. v2 결과는 현재 registry·신호 제출에서 거부되며 자동 승격이나 실제 paper runner 전체 동등성을 증명하지 않습니다. [계산 계약과 검증](gates/g3ai-paper-compatible-research.md)을 참고하세요.
+
+Go core는 v1 로컬 결과를 schema v13에서 도입되어 현재 schema v26에도 보존된 insert-only registry에 등록합니다. `no_promotion`도 거절 evidence로 보존되지만 선택할 수 없습니다. `paper_candidate` 선택은 현재 champion과 직접 비교하는 로직이 아직 없으므로 명시적 CLI와 optimistic concurrency를 요구하며, rollback은 직전 선택이나 `no_strategy`로만 새 이벤트를 append합니다.
 
 ```sh
 candidate_file="$(mktemp)"
