@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"os"
 	"regexp"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -55,6 +56,7 @@ type StrategySelectionEvent struct {
 	ReasonCode                    string `json:"reason_code"`
 	PaperEvaluationSequence       int64  `json:"paper_evaluation_sequence,omitempty"`
 	PaperPerformancePolicyEventID string `json:"paper_performance_policy_event_id,omitempty"`
+	PaperPromotionAttemptID       string `json:"paper_promotion_attempt_id,omitempty"`
 	RecordedAt                    string `json:"recorded_at"`
 }
 
@@ -147,6 +149,9 @@ func (s *Service) registerStrategyEvidence(ctx context.Context, artifact []byte)
 		return nil, err
 	}
 	evidence.RecordedAt = s.now().UTC().Format(time.RFC3339Nano)
+	if err := requirePaperPromotionAppendTime(ctx, tx, evidence.RecordedAt); err != nil {
+		return nil, err
+	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO strategy_research_evidence(
 		result_sha256,artifact_sha256,strategy_name,strategy_version,parameter_sha256,target,artifact_json,recorded_at
 	) VALUES(?,?,?,?,?,?,?,?)`, evidence.ResultSHA256, evidence.ArtifactSHA256, evidence.StrategyName,
@@ -286,6 +291,18 @@ func insertStrategySelectionEvent(ctx context.Context, tx *sql.Tx, event Strateg
 	if err != nil {
 		return err
 	}
+	var schema int
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&schema); err != nil {
+		return err
+	}
+	if schema >= 27 {
+		_, err = tx.ExecContext(ctx, `INSERT INTO strategy_selection_events(
+			event_id,event_type,candidate_result_sha256,expected_current_event_id,source_event_id,
+			previous_selected_result_sha256,selected_result_sha256,reason_code,paper_evaluation_sequence,paper_performance_policy_event_id,paper_promotion_attempt_id,record_sha256,record_json,recorded_at
+		) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, event.EventID, event.EventType, nullable(event.CandidateResultSHA256), event.ExpectedCurrentEventID, nullable(event.SourceEventID),
+			event.PreviousSelectedResultSHA256, event.SelectedResultSHA256, event.ReasonCode, event.PaperEvaluationSequence, nullable(event.PaperPerformancePolicyEventID), nullable(event.PaperPromotionAttemptID), recordSHA, string(recordJSON), event.RecordedAt)
+		return err
+	}
 	hasPolicySchema, err := hasPaperPerformancePolicySchema(ctx, tx)
 	if err != nil {
 		return err
@@ -368,16 +385,19 @@ func replayStrategyRegistry(ctx context.Context, q orderQuerier) (strategyRegist
 	type policyLink struct{ policyID, eventID string }
 	var linkedRollbacks []policyLink
 	selectionQuery := `SELECT sequence,event_id,event_type,candidate_result_sha256,expected_current_event_id,
-		 source_event_id,previous_selected_result_sha256,selected_result_sha256,reason_code,0,NULL,record_sha256,record_json,recorded_at
+		 source_event_id,previous_selected_result_sha256,selected_result_sha256,reason_code,0,NULL,NULL,record_sha256,record_json,recorded_at
 		FROM strategy_selection_events ORDER BY sequence`
 	if schemaVersion >= 20 {
 		selectionQuery = `SELECT sequence,event_id,event_type,candidate_result_sha256,expected_current_event_id,
-		 source_event_id,previous_selected_result_sha256,selected_result_sha256,reason_code,paper_evaluation_sequence,paper_performance_policy_event_id,record_sha256,record_json,recorded_at
+		 source_event_id,previous_selected_result_sha256,selected_result_sha256,reason_code,paper_evaluation_sequence,paper_performance_policy_event_id,NULL,record_sha256,record_json,recorded_at
 		FROM strategy_selection_events ORDER BY sequence`
 	} else if schemaVersion >= 14 {
 		selectionQuery = `SELECT sequence,event_id,event_type,candidate_result_sha256,expected_current_event_id,
-		 source_event_id,previous_selected_result_sha256,selected_result_sha256,reason_code,paper_evaluation_sequence,NULL,record_sha256,record_json,recorded_at
+		 source_event_id,previous_selected_result_sha256,selected_result_sha256,reason_code,paper_evaluation_sequence,NULL,NULL,record_sha256,record_json,recorded_at
 		FROM strategy_selection_events ORDER BY sequence`
+	}
+	if schemaVersion >= 27 {
+		selectionQuery = strings.Replace(selectionQuery, "paper_performance_policy_event_id,NULL,record_sha256", "paper_performance_policy_event_id,paper_promotion_attempt_id,record_sha256", 1)
 	}
 	rows, err = q.QueryContext(ctx, selectionQuery)
 	if err != nil {
@@ -386,9 +406,9 @@ func replayStrategyRegistry(ctx context.Context, q orderQuerier) (strategyRegist
 	for rows.Next() {
 		var sequence, paperEvaluationSequence int64
 		var eventID, eventType, expectedCurrent, previousSelected, nextSelected, reason, recordSHA, recordJSON, recordedAt string
-		var candidateSHA, sourceEvent, policyEventID sql.NullString
+		var candidateSHA, sourceEvent, policyEventID, promotionAttemptID sql.NullString
 		if err := rows.Scan(&sequence, &eventID, &eventType, &candidateSHA, &expectedCurrent, &sourceEvent,
-			&previousSelected, &nextSelected, &reason, &paperEvaluationSequence, &policyEventID, &recordSHA, &recordJSON, &recordedAt); err != nil {
+			&previousSelected, &nextSelected, &reason, &paperEvaluationSequence, &policyEventID, &promotionAttemptID, &recordSHA, &recordJSON, &recordedAt); err != nil {
 			rows.Close()
 			return strategyRegistryRecoveryProof{}, err
 		}
@@ -403,20 +423,21 @@ func replayStrategyRegistry(ctx context.Context, q orderQuerier) (strategyRegist
 			event.SourceEventID != sourceEvent.String || event.PreviousSelectedResultSHA256 != previousSelected ||
 			event.SelectedResultSHA256 != nextSelected || event.ReasonCode != reason ||
 			event.PaperEvaluationSequence != paperEvaluationSequence || event.PaperPerformancePolicyEventID != policyEventID.String ||
-			(event.PaperPerformancePolicyEventID != "") != policyEventID.Valid || event.RecordedAt != recordedAt ||
+			(event.PaperPerformancePolicyEventID != "") != policyEventID.Valid ||
+			event.PaperPromotionAttemptID != promotionAttemptID.String || (event.PaperPromotionAttemptID != "") != promotionAttemptID.Valid || event.RecordedAt != recordedAt ||
 			!safeOrderID(eventID) || !canonicalUTCString(recordedAt) || expectedCurrent != currentEvent || previousSelected != selected {
 			rows.Close()
 			return strategyRegistryRecoveryProof{}, fmt.Errorf("strategy selection event %q metadata or hash mismatch", eventID)
 		}
 		switch eventType {
 		case "SELECT":
-			if evidenceTargets[candidateSHA.String] != "paper_candidate" || sourceEvent.Valid || reason != "manual_selection" || policyEventID.Valid || nextSelected != candidateSHA.String || nextSelected == selected {
+			if evidenceTargets[candidateSHA.String] != "paper_candidate" || sourceEvent.Valid || (reason != "manual_selection" && reason != "auto_comparison") || (reason == "auto_comparison") != promotionAttemptID.Valid || policyEventID.Valid || nextSelected != candidateSHA.String || nextSelected == selected {
 				rows.Close()
 				return strategyRegistryRecoveryProof{}, fmt.Errorf("strategy selection event %q is invalid", eventID)
 			}
 			stack = append(stack, nextSelected)
 		case "ROLLBACK":
-			if candidateSHA.Valid || !sourceEvent.Valid || sourceEvent.String != currentEvent || !knownEvents[sourceEvent.String] ||
+			if promotionAttemptID.Valid || candidateSHA.Valid || !sourceEvent.Valid || sourceEvent.String != currentEvent || !knownEvents[sourceEvent.String] ||
 				(reason != "manual_rollback" && reason != "automatic_performance_rollback") ||
 				(reason == "automatic_performance_rollback") != policyEventID.Valid || len(stack) == 0 {
 				rows.Close()
@@ -445,6 +466,9 @@ func replayStrategyRegistry(ctx context.Context, q orderQuerier) (strategyRegist
 		}
 		if policyEventID.Valid {
 			selectionHashFields = append(selectionHashFields, policyEventID)
+		}
+		if promotionAttemptID.Valid {
+			selectionHashFields = append(selectionHashFields, promotionAttemptID)
 		}
 		selectionHashFields = append(selectionHashFields, recordSHA, recordJSON, recordedAt)
 		if err := encoder.Encode(selectionHashFields); err != nil {
@@ -545,6 +569,9 @@ func replayStrategyRegistry(ctx context.Context, q orderQuerier) (strategyRegist
 		if sequence > int64(evaluationCount) {
 			return strategyRegistryRecoveryProof{}, errors.New("strategy selection references a future paper evaluation sequence")
 		}
+	}
+	if _, err := provePaperPromotionRecovery(ctx, q); err != nil {
+		return strategyRegistryRecoveryProof{}, err
 	}
 	return strategyRegistryRecoveryProof{
 		SHA256: hex.EncodeToString(hash.Sum(nil)), Evidence: evidenceCount, Events: eventCount, Evaluations: evaluationCount,

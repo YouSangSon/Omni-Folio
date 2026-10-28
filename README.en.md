@@ -18,7 +18,7 @@ The Korean README is the source of truth for keeping the structure, commands, an
 | Gate | Status | Evidence |
 |---|---|---|
 | G0 Architecture and contracts | Passed locally | Versioned OpenAPI/JSON Schema, separate runtime responsibilities, repository-wide commands |
-| G1 Local ledger | Automated checks passed | CSV review and atomic application; exact trade, cash, split, and FX replay; FIFO cost and stored-price valuation; schema v26/backup v20 and recovery of supported older formats |
+| G1 Local ledger | Earlier scope passed; v27 pending | CSV review and atomic application; exact trade, cash, split, and FX replay; FIFO cost and stored-price valuation. Verification of schema v27/backup v21 and older-format recovery with the new changes is pending |
 | G2 Flutter client | Partially passed | iOS, Android, and web release builds, automated parser/widget checks, and Android emulator frame measurements. Test-plugin exclusion verified in the unsigned iOS package. Physical-device, manual screen-reader, and store checks remain |
 | G3 Research and paper execution | Partially passed | Reproducible backtests, walk-forward validation, holdouts, candidate registration, and local paper fills, performance, halt, and recovery. Long-running operation and completeness of source delivery remain unverified |
 | G4 Brokers, charts, and orders | In progress | Local sample charts, stored reconciliation and order-history views, and credential-free synthetic Kiwoom contracts. Credentialed market-data and mock-order observations, recovery of orders with unknown outcomes, and all live-trading stages remain |
@@ -171,7 +171,7 @@ The `ledger-activity-export.v1` receipt reports the revision, row count and SHA2
 
 ### Transition an existing ledger to chronological replay
 
-schema26/backup v20 uses the FIFO v2 policy with exact UTC ordering. A DB with an existing ledger cannot run normally after migration alone. Stop the old core, preserve the original backup, and follow [G1.20's preview → review → activate → verify new backup procedure](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차). Distinguish validation of archived historical backups from activation of the current policy.
+schema27/backup v21 uses the FIFO v2 policy with exact UTC ordering. A DB with an existing ledger cannot run normally after migration alone. Stop the old core, preserve the original backup, and follow [G1.20's preview → review → activate → verify new backup procedure](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차). Distinguish validation of archived historical backups from activation of the current policy.
 
 ### Local sample OHLCV chart
 
@@ -321,7 +321,7 @@ curl -fsS 'http://127.0.0.1:8080/v1/portfolio/cash-valuation?base_currency=KRW&a
 
 Ahead of holding valuation, G1.12 preserves local fixture security prices in the `STRICT`/insert-only series introduced in schema v11. It validates source identity, instrument ID, symbol, venue, currency, a positive canonical price, `price_adjustment=unspecified`, observed/fetched/recorded UTC timestamps, and the canonical row hash. Internal exact-as-of queries fix every identity dimension and select only observations whose three timestamps are at or before the cutoff.
 
-Backup v8 at the G4U checkpoint validates price-series digests/counts and migrated legacy artifacts to schema v13 in owned copies without changing the originals. Current schema v26/backup v20 preserves that price proof as well. An empty restore candidate must have the same table DDL, latest index, and insert-only triggers as the embedded migrations. No public API, Flutter screen, provider request, scheduler, or broker-backed holding/PnL/performance valuation was added; `PortfolioSnapshot.valuation_status` remains `unavailable`.
+Backup v8 at the G4U checkpoint validates price-series digests/counts and migrated legacy artifacts to schema v13 in owned copies without changing the originals. Current schema v27/backup v21 preserves that price proof as well. An empty restore candidate must have the same table DDL, latest index, and insert-only triggers as the embedded migrations. No public API, Flutter screen, provider request, scheduler, or broker-backed holding/PnL/performance valuation was added; `PortfolioSnapshot.valuation_status` remains `unavailable`.
 
 ### Stored-price native-currency holding valuation
 
@@ -379,7 +379,7 @@ cd services/core
 go test -run '^TestG4H' -count=1 ./...
 ```
 
-Schema v13/backup v8 at the G4U checkpoint protected ledger events, cash-void/FX guards, direct FX observations, security price observations, instrument listings, raw broker snapshots, revisioned broker reconciliation, execution-authority events, risk reservations, the strategy registry, and the then-existing synthetic/paper orders as insert-only data. Current schema v26/backup v20 preserves those proofs together with G3.8C2 paper accounting, G3.8C3 account-global performance, G3.8D strategy-window evidence, and G3.8E paper safety policy/action recovery. G4H itself does not establish credentials, broker requests, scheduling, official freshness/timezone, cash/value reconciliation, public API/UI, or live readiness.
+Schema v13/backup v8 at the G4U checkpoint protected ledger events, cash-void/FX guards, direct FX observations, security price observations, instrument listings, raw broker snapshots, revisioned broker reconciliation, execution-authority events, risk reservations, the strategy registry, and the then-existing synthetic/paper orders as insert-only data. Current schema v27/backup v21 preserves those proofs together with G3.8C2 paper accounting, G3.8C3 account-global performance, G3.8D strategy-window evidence, and G3.8E paper safety policy/action recovery. G4H itself does not establish credentials, broker requests, scheduling, official freshness/timezone, cash/value reconciliation, public API/UI, or live readiness.
 
 ### Stored broker reconciliation read view
 
@@ -435,7 +435,7 @@ The strategy-improvement runner evaluates a finite set of long-only SMA candidat
 
 To evaluate with whole-share paper fills, fees, taxes, and partial fills, pass `--config contracts/fixtures/strategy-improvement-paper-config.json` to the same CLI. This v2 uses exact money arithmetic and ratios rounded half-even to 28 decimal places, separately from v1 results. The registration example below is for v1 only. The current registry and signal submission reject v2; its results establish neither automatic promotion nor equivalence to the complete paper runner. See the [calculation contract and verification](gates/g3ai-paper-compatible-research.md).
 
-Go core registers v1 local results in the insert-only registry introduced in schema v13 and preserved in current schema v26. `no_promotion` is retained as rejection evidence but cannot be selected. Because direct comparison with the current champion is not implemented yet, selecting a `paper_candidate` requires an explicit CLI action and optimistic concurrency. Rollback appends a new event only to the previous selection or `no_strategy`.
+Go core registers v1 local results in the insert-only registry introduced in schema v13 and retained in schema v27. A `paper_candidate` is a proposal; `no_promotion` is retained as rejection evidence and cannot be selected. Manual selection uses an explicit CLI and the current selection event. Rollback appends an event returning to the previous selection or `no_strategy`.
 
 ```sh
 candidate_file="$(mktemp)"
@@ -451,6 +451,33 @@ rm -f "$candidate_file"
 ```
 
 To select a registered result's `result_sha256`, use `strategy-select -result-sha256 ... -expected-current-event ...`. The initial expected event is `no_event`; afterward use `current_event_id` from `strategy-status` or the previous output. To roll back, pass the current event ID to both `-expected-current-event` and `-source-event` in `strategy-rollback`. This manual rollback halts/fences all active execution authorities and then appends selection history in the same transaction; any failed record rolls back the entire transaction. Selection alone does not grant order authority.
+
+### Automatic local paper candidate comparison
+
+The local `paper-promote` implementation compares a registered v1 candidate with the current selection and buy-and-hold on the same input. Go independently evaluates the fixed strategies over three fresh 30-bar windows using the same quantity, starting cash, and fill costs. Python's candidate search is not proof of this comparison. The evaluation interval must follow every registered research period and earlier comparison.
+
+The database must contain exactly one existing paper account session and a current selection. The account must be flat with no active orders. All execution authorities must be halted, and the global runner lease and incomplete-chain guards must allow the operation. The comparison interval must not overlap registered research or a previously claimed comparison. Replace the paths and IDs below with your own values.
+
+```sh
+(cd services/core && go run . paper-promote \
+  -db ../../data/omni-folio.db \
+  -account '<EXISTING_PAPER_ACCOUNT>' \
+  -candidate-result-sha '<REGISTERED_RESULT_SHA256>' \
+  -expected-selection-event '<CURRENT_EVENT_ID>' \
+  -attempt-id paper_compare_001 \
+  -bars /absolute/path/to/fresh-forward-bars.csv)
+
+(cd services/core && go run . paper-promotion-status \
+  -db ../../data/omni-folio.db -attempt-id paper_compare_001)
+
+# Only if the pending attempt should be aborted:
+(cd services/core && go run . paper-promotion-abort \
+  -db ../../data/omni-folio.db -attempt-id paper_compare_001)
+```
+
+If the result is uncertain, check status using the same attempt ID first. An exact retry returns the stored `PENDING` or completed receipt without scoring again. Use `abort` explicitly only when needed. A claimed interval remains consumed after `HOLD`, `ERROR`, abort, or a process crash; `PENDING` is not expired by guessing from elapsed time. Later signals for an automatically selected candidate must be strictly after the comparison end, including after rollback and reselection.
+
+This does not automatically arm, create or reset an account, or execute live trades. CSV usage rights, provider, and instrument metadata are unverified, and buy-and-hold is not a real index series. The receipt excludes raw CSV, but the database and its backups retain it. [Command, recovery contract, and verification status](gates/g3aj-automatic-paper-promotion.md)
 
 ### Credential-free paper accounting and performance evidence
 

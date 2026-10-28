@@ -1089,6 +1089,9 @@ func TestG38EMigration20PreservesNonemptyV19JournalsProofsAndForeignKeys(t *test
 	expectedForeignKeys = append(expectedForeignKeys,
 		migration20ForeignKey{Child: "paper_runner_leases", Parent: "strategy_selection_events", From: "strategy_selection_event_id", To: "event_id", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
 		migration20ForeignKey{Child: "paper_runner_leases", Parent: "strategy_selection_events", From: "selected_result_sha256", To: "selected_result_sha256", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+		migration20ForeignKey{Child: "strategy_selection_events", Parent: "paper_promotion_decisions", From: "paper_promotion_attempt_id", To: "attempt_id", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+		migration20ForeignKey{Child: "paper_promotion_decisions", Parent: "paper_promotion_claims", From: "attempt_id", To: "attempt_id", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+		migration20ForeignKey{Child: "paper_promotion_decisions", Parent: "strategy_selection_events", From: "selection_event_id", To: "event_id", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
 	)
 	sort.Slice(expectedForeignKeys, func(i, j int) bool {
 		return migration20ForeignKeyKey(expectedForeignKeys[i]) < migration20ForeignKeyKey(expectedForeignKeys[j])

@@ -311,7 +311,7 @@ func provePaperRunnerLeaseRecovery(ctx context.Context, q orderQuerier) (paperRu
 func provePaperRunnerLeaseRecoveryAtSchema(ctx context.Context, q orderQuerier, schema int) (paperRunnerLeaseRecoveryProof, error) {
 	// Policy recovery has legacy early returns. Require current migration
 	// history, or the exact v16 through v19 source history already declared by restore.
-	if schema != latestSchema && schema != 22 && schema != 23 && schema != 24 && schema != 25 {
+	if schema != latestSchema && schema != 22 && schema != 23 && schema != 24 && schema != 25 && schema != 26 {
 		return paperRunnerLeaseRecoveryProof{}, errors.New("unsupported runner lease recovery schema")
 	}
 	if err := requireSchemaVersionContext(ctx, q, schema); err != nil {

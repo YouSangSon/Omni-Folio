@@ -191,6 +191,9 @@ func (s *Service) recordPaperSignalEventTx(ctx context.Context, tx *sql.Tx, acco
 	if !found || session.ExecutionPolicySHA256 != policy.SHA256 {
 		return nil, errors.New("paper signal accounting policy does not match the account session")
 	}
+	if err := validatePaperPromotionSignalCutoff(ctx, tx, signal.StrategyResultSHA256, signal.StrategySelectionEventID, signal.DataAsOf); err != nil {
+		return nil, err
+	}
 	bar, barSequence, err := loadPaperMarketBarByID(ctx, tx, signal.SignalBarObservationID)
 	if err != nil {
 		return nil, err
@@ -443,6 +446,9 @@ func validateStoredPaperSignalEvent(ctx context.Context, q orderQuerier, event P
 	}
 	if err := q.QueryRowContext(ctx, `SELECT selected_result_sha256 FROM strategy_selection_events WHERE event_id=?`, event.StrategySelectionEventID).Scan(&selectedResult); err != nil || selectedResult != event.StrategyResultSHA256 {
 		return errors.New("paper signal selection binding is invalid")
+	}
+	if err := validatePaperPromotionSignalCutoff(ctx, q, event.StrategyResultSHA256, event.StrategySelectionEventID, event.DataAsOf); err != nil {
+		return err
 	}
 	bar, barSequence, err := loadPaperMarketBarByID(ctx, q, event.SignalBarObservationID)
 	if err != nil {

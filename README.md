@@ -18,7 +18,7 @@
 | Gate | 상태 | 증거 |
 |---|---|---|
 | G0 아키텍처·계약 | 로컬 통과 | 버전이 명시된 OpenAPI/JSON Schema, 런타임 책임 분리, 저장소 공통 명령 |
-| G1 로컬 원장 | 자동 검증 통과 | CSV 검토·원자적 반영, 정확한 거래·현금·분할·FX 재생, FIFO 원가·저장 가격 평가, schema v26/backup v20와 지원하는 과거 형식의 복구 |
+| G1 로컬 원장 | 기존 범위 통과, v27 검증 대기 | CSV 검토·원자적 반영, 정확한 거래·현금·분할·FX 재생, FIFO 원가·저장 가격 평가. schema v27/backup v21 및 과거 형식 복구는 새 변경의 검증 대기 |
 | G2 Flutter 클라이언트 | 부분 통과 | iOS·Android·web 릴리스 빌드, 자동 파서·위젯 검사와 Android 에뮬레이터 프레임 측정. iOS 무서명 패키지의 테스트 플러그인 제외 확인. 실기기·수동 스크린 리더·스토어 검증은 남음 |
 | G3 연구·모의 실행 | 부분 통과 | 재현 가능한 백테스트·walk-forward·홀드아웃, 후보 등록, 로컬 모의 체결·성과·중지·복구. 장기 운영·소스 전달의 완결성은 미검증 |
 | G4 브로커·차트·주문 | 진행 중 | 로컬 샘플 차트, 저장된 대조·주문 기록 조회, 자격 증명 없는 키움 합성 계약. 실제 인증을 사용하는 시세·모의주문 관찰, 결과 미확정 주문 복구와 모든 실거래 단계는 남음 |
@@ -171,7 +171,7 @@ mkdir -p -m 700 data/exports
 
 ### 기존 원장의 시간 재생 정책 전환
 
-schema26/backup v20은 정확한 UTC 순서의 FIFO v2 정책을 사용합니다. 기존 원장이 있는 DB는 migrate만으로 정상 실행되지 않습니다. 구 core를 중지하고 원본 backup을 보존한 뒤 [G1.20의 preview → 검토 → activate → 새 backup 검증 절차](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차)를 따릅니다. 과거 backup의 보관 검증과 현재 정책 활성화를 구분합니다.
+schema27/backup v21은 정확한 UTC 순서의 FIFO v2 정책을 사용합니다. 기존 원장이 있는 DB는 migrate만으로 정상 실행되지 않습니다. 구 core를 중지하고 원본 backup을 보존한 뒤 [G1.20의 preview → 검토 → activate → 새 backup 검증 절차](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차)를 따릅니다. 과거 backup의 보관 검증과 현재 정책 활성화를 구분합니다.
 
 ### Local sample OHLCV chart
 
@@ -321,7 +321,7 @@ curl -fsS 'http://127.0.0.1:8080/v1/portfolio/cash-valuation?base_currency=KRW&a
 
 G1.12는 보유자산 평가에 앞서 local fixture 종목 가격을 schema v11에서 도입한 `STRICT`/insert-only series에 보존합니다. source identity, instrument ID, symbol, venue, currency, positive canonical price, `price_adjustment=unspecified`, observed/fetched/recorded UTC 시각과 canonical row hash를 검증합니다. 내부 exact-as-of 조회는 모든 identity 차원을 고정하고 세 시각이 cutoff 이하인 관측만 선택합니다.
 
-G4U checkpoint의 backup v8은 가격 series digest/count를 검증하며 legacy artifact를 원본을 바꾸지 않는 owned copy에서 schema v13으로 migration했습니다. 현재 schema v26/backup v20도 그 가격 proof를 보존합니다. 빈 restore 후보는 embedded migration과 동일한 table DDL·latest index·insert-only trigger를 요구합니다. public API, Flutter 화면, provider 요청, scheduler 또는 broker-backed 보유·손익·성과 평가는 추가하지 않았고 `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다.
+G4U checkpoint의 backup v8은 가격 series digest/count를 검증하며 legacy artifact를 원본을 바꾸지 않는 owned copy에서 schema v13으로 migration했습니다. 현재 schema v27/backup v21도 그 가격 proof를 보존합니다. 빈 restore 후보는 embedded migration과 동일한 table DDL·latest index·insert-only trigger를 요구합니다. public API, Flutter 화면, provider 요청, scheduler 또는 broker-backed 보유·손익·성과 평가는 추가하지 않았고 `PortfolioSnapshot.valuation_status`는 계속 `unavailable`입니다.
 
 ### Stored-price native-currency holding valuation
 
@@ -379,7 +379,7 @@ cd services/core
 go test -run '^TestG4H' -count=1 ./...
 ```
 
-G4U checkpoint의 schema v13/backup v8은 ledger event, cash-void/FX guard, direct FX observation, security price observation, instrument listing, raw broker snapshot, revisioned broker reconciliation, execution-authority event, risk reservation, strategy registry와 당시 synthetic/paper 주문을 insert-only로 보호했습니다. 현재 schema v26/backup v20는 그 proof와 G3.8C2 paper accounting, G3.8C3 account-global performance, G3.8D strategy-window evidence, G3.8E paper safety policy/action recovery를 함께 보존합니다. G4H 자체는 credential, broker request, scheduling, 공식 freshness/timezone, 현금·평가금액 reconciliation, public API/UI 또는 live readiness를 증명하지 않습니다.
+G4U checkpoint의 schema v13/backup v8은 ledger event, cash-void/FX guard, direct FX observation, security price observation, instrument listing, raw broker snapshot, revisioned broker reconciliation, execution-authority event, risk reservation, strategy registry와 당시 synthetic/paper 주문을 insert-only로 보호했습니다. 현재 schema v27/backup v21는 그 proof와 G3.8C2 paper accounting, G3.8C3 account-global performance, G3.8D strategy-window evidence, G3.8E paper safety policy/action recovery를 함께 보존합니다. G4H 자체는 credential, broker request, scheduling, 공식 freshness/timezone, 현금·평가금액 reconciliation, public API/UI 또는 live readiness를 증명하지 않습니다.
 
 ### Stored broker reconciliation read view
 
@@ -435,7 +435,7 @@ Python `--bundle`은 제안과 계산에 사용한 원본 CSV를 함께 출력�
 
 모의 체결의 정수 주·수수료·세금·부분체결 계산으로 평가하려면 같은 CLI에 `--config contracts/fixtures/strategy-improvement-paper-config.json`을 전달합니다. 이 v2는 정확한 금액 계산과 소수 28자리 half-even 수익률 정책을 사용하며 기존 v1 결과와 구분됩니다. 아래 등록 예제는 v1 전용입니다. v2 결과는 현재 registry·신호 제출에서 거부되며 자동 승격이나 실제 paper runner 전체 동등성을 증명하지 않습니다. [계산 계약과 검증](gates/g3ai-paper-compatible-research.md)을 참고하세요.
 
-Go core는 v1 로컬 결과를 schema v13에서 도입되어 현재 schema v26에도 보존된 insert-only registry에 등록합니다. `no_promotion`도 거절 evidence로 보존되지만 선택할 수 없습니다. `paper_candidate` 선택은 현재 champion과 직접 비교하는 로직이 아직 없으므로 명시적 CLI와 optimistic concurrency를 요구하며, rollback은 직전 선택이나 `no_strategy`로만 새 이벤트를 append합니다.
+Go core는 v1 로컬 결과를 schema v13에서 도입되어 schema v27에도 보존되는 insert-only registry에 등록합니다. `paper_candidate`는 제안이며, `no_promotion`은 거절 evidence로 남고 선택할 수 없습니다. 수동 선택은 명시적 CLI와 현재 선택 이벤트를 사용하고, rollback은 직전 선택이나 `no_strategy`로 돌아가는 이벤트를 추가합니다.
 
 ```sh
 candidate_file="$(mktemp)"
@@ -451,6 +451,33 @@ rm -f "$candidate_file"
 ```
 
 등록 결과의 `result_sha256`를 선택할 때는 `strategy-select -result-sha256 ... -expected-current-event ...`를 사용합니다. 최초 expected event는 `no_event`이고 이후에는 `strategy-status` 또는 직전 출력의 `current_event_id`입니다. 되돌리기는 `strategy-rollback`에 현재 event ID를 `-expected-current-event`와 `-source-event` 둘 다로 전달합니다. 이 수동 rollback은 모든 활성 execution authority를 같은 transaction에서 halt/fence한 뒤 선택 이력을 append하며, 어느 한 기록이라도 실패하면 전체를 되돌립니다. 선택 상태만으로 주문 권한이 생기지는 않습니다.
+
+### 로컬 paper 후보 자동 비교
+
+로컬 코드의 `paper-promote`는 등록된 v1 후보를 현재 선택 전략 및 같은 입력의 buy-and-hold와 비교합니다. Go가 고정된 두 전략을 새 30개 bar씩 세 구간에서 같은 수량·시작 현금·체결 비용으로 독립 계산합니다. Python의 후보 탐색 결과 자체가 이 비교의 증명은 아닙니다. 비교 구간은 등록된 모든 연구와 앞선 비교의 종료 시각보다 뒤여야 합니다.
+
+DB에는 기존 paper 계좌 세션이 정확히 하나 있어야 하며 현재 선택이 필요합니다. 계좌는 보유 종목 없이 평탄해야 하고 진행 중인 주문이 없어야 합니다. 모든 실행 권한이 중지되고 전역 runner 임대와 미완결 체인에 걸리지 않아야 합니다. 비교 구간은 연구에 등록된 구간이나 이미 사용한 비교 구간과 겹치지 않아야 합니다. 아래 경로와 ID를 실제 값으로 바꾸세요.
+
+```sh
+(cd services/core && go run . paper-promote \
+  -db ../../data/omni-folio.db \
+  -account '<EXISTING_PAPER_ACCOUNT>' \
+  -candidate-result-sha '<REGISTERED_RESULT_SHA256>' \
+  -expected-selection-event '<CURRENT_EVENT_ID>' \
+  -attempt-id paper_compare_001 \
+  -bars /absolute/path/to/fresh-forward-bars.csv)
+
+(cd services/core && go run . paper-promotion-status \
+  -db ../../data/omni-folio.db -attempt-id paper_compare_001)
+
+# Only if the pending attempt should be aborted:
+(cd services/core && go run . paper-promotion-abort \
+  -db ../../data/omni-folio.db -attempt-id paper_compare_001)
+```
+
+결과가 불확실하면 같은 attempt ID로 먼저 상태를 확인하세요. 같은 요청의 재시도는 저장된 `PENDING` 또는 완료 결과를 반환하며 다시 계산하지 않습니다. 중단이 필요할 때만 명시적으로 `abort`합니다. 일단 기록된 비교 구간은 `HOLD`, `ERROR`, 중단이나 프로세스 종료 뒤에도 다시 사용할 수 없고, `PENDING`은 시간만 보고 만료 처리하지 않습니다. 자동 선택된 후보의 이후 신호는 비교 종료 시각보다 엄격히 뒤여야 하며, rollback 후 재선택해도 이 제한이 유지됩니다.
+
+자동 활성화·초기 계좌 생성·초기화·실거래는 수행하지 않습니다. 입력 CSV의 이용 권한, 제공자와 종목 metadata는 검증하지 않으며 buy-and-hold는 실제 지수 데이터가 아닙니다. 영수증에는 원본 CSV가 없지만 DB와 백업에는 저장됩니다. [명령·복구 계약과 검증 상태](gates/g3aj-automatic-paper-promotion.md)
 
 ### Credential-free paper accounting and performance evidence
 

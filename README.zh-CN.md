@@ -18,7 +18,7 @@
 | Gate | 状态 | 证据 |
 |---|---|---|
 | G0 架构与契约 | 本地通过 | 带版本的 OpenAPI/JSON Schema、运行时职责分离、仓库统一命令 |
-| G1 本地账本 | 自动验证通过 | CSV 审核与原子应用，精确重放交易、现金、拆股和 FX，FIFO 成本与存储价格估值，schema v26/backup v20 及受支持历史格式的恢复 |
+| G1 本地账本 | 旧范围已通过，v27 待验证 | CSV 审核与原子应用，精确重放交易、现金、拆股和 FX，FIFO 成本与存储价格估值。schema v27/backup v21 及历史格式恢复需验证新改动 |
 | G2 Flutter 客户端 | 部分通过 | iOS、Android、web 发布构建、自动解析器和组件检查，以及 Android 模拟器帧性能测量。已验证未签名 iOS 包排除测试插件。真机、手动屏幕阅读器及应用商店验证仍待完成 |
 | G3 研究与模拟执行 | 部分通过 | 可复现的回测、walk-forward、留出集评估、候选注册、本地模拟成交、绩效、停止与恢复。长期运行和源数据传递的完整性尚未验证 |
 | G4 券商、图表与订单 | 进行中 | 本地样本图表、已存储的对账和订单记录查询、不使用凭据的 Kiwoom 合成契约。使用真实认证的行情与模拟订单观察、结果未确定订单的恢复及所有实盘阶段仍待完成 |
@@ -171,7 +171,7 @@ mkdir -p -m 700 data/exports
 
 ### 切换现有账本的时间重放策略
 
-schema26/backup v20 使用按精确 UTC 顺序重放的 FIFO v2 策略。已有账本的数据库仅执行 migrate 无法正常运行。停止旧 core、保留原始备份后，请遵循 [G1.20 的 preview → 审核 → activate → 验证新备份流程](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차)。历史备份的存档验证与当前策略的激活是两项不同的操作。
+schema27/backup v21 使用按精确 UTC 顺序重放的 FIFO v2 策略。已有账本的数据库仅执行 migrate 无法正常运行。停止旧 core、保留原始备份后，请遵循 [G1.20 的 preview → 审核 → activate → 验证新备份流程](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차)。历史备份的存档验证与当前策略的激活是两项不同的操作。
 
 ### 本地样本 OHLCV 图表
 
@@ -321,7 +321,7 @@ curl -fsS 'http://127.0.0.1:8080/v1/portfolio/cash-valuation?base_currency=KRW&a
 
 G1.12 在持仓估值之前，将 local fixture 的证券价格保存在 schema v11 引入的 `STRICT`/仅插入序列中。验证 source identity、instrument ID、symbol、venue、currency、正数规范价格、`price_adjustment=unspecified`、observed/fetched/recorded UTC 时间和规范行哈希。内部精确 as-of 查询固定所有标识维度，只选择三个时间均不晚于 cutoff 的观测值。
 
-G4U checkpoint 的 backup v8 验证价格序列的 digest/count，并在不修改原件的自有副本中将 legacy artifact 迁移到 schema v13。当前 schema v26/backup v20 也保留该价格证明。空恢复候选必须具有与内嵌 migration 相同的表 DDL、latest index 和仅插入 trigger。未增加公共 API、Flutter 界面、provider 请求、scheduler 或基于券商数据的持仓、盈亏、绩效估值；`PortfolioSnapshot.valuation_status` 继续保持 `unavailable`。
+G4U checkpoint 的 backup v8 验证价格序列的 digest/count，并在不修改原件的自有副本中将 legacy artifact 迁移到 schema v13。当前 schema v27/backup v21 也保留该价格证明。空恢复候选必须具有与内嵌 migration 相同的表 DDL、latest index 和仅插入 trigger。未增加公共 API、Flutter 界面、provider 请求、scheduler 或基于券商数据的持仓、盈亏、绩效估值；`PortfolioSnapshot.valuation_status` 继续保持 `unavailable`。
 
 ### 使用存储价格进行原币持仓估值
 
@@ -379,7 +379,7 @@ cd services/core
 go test -run '^TestG4H' -count=1 ./...
 ```
 
-G4U checkpoint 的 schema v13/backup v8 以仅插入方式保护 ledger event、cash-void/FX guard、直接 FX 观测、证券价格观测、证券挂牌关系、券商原始快照、带 revision 的券商对账、执行权限事件、风险预留、策略注册表，以及当时的合成/模拟订单。当前 schema v26/backup v20 同时保留这些证明，以及 G3.8C2 模拟记账、G3.8C3 账户全局绩效、G3.8D 策略窗口证据和 G3.8E 模拟安全策略/动作恢复。G4H 本身不证明凭据、券商请求、调度、官方时效性/timezone、现金与估值金额对账、公共 API/UI 或实盘就绪。
+G4U checkpoint 的 schema v13/backup v8 以仅插入方式保护 ledger event、cash-void/FX guard、直接 FX 观测、证券价格观测、证券挂牌关系、券商原始快照、带 revision 的券商对账、执行权限事件、风险预留、策略注册表，以及当时的合成/模拟订单。当前 schema v27/backup v21 同时保留这些证明，以及 G3.8C2 模拟记账、G3.8C3 账户全局绩效、G3.8D 策略窗口证据和 G3.8E 模拟安全策略/动作恢复。G4H 本身不证明凭据、券商请求、调度、官方时效性/timezone、现金与估值金额对账、公共 API/UI 或实盘就绪。
 
 ### 已存储券商对账的只读视图
 
@@ -435,7 +435,7 @@ Python 的 `--bundle` 会一起输出提案和计算所用的原始 CSV。通过
 
 如需使用整数股的 paper 成交、手续费、税费和部分成交进行评估，请向同一 CLI 传入 `--config contracts/fixtures/strategy-improvement-paper-config.json`。此 v2 精确计算金额，将比率按 half-even 舍入到小数点后28位，并与现有 v1 结果区分。下方注册示例仅适用于 v1。当前 registry 和信号提交均拒绝 v2；其结果不代表自动晋级，也不证明与完整 paper runner 等价。参见[计算契约与验证](gates/g3ai-paper-compatible-research.md)。
 
-Go core 将 v1 本地结果注册到 schema v13 引入、并保留到当前 schema v26 的仅插入 registry 中。`no_promotion` 也会作为拒绝证据保留，但不可被选中。由于尚无与当前 champion 直接比较的逻辑，选择 `paper_candidate` 需要显式 CLI 和乐观并发控制；rollback 只能向日志追加新事件，退回前一次选择或 `no_strategy`。
+Go core 将 v1 本地结果注册到 schema v13 引入、并保留到 schema v27 的仅插入 registry 中。`paper_candidate` 是提案；`no_promotion` 作为拒绝证据保留，但不可被选中。手动选择使用显式 CLI 和当前 selection event；rollback 追加事件，退回前一次选择或 `no_strategy`。
 
 ```sh
 candidate_file="$(mktemp)"
@@ -451,6 +451,33 @@ rm -f "$candidate_file"
 ```
 
 按注册结果的 `result_sha256` 进行选择时，使用 `strategy-select -result-sha256 ... -expected-current-event ...`。首次 expected event 为 `no_event`，之后使用 `strategy-status` 或前一次输出的 `current_event_id`。回退时，将当前 event ID 同时作为 `-expected-current-event` 和 `-source-event` 传给 `strategy-rollback`。此手动 rollback 会在同一事务中先 halt/fence 所有活跃执行权限，再追加选择历史；任意记录失败，整个事务都会回滚。仅有选择状态不会产生下单权限。
+
+### 本地 paper 候选的自动比较
+
+本地实现的 `paper-promote` 将已注册的 v1 候选与当前选择策略及同一输入上的 buy-and-hold 比较。Go 在三个各含30根新 K 线的区间内，以相同数量、初始现金和成交成本独立计算固定策略。Python 的候选搜索结果本身不能证明这次比较。评估区间必须晚于所有已注册研究及此前比较的结束时间。
+
+数据库必须恰好有一个已有 paper 账户会话，且需要当前选择。账户必须没有持仓或进行中的订单；所有执行权限必须停止，且须满足全局 runner lease 和未完成链的限制。比较区间不能与已注册的研究区间或已使用的比较区间重叠。请将以下路径和 ID 换成实际值。
+
+```sh
+(cd services/core && go run . paper-promote \
+  -db ../../data/omni-folio.db \
+  -account '<EXISTING_PAPER_ACCOUNT>' \
+  -candidate-result-sha '<REGISTERED_RESULT_SHA256>' \
+  -expected-selection-event '<CURRENT_EVENT_ID>' \
+  -attempt-id paper_compare_001 \
+  -bars /absolute/path/to/fresh-forward-bars.csv)
+
+(cd services/core && go run . paper-promotion-status \
+  -db ../../data/omni-folio.db -attempt-id paper_compare_001)
+
+# Only if the pending attempt should be aborted:
+(cd services/core && go run . paper-promotion-abort \
+  -db ../../data/omni-folio.db -attempt-id paper_compare_001)
+```
+
+结果不确定时，请先使用相同 attempt ID 查询状态。完全相同的请求重试会返回已保存的 `PENDING` 或完成结果，不会重新计算。仅在需要中止时显式执行 `abort`。已记录的比较区间在 `HOLD`、`ERROR`、中止或进程退出后仍不可重用；不会仅凭经过时间推测 `PENDING` 已过期。自动选中候选的后续信号时间必须严格晚于比较结束时间，rollback 后重新选择也保留此限制。
+
+此操作不会自动激活、创建或重置账户，也不会执行实盘交易。CSV 使用权、提供方和证券 metadata 均未验证，buy-and-hold 并非真实指数数据。receipt 不包含原始 CSV，但数据库和备份会保留。[命令、恢复契约与验证状态](gates/g3aj-automatic-paper-promotion.md)
 
 ### 不使用凭据的模拟记账与绩效证据
 

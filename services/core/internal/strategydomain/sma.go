@@ -9,23 +9,32 @@ import (
 )
 
 // VerifySMACrossover independently checks a claimed reference-v1 decision.
+func VerifySMACrossover(closes []string, fast, slow int64, claimed string) error {
+	actual, err := SMACrossover(closes, fast, slow)
+	if err != nil || claimed != actual {
+		return errors.New("paper SMA decision is unverified")
+	}
+	return nil
+}
+
+// SMACrossover calculates a decision from exactly slow+1 closes.
 // Bounds keep every sum exact in Python Decimal(28); distinct averages differ
 // by at least 1e-8/(365*364), greater than combined division rounding (<1e-16).
 // Do not widen these bounds without a new arithmetic parity proof.
-func VerifySMACrossover(closes []string, fast, slow int64, claimed string) error {
+func SMACrossover(closes []string, fast, slow int64) (string, error) {
 	invalid := errors.New("paper SMA decision is unverified")
 	if fast < 1 || slow <= fast || slow > 365 || int64(len(closes)) != slow+1 {
-		return invalid
+		return "", invalid
 	}
 	values := make([]*big.Rat, len(closes))
 	for i, raw := range closes {
 		if len(raw) > 21 {
-			return invalid
+			return "", invalid
 		}
 		_, fraction, _ := strings.Cut(raw, ".")
 		value, err := exact.ParseDecimal(raw)
 		if err != nil || len(fraction) > 8 || value.Sign() <= 0 || value.Cmp(big.NewRat(1_000_000_000_000, 1)) >= 0 {
-			return invalid
+			return "", invalid
 		}
 		values[i] = value
 	}
@@ -45,8 +54,5 @@ func VerifySMACrossover(closes []string, fast, slow int64, claimed string) error
 	if previous >= 0 && current < 0 {
 		actual = "death_cross"
 	}
-	if claimed != actual {
-		return invalid
-	}
-	return nil
+	return actual, nil
 }
