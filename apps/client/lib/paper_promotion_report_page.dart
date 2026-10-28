@@ -10,7 +10,8 @@ class PaperPromotionReportPage extends StatefulWidget {
   final OmniApi api;
 
   @override
-  State<PaperPromotionReportPage> createState() => _PaperPromotionReportPageState();
+  State<PaperPromotionReportPage> createState() =>
+      _PaperPromotionReportPageState();
 }
 
 class _PaperPromotionReportPageState extends State<PaperPromotionReportPage> {
@@ -96,45 +97,78 @@ class _PaperPromotionReportPageState extends State<PaperPromotionReportPage> {
                     liveRegion: true,
                     child: Text(
                       _error!,
-                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
                     ),
                   ),
                   if (observation == null) ...[
                     const SizedBox(height: 12),
-                    ElevatedButton(onPressed: _busy ? null : _refresh, child: const Text('다시 시도')),
+                    ElevatedButton(
+                      onPressed: _busy ? null : _refresh,
+                      child: const Text('다시 시도'),
+                    ),
                   ],
                 ],
                 if (observation != null) ...[
                   const SizedBox(height: 12),
                   _card(context, '최근 비교 기록', [
-                    Text('관측 시각 ${observation.observedAt}', style: _tabular(context)),
+                    Text(
+                      '관측 시각 ${observation.observedAt}',
+                      style: _tabular(context),
+                    ),
                     if (attempt == null)
                       const Text('저장된 모의 전략 비교 기록이 없습니다.')
                     else ...[
-                      Text(_decision(attempt.decision), style: Theme.of(context).textTheme.titleMedium),
+                      Text(
+                        _decision(attempt.decision),
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
                       Text(_reason(attempt.reasonCode)),
                       if (attempt.decision == 'PROMOTE')
-                        Text(attempt.selectionStatus == 'current'
-                            ? '이 비교의 선택 기록이 현재 선택으로 남아 있습니다.'
-                            : '이 비교의 선택 기록은 현재 선택이 아닙니다. 같은 전략을 다시 선택했더라도 다른 선택 기록입니다.'),
+                        Text(
+                          attempt.selectionStatus == 'current'
+                              ? '이 비교의 선택 기록이 현재 선택으로 남아 있습니다.'
+                              : '이 비교의 선택 기록은 현재 선택이 아닙니다. 같은 전략을 다시 선택했더라도 다른 선택 기록입니다.',
+                        ),
                       if (attempt.decision == 'HOLD')
                         const Text('비교 시점의 결과이며 현재 안전을 뜻하지 않습니다.'),
-                      Text('비교 요청 기록 시각 ${attempt.claimedAt}', style: _tabular(context)),
-                      Text('결정 시각 ${attempt.decidedAt ?? '기록 없음'}', style: _tabular(context)),
-                      Text('비교 범위 ${attempt.comparisonStart} ~ ${attempt.comparisonEnd}', style: _tabular(context)),
+                      Text(
+                        '비교 요청 기록 시각 ${attempt.claimedAt}',
+                        style: _tabular(context),
+                      ),
+                      Text(
+                        '결정 시각 ${attempt.decidedAt ?? '기록 없음'}',
+                        style: _tabular(context),
+                      ),
+                      Text(
+                        '비교 범위 ${attempt.comparisonStart} ~ ${attempt.comparisonEnd}',
+                        style: _tabular(context),
+                      ),
                     ],
                   ]),
                   if (attempt != null) ...[
                     const SizedBox(height: 12),
                     _card(context, '비교한 전략', [
-                      Text('종목 ${attempt.symbol} · 이동평균 교차', style: _tabular(context)),
-                      Text('후보: ${_strategy(attempt.candidate)}', style: _tabular(context)),
-                      Text('당시 선택 전략: ${_strategy(attempt.incumbent)}', style: _tabular(context)),
+                      Text(
+                        '종목 ${attempt.symbol} · 이동평균 교차',
+                        style: _tabular(context),
+                      ),
+                      Text(
+                        '후보: ${_strategy(attempt.candidate)}',
+                        style: _tabular(context),
+                      ),
+                      Text(
+                        '당시 선택 전략: ${_strategy(attempt.incumbent)}',
+                        style: _tabular(context),
+                      ),
                     ]),
                     if (attempt.comparison case final comparison?) ...[
                       const SizedBox(height: 12),
                       _card(context, '저장된 비교 지표', [
-                        const Text('저장된 입력으로 다시 확인한 모델 지표입니다. 매수 후 보유도 같은 봉과 실행 모델을 사용합니다.'),
+                        const Text(
+                          '저장된 입력으로 다시 확인한 모델 지표입니다. 매수 후 보유도 같은 봉과 실행 모델을 사용합니다.',
+                        ),
                         if (attempt.decision == 'STALE')
                           Text(
                             '비교 지표 판정: ${comparison.decision == 'PROMOTE' ? '후보 기준 통과' : '후보 기준 미통과'} · ${_reason(comparison.reasonCode)}',
@@ -179,28 +213,35 @@ String _reason(String reason) => switch (reason) {
   'candidate_drawdown_above_incumbent' => '한 구간에서 후보 낙폭이 당시 선택 전략보다 컸습니다.',
   'candidate_turnover_above_incumbent' => '한 구간에서 후보 거래 회전율이 당시 선택 전략보다 높았습니다.',
   'holdout_not_better_than_incumbent' => '마지막 검증 구간에서 당시 선택 전략보다 낫지 않았습니다.',
-  'holdout_not_better_than_buy_and_hold' => '마지막 검증 구간에서 매수 후 보유 모델보다 낫지 않았습니다.',
+  'holdout_not_better_than_buy_and_hold' =>
+    '마지막 검증 구간에서 매수 후 보유 모델보다 낫지 않았습니다.',
   'account_or_selection_changed' => '저장된 비교의 적용 전 상태를 확인하지 못했습니다.',
   'comparison_failed' => '저장된 비교를 처리하지 못했습니다.',
   'explicit_abort' => '중단 결정이 기록되었습니다.',
   _ => throw StateError('Validated reason required'),
 };
 
-Widget _card(BuildContext context, String title, List<Widget> children) =>
-    MergeSemantics(
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Semantics(header: true, child: Text(title, style: Theme.of(context).textTheme.titleMedium)),
-              for (final child in children) ...[const SizedBox(height: 8), child],
-            ],
+Widget _card(
+  BuildContext context,
+  String title,
+  List<Widget> children,
+) => MergeSemantics(
+  child: Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            header: true,
+            child: Text(title, style: Theme.of(context).textTheme.titleMedium),
           ),
-        ),
+          for (final child in children) ...[const SizedBox(height: 8), child],
+        ],
       ),
-    );
+    ),
+  ),
+);
 
 Widget _window(BuildContext context, PaperPromotionWindow window, int index) =>
     Card(
@@ -208,7 +249,9 @@ Widget _window(BuildContext context, PaperPromotionWindow window, int index) =>
         expansionAnimationStyle: MediaQuery.disableAnimationsOf(context)
             ? AnimationStyle.noAnimation
             : null,
-        title: Text(index == 2 ? '구간 3 · 마지막 검증 구간 · 30개 봉' : '구간 ${index + 1} · 30개 봉'),
+        title: Text(
+          index == 2 ? '구간 3 · 마지막 검증 구간 · 30개 봉' : '구간 ${index + 1} · 30개 봉',
+        ),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         expandedCrossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -219,11 +262,23 @@ Widget _window(BuildContext context, PaperPromotionWindow window, int index) =>
             ('매수 후 보유 모델', window.buyAndHold),
           ]) ...[
             const SizedBox(height: 12),
-            Semantics(header: true, child: Text(label, style: Theme.of(context).textTheme.titleSmall)),
-            Text('비용 차감 수익률 ${decimalPercent(metrics.afterCostReturn)}', style: _tabular(context)),
-            Text('최대 낙폭 ${decimalPercent(metrics.maxDrawdown)}', style: _tabular(context)),
+            Semantics(
+              header: true,
+              child: Text(label, style: Theme.of(context).textTheme.titleSmall),
+            ),
+            Text(
+              '비용 차감 수익률 ${decimalPercent(metrics.afterCostReturn)}',
+              style: _tabular(context),
+            ),
+            Text(
+              '최대 낙폭 ${decimalPercent(metrics.maxDrawdown)}',
+              style: _tabular(context),
+            ),
             Text('완료 왕복 거래 ${metrics.roundTrips}회', style: _tabular(context)),
-            Text('거래 회전율 ${decimalPercent(metrics.turnover)}', style: _tabular(context)),
+            Text(
+              '거래 회전율 ${decimalPercent(metrics.turnover)}',
+              style: _tabular(context),
+            ),
           ],
         ],
       ),

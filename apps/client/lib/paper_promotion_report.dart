@@ -60,8 +60,12 @@ class PaperPromotionAttempt {
         : _utc(json['decided_at']);
     final start = _utc(json['comparison_start'], wholeSecond: true);
     final end = _utc(json['comparison_end'], wholeSecond: true);
-    final candidate = PaperPromotionStrategy.fromJson(_object(json['candidate']));
-    final incumbent = PaperPromotionStrategy.fromJson(_object(json['incumbent']));
+    final candidate = PaperPromotionStrategy.fromJson(
+      _object(json['candidate']),
+    );
+    final incumbent = PaperPromotionStrategy.fromJson(
+      _object(json['incumbent']),
+    );
     final decision = json['decision'];
     final reason = json['reason_code'];
     final status = json['promotion_selection_status'];
@@ -69,20 +73,38 @@ class PaperPromotionAttempt {
         ? null
         : PaperPromotionComparison.fromJson(_object(json['comparison']));
     final validDecision = switch (decision) {
-      'PENDING' => reason == 'comparison_claimed' &&
-          decidedAt == null && comparison == null && status == 'not_promoted',
-      'ERROR' => reason == 'comparison_failed' &&
-          decidedAt != null && comparison == null && status == 'not_promoted',
-      'ABORTED' => reason == 'explicit_abort' &&
-          decidedAt != null && comparison == null && status == 'not_promoted',
-      'STALE' => reason == 'account_or_selection_changed' &&
-          decidedAt != null && comparison != null && status == 'not_promoted',
-      'PROMOTE' => decidedAt != null && comparison != null &&
-          (status == 'current' || status == 'superseded') &&
-          comparison.decision == decision && comparison.reasonCode == reason,
-      'HOLD' => decidedAt != null && comparison != null &&
-          status == 'not_promoted' && comparison.decision == decision &&
-          comparison.reasonCode == reason,
+      'PENDING' =>
+        reason == 'comparison_claimed' &&
+            decidedAt == null &&
+            comparison == null &&
+            status == 'not_promoted',
+      'ERROR' =>
+        reason == 'comparison_failed' &&
+            decidedAt != null &&
+            comparison == null &&
+            status == 'not_promoted',
+      'ABORTED' =>
+        reason == 'explicit_abort' &&
+            decidedAt != null &&
+            comparison == null &&
+            status == 'not_promoted',
+      'STALE' =>
+        reason == 'account_or_selection_changed' &&
+            decidedAt != null &&
+            comparison != null &&
+            status == 'not_promoted',
+      'PROMOTE' =>
+        decidedAt != null &&
+            comparison != null &&
+            (status == 'current' || status == 'superseded') &&
+            comparison.decision == decision &&
+            comparison.reasonCode == reason,
+      'HOLD' =>
+        decidedAt != null &&
+            comparison != null &&
+            status == 'not_promoted' &&
+            comparison.decision == decision &&
+            comparison.reasonCode == reason,
       _ => false,
     };
     if (!validDecision ||
@@ -135,8 +157,13 @@ class PaperPromotionStrategy {
     final fast = json['fast_window'];
     final slow = json['slow_window'];
     final quantity = json['quantity'];
-    if (fast is! int || slow is! int || fast < 1 || fast >= slow || slow > 365 ||
-        quantity is! String || quantity.length > 19 ||
+    if (fast is! int ||
+        slow is! int ||
+        fast < 1 ||
+        fast >= slow ||
+        slow > 365 ||
+        quantity is! String ||
+        quantity.length > 19 ||
         !_matchesWhole(r'^[1-9][0-9]*$', quantity) ||
         BigInt.parse(quantity) > BigInt.parse('4611686018427387903')) {
       throw const FormatException('Invalid paper promotion strategy');
@@ -162,7 +189,11 @@ class PaperPromotionComparison {
 
   factory PaperPromotionComparison.fromJson(PaperPromotionJson json) {
     _keys(json, const {
-      'policy_version', 'metrics_verification', 'decision', 'reason_code', 'windows',
+      'policy_version',
+      'metrics_verification',
+      'decision',
+      'reason_code',
+      'windows',
     });
     final decision = json['decision'];
     final reason = json['reason_code'];
@@ -172,7 +203,9 @@ class PaperPromotionComparison {
         : decision == 'HOLD' && _holdReasons.contains(reason);
     if (json['policy_version'] != 'paper-forward-comparison.v1' ||
         json['metrics_verification'] != 'recomputed_from_stored_input' ||
-        !validReason || rawWindows is! List || rawWindows.length != 3) {
+        !validReason ||
+        rawWindows is! List ||
+        rawWindows.length != 3) {
       throw const FormatException('Invalid paper promotion comparison');
     }
     final windows = rawWindows
@@ -215,7 +248,13 @@ class PaperPromotionWindow {
   });
 
   factory PaperPromotionWindow.fromJson(PaperPromotionJson json) {
-    _keys(json, const {'start', 'end', 'candidate', 'incumbent', 'buy_and_hold'});
+    _keys(json, const {
+      'start',
+      'end',
+      'candidate',
+      'incumbent',
+      'buy_and_hold',
+    });
     final start = _utc(json['start'], wholeSecond: true);
     final end = _utc(json['end'], wholeSecond: true);
     if (_compareUtc(start, end) >= 0) {
@@ -246,7 +285,12 @@ class PaperPromotionMetrics {
   });
 
   factory PaperPromotionMetrics.fromJson(PaperPromotionJson json) {
-    _keys(json, const {'after_cost_return', 'max_drawdown', 'round_trips', 'turnover'});
+    _keys(json, const {
+      'after_cost_return',
+      'max_drawdown',
+      'round_trips',
+      'turnover',
+    });
     return PaperPromotionMetrics(
       afterCostReturn: _decimal(json['after_cost_return'], signed: true),
       maxDrawdown: _decimal(json['max_drawdown']),
@@ -280,7 +324,9 @@ String _decimal(Object? value, {bool signed = false, bool integer = false}) {
       : signed
       ? r'^(?:0|-?(?:[1-9][0-9]*(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9]))$'
       : r'^(?:0|[1-9][0-9]*(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9])$';
-  if (value is! String || value.length > 128 || !_matchesWhole(pattern, value)) {
+  if (value is! String ||
+      value.length > 128 ||
+      !_matchesWhole(pattern, value)) {
     throw const FormatException('Invalid paper promotion metric');
   }
   return value;
@@ -297,7 +343,10 @@ String _utc(Object? value, {bool wholeSecond = false}) {
         : r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.[0-9]{0,8}[1-9])?Z$',
   ).firstMatch(value);
   final parsed = DateTime.tryParse(value);
-  if (match == null || match.group(0) != value || parsed == null || !parsed.isUtc ||
+  if (match == null ||
+      match.group(0) != value ||
+      parsed == null ||
+      !parsed.isUtc ||
       parsed.year != int.parse(match.group(1)!) ||
       parsed.month != int.parse(match.group(2)!) ||
       parsed.day != int.parse(match.group(3)!) ||
