@@ -7,14 +7,14 @@
 - [x] 제품·안전 목표와 조사 기준선
 - [x] Flutter/Go/Python 및 state-authority ADR
 - [x] G0 contracts와 monorepo 실행 명령
-- [x] G1 CSV preview → atomic apply → ledger snapshot/receipt, exact cash-flow·split·두 통화 환전 replay, append-only `CASH_VOID`, direct FX observation, cash-only direct-FX valuation, durable security price observation, internal native-currency holding valuation, current KRW whole-portfolio valuation과 versioned FIFO residual allocation, owner-declared instrument listing, paper operational evaluation, schema v25/backup v19 및 supported legacy owned-copy migration/restore proof
+- [x] G1 CSV preview → atomic apply → ledger snapshot/receipt, exact cash-flow·split·두 통화 환전 replay, append-only `CASH_VOID`, direct FX observation, cash-only direct-FX valuation, durable security price observation, internal native-currency holding valuation, current KRW whole-portfolio valuation과 versioned FIFO residual allocation, owner-declared instrument listing, paper operational evaluation, schema v26/backup v20 및 supported legacy owned-copy migration/restore proof
 - [ ] G2 동일 fixture를 표시하는 Flutter client와 iOS·Android·web build 완료; 실제 import API 기반 demo seed, 모바일 bottom navigation·desktop rail, bounded Overview·lazy Holdings, provenance count·signed PnL·단일 actionable semantics를 포함한 자동 검증 통과, chart 포함 Android emulator profile 2회 통과, 수동 screen-reader·physical-device profile 증거 남음
 - [x] G3 동일 market fixture를 읽는 deterministic Python backtest와 walk-forward 개선 runner
 - [x] local OCI/Compose 정의와 root check/smoke
 
 ## Next
 
-- [ ] G4Y 관심종목 등록·삭제와 저장 가격 상태: 원장과 별도의 서버 목록, KRW/USD 원통화 가격·출처·누락·지연, 충돌/불확실 재시도와 schema26/backup20 복구를 구현 중이다. 실제 API404 RED와 독립 설계 리뷰를 확인했으며 최종 Core/Client CI·병합은 아직 확인하지 않았다 ([gate](gates/g4y-stored-watchlist.md), [PR #61](https://github.com/YouSangSon/Omni-Folio/pull/61)).
+- [x] G4Y 관심종목 등록·삭제와 저장 가격 상태: 원장과 별도의 서버 목록, KRW/USD 원통화 가격·출처·누락·지연, 충돌/불확실 재시도와 schema26/backup20 복구를 구현했다. 실제 API404 RED·독립 리뷰·중간 테스트/분석 실패 보완 후 Core 전체446.025s·Python39/JSON39·Flutter22/457·분석·web/ARM64·권한/소스 일치를 통과해 main에 병합했다. Core는 동일 Git 객체의 통과 근거를 재사용했고 중복 취소는 통과로 세지 않는다. 실제 시세·실기기·VM/배포는 별도다 ([gate](gates/g4y-stored-watchlist.md), [PR #61](https://github.com/YouSangSon/Omni-Folio/pull/61)).
 
 - [x] G1.24 입출금 경계별 과거 평가의 누적 TWR: 정정·동일 시각 외부 흐름 우선·과거 가격/환율의 두 시점·분할 단위·중간 자본 소진과 기말 전액손실을 구분한다. 독립 금융 리뷰와 보완분 재검토·수치11사례·공유 응답7상태·원격 Core 전체/Python39/JSON24·Flutter 집중44/전체264·분석·web/Android release·권한/소스 일치 확인 후 main에 병합했다. 실제 시세·benchmark·소진 후 재투자·새 iOS/실기기·VM은 별도 ([gate](gates/g1t-portfolio-twr.md), [PR #46](https://github.com/YouSangSon/Omni-Folio/pull/46)).
 - [x] G1.25 KRW·USD 비교 지수 원본의 버전별 보관: 닫힌 파일 입력·동일 버전 충돌/재시도·전체 기록/물리 schema 증명과 schema23/backup17 복구를 구현했다. v16의 v2 권한과 v15 이하 archival·원본 보존을 유지한다. 독립 리뷰의3지적과 실제 RED를 보완하고 원격 Core 집중/전체·Python39/JSON27·Client44/264·web/ARM64 release·소스 일치를 통과해 main에 병합했다. 수익률 비교/환산/UI는 아래 G1.26에 기록하며 실제 지수 선정은 별도다 ([gate](gates/g1u-benchmark-series.md), [PR #48](https://github.com/YouSangSon/Omni-Folio/pull/48)).
