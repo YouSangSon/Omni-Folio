@@ -1,6 +1,6 @@
 # G1.30 같은 관찰의 TWR 계산점 차트와 표
 
-상태: 구현·독립 리뷰·필수 원격 검증 진행 중 ([PR #59](https://github.com/YouSangSon/Omni-Folio/pull/59)). 일별 성과 이력이나 전체 Goal 완료를 뜻하지 않는다.
+상태: 구현·독립 리뷰·필수 원격 검증·main 병합 완료 ([PR #59](https://github.com/YouSangSon/Omni-Folio/pull/59)). 일별 성과 이력이나 전체 Goal 완료를 뜻하지 않는다.
 
 ## 문제와 작동 원리
 
@@ -35,12 +35,28 @@ TWR 상세→`입출금 구간별 성과 보기`→`같은 계산점 표로 보�
 - Flutter: `apps/client/lib/models.dart`, `api.dart`, `portfolio_twr_checkpoint_plot.dart`, `portfolio_twr_checkpoints_page.dart`, `portfolio_twr_page.dart` 및 `test/portfolio_twr_checkpoints_test.dart`. 모든 명시적 OmniApi fake와 integration profile fake를 갱신한다.
 - 계약: `contracts/openapi.json`, `golden-portfolio-twr-checkpoints.json`의 기존7상태, `portfolio-twr-cases.json`의 독립 Fraction14사례·prefix 기대값.
 
-실제 RED head `fb769884b0e1d89c042fef45f4a5fe80dc0a2abb`, [Core run40300745647](https://github.com/YouSangSon/Omni-Folio/actions/runs/40300745647), job121497719247에서 새 경로 HTTP404로 실패했다. full/source identity는 skipped다. 구현 후 필수 Core 전체·Python/JSON, Client 집중/전체·분석·web/ARM64·권한/소스 일치는 아직 실행 전이다. 로컬 runtime 검사는 실행하지 않는다.
+실제 RED head `fb769884b0e1d89c042fef45f4a5fe80dc0a2abb`, [Core run40300745647](https://github.com/YouSangSon/Omni-Folio/actions/runs/40300745647), job121497719247에서 새 경로 HTTP404로 실패했다. full/source identity는 skipped였다. 아래 최종 커밋에서 필수 원격 검사를 통과했다. 로컬 runtime 검사는 실행하지 않았다.
 
-수치 fixture는 Python 표준 라이브러리 Fraction과 정수 quotient/remainder half-even으로 기존 최종 값과 독립 prefix를 확인한다. 실제 HTTP producer 비교, 이전 scalar 동일성, 같은 시각/1ns, 늦은 과거 입력 실패의 부분 폐기, 반올림−1 후 회복,512자리 prefix,1000/1001경계와 strict consumer·stream bound·UI 회귀를 별도로 검사한다. 독립 설계/구현 리뷰에서 표 이동 시 출처·sample 경고가 사라지는 문제를 보완했다. 표 header에도 세 독립 경고를 표시하고 실제 이동 후 유지되는지 검사한다. 최종 수정 리뷰와 실제 CI 결과는 완료 후 기록한다.
+수치 fixture는 Python 표준 라이브러리 Fraction과 정수 quotient/remainder half-even으로 기존 최종 값과 독립 prefix를 확인한다. 실제 HTTP producer 비교, 이전 scalar 동일성, 같은 시각/1ns, 늦은 과거 입력 실패의 부분 폐기, 반올림−1 후 회복,512자리 prefix,1000/1001경계와 strict consumer·stream bound·UI 회귀를 별도로 검사한다. 독립 설계/구현 리뷰에서 표 이동 시 출처·sample 경고가 사라지는 문제를 보완했다. 표 header에도 세 독립 경고를 표시하고 실제 이동 후 유지되는지 검사한다. 수정 후 독립 리뷰에서 잔여 차단 지적은 없었으며, 아래 최종 CI에서 실제 동작을 확인했다.
 
 ## 출처와 한계
 
 [Portfolio Performance General Method](https://help.portfolio-performance.info/en/concepts/performance/time-weighted/)의 외부 흐름별 기하 연결 개념을 참고했다. 해당 구현의 일별 평가·하루 시작 입금/끝 출금 관례는 도입하지 않았고 코드·자산은 차용하지 않았다. 기존 정책의 출처 owner는 [G1.24](g1t-portfolio-twr.md)다.
 
 실제 시장 자료/사용권·제공사 정확성·일별 이력·새 iOS/실기기·수동 screen reader·VM/배포는 이 자동 합성 검증의 근거가 아니다. KRW·USD benchmark 지원과 실제 자료 확보의 구분은 [기존 source owner](g1u-benchmark-series.md#benchmark-source-policy)를 따른다. 예측 확인: 두 구간이 각각10%이고 중간에 입금했다면 최종21%가 유지되어야 한다.
+
+## 최종 검증과 병합 근거
+
+검증 head `9d9a55553e239eef008e96dc6f9ed7125f48c4f6`를 [PR #59](https://github.com/YouSangSon/Omni-Folio/pull/59)로 main `0aac9644257e1eb3913716a31f1f1bc7ab65ba42`에 병합했다. ancestry와 전체 tree `7421eca05165ddfdecfd8da7d4c86bb173820292` 일치를 확인했다. 이후 문서 변경은 이 검증의 코드·계약·workflow가 그대로인지 대조해 근거를 재사용한다.
+
+| 검증 | 최종 근거 | 결과 |
+| --- | --- | --- |
+| Core | [run40337044902 attempt2](https://github.com/YouSangSon/Omni-Folio/actions/runs/40337044902/attempts/2), job122624045223 | TWR 집중3.933s·root 전체434.675s·내부5 package·vet/형식·Python39·JSON38·소유 자원 정리·source identity 통과 |
+| Client | [run40337044963 attempt2](https://github.com/YouSangSon/Omni-Folio/actions/runs/40337044963/attempts/2), job122624047682 | 집중17/전체435·format38파일0변경·analyze·web/Android ARM64 release·권한 반례8·source identity 통과 |
+| APK | client tree `a1fcaf97d1d8178eea053d6f2f81c7234409f847` | 23546674 bytes, SHA256 `d0e6420443e19d6cb419dd126243e2e1f8f7871fd440f9d4c4d4f9692fa79d6f` |
+| Android 등록·권한 | registrant SHA256 `5d31e4d80984b4f5254d2e6629d2cc2b16760ab4774a94faa863c48897f18326` | file selector 등록·IntegrationTestPlugin 제외·INTERNET 및 signature receiver 권한만 확인 |
+| 로컬 정적 확인 | JSON38·OpenAPI local refs·기존 path/schema 불변·독립 Fraction14 | README4개 언어의 shell27개 일치·변경 Markdown 경로·gofmt·고정 Dart formatter40파일0변경·diff 통과. runtime 실행 없음 |
+
+중간 실패와 취소도 구분한다. `7ea71ea`의 Client run40336450576/job121619213449는 집중11통과/6실패였다. 여섯 실패는 복사 가능한 `SelectableText`의 내부 스크롤까지 기본 finder가 선택해 `Too many elements`가 발생한 테스트 오류다. `9d9a555`는 바깥 페이지 `Scrollable`을 명시하고 기존 값·접근성 단언을 유지했다. 이 수정 뒤 집중17개와 전체435개가 모두 통과했다. Core40336450891 및 최종 head의 두 run attempt1은 사용자 중단으로 취소됐고 성공으로 세지 않는다. 재개 후 동일 head의 attempt2만 최종 근거다.
+
+최종 로그는 ignored `docs/_internal/skill-outputs/goal-20261028-twr-checkpoints-{core,client}-green.log`, 중간 실패 로그와 재개 상태는 기존 G1.30 unit receipt에 보존한다. 이 결과는 합성 HTTP producer·strict consumer·자동 UI 검사이며 실제 시장 정확성·일별 이력·실기기·배포 증거를 대신하지 않는다.
