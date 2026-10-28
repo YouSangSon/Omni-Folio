@@ -108,7 +108,7 @@ G6 PostgreSQL and Kubernetes promotion
 
 ## Root completion evidence
 
-- G3AK는 최신 모의 비교 요청의 결정·재계산 지표·현재 선택 이벤트 상태를 공개한다. 실제 HTTP404 RED 이후 독립 리뷰와 원격 CI 검증 중이다. [읽기 계약과 검증 상태](gates/g3ak-paper-promotion-report.md).
+- G3AK는 최신 모의 비교 요청의 결정·재계산 지표·현재 선택 이벤트 상태를 공개한다. 실제 HTTP404 RED·독립 리뷰 후 Core/Client 전체 CI·web/ARM64 release를 통과하고 main에 병합했다. 기존 실행 권한과 저장 계약을 유지한다. [읽기 계약과 최종 근거](gates/g3ak-paper-promotion-report.md).
 - G3AJ는 Go가 고정 후보와 현재 전략을 새 구간에서 비교해 paper 선택을 바꾼다. claim 선기록·시간 cutoff·현재 상태 CAS·복구 재계산을 집중33·Core/Client 전체 CI와 독립 리뷰로 검증하고 main에 병합했다. 기존 계좌의 현금·실행 권한과 수동 선택 계약을 유지한다. [계약과 최종 근거](gates/g3aj-automatic-paper-promotion.md).
 - G3AI는 기존 v1 계약을 유지하는 별도 연구 v2의 정수 수량·정확한 비용·부분체결·단일 입력 캡처를 검증한다. 실제 Go/Python 공통49사례·전체 CI와 v2 registry 거절을 통과했으며 자동 승격·운영 runner 전체 동등성은 별도다. [계산 계약과 최종 근거](gates/g3ai-paper-compatible-research.md).
 
