@@ -22,6 +22,18 @@ Json fixture(String name) {
 
 class FakeApi implements OmniApi {
   @override
+  Future<WatchlistReport> watchlist() async => WatchlistReport.fromJson({
+    'policy_version': 'watchlist_stored_prices_24h.v1',
+    'max_observation_age_seconds': 86400,
+    'observed_at': '2026-01-01T00:00:00Z',
+    'watchlist': {'revision': 0, 'updated_at': null, 'entries': <Json>[]},
+    'quotes': <Json>[],
+  });
+  @override
+  Future<WatchlistState> updateWatchlist(WatchlistChange change) async =>
+      throw UnimplementedError();
+
+  @override
   Future<PortfolioTwrCheckpoints> portfolioTwrCheckpoints() =>
       throw UnsupportedError('Not used by this fixture.');
 
@@ -1624,7 +1636,11 @@ void main() {
       expect(api.reconciliationCalls, 1);
       final refresh = find.byTooltip('데이터 새로고침');
       expect(
-        tester.widget<IconButton>(find.byType(IconButton)).onPressed,
+        tester
+            .widget<IconButton>(
+              find.ancestor(of: refresh, matching: find.byType(IconButton)),
+            )
+            .onPressed,
         isNotNull,
       );
       await tester.tap(refresh);

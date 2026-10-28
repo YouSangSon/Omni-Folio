@@ -32,12 +32,12 @@ import (
 const (
 	maxBodyBytes                       = 1 << 20
 	maxImportRows                      = 10_000
-	latestSchema                       = 25
+	latestSchema                       = 26
 	zeroTime                           = "1970-01-01T00:00:00Z"
 	csvSchema                          = "omni-folio.csv.v1"
 	mappingSchema                      = "canonical-transaction.v4"
-	backupFormat                       = "omni-folio-backup.v19"
-	backupSchema                       = "omni-folio.sqlite.v25"
+	backupFormat                       = "omni-folio-backup.v20"
+	backupSchema                       = "omni-folio.sqlite.v26"
 	legacyPaperRunnerFormat            = "omni-folio-backup.v14"
 	legacyPaperRunnerSchema            = "omni-folio.sqlite.v20"
 	legacyPaperPerformancePolicyFormat = "omni-folio-backup.v13"
@@ -246,6 +246,9 @@ type BackupManifest struct {
 	OwnerPriceSeriesVersionCount             int                 `json:"owner_price_series_version_count"`
 	OwnerFXSeriesPointCount                  int                 `json:"owner_fx_series_point_count"`
 	OwnerPriceSeriesPointCount               int                 `json:"owner_price_series_point_count"`
+	WatchlistStateSHA256                     string              `json:"watchlist_state_sha256"`
+	WatchlistRevision                        int64               `json:"watchlist_revision"`
+	WatchlistEntryCount                      int                 `json:"watchlist_entry_count"`
 	DBSHA256                                 string              `json:"db_sha256"`
 	SizeBytes                                int64               `json:"size_bytes"`
 	ExpectedSnapshotSHA256                   string              `json:"expected_snapshot_sha256"`
@@ -274,6 +277,10 @@ type VerificationReceipt struct {
 	BenchmarkSeriesCheck                         string   `json:"benchmark_series_check"`
 	OwnerFXSeriesCheck                           string   `json:"owner_fx_series_check"`
 	OwnerPriceSeriesCheck                        string   `json:"owner_price_series_check"`
+	WatchlistCheck                               string   `json:"watchlist_check"`
+	CandidateWatchlistStateSHA256                string   `json:"candidate_watchlist_state_sha256"`
+	CandidateWatchlistRevision                   int64    `json:"candidate_watchlist_revision"`
+	CandidateWatchlistEntryCount                 int      `json:"candidate_watchlist_entry_count"`
 	PaperPerformanceCheck                        string   `json:"paper_performance_check"`
 	PaperStrategyPerformanceCheck                string   `json:"paper_strategy_performance_check"`
 	PaperPerformancePolicyCheck                  string   `json:"paper_performance_policy_check"`
@@ -381,6 +388,9 @@ func requireServerStartupRecovery(db *sql.DB) error {
 	if _, err := proveOwnerPriceSeriesRecovery(context.Background(), db); err != nil {
 		return fmt.Errorf("owner price series startup recovery: %w", err)
 	}
+	if _, err := proveWatchlistRecovery(context.Background(), db); err != nil {
+		return fmt.Errorf("watchlist startup recovery: %w", err)
+	}
 	return nil
 }
 
@@ -399,7 +409,7 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("unsupported schema version %d", current)
 		}
 	}
-	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql", "013_instrument_listing_events.sql", "014_paper_evaluation_events.sql", "015_paper_accounting_sessions.sql", "016_paper_market_signals.sql", "017_paper_execution_authorizations.sql", "018_paper_performance_events.sql", "019_paper_strategy_performance_events.sql", "020_paper_performance_policy_events.sql", "021_paper_runner_leases.sql", "022_ledger_replay_policy.sql", "023_benchmark_series_versions.sql", "024_owner_fx_series_versions.sql", "025_owner_price_series_versions.sql"}
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql", "013_instrument_listing_events.sql", "014_paper_evaluation_events.sql", "015_paper_accounting_sessions.sql", "016_paper_market_signals.sql", "017_paper_execution_authorizations.sql", "018_paper_performance_events.sql", "019_paper_strategy_performance_events.sql", "020_paper_performance_policy_events.sql", "021_paper_runner_leases.sql", "022_ledger_replay_policy.sql", "023_benchmark_series_versions.sql", "024_owner_fx_series_versions.sql", "025_owner_price_series_versions.sql", "026_watchlist_state.sql"}
 	for version := current + 1; version <= latestSchema; version++ {
 		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
 		if err != nil {
@@ -836,6 +846,8 @@ func (s *Service) routes() http.Handler {
 	})
 	mux.HandleFunc("GET /readyz", s.handleReady)
 	mux.HandleFunc("GET /v1/status", s.handleStatus)
+	mux.HandleFunc("GET /v1/watchlist", s.handleWatchlist)
+	mux.HandleFunc("POST /v1/watchlist", s.handleWatchlist)
 	mux.HandleFunc("GET /v1/market-data/candles", s.handleMarketDataCandles)
 	mux.HandleFunc("GET /v1/portfolio/instrument-ledger", s.handleInstrumentLedger)
 	mux.HandleFunc("GET /v1/market-data/fx/latest", s.handleLatestFXObservation)
@@ -881,11 +893,15 @@ func validateAllowedOrigin(origin string) error {
 
 func withCORS(next http.Handler, allowedOrigin string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if isOwnerDataImportPath(r.URL.Path) {
+		if isOwnerDataImportPath(r.URL.Path) || r.URL.Path == "/v1/watchlist" {
 			// CORS headers alone do not prevent writes from an unapproved browser origin.
 			origins, present := r.Header[http.CanonicalHeaderKey("Origin")]
 			if present && (len(origins) != 1 || origins[0] == "" || allowedOrigin == "" || origins[0] != allowedOrigin) {
-				writeError(w, &appError{http.StatusForbidden, APIError{Code: "owner_data_origin_rejected", Message: "owner data origin is not allowed"}})
+				if r.URL.Path == "/v1/watchlist" {
+					writeError(w, &appError{http.StatusForbidden, APIError{Code: "watchlist_origin_rejected", Message: "watchlist origin is not allowed"}})
+				} else {
+					writeError(w, &appError{http.StatusForbidden, APIError{Code: "owner_data_origin_rejected", Message: "owner data origin is not allowed"}})
+				}
 				return
 			}
 		}
@@ -1852,6 +1868,10 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err != nil {
 		return nil, fmt.Errorf("source owner price series recovery proof: %w", err)
 	}
+	sourceWatchlist, err := proveWatchlistRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source watchlist recovery proof: %w", err)
+	}
 	createdAt := now().UTC()
 	quoted := strings.ReplaceAll(out, "'", "''")
 	if _, err := db.Exec(`VACUUM INTO '` + quoted + `'`); err != nil {
@@ -1914,6 +1934,13 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err != nil {
 		return nil, err
 	}
+	candidateWatchlist, err := verifyWatchlistRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
+	if sourceWatchlist != candidateWatchlist {
+		return nil, errors.New("backup watchlist recovery proof does not match source")
+	}
 	if sourceOrders != candidateOrders {
 		return nil, errors.New("backup order recovery proof does not match source")
 	}
@@ -1968,6 +1995,7 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 		verificationErrors = []string{"active_paper_runner_lease_present"}
 	}
 	manifest := &BackupManifest{
+		WatchlistStateSHA256: sourceWatchlist.SHA256, WatchlistRevision: sourceWatchlist.Revision, WatchlistEntryCount: sourceWatchlist.Entries,
 		FormatVersion: backupFormat, SchemaVersion: backupSchema, CreatedAt: createdAt.Format(time.RFC3339Nano),
 		SourceLedgerRevision: revision(sourceRevision), OrderStateSHA256: sourceOrders.SHA256, OrderCount: sourceOrders.Orders,
 		OrderEventCount: sourceOrders.Events, ExecutionAuthoritySHA256: sourceOrders.ExecutionAuthoritySHA256,
@@ -2018,6 +2046,7 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 			BenchmarkSeriesCheck: "ok", CandidateBenchmarkSeriesStateSHA256: candidateBenchmark.SHA256, CandidateBenchmarkSeriesVersionCount: candidateBenchmark.Versions, CandidateBenchmarkSeriesPointCount: candidateBenchmark.Points,
 			OwnerFXSeriesCheck: "ok", CandidateOwnerFXSeriesStateSHA256: candidateOwnerFX.SHA256, CandidateOwnerFXSeriesVersionCount: candidateOwnerFX.Versions, CandidateOwnerFXSeriesPointCount: candidateOwnerFX.Points,
 			OwnerPriceSeriesCheck: "ok", CandidateOwnerPriceSeriesStateSHA256: candidateOwnerPrice.SHA256, CandidateOwnerPriceSeriesVersionCount: candidateOwnerPrice.Versions, CandidateOwnerPriceSeriesPointCount: candidateOwnerPrice.Points,
+			WatchlistCheck: "ok", CandidateWatchlistStateSHA256: candidateWatchlist.SHA256, CandidateWatchlistRevision: candidateWatchlist.Revision, CandidateWatchlistEntryCount: candidateWatchlist.Entries,
 		},
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
@@ -2088,7 +2117,10 @@ func verifyRestore(path, goldenPath string) error {
 	if _, err := verifyOwnerFXSeriesRestoreProof(path); err != nil {
 		return err
 	}
-	_, err = verifyOwnerPriceSeriesRestoreProof(path)
+	if _, err := verifyOwnerPriceSeriesRestoreProof(path); err != nil {
+		return err
+	}
+	_, err = verifyWatchlistRestoreProof(path)
 	return err
 }
 
@@ -3142,13 +3174,15 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err := dec.Decode(&manifest); err != nil {
 		return fmt.Errorf("backup manifest: %w", err)
 	}
-	currentV19Manifest := manifest.FormatVersion == backupFormat && manifest.SchemaVersion == backupSchema
+	currentV20Manifest := manifest.FormatVersion == backupFormat && manifest.SchemaVersion == backupSchema
+	legacyV19Manifest := manifest.FormatVersion == "omni-folio-backup.v19" && manifest.SchemaVersion == "omni-folio.sqlite.v25"
+	hasOwnerPriceManifest := currentV20Manifest || legacyV19Manifest
 	legacyV18Manifest := manifest.FormatVersion == "omni-folio-backup.v18" && manifest.SchemaVersion == "omni-folio.sqlite.v24"
-	hasOwnerFXManifest := currentV19Manifest || legacyV18Manifest
+	hasOwnerFXManifest := hasOwnerPriceManifest || legacyV18Manifest
 	legacyV17Manifest := manifest.FormatVersion == "omni-folio-backup.v17" && manifest.SchemaVersion == "omni-folio.sqlite.v23"
 	legacyV16Manifest := manifest.FormatVersion == "omni-folio-backup.v16" && manifest.SchemaVersion == "omni-folio.sqlite.v22"
 	hasBenchmarkManifest := hasOwnerFXManifest || legacyV17Manifest
-	// Backup format is independent of ledger replay authority: v16/v17/v18 remain nonarchival.
+	// Backup format is independent of ledger replay authority: v16 through v19 remain nonarchival.
 	nonArchivalManifest := hasBenchmarkManifest || legacyV16Manifest
 	legacyV15Manifest := manifest.FormatVersion == "omni-folio-backup.v15" && manifest.SchemaVersion == "omni-folio.sqlite.v21"
 	currentManifest := nonArchivalManifest || legacyV15Manifest
@@ -3182,7 +3216,10 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err := requireOwnerFXManifestFields(fields, receiptFields, hasOwnerFXManifest); err != nil {
 		return err
 	}
-	if err := requireOwnerPriceManifestFields(fields, receiptFields, currentV19Manifest); err != nil {
+	if err := requireOwnerPriceManifestFields(fields, receiptFields, hasOwnerPriceManifest); err != nil {
+		return err
+	}
+	if err := requireWatchlistManifestFields(fields, receiptFields, currentV20Manifest); err != nil {
 		return err
 	}
 	if currentManifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
@@ -3430,7 +3467,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 			return errors.New("legacy backup cannot contain an owner FX journal")
 		}
 	}
-	if currentV19Manifest {
+	if hasOwnerPriceManifest {
 		proof, err := proveOwnerPriceSeriesRecovery(context.Background(), sourceDB)
 		if err != nil {
 			_ = sourceDB.Close()
@@ -3445,6 +3482,19 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 		if err := sourceDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name='owner_price_series_versions'`).Scan(&present); err != nil || present != 0 {
 			_ = sourceDB.Close()
 			return errors.New("legacy backup cannot contain an owner price journal")
+		}
+	}
+	if currentV20Manifest {
+		proof, err := proveWatchlistRecovery(context.Background(), sourceDB)
+		if err != nil || !watchlistManifestMatches(manifest, proof) {
+			_ = sourceDB.Close()
+			return errors.New("source watchlist recovery proof mismatch")
+		}
+	} else {
+		var present int
+		if err := sourceDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name='watchlist_state'`).Scan(&present); err != nil || present != 0 {
+			_ = sourceDB.Close()
+			return errors.New("legacy backup cannot contain a watchlist state")
 		}
 	}
 	if err := sourceDB.Close(); err != nil {
@@ -3666,12 +3716,23 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err != nil {
 		return err
 	}
-	if currentV19Manifest {
+	if hasOwnerPriceManifest {
 		if !ownerPriceManifestMatches(manifest, ownerPrice) {
 			return errors.New("backup owner price series proof mismatch")
 		}
 	} else if ownerPrice.Versions != 0 || ownerPrice.Points != 0 || ownerPrice.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
 		return errors.New("legacy backup unexpectedly contains owner price series")
+	}
+	watchlist, err := verifyWatchlistRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if currentV20Manifest {
+		if !watchlistManifestMatches(manifest, watchlist) {
+			return errors.New("backup watchlist recovery proof mismatch")
+		}
+	} else if watchlist.Revision != 0 || watchlist.Entries != 0 {
+		return errors.New("legacy backup unexpectedly contains a watchlist")
 	}
 	db, err := openExistingDB(verificationPath)
 	if err != nil {

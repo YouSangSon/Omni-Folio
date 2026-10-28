@@ -2,6 +2,240 @@ import 'dart:convert';
 
 typedef Json = Map<String, dynamic>;
 
+class WatchlistEntry {
+  const WatchlistEntry._(this.venue, this.symbol, this.currency);
+  factory WatchlistEntry.fromJson(Json json) {
+    _requireExactKeys(json, {'venue', 'symbol', 'currency'});
+    final venue = _text(json, 'venue');
+    final symbol = _text(json, 'symbol');
+    final currency = _text(json, 'currency');
+    final kr =
+        venue == 'XKRX' &&
+        currency == 'KRW' &&
+        RegExp(r'^[0-9]{6}$').stringMatch(symbol) == symbol;
+    final us =
+        const {'XNAS', 'XNYS'}.contains(venue) &&
+        currency == 'USD' &&
+        RegExp(r'^[A-Z0-9][A-Z0-9.-]{0,31}$').stringMatch(symbol) == symbol;
+    if (!kr && !us) throw const FormatException('Invalid watchlist identity');
+    return WatchlistEntry._(venue, symbol, currency);
+  }
+  final String venue, symbol, currency;
+  String get key => '$venue\u0000$symbol\u0000$currency';
+  Json toJson() => {'venue': venue, 'symbol': symbol, 'currency': currency};
+}
+
+class WatchlistState {
+  const WatchlistState._(this.revision, this.updatedAt, this.entries);
+  factory WatchlistState.fromJson(Json json) {
+    _requireExactKeys(json, {'revision', 'updated_at', 'entries'});
+    final revision = _count(json, 'revision');
+    final updated = json['updated_at'] == null
+        ? null
+        : _utcText(json, 'updated_at');
+    final raw = _jsonList(json, 'entries');
+    if (revision > 9007199254740991 ||
+        raw.length > 50 ||
+        (revision == 0 ? updated != null || raw.isNotEmpty : updated == null)) {
+      throw const FormatException('Invalid watchlist state');
+    }
+    final entries = raw.map(WatchlistEntry.fromJson).toList();
+    for (var i = 1; i < entries.length; i++) {
+      if (entries[i - 1].key.compareTo(entries[i].key) >= 0) {
+        throw const FormatException('Watchlist must be unique and sorted');
+      }
+    }
+    return WatchlistState._(revision, updated, List.unmodifiable(entries));
+  }
+  final int revision;
+  final String? updatedAt;
+  final List<WatchlistEntry> entries;
+  bool sameEntries(List<WatchlistEntry> other) {
+    if (entries.length != other.length) return false;
+    for (var i = 0; i < entries.length; i++) {
+      if (entries[i].key != other[i].key) return false;
+    }
+    return true;
+  }
+}
+
+class WatchlistChange {
+  WatchlistChange({
+    required this.expectedRevision,
+    required List<WatchlistEntry> entries,
+  }) : entries = List.unmodifiable(
+         [...entries]..sort((a, b) => a.key.compareTo(b.key)),
+       ) {
+    if (expectedRevision < 0 ||
+        expectedRevision > 9007199254740991 ||
+        entries.length > 50) {
+      throw const FormatException('Invalid watchlist change');
+    }
+    for (var i = 1; i < this.entries.length; i++) {
+      if (this.entries[i - 1].key == this.entries[i].key) {
+        throw const FormatException('Duplicate watchlist entry');
+      }
+    }
+  }
+  final int expectedRevision;
+  final List<WatchlistEntry> entries;
+  Json toJson() => {
+    'expected_revision': expectedRevision,
+    'entries': entries.map((e) => e.toJson()).toList(),
+  };
+  bool matchesAck(WatchlistState state) =>
+      (state.revision == expectedRevision ||
+          state.revision == expectedRevision + 1) &&
+      state.sameEntries(entries);
+}
+
+class WatchlistPrice {
+  const WatchlistPrice._(
+    this.source,
+    this.sourceVersion,
+    this.price,
+    this.priceAdjustment,
+    this.observedAt,
+    this.fetchedAt,
+    this.recordedAt,
+    this.sample,
+  );
+  factory WatchlistPrice.fromJson(Json json, String cutoff, String status) {
+    _requireExactKeys(json, {
+      'source',
+      'source_version',
+      'price',
+      'price_adjustment',
+      'observed_at',
+      'fetched_at',
+      'recorded_at',
+      'sample',
+    });
+    final source = _text(json, 'source');
+    final version = json['source_version'] == null
+        ? null
+        : _benchmarkText(json, 'source_version', 128, identity: true);
+    final price = _decimal(json, 'price');
+    final adjustment = _text(json, 'price_adjustment');
+    final observed = _utcText(json, 'observed_at'),
+        fetched = _utcText(json, 'fetched_at'),
+        recorded = _utcText(json, 'recorded_at');
+    final sample = _bool(json, 'sample');
+    final owner =
+        source == 'owner_declared' &&
+        version != null &&
+        adjustment == 'unadjusted';
+    final fixture =
+        source == 'local_fixture' &&
+        version == null &&
+        adjustment == 'unspecified' &&
+        sample;
+    final old =
+        _utcNanoseconds(cutoff) - _utcNanoseconds(observed) >
+        BigInt.from(86400) * BigInt.from(1000000000);
+    if ((!owner && !fixture) ||
+        price.length > 128 ||
+        price.startsWith('-') ||
+        price == '0' ||
+        _utcNanoseconds(observed) > _utcNanoseconds(fetched) ||
+        _utcNanoseconds(fetched) > _utcNanoseconds(recorded) ||
+        _utcNanoseconds(recorded) > _utcNanoseconds(cutoff) ||
+        status != (fixture || old ? 'stale' : 'unknown')) {
+      throw const FormatException('Invalid stored watchlist price');
+    }
+    return WatchlistPrice._(
+      source,
+      version,
+      price,
+      adjustment,
+      observed,
+      fetched,
+      recorded,
+      sample,
+    );
+  }
+  final String source,
+      price,
+      priceAdjustment,
+      observedAt,
+      fetchedAt,
+      recordedAt;
+  final String? sourceVersion;
+  final bool sample;
+}
+
+class WatchlistQuote {
+  const WatchlistQuote._(this.entry, this.status, this.price);
+  factory WatchlistQuote.fromJson(
+    Json json,
+    WatchlistEntry expected,
+    String cutoff,
+  ) {
+    _requireExactKeys(json, {'venue', 'symbol', 'currency', 'status', 'price'});
+    final entry = WatchlistEntry.fromJson({
+      'venue': json['venue'],
+      'symbol': json['symbol'],
+      'currency': json['currency'],
+    });
+    final status = _text(json, 'status');
+    if (entry.key != expected.key ||
+        !const {'missing', 'ambiguous', 'unknown', 'stale'}.contains(status)) {
+      throw const FormatException(
+        'Watchlist quote identity or status mismatch',
+      );
+    }
+    final hasPrice = status == 'unknown' || status == 'stale';
+    if (hasPrice ? json['price'] is! Json : json['price'] != null) {
+      throw const FormatException('Watchlist price availability mismatch');
+    }
+    return WatchlistQuote._(
+      entry,
+      status,
+      hasPrice
+          ? WatchlistPrice.fromJson(json['price'] as Json, cutoff, status)
+          : null,
+    );
+  }
+  final WatchlistEntry entry;
+  final String status;
+  final WatchlistPrice? price;
+}
+
+class WatchlistReport {
+  const WatchlistReport._(this.observedAt, this.watchlist, this.quotes);
+  factory WatchlistReport.fromJson(Json json) {
+    _requireExactKeys(json, {
+      'policy_version',
+      'max_observation_age_seconds',
+      'observed_at',
+      'watchlist',
+      'quotes',
+    });
+    if (json['policy_version'] != 'watchlist_stored_prices_24h.v1' ||
+        json['max_observation_age_seconds'] is! int ||
+        json['max_observation_age_seconds'] != 86400 ||
+        json['watchlist'] is! Json) {
+      throw const FormatException('Unsupported watchlist policy');
+    }
+    final at = _utcText(json, 'observed_at');
+    final state = WatchlistState.fromJson(json['watchlist'] as Json);
+    final rows = _jsonList(json, 'quotes');
+    if (rows.length != state.entries.length ||
+        (state.updatedAt != null &&
+            _utcNanoseconds(state.updatedAt!) > _utcNanoseconds(at))) {
+      throw const FormatException('Watchlist observation mismatch');
+    }
+    final quotes = <WatchlistQuote>[];
+    for (var i = 0; i < rows.length; i++) {
+      quotes.add(WatchlistQuote.fromJson(rows[i], state.entries[i], at));
+    }
+    return WatchlistReport._(at, state, List.unmodifiable(quotes));
+  }
+  final String observedAt;
+  final WatchlistState watchlist;
+  final List<WatchlistQuote> quotes;
+}
+
 // Correlates a server input-only review with the exact posted text, not a local hash proof.
 class OwnerDataPreview {
   OwnerDataPreview._(this.kind, this.input, Json summary)

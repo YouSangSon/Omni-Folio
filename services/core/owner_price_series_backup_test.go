@@ -11,6 +11,7 @@ import (
 )
 
 func dropOwnerPriceSchemaForLegacy(t testing.TB, db *sql.DB) {
+	dropWatchlistSchemaForLegacy(t, db)
 	t.Helper()
 	var present int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name='owner_price_series_versions'`).Scan(&present); err != nil {
@@ -34,6 +35,7 @@ func dropOwnerPriceSchemaForLegacy(t testing.TB, db *sql.DB) {
 }
 
 func stripOwnerPriceProofForLegacy(manifest map[string]any) {
+	stripWatchlistProofForLegacy(manifest)
 	for _, key := range []string{"owner_price_series_state_sha256", "owner_price_series_version_count", "owner_price_series_point_count"} {
 		delete(manifest, key)
 	}

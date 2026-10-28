@@ -14,6 +14,8 @@ import 'owner_data_import_page.dart';
 import 'paper_monitor_page.dart';
 import 'portfolio_xirr_page.dart';
 import 'research_report_page.dart';
+import 'watchlist.dart';
+import 'watchlist_page.dart';
 
 class OmniFolioApp extends StatefulWidget {
   const OmniFolioApp({super.key, required this.api});
@@ -24,6 +26,7 @@ class OmniFolioApp extends StatefulWidget {
 }
 
 class _OmniFolioAppState extends State<OmniFolioApp> {
+  late final WatchlistController _watchlist = WatchlistController(widget.api);
   late final PortfolioController _portfolio = PortfolioController(widget.api)
     ..refresh();
   late final ImportApplyController _importApplies = ImportApplyController(
@@ -38,6 +41,7 @@ class _OmniFolioAppState extends State<OmniFolioApp> {
 
   @override
   void dispose() {
+    _watchlist.dispose();
     _portfolio.dispose();
     _importApplies.dispose();
     _ownerImports.dispose();
@@ -83,6 +87,17 @@ class _OmniFolioAppState extends State<OmniFolioApp> {
               appBar: AppBar(
                 title: Text(wide ? 'Omni Folio' : labels[_tab]),
                 actions: [
+                  Builder(
+                    builder: (context) => IconButton(
+                      tooltip: '관심종목',
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => WatchlistPage(controller: _watchlist),
+                        ),
+                      ),
+                      icon: const Icon(Icons.bookmark_outline),
+                    ),
+                  ),
                   IconButton(
                     tooltip: '데이터 새로고침',
                     onPressed: _portfolio.busy ? null : _portfolio.refresh,

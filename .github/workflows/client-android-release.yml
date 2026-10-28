@@ -47,9 +47,9 @@ jobs:
       - name: Resolve the committed lock
         working-directory: apps/client
         run: flutter pub get --enforce-lockfile
-      - name: Check TWR checkpoint scenarios first
+      - name: Check watchlist scenarios first
         working-directory: apps/client
-        run: flutter test --no-pub --concurrency=1 test/portfolio_twr_checkpoints_test.dart
+        run: flutter test --no-pub --concurrency=1 test/watchlist_test.dart test/watchlist_contract_test.dart
       - name: Check Dart formatting and static analysis
         working-directory: apps/client
         run: |
