@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import 'models.dart';
 import 'paper_monitor.dart';
+import 'paper_promotion_report.dart';
 import 'research_report.dart';
 
 abstract interface class OmniApi {
@@ -27,6 +28,7 @@ abstract interface class OmniApi {
   Future<BrokerReconciliation?> latestBrokerReconciliation();
   Future<LocalOrderLog> localOrders();
   Future<PaperMonitor> paperMonitor();
+  Future<PaperPromotionReport> paperPromotionReport();
   Future<ResearchReport> researchReport();
   Future<LedgerActivityPage> ledgerActivities({String? cursor});
   Future<ImportPreview> preview(String csv);
@@ -350,6 +352,10 @@ class RestOmniApi implements OmniApi {
   @override
   Future<PaperMonitor> paperMonitor() async =>
       PaperMonitor.fromJson(await _get('/v1/paper/monitor'));
+
+  @override
+  Future<PaperPromotionReport> paperPromotionReport() async =>
+      PaperPromotionReport.fromJson(await _get('/v1/paper/promotion-report'));
 
   @override
   Future<ResearchReport> researchReport() async =>

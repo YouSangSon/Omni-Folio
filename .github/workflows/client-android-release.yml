@@ -47,14 +47,20 @@ jobs:
       - name: Resolve the committed lock
         working-directory: apps/client
         run: flutter pub get --enforce-lockfile
-      - name: Check watchlist scenarios first
+      - name: Check stored paper comparison scenarios first
         working-directory: apps/client
-        run: flutter test --no-pub --concurrency=1 test/watchlist_test.dart test/watchlist_contract_test.dart
+        run: flutter test --no-pub --concurrency=1 test/paper_promotion_report_test.dart
       - name: Check Dart formatting and static analysis
         working-directory: apps/client
         run: |
           dart format --output=none --set-exit-if-changed lib test
           flutter analyze
+      - name: Show a Dart formatting patch on failure
+        if: failure()
+        working-directory: apps/client
+        run: |
+          dart format lib test integration_test test_driver
+          git diff -- lib test integration_test test_driver
       - name: Check all client unit and fake scenarios
         working-directory: apps/client
         run: flutter test --no-pub --concurrency=1

@@ -479,6 +479,18 @@ If the result is uncertain, check status using the same attempt ID first. An exa
 
 This does not automatically arm, create or reset an account, or execute live trades. CSV usage rights, provider, and instrument metadata are unverified, and buy-and-hold is not a real index series. The receipt excludes raw CSV, but the database and its backups retain it. [Command, recovery contract, and verification status](gates/g3aj-automatic-paper-promotion.md)
 
+### View the stored paper strategy comparison
+
+In the app, open `연결` → `모의 전략 비교 보기` to see the latest comparison request. When a comparison is stored, it shows cost-inclusive metrics for the candidate, the strategy selected at request time, and a buy-and-hold model for the same instrument. Three independent windows each use 30 bars, and the server verifies the metrics by recomputing them from the stored input. If the latest request has no decision, the page shows `결정 기록 없음` instead of an earlier successful result.
+
+The page separates the comparison verdict from the final application decision and, when a candidate was selected, shows whether that exact selection record remains current. It fetches only when opened or manually refreshed. If refresh fails, it retains the last successful result and its original observation time.
+
+The report does not verify current market-data freshness or an external index and does not grant automated trading authority. The response excludes account IDs, raw CSV, and cash amounts. [Report contract](gates/g3ak-paper-promotion-report.md)
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/paper/promotion-report
+```
+
 ### Credential-free paper accounting and performance evidence
 
 G3.8C2 uses the exact eligible closed bar after the transaction-owned sequence cutoff in `paper-signal.v3`. Fill prices model a bar's open ex post using final volume known only later; they are not evidence of opening-auction or live broker fills. The account-global session must match the current policy SHA; a signed target delta creates BUY/SELL, and a zero target requests full reduction. Only one active order is allowed per account/symbol.

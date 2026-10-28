@@ -479,6 +479,18 @@ DB에는 기존 paper 계좌 세션이 정확히 하나 있어야 하며 현재 
 
 자동 활성화·초기 계좌 생성·초기화·실거래는 수행하지 않습니다. 입력 CSV의 이용 권한, 제공자와 종목 metadata는 검증하지 않으며 buy-and-hold는 실제 지수 데이터가 아닙니다. 영수증에는 원본 CSV가 없지만 DB와 백업에는 저장됩니다. [명령·복구 계약과 검증 상태](gates/g3aj-automatic-paper-promotion.md)
 
+### 저장된 모의 전략 비교 조회
+
+앱에서 `연결` → `모의 전략 비교 보기`를 열면 가장 최근 비교 요청 한 건을 볼 수 있습니다. 저장된 비교가 있으면 후보, 요청 당시 선택 전략, 같은 종목의 매수 후 보유 모델을 비용 반영 지표로 비교합니다. 세 구간은 각각 30개 봉을 독립적으로 평가하며, 서버가 저장된 입력으로 지표를 다시 계산해 검증합니다. 최근 요청에 결정이 없으면 이전 성공 결과 대신 `결정 기록 없음`을 표시합니다.
+
+비교 판정과 최종 적용 판정을 구분하고, 후보를 선택했다면 그 선택 기록이 현재도 유지되는지 표시합니다. 화면을 열거나 수동으로 새로고침할 때만 조회합니다. 새로고침에 실패하면 마지막 정상 결과와 원래 관측 시각을 유지합니다.
+
+이 보고서는 현재 시세의 신선도나 외부 지수를 검증하지 않으며 자동매매 실행 권한을 뜻하지 않습니다. 응답에는 계좌 ID, 원본 CSV, 현금 금액이 포함되지 않습니다. [보고서 계약](gates/g3ak-paper-promotion-report.md)
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/paper/promotion-report
+```
+
 ### Credential-free paper accounting and performance evidence
 
 G3.8C2는 `paper-signal.v3`의 transaction-owned sequence cutoff 뒤 exact eligible closed bar를 사용합니다. 체결 가격은 later-known final volume을 가진 bar의 open을 ex-post 모델링하므로 opening-auction이나 live broker 체결 증거가 아닙니다. Account-global session과 현재 policy SHA가 같아야 하며, signed target delta가 BUY/SELL을 만들고 target zero는 전량 축소를 요청합니다. Account/symbol당 active order는 하나뿐입니다.
