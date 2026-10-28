@@ -264,11 +264,16 @@ func replayPaperAccountingAt(ctx context.Context, q orderQuerier, cutoff paperAc
 }
 
 func replayPaperAccountingWithCutoff(ctx context.Context, q orderQuerier, cutoff *paperAccountingCutoff) (map[string]paperAccountState, error) {
-	if _, err := proveOrderRecovery(ctx, q); err != nil {
-		return nil, fmt.Errorf("paper accounting order recovery: %w", err)
-	}
 	if _, err := replayStrategyRegistry(ctx, q); err != nil {
 		return nil, fmt.Errorf("paper accounting strategy recovery: %w", err)
+	}
+	return replayPaperAccountingWithoutRegistry(ctx, q, cutoff)
+}
+
+// Promotion replay already owns registry validation; keep the money proof acyclic.
+func replayPaperAccountingWithoutRegistry(ctx context.Context, q orderQuerier, cutoff *paperAccountingCutoff) (map[string]paperAccountState, error) {
+	if _, err := proveOrderRecovery(ctx, q); err != nil {
+		return nil, fmt.Errorf("paper accounting order recovery: %w", err)
 	}
 	if _, err := replayPaperMarketRecovery(ctx, q); err != nil {
 		return nil, fmt.Errorf("paper accounting market recovery: %w", err)

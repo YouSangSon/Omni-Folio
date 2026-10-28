@@ -13,6 +13,7 @@ import (
 
 func dropWatchlistSchemaForLegacy(t testing.TB, db *sql.DB) {
 	t.Helper()
+	dropPaperPromotionSchemaForLegacy(t, db)
 	var present int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name='watchlist_state'`).Scan(&present); err != nil {
 		t.Fatal(err)
@@ -32,6 +33,7 @@ func dropWatchlistSchemaForLegacy(t testing.TB, db *sql.DB) {
 }
 
 func stripWatchlistProofForLegacy(manifest map[string]any) {
+	stripPaperPromotionProofForLegacy(manifest)
 	for _, key := range []string{"watchlist_state_sha256", "watchlist_revision", "watchlist_entry_count"} {
 		delete(manifest, key)
 	}
@@ -52,7 +54,7 @@ func TestWatchlistBackupRestoresCurrentStateAndRejectsUnprovedFields(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if manifest.FormatVersion != "omni-folio-backup.v20" || manifest.SchemaVersion != "omni-folio.sqlite.v26" || manifest.WatchlistRevision != 2 || manifest.WatchlistEntryCount != 1 {
+	if manifest.FormatVersion != backupFormat || manifest.SchemaVersion != backupSchema || manifest.WatchlistRevision != 2 || manifest.WatchlistEntryCount != 1 {
 		t.Fatal("watchlist manifest missing")
 	}
 	if err := verifyManifest(backup, golden, mp); err != nil {

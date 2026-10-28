@@ -16,7 +16,7 @@ import (
 
 func main() {
 	args := os.Args[1:]
-	if len(args) > 0 && (args[0] == "paper-run-loop" || args[0] == "paper-execute" || args[0] == "paper-execute-stream" || args[0] == "paper-import-bars" || args[0] == "paper-init" || args[0] == "paper-input-status" || args[0] == "ledger-export" || args[0] == "benchmark-import" || args[0] == "benchmark-status" || args[0] == "owner-fx-import" || args[0] == "owner-price-import") {
+	if len(args) > 0 && (args[0] == "paper-run-loop" || args[0] == "paper-execute" || args[0] == "paper-execute-stream" || args[0] == "paper-import-bars" || args[0] == "paper-init" || args[0] == "paper-input-status" || args[0] == "paper-promote" || args[0] == "paper-promotion-status" || args[0] == "paper-promotion-abort" || args[0] == "ledger-export" || args[0] == "benchmark-import" || args[0] == "benchmark-status" || args[0] == "owner-fx-import" || args[0] == "owner-price-import") {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		if err := runContext(ctx, args); err != nil && !(args[0] == "paper-run-loop" && errors.Is(err, context.Canceled)) {
@@ -37,9 +37,11 @@ func run(args []string) error {
 
 func runContext(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: omni-core <migrate|ledger-replay-preview|ledger-replay-activate|ledger-export|benchmark-import|benchmark-status|owner-fx-import|owner-price-import|serve|backup|verify-restore|strategy-register|strategy-status|strategy-select|strategy-rollback|paper-run-due|paper-run-loop|paper-init|paper-import-bars|paper-execute|paper-execute-stream|paper-input-status>")
+		return fmt.Errorf("usage: omni-core <migrate|ledger-replay-preview|ledger-replay-activate|ledger-export|benchmark-import|benchmark-status|owner-fx-import|owner-price-import|serve|backup|verify-restore|strategy-register|strategy-status|strategy-select|strategy-rollback|paper-run-due|paper-run-loop|paper-init|paper-import-bars|paper-execute|paper-execute-stream|paper-input-status|paper-promote|paper-promotion-status|paper-promotion-abort>")
 	}
 	switch args[0] {
+	case "paper-promote", "paper-promotion-status", "paper-promotion-abort":
+		return runPaperPromotionCommand(ctx, args[0], args[1:], os.Stdout)
 	case "owner-price-import":
 		return runOwnerPriceImportCommand(ctx, args[1:], os.Stdout)
 	case "owner-fx-import":

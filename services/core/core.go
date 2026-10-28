@@ -32,12 +32,12 @@ import (
 const (
 	maxBodyBytes                       = 1 << 20
 	maxImportRows                      = 10_000
-	latestSchema                       = 26
+	latestSchema                       = 27
 	zeroTime                           = "1970-01-01T00:00:00Z"
 	csvSchema                          = "omni-folio.csv.v1"
 	mappingSchema                      = "canonical-transaction.v4"
-	backupFormat                       = "omni-folio-backup.v20"
-	backupSchema                       = "omni-folio.sqlite.v26"
+	backupFormat                       = "omni-folio-backup.v21"
+	backupSchema                       = "omni-folio.sqlite.v27"
 	legacyPaperRunnerFormat            = "omni-folio-backup.v14"
 	legacyPaperRunnerSchema            = "omni-folio.sqlite.v20"
 	legacyPaperPerformancePolicyFormat = "omni-folio-backup.v13"
@@ -209,6 +209,9 @@ type BackupManifest struct {
 	StrategyRegistrySHA256                   string              `json:"strategy_registry_sha256"`
 	StrategyEvidenceCount                    int                 `json:"strategy_evidence_count"`
 	StrategySelectionEventCount              int                 `json:"strategy_selection_event_count"`
+	PaperPromotionStateSHA256                string              `json:"paper_promotion_state_sha256"`
+	PaperPromotionClaimCount                 int                 `json:"paper_promotion_claim_count"`
+	PaperPromotionDecisionCount              int                 `json:"paper_promotion_decision_count"`
 	PaperEvaluationEventCount                int                 `json:"paper_evaluation_event_count"`
 	PaperAccountingStateSHA256               string              `json:"paper_accounting_state_sha256"`
 	PaperAccountingSessionCount              int                 `json:"paper_accounting_session_count"`
@@ -290,6 +293,7 @@ type VerificationReceipt struct {
 	CandidateOrderStateSHA256                    string   `json:"candidate_order_state_sha256"`
 	CandidateBrokerStateSHA256                   string   `json:"candidate_broker_state_sha256"`
 	CandidateStrategyRegistrySHA256              string   `json:"candidate_strategy_registry_sha256"`
+	CandidatePaperPromotionStateSHA256           string   `json:"candidate_paper_promotion_state_sha256"`
 	CandidatePaperAccountingStateSHA256          string   `json:"candidate_paper_accounting_state_sha256"`
 	CandidateFXObservationStateSHA256            string   `json:"candidate_fx_observation_state_sha256"`
 	CandidateSecurityPriceObservationStateSHA256 string   `json:"candidate_security_price_observation_state_sha256"`
@@ -379,6 +383,9 @@ func requireServerStartupRecovery(db *sql.DB) error {
 	if _, err := provePaperRunnerLeaseRecovery(context.Background(), db); err != nil {
 		return fmt.Errorf("paper runner lease startup recovery: %w", err)
 	}
+	if _, err := provePaperPromotionRecovery(context.Background(), db); err != nil {
+		return fmt.Errorf("paper promotion startup recovery: %w", err)
+	}
 	if _, err := proveBenchmarkSeriesRecovery(context.Background(), db); err != nil {
 		return fmt.Errorf("benchmark series startup recovery: %w", err)
 	}
@@ -409,13 +416,13 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("unsupported schema version %d", current)
 		}
 	}
-	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql", "013_instrument_listing_events.sql", "014_paper_evaluation_events.sql", "015_paper_accounting_sessions.sql", "016_paper_market_signals.sql", "017_paper_execution_authorizations.sql", "018_paper_performance_events.sql", "019_paper_strategy_performance_events.sql", "020_paper_performance_policy_events.sql", "021_paper_runner_leases.sql", "022_ledger_replay_policy.sql", "023_benchmark_series_versions.sql", "024_owner_fx_series_versions.sql", "025_owner_price_series_versions.sql", "026_watchlist_state.sql"}
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql", "013_instrument_listing_events.sql", "014_paper_evaluation_events.sql", "015_paper_accounting_sessions.sql", "016_paper_market_signals.sql", "017_paper_execution_authorizations.sql", "018_paper_performance_events.sql", "019_paper_strategy_performance_events.sql", "020_paper_performance_policy_events.sql", "021_paper_runner_leases.sql", "022_ledger_replay_policy.sql", "023_benchmark_series_versions.sql", "024_owner_fx_series_versions.sql", "025_owner_price_series_versions.sql", "026_watchlist_state.sql", "027_paper_promotion.sql"}
 	for version := current + 1; version <= latestSchema; version++ {
 		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
 		if err != nil {
 			return err
 		}
-		disableForeignKeys := version == 7 || version == 20
+		disableForeignKeys := version == 7 || version == 20 || version == 27
 		checkForeignKeys := version >= 7
 		if disableForeignKeys {
 			if _, err := db.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
@@ -430,6 +437,7 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 		var v20Before migration20Snapshot
+		var v27Before migration27Snapshot
 		if version == 20 {
 			v20Before, err = captureMigration20Snapshot(context.Background(), tx)
 			if err != nil {
@@ -441,6 +449,17 @@ func migrate(db *sql.DB) error {
 				tx.Rollback()
 				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
 				return fmt.Errorf("migration 20 rebuild preparation: %w", err)
+			}
+		}
+		if version == 27 {
+			v27Before, err = captureMigration27Snapshot(context.Background(), tx)
+			if err == nil {
+				err = dropMigration20DependentTriggers(tx, v27Before.DependentTriggers)
+			}
+			if err != nil {
+				tx.Rollback()
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+				return fmt.Errorf("migration 27 pre-rebuild proof: %w", err)
 			}
 		}
 		if _, err := tx.Exec(string(script)); err != nil {
@@ -460,6 +479,24 @@ func migrate(db *sql.DB) error {
 				tx.Rollback()
 				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
 				return fmt.Errorf("migration 20 rebuild proof: %w", err)
+			}
+		}
+		if version == 27 {
+			for _, index := range v27Before.SelectionIndexes {
+				if _, err = tx.Exec(index.SQL); err != nil {
+					break
+				}
+			}
+			if err == nil {
+				err = restoreMigration20DependentTriggers(tx, v27Before.DependentTriggers)
+			}
+			if err == nil {
+				err = verifyMigration27Snapshot(context.Background(), tx, v27Before)
+			}
+			if err != nil {
+				tx.Rollback()
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+				return fmt.Errorf("migration 27 rebuild proof: %w", err)
 			}
 		}
 		if _, err := tx.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)`, version, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
@@ -811,6 +848,131 @@ func verifyMigration20TemporaryNames(ctx context.Context, q orderQuerier, foreig
 		}
 	}
 	return nil
+}
+
+type migration27SchemaObject struct {
+	Type, Name, Table, SQL string
+}
+
+type migration27Snapshot struct {
+	Orders            orderRecoveryProof
+	Strategy          strategyRegistryRecoveryProof
+	SelectionShape    migration20JournalShape
+	ForeignKeys       []migration20ForeignKey
+	SchemaObjects     []migration27SchemaObject
+	SelectionIndexes  []migration27SchemaObject
+	DependentTriggers []migration20Trigger
+}
+
+func captureMigration27Snapshot(ctx context.Context, q orderQuerier) (migration27Snapshot, error) {
+	if err := requireSchemaVersionContext(ctx, q, 26); err != nil {
+		return migration27Snapshot{}, err
+	}
+	orders, err := proveOrderRecovery(ctx, q)
+	if err != nil {
+		return migration27Snapshot{}, err
+	}
+	strategy, err := proveStrategyRegistryRecovery(ctx, q)
+	if err != nil {
+		return migration27Snapshot{}, err
+	}
+	shape, err := migration20JournalShapeFor(ctx, q, "strategy_selection_events")
+	if err != nil {
+		return migration27Snapshot{}, err
+	}
+	foreignKeys, err := migration20ForeignKeyInventory(ctx, q)
+	if err != nil {
+		return migration27Snapshot{}, err
+	}
+	objects, indexes, triggers, err := migration27SchemaInventory(ctx, q)
+	if err != nil {
+		return migration27Snapshot{}, err
+	}
+	return migration27Snapshot{
+		Orders: orders, Strategy: strategy, SelectionShape: shape, ForeignKeys: foreignKeys,
+		SchemaObjects: objects, SelectionIndexes: indexes, DependentTriggers: triggers,
+	}, nil
+}
+
+func migration27SchemaInventory(ctx context.Context, q orderQuerier) ([]migration27SchemaObject, []migration27SchemaObject, []migration20Trigger, error) {
+	rows, err := q.QueryContext(ctx, `SELECT type,name,tbl_name,COALESCE(sql,'') FROM sqlite_master
+		WHERE name NOT LIKE 'sqlite_%' AND tbl_name NOT IN ('paper_promotion_claims','paper_promotion_decisions') ORDER BY type,name`)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer rows.Close()
+	var objects, indexes []migration27SchemaObject
+	var triggers []migration20Trigger
+	for rows.Next() {
+		var object migration27SchemaObject
+		if err := rows.Scan(&object.Type, &object.Name, &object.Table, &object.SQL); err != nil {
+			return nil, nil, nil, err
+		}
+		if object.Table == "strategy_selection_events" {
+			if object.Type == "index" && object.SQL != "" {
+				indexes = append(indexes, object)
+			}
+			continue
+		}
+		objects = append(objects, object)
+		if object.Type == "trigger" && strings.Contains(object.SQL, "strategy_selection_events") {
+			triggers = append(triggers, migration20Trigger{Name: object.Name, Table: object.Table, SQL: object.SQL})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, nil, nil, err
+	}
+	return objects, indexes, triggers, nil
+}
+
+func sameMigration27SchemaObjects(left, right []migration27SchemaObject) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func verifyMigration27Snapshot(ctx context.Context, q orderQuerier, before migration27Snapshot) error {
+	after, err := captureMigration27Snapshot(ctx, q)
+	if err != nil {
+		return err
+	}
+	if before.Orders != after.Orders || !sameStrategyRegistryProof(before.Strategy, after.Strategy) || before.SelectionShape != after.SelectionShape {
+		return errors.New("order or strategy journal was not preserved exactly")
+	}
+	if !sameMigration27SchemaObjects(before.SchemaObjects, after.SchemaObjects) ||
+		!sameMigration27SchemaObjects(before.SelectionIndexes, after.SelectionIndexes) || !sameMigration20Triggers(before.DependentTriggers, after.DependentTriggers) {
+		return errors.New("existing schema or dependent trigger inventory was not preserved exactly")
+	}
+	expected := append([]migration20ForeignKey(nil), before.ForeignKeys...)
+	expected = append(expected,
+		migration20ForeignKey{Child: "strategy_selection_events", Parent: "paper_promotion_decisions", From: "paper_promotion_attempt_id", To: "attempt_id", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+		migration20ForeignKey{Child: "paper_promotion_decisions", Parent: "paper_promotion_claims", From: "attempt_id", To: "attempt_id", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+		migration20ForeignKey{Child: "paper_promotion_decisions", Parent: "strategy_selection_events", From: "selection_event_id", To: "event_id", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+	)
+	sort.Slice(expected, func(i, j int) bool {
+		return migration20ForeignKeyKey(expected[i]) < migration20ForeignKeyKey(expected[j])
+	})
+	if !sameMigration20ForeignKeys(expected, after.ForeignKeys) {
+		return errors.New("foreign-key inventory was not preserved exactly")
+	}
+	var addedRows int
+	if err := q.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM paper_promotion_claims) +
+		(SELECT COUNT(*) FROM paper_promotion_decisions) + (SELECT COUNT(*) FROM strategy_selection_events WHERE paper_promotion_attempt_id IS NOT NULL)`).Scan(&addedRows); err != nil {
+		return err
+	}
+	if addedRows != 0 {
+		return errors.New("migration introduced paper promotion history")
+	}
+	return verifyMigration20TemporaryNames(ctx, q, after.ForeignKeys)
 }
 
 func newService(db *sql.DB, now func() time.Time, id func(string) string) *Service {
@@ -1825,6 +1987,10 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err != nil {
 		return nil, fmt.Errorf("source strategy registry recovery proof: %w", err)
 	}
+	sourcePaperPromotion, err := provePaperPromotionRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source paper promotion recovery proof: %w", err)
+	}
 	sourcePaperAccounting, err := provePaperAccountingRecovery(context.Background(), db)
 	if err != nil {
 		return nil, fmt.Errorf("source paper accounting recovery proof: %w", err)
@@ -1890,6 +2056,10 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if err != nil {
 		return nil, err
 	}
+	candidatePaperPromotion, err := verifyPaperPromotionRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
 	candidatePaperAccounting, err := verifyPaperAccountingRestoreProof(out)
 	if err != nil {
 		return nil, err
@@ -1950,6 +2120,9 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 	if !sameStrategyRegistryProof(sourceStrategy, candidateStrategy) {
 		return nil, errors.New("backup strategy registry recovery proof does not match source")
 	}
+	if sourcePaperPromotion != candidatePaperPromotion {
+		return nil, errors.New("backup paper promotion recovery proof does not match source")
+	}
 	if sourcePaperAccounting != candidatePaperAccounting {
 		return nil, errors.New("backup paper accounting recovery proof does not match source")
 	}
@@ -2004,6 +2177,7 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 		BrokerReconciliationCount: sourceBroker.Reconciliations,
 		StrategyRegistrySHA256:    sourceStrategy.SHA256, StrategyEvidenceCount: sourceStrategy.Evidence,
 		StrategySelectionEventCount: sourceStrategy.Events, SelectedStrategyResultSHA256: sourceStrategy.SelectedResultSHA256,
+		PaperPromotionStateSHA256: sourcePaperPromotion.SHA256, PaperPromotionClaimCount: sourcePaperPromotion.Claims, PaperPromotionDecisionCount: sourcePaperPromotion.Decisions,
 		PaperEvaluationEventCount:  sourceStrategy.Evaluations,
 		PaperAccountingStateSHA256: sourcePaperAccounting.SHA256, PaperAccountingSessionCount: sourcePaperAccounting.Sessions,
 		PaperMarketBarObservationCount: sourcePaperAccounting.MarketBars, PaperSignalEventCount: sourcePaperAccounting.Signals,
@@ -2036,6 +2210,7 @@ func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.
 			Status: status, IntegrityCheck: "ok", GoldenSnapshotCheck: "ok", OrderStateCheck: "ok", BrokerStateCheck: "ok", StrategyRegistryCheck: "ok", FXObservationCheck: "ok", SecurityPriceObservationCheck: "ok", InstrumentListingCheck: "ok", PaperPerformanceCheck: "ok", PaperStrategyPerformanceCheck: "ok", PaperPerformancePolicyCheck: "ok", PaperRunnerLeaseCheck: "ok", CandidateDBSHA256: dbSHA,
 			CandidateSnapshotSHA256: snapshotSHA, CandidateOrderStateSHA256: candidateOrders.SHA256,
 			CandidateBrokerStateSHA256: candidateBroker.SHA256, CandidateStrategyRegistrySHA256: candidateStrategy.SHA256,
+			CandidatePaperPromotionStateSHA256:           candidatePaperPromotion.SHA256,
 			CandidatePaperAccountingStateSHA256:          candidatePaperAccounting.SHA256,
 			CandidatePaperPerformanceStateSHA256:         candidatePaperPerformance.SHA256,
 			CandidatePaperStrategyPerformanceStateSHA256: candidatePaperStrategyPerformance.SHA256,
@@ -2077,6 +2252,9 @@ func verifyRestore(path, goldenPath string) error {
 		return err
 	}
 	if _, err := verifyStrategyRestoreProof(path); err != nil {
+		return err
+	}
+	if _, err := verifyPaperPromotionRestoreProof(path); err != nil {
 		return err
 	}
 	if _, err := verifyPaperAccountingRestoreProof(path); err != nil {
@@ -2237,6 +2415,19 @@ func verifyPaperRunnerLeaseRestoreProof(path string) (paperRunnerLeaseRecoveryPr
 	proof, err := provePaperRunnerLeaseRecovery(context.Background(), db)
 	if err != nil {
 		return paperRunnerLeaseRecoveryProof{}, fmt.Errorf("candidate paper runner lease recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func verifyPaperPromotionRestoreProof(path string) (paperPromotionRecoveryProof, error) {
+	db, err := openReadOnlyExistingDB(context.Background(), path)
+	if err != nil {
+		return paperPromotionRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := provePaperPromotionRecovery(context.Background(), db)
+	if err != nil {
+		return paperPromotionRecoveryProof{}, fmt.Errorf("candidate paper promotion recovery proof: %w", err)
 	}
 	return proof, nil
 }
@@ -3163,6 +3354,11 @@ func verifyLegacyV14SourceManifest(ctx context.Context, db *sql.DB, manifest Bac
 	return nil
 }
 
+func paperPromotionManifestMatches(manifest BackupManifest, proof paperPromotionRecoveryProof) bool {
+	return manifest.PaperPromotionStateSHA256 == proof.SHA256 && manifest.PaperPromotionClaimCount == proof.Claims &&
+		manifest.PaperPromotionDecisionCount == proof.Decisions && manifest.VerificationReceipt.CandidatePaperPromotionStateSHA256 == proof.SHA256
+}
+
 func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	manifestBytes, err := os.ReadFile(manifestPath)
 	if err != nil {
@@ -3174,15 +3370,17 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err := dec.Decode(&manifest); err != nil {
 		return fmt.Errorf("backup manifest: %w", err)
 	}
-	currentV20Manifest := manifest.FormatVersion == backupFormat && manifest.SchemaVersion == backupSchema
+	currentV21Manifest := manifest.FormatVersion == backupFormat && manifest.SchemaVersion == backupSchema
+	legacyV20Manifest := manifest.FormatVersion == "omni-folio-backup.v20" && manifest.SchemaVersion == "omni-folio.sqlite.v26"
+	hasWatchlistManifest := currentV21Manifest || legacyV20Manifest
 	legacyV19Manifest := manifest.FormatVersion == "omni-folio-backup.v19" && manifest.SchemaVersion == "omni-folio.sqlite.v25"
-	hasOwnerPriceManifest := currentV20Manifest || legacyV19Manifest
+	hasOwnerPriceManifest := hasWatchlistManifest || legacyV19Manifest
 	legacyV18Manifest := manifest.FormatVersion == "omni-folio-backup.v18" && manifest.SchemaVersion == "omni-folio.sqlite.v24"
 	hasOwnerFXManifest := hasOwnerPriceManifest || legacyV18Manifest
 	legacyV17Manifest := manifest.FormatVersion == "omni-folio-backup.v17" && manifest.SchemaVersion == "omni-folio.sqlite.v23"
 	legacyV16Manifest := manifest.FormatVersion == "omni-folio-backup.v16" && manifest.SchemaVersion == "omni-folio.sqlite.v22"
 	hasBenchmarkManifest := hasOwnerFXManifest || legacyV17Manifest
-	// Backup format is independent of ledger replay authority: v16 through v19 remain nonarchival.
+	// Backup format is independent of ledger replay authority: v16 and later remain nonarchival.
 	nonArchivalManifest := hasBenchmarkManifest || legacyV16Manifest
 	legacyV15Manifest := manifest.FormatVersion == "omni-folio-backup.v15" && manifest.SchemaVersion == "omni-folio.sqlite.v21"
 	currentManifest := nonArchivalManifest || legacyV15Manifest
@@ -3219,8 +3417,25 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err := requireOwnerPriceManifestFields(fields, receiptFields, hasOwnerPriceManifest); err != nil {
 		return err
 	}
-	if err := requireWatchlistManifestFields(fields, receiptFields, currentV20Manifest); err != nil {
+	if err := requireWatchlistManifestFields(fields, receiptFields, hasWatchlistManifest); err != nil {
 		return err
+	}
+	for _, group := range []struct {
+		fields map[string]json.RawMessage
+		keys   []string
+	}{
+		{fields, []string{"paper_promotion_state_sha256", "paper_promotion_claim_count", "paper_promotion_decision_count"}},
+		{receiptFields, []string{"candidate_paper_promotion_state_sha256"}},
+	} {
+		for _, key := range group.keys {
+			value, present := group.fields[key]
+			if currentV21Manifest && (!present || bytes.Equal(bytes.TrimSpace(value), []byte("null"))) {
+				return errors.New("backup omits paper promotion proof")
+			}
+			if !currentV21Manifest && present {
+				return errors.New("legacy backup cannot claim paper promotion proof")
+			}
+		}
 	}
 	if currentManifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
 		if fields["paper_evaluation_event_count"] == nil || fields["paper_accounting_state_sha256"] == nil ||
@@ -3484,7 +3699,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 			return errors.New("legacy backup cannot contain an owner price journal")
 		}
 	}
-	if currentV20Manifest {
+	if hasWatchlistManifest {
 		proof, err := proveWatchlistRecovery(context.Background(), sourceDB)
 		if err != nil || !watchlistManifestMatches(manifest, proof) {
 			_ = sourceDB.Close()
@@ -3495,6 +3710,19 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 		if err := sourceDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name='watchlist_state'`).Scan(&present); err != nil || present != 0 {
 			_ = sourceDB.Close()
 			return errors.New("legacy backup cannot contain a watchlist state")
+		}
+	}
+	if currentV21Manifest {
+		proof, err := provePaperPromotionRecovery(context.Background(), sourceDB)
+		if err != nil || !paperPromotionManifestMatches(manifest, proof) {
+			_ = sourceDB.Close()
+			return errors.New("source paper promotion recovery proof mismatch")
+		}
+	} else {
+		var present int
+		if err := sourceDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name IN ('paper_promotion_claims','paper_promotion_decisions')`).Scan(&present); err != nil || present != 0 {
+			_ = sourceDB.Close()
+			return errors.New("legacy backup cannot contain paper promotion journals")
 		}
 	}
 	if err := sourceDB.Close(); err != nil {
@@ -3559,6 +3787,17 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 		manifest.StrategyEvidenceCount != strategy.Evidence || manifest.StrategySelectionEventCount != strategy.Events ||
 		manifest.SelectedStrategyResultSHA256 != strategy.SelectedResultSHA256 {
 		return errors.New("backup strategy registry recovery proof mismatch")
+	}
+	paperPromotion, err := verifyPaperPromotionRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if currentV21Manifest {
+		if !paperPromotionManifestMatches(manifest, paperPromotion) {
+			return errors.New("backup paper promotion recovery proof mismatch")
+		}
+	} else if paperPromotion.Claims != 0 || paperPromotion.Decisions != 0 || paperPromotion.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
+		return errors.New("legacy backup unexpectedly contains paper promotion history")
 	}
 	if currentManifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
 		if manifest.PaperEvaluationEventCount != strategy.Evaluations {
@@ -3727,7 +3966,7 @@ func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
 	if err != nil {
 		return err
 	}
-	if currentV20Manifest {
+	if hasWatchlistManifest {
 		if !watchlistManifestMatches(manifest, watchlist) {
 			return errors.New("backup watchlist recovery proof mismatch")
 		}
