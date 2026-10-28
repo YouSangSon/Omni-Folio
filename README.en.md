@@ -18,7 +18,7 @@ The Korean README is the source of truth for keeping the structure, commands, an
 | Gate | Status | Evidence |
 |---|---|---|
 | G0 Architecture and contracts | Passed locally | Versioned OpenAPI/JSON Schema, separate runtime responsibilities, repository-wide commands |
-| G1 Local ledger | Passed locally | CSV review and atomic application; exact trade, cash, split, and FX replay; FIFO cost and stored-price valuation; schema v26/backup v20 and recovery of supported older formats |
+| G1 Local ledger | Automated checks passed | CSV review and atomic application; exact trade, cash, split, and FX replay; FIFO cost and stored-price valuation; schema v26/backup v20 and recovery of supported older formats |
 | G2 Flutter client | Partially passed | iOS, Android, and web release builds, automated parser/widget checks, and Android emulator frame measurements. Test-plugin exclusion verified in the unsigned iOS package. Physical-device, manual screen-reader, and store checks remain |
 | G3 Research and paper execution | Partially passed | Reproducible backtests, walk-forward validation, holdouts, candidate registration, and local paper fills, performance, halt, and recovery. Long-running operation and completeness of source delivery remain unverified |
 | G4 Brokers, charts, and orders | In progress | Local sample charts, stored reconciliation and order-history views, and credential-free synthetic Kiwoom contracts. Credentialed market-data and mock-order observations, recovery of orders with unknown outcomes, and all live-trading stages remain |
