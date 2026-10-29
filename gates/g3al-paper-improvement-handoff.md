@@ -2,9 +2,11 @@
 
 ## 상태와 범위
 
-**구현·독립 리뷰 완료, 원격 CI 검증 대기.** 저장된 v1 연구 결과를 등록하고 [기존 Go 비교](g3aj-automatic-paper-promotion.md)로 넘기는 `paper-improve`를 추가한다. 연구 결과 SHA와 현재 선택 이벤트를 사용자가 복사하던 단계를 줄인다. schema v27/backup v21, 비교 journal과 실행 권한은 그대로 사용한다.
+**구현·독립 리뷰·Core CI와 고정 버전 로컬 검증을 통과해 main에 반영했다.** 저장된 v1 연구 결과를 등록하고 [기존 Go 비교](g3aj-automatic-paper-promotion.md)로 넘기는 `paper-improve`를 추가했다. 연구 결과 SHA와 현재 선택 이벤트를 사용자가 복사하던 단계를 줄인다. schema v27/backup v21, 비교 journal과 실행 권한은 그대로 사용한다.
 
-실제 RED는 head `0e8bfc6665c61eb848669298380237da206a08e2`, [Core40669802386 job122753398938](https://github.com/YouSangSon/Omni-Folio/actions/runs/40669802386/job/122753398938)에서 `unknown command "paper-improve"`로 실패했다. 이 실패를 구현 검증 통과로 세지 않는다. [PR #70](https://github.com/YouSangSon/Omni-Folio/pull/70)의 최종 head·CI·main 반영 여부는 후속 검증에서 기록한다.
+검증 head는 `c53f357067ae8bd73cd1594d7591fb6d2cf7d3fd`, [PR #70](https://github.com/YouSangSon/Omni-Folio/pull/70)의 main은 `09074a73bcfdc742b04403ed6a986515b374b697`이다. 원격 main을 fetch한 뒤 head의 ancestry와 전체 Git tree 일치를 확인했다. 후속 기록 변경은 이 gate·`PLAN.md`·`GATES.md`만 바꾸므로 실행 입력이 같은 통과 근거를 재사용한다.
+
+실제 RED는 head `0e8bfc6665c61eb848669298380237da206a08e2`, [Core40669802386 job122753398938](https://github.com/YouSangSon/Omni-Folio/actions/runs/40669802386/job/122753398938)에서 `unknown command "paper-improve"`로 실패했다. 이 실패를 구현 검증 통과로 세지 않는다.
 
 ## 연결 방식과 사용법
 
@@ -50,11 +52,18 @@
 
 ## 검증 근거
 
-- 독립 읽기 전용 리뷰에서 P1/P2 결함은 발견되지 않았다. 이 결과는 컴파일·실행 통과를 대신하지 않는다.
-- 실제 Python `improve_cli`가 만든 v1 결과를 Go CLI dispatch에 전달하는 RED를 먼저 확인했다. 구현 후 등록→fresh 비교→선택→기존 rollback과 정확한 재시도를 원격 CI에서 검증한다.
-- 연구 부적격·이미 선택된 결과의 무소비, ID 충돌 전 등록 금지, 등록 후 권한·freshness 실패, pending 보존, 동일·상이 ID 동시 호출, 취소·출력 실패와 비공개 오류를 검사한다.
-- 기존 `TestPaperPromotion` 집중 target과 전체 `make check DART=true FLUTTER=true CORE_TEST_PACKAGES='-timeout=30m ./...'`를 사용한다. Core가 바뀌므로 새 CI가 필요하다. Client는 소스·계약·검증 입력의 Git 객체가 같을 때만 이전 통과 근거를 재사용한다.
-- 로컬 gofmt·diff, README 네 언어의 동일 shell32개(sh31·bash1), 기존 명령 보존·shell 문법과 변경 문서의 상대 링크309개를 정적으로 확인했다. 통합 테스트는 실제 Python CLI stdout JSON을 파일에 저장하므로 `--output` 옵션 자체를 검증한다고 세지 않는다. 로컬 앱·테스트·빌드·분석은 실행하지 않았다.
+- 독립 읽기 전용 리뷰는 지정 head/base의 변경13파일과 연결된 registry·promotion·복구 경로에서 P1/P2 결함을 발견하지 못했다. 독립 실행 검증과 함께 `PASS+NOTES`로 기록했다. 새 동시 호출 테스트는 이미 등록된 후보를 사용하고, 취소 테스트는 사전 취소이므로 최초 등록끼리의 경합이나 새 명령 실행 도중의 native SIGINT/SIGTERM까지 검증했다고 세지 않는다.
+- [Core40672222560](https://github.com/YouSangSon/Omni-Folio/actions/runs/40672222560), job122761600282가 검증 head에서 통과했다. 기존 `TestPaperPromotion`·migration 집중 target과 `make check DART=true FLUTTER=true CORE_TEST_PACKAGES='-timeout=30m ./...'`를 실행했다. Go core 전체503.019초·내부6패키지, Python48·JSON44 파싱, Go format/vet·Python 문법 검사·소유 자원 cleanup·소스 일치를 확인했다. 환경은 Ubuntu24.04, Go1.24.5, Python3.14.5, Go 실행 병렬도2·빌드 병렬도1이다. JSON 파싱을 전체 JSON Schema 검증으로 확대하지 않는다.
+- 실제 Python `improve_cli` stdout을 파일로 저장해 Go CLI dispatch에 전달하고 등록→fresh 비교→선택→기존 rollback과 정확한 재시도를 검증했다. 연구 부적격·이미 선택된 결과의 무소비, ID 충돌 전 등록 금지, 등록 후 권한·freshness 실패, pending 보존, 동일·상이 ID 동시 호출, 사전 취소·출력 실패와 비공개 오류도 포함한다. 이 경로는 Python의 `--output` 옵션 자체를 검증하지 않는다.
+- 2026-10-29의 독립 detached checkout에서 Go1.24.5·Python3.14.5 실행 경로와 PATH를 고정했다. `make test FLUTTER=true CORE_TEST_PACKAGES="-race -run='^TestPaperPromotionImprovement' -count=1 -timeout=10m -v ./..."`가 Go 집중10개·하위16개·Python48과 cleanup을 exit0으로 통과했다. core15.528초·Python5.838초는 검사 소요시간이며 성능 개선 측정이 아니다. 같은 환경의 `make smoke`도 exit0으로 health·status·preview·apply·snapshot·activity·sample market data를 검증했다. 임시 root와 프로세스가 종료됐고18080 listener는 없었다. checkout은16,888KiB로 전후 동일했다. 로그와 정확한 명령·종료 코드는 Git 제외 경로 `docs/_internal/skill-outputs/goal-20261029-paper-handoff/`의 `validation.json`과 `*-pinned.log`에 보관했다.
+- [Client40662911694](https://github.com/YouSangSon/Omni-Folio/actions/runs/40662911694), job122730096020의 집중15·전체472, format/analyze·web/ARM64 release·권한 반례8·패키지/소스 일치를 재사용했다. 해당 head `06e76dd8589566b8925d33e0dee38060fac87e4f`와 이번 head의 `apps/client`·전체 `contracts`·`.tool-versions`·Client workflow·`Makefile`·`tools`·`tests` Git 객체가 모두 같다. Client tree는 `d8f8ad1e62cf2e11e5c7f8cba843c62087577740`이며 새 Client 전체 검사·빌드는 반복하지 않았다.
+- 앞선 로컬 gofmt·diff, README 네 언어의 동일 shell32개(sh31·bash1), 기존 명령 보존·shell 문법과 상대 링크309개 확인은 당시 범위의 정적 근거다. 후속 기록 변경은 변경 문서의 링크·내용과 diff를 다시 검사한다.
+
+### 실제 실행 디렉터리에서 도구 버전 확인
+
+처음 로컬 검사는 exit0이었으나 고정 버전의 근거에서 제외했다. 현재 asdf는 저장소 루트의 `.tool-versions`에서는 Go1.24.5를, `services/core`의 `go.mod`에서는 Go1.27.3을 선택했다. `asdf current golang`과 `go version`으로 차이를 재현했고 실제 smoke compiler 경로도1.27.3이었다. Python 자체의 버전 문제로 단정하지 않는다.
+
+전역 설정을 바꾸지 않고 `GO`·`PYTHON`에 검증한 절대 실행 경로를, PATH 앞부분에 같은 bin 디렉터리를 지정해 집중 검사와 smoke만 다시 실행했다. `GOTOOLCHAIN=local`을 유지하고 `services/core` 안의 버전과 실제 smoke compiler가1.24.5임을 확인했다. 이전 로그는 추가 호환성 관찰로 보존하며 위의 고정 버전 통과 근거와 구분한다. 실행 디렉터리나 asdf 설정이 바뀌면 이 확인부터 다시 한다.
 
 ## 남은 범위
 

@@ -14,7 +14,7 @@
 
 ## Next
 
-- [ ] G3AL 저장된 연구 결과의 모의 비교 인계: v1 artifact 등록과 기존 fresh 비교·선택을 `paper-improve`로 연결한다. 실제 unknown-command RED를 확인했으며 재시도·부분 저장·동시 호출과 README 네 언어를 구현·검토 중이다. 최종 원격 CI와 main 반영은 남아 있다 ([gate](gates/g3al-paper-improvement-handoff.md), [PR #70](https://github.com/YouSangSon/Omni-Folio/pull/70)).
+- [x] G3AL 저장된 연구 결과의 모의 비교 인계: v1 artifact 등록과 기존 fresh 비교·선택을 `paper-improve`로 연결했다. 실제 unknown-command RED·독립 리뷰 후 Core 전체503.019초·Python48/JSON44, 고정 Go1.24.5의 집중 race10·하위16·native smoke·소유 자원 정리를 통과해 main에 병합했다. Client472·분석·web/ARM64는 모든 검증 입력의 Git 객체 일치를 확인해 재사용했다. 등록/claim의 별도 저장과 정확한 재시도를 유지하며 정기 탐색·실브로커 관측·전체 Goal 완료는 별도다 ([gate](gates/g3al-paper-improvement-handoff.md), [PR #70](https://github.com/YouSangSon/Omni-Folio/pull/70)).
 
 - [x] G3AK 저장된 모의 전략 비교 보고서: 최신 요청·최종 결정·재계산 지표·정확한 선택 이벤트의 유지 여부를 닫힌 읽기 API와 Flutter 화면으로 연결했다. 실제 HTTP404 RED·독립 리뷰·화면 진입 검사 수정 후 Core 전체406.978초·Python48/JSON44·Flutter15/472·분석·web/ARM64·권한/소스 일치를 통과해 main에 병합했다. 기존 schema27/backup21과 실행 권한을 유지한다 ([gate](gates/g3ak-paper-promotion-report.md), [PR #68](https://github.com/YouSangSon/Omni-Folio/pull/68)).
 
