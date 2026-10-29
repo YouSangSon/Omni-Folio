@@ -479,6 +479,22 @@ DB에는 기존 paper 계좌 세션이 정확히 하나 있어야 하며 현재 
 
 자동 활성화·초기 계좌 생성·초기화·실거래는 수행하지 않습니다. 입력 CSV의 이용 권한, 제공자와 종목 metadata는 검증하지 않으며 buy-and-hold는 실제 지수 데이터가 아닙니다. 영수증에는 원본 CSV가 없지만 DB와 백업에는 저장됩니다. [명령·복구 계약과 검증 상태](gates/g3aj-automatic-paper-promotion.md)
 
+### 저장된 연구 결과 한 번 인계하기
+
+이미 `improve_cli --output`으로 저장한 v1 연구 JSON을 `paper-improve`에 넘기면 Go가 결과를 등록하고, 비교가 필요한 후보를 캡처한 현재 전략과 새 forward 구간으로 평가해 조건에 따라 선택합니다. SHA와 선택 이벤트를 직접 복사할 필요는 없으며 위의 수동 명령도 그대로 사용할 수 있습니다. 이 명령은 Python 실행, 정기 탐색, 자동 활성화 또는 새 DB·계좌 초기화를 하지 않으며 v2는 계속 거부합니다.
+
+```sh
+(cd services/core && go run . paper-improve \
+  -db ../../data/omni-folio.db -account '<EXISTING_ACCOUNT_REF>' \
+  -artifact /absolute/path/to/research-result.json \
+  -bars /absolute/path/to/fresh-forward-bars.csv \
+  -attempt-id paper_improve_001)
+```
+
+`research_not_candidate`는 연구가 보고한 `no_promotion`이며 Go 비교의 `HOLD`가 아닙니다. `already_selected`는 캡처 시 같은 결과가 이미 선택된 경우입니다. 두 경우 모두 `registered=true`, `attempt_recorded=false`, `comparison=null`이며 ID를 예약하거나 구간을 소비하지 않습니다. 비교 claim이 저장될 때만 ID가 입력에 묶입니다.
+
+등록 후 비교가 실패해도 등록은 남을 수 있습니다. 결과가 불확실하면 전략 상태는 `strategy-status`로, 비교 상태는 같은 ID를 전달한 `paper-promotion-status`로 확인하세요. 같은 파일·계좌·ID로 재시도하면 저장된 claim부터 멱등하게 처리합니다. [인계 계약](gates/g3al-paper-improvement-handoff.md)
+
 ### 저장된 모의 전략 비교 조회
 
 앱에서 `연결` → `모의 전략 비교 보기`를 열면 가장 최근 비교 요청 한 건을 볼 수 있습니다. 저장된 비교가 있으면 후보, 요청 당시 선택 전략, 같은 종목의 매수 후 보유 모델을 비용 반영 지표로 비교합니다. 세 구간은 각각 30개 봉을 독립적으로 평가하며, 서버가 저장된 입력으로 지표를 다시 계산해 검증합니다. 최근 요청에 결정이 없으면 이전 성공 결과 대신 `결정 기록 없음`을 표시합니다.

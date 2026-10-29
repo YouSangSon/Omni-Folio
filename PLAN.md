@@ -14,6 +14,8 @@
 
 ## Next
 
+- [ ] G3AL 저장된 연구 결과의 모의 비교 인계: v1 artifact 등록과 기존 fresh 비교·선택을 `paper-improve`로 연결한다. 실제 unknown-command RED를 확인했으며 재시도·부분 저장·동시 호출과 README 네 언어를 구현·검토 중이다. 최종 원격 CI와 main 반영은 남아 있다 ([gate](gates/g3al-paper-improvement-handoff.md), [PR #70](https://github.com/YouSangSon/Omni-Folio/pull/70)).
+
 - [x] G3AK 저장된 모의 전략 비교 보고서: 최신 요청·최종 결정·재계산 지표·정확한 선택 이벤트의 유지 여부를 닫힌 읽기 API와 Flutter 화면으로 연결했다. 실제 HTTP404 RED·독립 리뷰·화면 진입 검사 수정 후 Core 전체406.978초·Python48/JSON44·Flutter15/472·분석·web/ARM64·권한/소스 일치를 통과해 main에 병합했다. 기존 schema27/backup21과 실행 권한을 유지한다 ([gate](gates/g3ak-paper-promotion-report.md), [PR #68](https://github.com/YouSangSon/Omni-Folio/pull/68)).
 
 - [x] G3AJ 고정 후보의 paper 자동 비교: 실제 계좌 현금으로 새 세 구간을 재계산하고 소비 구간·결정·선택을 schema27/backup21에 보존한다. 실제 RED·독립 리뷰 후 집중33·Core 전체444.051초/내부6패키지·Python48/JSON43·Flutter22/457·분석·web/ARM64·권한/소스 일치를 통과해 main에 병합했다. 자동 arm·계좌 초기화·실거래는 포함하지 않는다 ([gate](gates/g3aj-automatic-paper-promotion.md), [PR #65](https://github.com/YouSangSon/Omni-Folio/pull/65)).
