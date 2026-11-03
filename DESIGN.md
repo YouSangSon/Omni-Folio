@@ -1,10 +1,10 @@
-# Omni Folio Design
+# Kairos Design
 
-This is the product-facing design contract for the Flutter client. [`design-system/omni-folio/MASTER.md`](design-system/omni-folio/MASTER.md) defines its reusable tokens and accessibility rules.
+This is the product-facing design contract for the Flutter client. [`design-system/kairos/MASTER.md`](design-system/kairos/MASTER.md) defines its reusable tokens and accessibility rules.
 
 ## Direction
 
-Omni Folio is a personal multi-broker portfolio app, not a marketing site or trading terminal. The experience is mobile-first, calm, and trust-first: before performance, show whether the data is fresh, complete, and recoverable. Flutter is the single client for iOS, Android, and app-centric web; the earlier React/PWA recommendation is superseded.
+Kairos is a personal multi-broker portfolio app, not a marketing site or trading terminal. The experience is mobile-first, calm, and trust-first: before performance, show whether the data is fresh, complete, and recoverable. Flutter is the single client for iOS, Android, and app-centric web; the earlier React/PWA recommendation is superseded.
 
 The interaction model is Toss-inspired, not a copy of Toss Securities. Use plain language, one primary decision per screen, strong numeric hierarchy, progressive disclosure, and the same mental model for Korean and US stocks. Do not copy Toss trade dress, brand assets, exact layouts, or motion. Kiwoom is the first execution provider and Toss Securities is the second planned provider; provider-specific TR codes and raw errors stay out of the primary UI.
 

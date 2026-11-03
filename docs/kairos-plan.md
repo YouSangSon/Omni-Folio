@@ -1,4 +1,4 @@
-# Omni Folio 구현 계획
+# Kairos 구현 계획
 
 상태: G0·G1·G3 로컬 통과(G3.8C3 account-global paper performance, G3.8D current-selection strategy-window performance, G3.8E versioned local paper performance policy·atomic automatic halt/rollback, G3.8F1 one-shot과 G3.8F2 DB-leased/fenced always-on local paper policy runner 구현·fresh local/mock 검증 완료), G2 build/widget/browser·자동 accessibility/reduced-motion 증거 확보 및 physical profile/screen-reader 증거 보강 중
 기준일: 2026-08-31
@@ -257,7 +257,7 @@ CSV import -> 중복 검토 -> 거래 원장 -> 보유/현금/손익 -> JSON bac
 
 ### 이미 존재하는 해법에서 재사용할 것
 
-| 하위 문제 | 기존 근거 | Omni Folio의 사용 방식 |
+| 하위 문제 | 기존 근거 | Kairos의 사용 방식 |
 |---|---|---|
 | 로컬 자산 통합 UX | [Wealthfolio](https://wealthfolio.app/features/investments-tracking/) | 화면 계층과 local-first 신뢰 모델만 참고하고 코드는 복제하지 않는다. |
 | KIS 전략 정의와 백테스트 연결 | [KIS 공식 Strategy Builder](https://github.com/koreainvestment/open-trading-api/blob/main/strategy_builder/README.md) | `.kis.yaml`, signal, backtest 흐름과 공식 fixture를 POC 입력으로 사용한다. 공식 샘플을 실전 안전성 증명으로 간주하지 않는다. |
@@ -577,7 +577,7 @@ Research / Orders / Automation = 해당 capability가 시작될 때만 추가
 
 ### Pass 5 — Design System Alignment: 3/10 → 8/10
 
-`DESIGN.md`, `design-system/omni-folio/MASTER.md`, Flutter light/dark theme에 `surface`, `text`, `muted`, `action`, `success`, `warning`, `danger`, `focus`, `stale` 의미를 반영했다. Noto Sans KR/시스템 글꼴과 tabular number를 사용하며 React/shadcn은 설치하지 않았다.
+`DESIGN.md`, `design-system/kairos/MASTER.md`, Flutter light/dark theme에 `surface`, `text`, `muted`, `action`, `success`, `warning`, `danger`, `focus`, `stale` 의미를 반영했다. Noto Sans KR/시스템 글꼴과 tabular number를 사용하며 React/shadcn은 설치하지 않았다.
 
 로컬 UI 검색이 제안한 marketing pattern과 dark-only 금융 palette는 개인 원장 APP UI와 맞지 않아 채택하지 않았다. 그 결과 중 Minimal/Swiss, 낮은 motion, data density 원칙만 사용한다.
 
@@ -1143,7 +1143,7 @@ G1.14 closes the prior recurring-rational rejection without changing any ledger 
 
 This policy is deliberately event-order dependent: two separate SELL events may temporarily allocate one last decimal differently from one combined SELL, while final lot closure conserves total cost. Existing exact allocation `1/2048` remains `0.00048828125`; tiny recurring, repeated `1/3`, split and multi-lot cases are executable regressions. Snapshot/OpenAPI/Flutter pin the exact policy string, and restore normalizes only a missing legacy golden policy to v1. Any future v2 must add a durable selector and schema/backup migration before replay behavior changes.
 
-The policy is analytical, not a tax filing rule. The [IRS FIFO description](https://www.irs.gov/pub/irs-pdf/p550.pdf) supports oldest-lot ordering for unidentified US shares, while the rounding rule is an Omni Folio reproducibility decision informed by the [General Decimal Arithmetic Specification](https://speleotrove.com/decimal/decarith.pdf). Go's [`math/big.Rat`](https://pkg.go.dev/math/big) remains the exact arithmetic substrate; custom integer half-even quantization is used because `Rat.FloatString` specifies half-away-from-zero.
+The policy is analytical, not a tax filing rule. The [IRS FIFO description](https://www.irs.gov/pub/irs-pdf/p550.pdf) supports oldest-lot ordering for unidentified US shares, while the rounding rule is a Kairos reproducibility decision informed by the [General Decimal Arithmetic Specification](https://speleotrove.com/decimal/decarith.pdf). Go's [`math/big.Rat`](https://pkg.go.dev/math/big) remains the exact arithmetic substrate; custom integer half-even quantization is used because `Rat.FloatString` specifies half-away-from-zero.
 
 TDD checkpoints are RED `5a1ac93` and GREEN `d9fac4a`. Full `make check`, `make smoke`, Go race, `govulncheck` and 78.1% Go statement coverage pass. Independent review found and blocked an always-quantize draft because it changed previously exact ledgers; the corrected exact-if-finite diff received arithmetic and compatibility GO, with documentation as the only remaining blocker closed by this leaf.
 

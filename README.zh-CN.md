@@ -1,6 +1,24 @@
-# Omni-Folio
+<div align="center">
+
+# Kairos
+
+**发现机会，管理风险。**
+
+从信息收集到判断、投资、再平衡与复盘，为长期财富积累打造的个人投资管理系统。
+
+[![Core checks](https://github.com/YouSangSon/Kairos/actions/workflows/core-checks.yml/badge.svg)](https://github.com/YouSangSon/Kairos/actions/workflows/core-checks.yml)
+[![Client release](https://github.com/YouSangSon/Kairos/actions/workflows/client-android-release.yml/badge.svg)](https://github.com/YouSangSon/Kairos/actions/workflows/client-android-release.yml)
+![Flutter](https://img.shields.io/badge/Flutter-3.47.1-02569B?logo=flutter&logoColor=white)
+![Go](https://img.shields.io/badge/Go-1.24.5-00ADD8?logo=go&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.14.5-3776AB?logo=python&logoColor=white)
+
+[项目目标](#purpose) · [当前状态](#status) · [快速开始](#quick-start) · [文档](#documentation)
 
 [한국어](README.md) · [日本語](README.ja.md) · [English](README.en.md) · [简体中文](README.zh-CN.md)
+
+</div>
+
+---
 
 本项目旨在构建个人投资管理系统：自动收集信息、发现投资机会和风险，提供有依据的投资行动建议，或在事先授权的范围内自动投资与再平衡。
 
@@ -79,8 +97,8 @@ flowchart LR
 项目的 [`.tool-versions`](.tool-versions) 固定使用 Flutter 3.47.1 stable、Go 1.24.5 和 Python 3.14.5。Python 研究运行时不使用第三方包。
 
 ```sh
-git clone https://github.com/YouSangSon/Omni-Folio.git
-cd Omni-Folio
+git clone https://github.com/YouSangSon/Kairos.git
+cd Kairos
 asdf install
 make bootstrap
 make check
@@ -140,6 +158,9 @@ make client-ios-release API_URL=http://127.0.0.1:8080
 ```
 
 输出为 `output/ios-release-<source SHA>/Runner.app` 和 `build.json`。存在 `COMPLETE` 才表示二进制检查和所属临时资源清理均已成功。不会覆盖已有输出。签名、安装、真机和应用商店验证需另行进行。参见[构建原理与验证依据](gates/g2-client.md#ios-release-packaging-2026-10-25)。
+
+<details>
+<summary><strong>查看使用流程和命令详情</strong></summary>
 
 <a id="workflows"></a>
 
@@ -623,6 +644,8 @@ Compose 在一次性 migration 后运行 non-root/read-only core，并仅在 loo
 
 运行上限为：`migrate` 使用 `0.25` CPU 和 `512 MiB`，`core` 使用 `0.75` CPU 和 `1536 MiB`，合计 `1 vCPU` 和 `2 GiB`。每个容器的日志按 `3` 个 `10 MB` 文件轮转。这些限制不约束构建资源，也不保证处理性能。进行非公开远程验证前，请先确认[共享 VM 准入条件](gates/g6-deployment.md#single-node-resource-budget)，并通过 SSH 访问。目前尚未验证这些设置在 VM 运行时的实际应用。
 
+</details>
+
 <a id="documentation"></a>
 
 ## 仓库结构
@@ -661,3 +684,5 @@ docs/              目标、ADR、研究、broker/UX 文档
 ## 许可证
 
 目前尚未授予单独的开源许可证。仓库可供公开浏览不等于获得代码复用权。
+
+[名称与现有设置](docs/project-identity.md)

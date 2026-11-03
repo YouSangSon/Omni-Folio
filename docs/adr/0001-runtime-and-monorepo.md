@@ -6,7 +6,7 @@
 
 ## Context
 
-Omni Folio는 iOS·Android·web 클라이언트, 여러 증권 API, 정확한 원장, 차트, 주문, 백테스트와 단계적 자동매매를 한 저장소에서 개발한다. 휴대폰은 OS 정책 때문에 정시 background execution을 보장하지 못하고, 실주문과 원장은 하나의 항상 켜진 authority가 필요하다. 초기 사용자는 한 명이므로 분산 인프라보다 명시적인 경계와 복구 가능성이 먼저다.
+Kairos는 iOS·Android·web 클라이언트, 여러 증권 API, 정확한 원장, 차트, 주문, 백테스트와 단계적 자동매매를 한 저장소에서 개발한다. 휴대폰은 OS 정책 때문에 정시 background execution을 보장하지 못하고, 실주문과 원장은 하나의 항상 켜진 authority가 필요하다. 초기 사용자는 한 명이므로 분산 인프라보다 명시적인 경계와 복구 가능성이 먼저다.
 
 ## Decision
 

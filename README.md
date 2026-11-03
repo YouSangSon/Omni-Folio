@@ -1,6 +1,24 @@
-# Omni-Folio
+<div align="center">
+
+# Kairos
+
+**기회를 읽고, 위험을 관리하다.**
+
+정보 수집부터 판단·투자·리밸런싱·복기까지, 장기 자산 형성을 위한 개인 투자 운용 시스템.
+
+[![Core checks](https://github.com/YouSangSon/Kairos/actions/workflows/core-checks.yml/badge.svg)](https://github.com/YouSangSon/Kairos/actions/workflows/core-checks.yml)
+[![Client release](https://github.com/YouSangSon/Kairos/actions/workflows/client-android-release.yml/badge.svg)](https://github.com/YouSangSon/Kairos/actions/workflows/client-android-release.yml)
+![Flutter](https://img.shields.io/badge/Flutter-3.47.1-02569B?logo=flutter&logoColor=white)
+![Go](https://img.shields.io/badge/Go-1.24.5-00ADD8?logo=go&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.14.5-3776AB?logo=python&logoColor=white)
+
+[프로젝트 목표](#purpose) · [현재 상태](#status) · [빠른 시작](#quick-start) · [문서](#documentation)
 
 [한국어](README.md) · [日本語](README.ja.md) · [English](README.en.md) · [简体中文](README.zh-CN.md)
+
+</div>
+
+---
 
 정보를 자동으로 모으고 투자 기회와 위험을 탐지해, 근거 있는 투자 행동을 추천하거나 사전에 허용한 범위에서 자동 투자·리밸런싱을 수행하는 개인용 투자 운용 시스템을 만드는 프로젝트입니다.
 
@@ -79,8 +97,8 @@ flowchart LR
 프로젝트의 [`.tool-versions`](.tool-versions)는 Flutter 3.47.1 stable, Go 1.24.5, Python 3.14.5를 고정합니다. Python research runtime에는 제3자 패키지가 없습니다.
 
 ```sh
-git clone https://github.com/YouSangSon/Omni-Folio.git
-cd Omni-Folio
+git clone https://github.com/YouSangSon/Kairos.git
+cd Kairos
 asdf install
 make bootstrap
 make check
@@ -140,6 +158,9 @@ make client-ios-release API_URL=http://127.0.0.1:8080
 ```
 
 결과는 `output/ios-release-<source SHA>/Runner.app`과 `build.json`입니다. `COMPLETE`가 있어야 바이너리 검사와 소유 임시 자원 정리까지 성공한 결과입니다. 기존 출력은 덮어쓰지 않습니다. 서명·설치·실기기·스토어 검증은 별도입니다. [빌드 원리와 검증 근거](gates/g2-client.md#ios-release-packaging-2026-10-25)를 참고하세요.
+
+<details>
+<summary><strong>사용 흐름과 명령 자세히 보기</strong></summary>
 
 <a id="workflows"></a>
 
@@ -623,6 +644,8 @@ Compose는 one-shot migration 뒤 non-root/read-only core를 실행하고 API를
 
 실행 상한은 `migrate`에 `0.25` CPU·`512 MiB`, `core`에 `0.75` CPU·`1536 MiB`로 합계 `1 vCPU`·`2 GiB`입니다. 각 컨테이너의 로그는 `10 MB` 파일 `3`개로 회전합니다. 이는 빌드 자원 상한이나 처리 성능 보장이 아닙니다. 원격 비공개 검증은 [공유 VM 진입 조건](gates/g6-deployment.md#single-node-resource-budget)을 먼저 확인하고 SSH 경로를 사용하세요. 현재 VM 런타임 적용은 미검증입니다.
 
+</details>
+
 <a id="documentation"></a>
 
 ## 저장소 구조
@@ -661,3 +684,5 @@ docs/              목표, ADR, research, broker/UX 문서
 ## 라이선스
 
 현재 별도 오픈소스 라이선스를 부여하지 않았습니다. 저장소의 공개 열람 가능 여부와 코드 재사용 권한은 동일하지 않습니다.
+
+[이름과 기존 설정](docs/project-identity.md)

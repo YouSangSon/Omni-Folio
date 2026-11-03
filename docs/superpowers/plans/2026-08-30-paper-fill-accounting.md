@@ -488,8 +488,8 @@ git commit -m "feat(core): 페이퍼 SELL과 회계 체결 추가"
 - Modify: `CONTEXT.md`
 - Modify: `DESIGN.md`
 - Modify: `README.md`
-- Modify: `docs/omni-folio-plan.md`
-- Modify: relevant Omni-Folio Obsidian project pages through the `obsidian-memory` workflow
+- Modify: `docs/kairos-plan.md`
+- Modify: relevant Kairos Obsidian project pages through the `obsidian-memory` workflow
 
 **Interfaces:**
 - Consumes: Tasks 1-4 implementation, SDD ledger, task reviews, backup evidence, and cleanup checks.
@@ -525,12 +525,12 @@ Remove only test-owned Python bytecode/cache and explicit Omni-Folio temporary a
 
 - [ ] **Step 5: Sync durable memory**
 
-Update the Omni-Folio project hub, staged architecture, and index so the current gate is G3.8C2 complete and G3.8C3 next. Record the durable decisions, not a worklog-only summary: ex-post model boundary, cutoff invariant, one fill journal, session policy equality, whole shares, one active order, and automatic authority prohibition.
+Update the Kairos project hub, staged architecture, and index so the current gate is G3.8C2 complete and G3.8C3 next. Record the durable decisions, not a worklog-only summary: ex-post model boundary, cutoff invariant, one fill journal, session policy equality, whole shares, one active order, and automatic authority prohibition.
 
 - [ ] **Step 6: Commit evidence**
 
 ```bash
-git add goal.md PLAN.md GATES.md CONTEXT.md DESIGN.md README.md docs/omni-folio-plan.md gates/g3k-paper-fill-accounting.md
+git add goal.md PLAN.md GATES.md CONTEXT.md DESIGN.md README.md docs/kairos-plan.md gates/g3k-paper-fill-accounting.md
 git commit -m "docs(core): 페이퍼 체결 회계 증거 기록"
 ```
 

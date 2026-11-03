@@ -1,6 +1,6 @@
 # G1.30 같은 관찰의 TWR 계산점 차트와 표
 
-상태: 구현·독립 리뷰·필수 원격 검증·main 병합 완료 ([PR #59](https://github.com/YouSangSon/Omni-Folio/pull/59)). 일별 성과 이력이나 전체 Goal 완료를 뜻하지 않는다.
+상태: 구현·독립 리뷰·필수 원격 검증·main 병합 완료 ([PR #59](https://github.com/YouSangSon/Kairos/pull/59)). 일별 성과 이력이나 전체 Goal 완료를 뜻하지 않는다.
 
 ## 문제와 작동 원리
 
@@ -35,7 +35,7 @@ TWR 상세→`입출금 구간별 성과 보기`→`같은 계산점 표로 보�
 - Flutter: `apps/client/lib/models.dart`, `api.dart`, `portfolio_twr_checkpoint_plot.dart`, `portfolio_twr_checkpoints_page.dart`, `portfolio_twr_page.dart` 및 `test/portfolio_twr_checkpoints_test.dart`. 모든 명시적 OmniApi fake와 integration profile fake를 갱신한다.
 - 계약: `contracts/openapi.json`, `golden-portfolio-twr-checkpoints.json`의 기존7상태, `portfolio-twr-cases.json`의 독립 Fraction14사례·prefix 기대값.
 
-실제 RED head `fb769884b0e1d89c042fef45f4a5fe80dc0a2abb`, [Core run40300745647](https://github.com/YouSangSon/Omni-Folio/actions/runs/40300745647), job121497719247에서 새 경로 HTTP404로 실패했다. full/source identity는 skipped였다. 아래 최종 커밋에서 필수 원격 검사를 통과했다. 로컬 runtime 검사는 실행하지 않았다.
+실제 RED head `fb769884b0e1d89c042fef45f4a5fe80dc0a2abb`, [Core run40300745647](https://github.com/YouSangSon/Kairos/actions/runs/40300745647), job121497719247에서 새 경로 HTTP404로 실패했다. full/source identity는 skipped였다. 아래 최종 커밋에서 필수 원격 검사를 통과했다. 로컬 runtime 검사는 실행하지 않았다.
 
 수치 fixture는 Python 표준 라이브러리 Fraction과 정수 quotient/remainder half-even으로 기존 최종 값과 독립 prefix를 확인한다. 실제 HTTP producer 비교, 이전 scalar 동일성, 같은 시각/1ns, 늦은 과거 입력 실패의 부분 폐기, 반올림−1 후 회복,512자리 prefix,1000/1001경계와 strict consumer·stream bound·UI 회귀를 별도로 검사한다. 독립 설계/구현 리뷰에서 표 이동 시 출처·sample 경고가 사라지는 문제를 보완했다. 표 header에도 세 독립 경고를 표시하고 실제 이동 후 유지되는지 검사한다. 수정 후 독립 리뷰에서 잔여 차단 지적은 없었으며, 아래 최종 CI에서 실제 동작을 확인했다.
 
@@ -47,12 +47,12 @@ TWR 상세→`입출금 구간별 성과 보기`→`같은 계산점 표로 보�
 
 ## 최종 검증과 병합 근거
 
-검증 head `9d9a55553e239eef008e96dc6f9ed7125f48c4f6`를 [PR #59](https://github.com/YouSangSon/Omni-Folio/pull/59)로 main `0aac9644257e1eb3913716a31f1f1bc7ab65ba42`에 병합했다. ancestry와 전체 tree `7421eca05165ddfdecfd8da7d4c86bb173820292` 일치를 확인했다. 이후 문서 변경은 이 검증의 코드·계약·workflow가 그대로인지 대조해 근거를 재사용한다.
+검증 head `9d9a55553e239eef008e96dc6f9ed7125f48c4f6`를 [PR #59](https://github.com/YouSangSon/Kairos/pull/59)로 main `0aac9644257e1eb3913716a31f1f1bc7ab65ba42`에 병합했다. ancestry와 전체 tree `7421eca05165ddfdecfd8da7d4c86bb173820292` 일치를 확인했다. 이후 문서 변경은 이 검증의 코드·계약·workflow가 그대로인지 대조해 근거를 재사용한다.
 
 | 검증 | 최종 근거 | 결과 |
 | --- | --- | --- |
-| Core | [run40337044902 attempt2](https://github.com/YouSangSon/Omni-Folio/actions/runs/40337044902/attempts/2), job122624045223 | TWR 집중3.933s·root 전체434.675s·내부5 package·vet/형식·Python39·JSON38·소유 자원 정리·source identity 통과 |
-| Client | [run40337044963 attempt2](https://github.com/YouSangSon/Omni-Folio/actions/runs/40337044963/attempts/2), job122624047682 | 집중17/전체435·format38파일0변경·analyze·web/Android ARM64 release·권한 반례8·source identity 통과 |
+| Core | [run40337044902 attempt2](https://github.com/YouSangSon/Kairos/actions/runs/40337044902/attempts/2), job122624045223 | TWR 집중3.933s·root 전체434.675s·내부5 package·vet/형식·Python39·JSON38·소유 자원 정리·source identity 통과 |
+| Client | [run40337044963 attempt2](https://github.com/YouSangSon/Kairos/actions/runs/40337044963/attempts/2), job122624047682 | 집중17/전체435·format38파일0변경·analyze·web/Android ARM64 release·권한 반례8·source identity 통과 |
 | APK | client tree `a1fcaf97d1d8178eea053d6f2f81c7234409f847` | 23546674 bytes, SHA256 `d0e6420443e19d6cb419dd126243e2e1f8f7871fd440f9d4c4d4f9692fa79d6f` |
 | Android 등록·권한 | registrant SHA256 `5d31e4d80984b4f5254d2e6629d2cc2b16760ab4774a94faa863c48897f18326` | file selector 등록·IntegrationTestPlugin 제외·INTERNET 및 signature receiver 권한만 확인 |
 | 로컬 정적 확인 | JSON38·OpenAPI local refs·기존 path/schema 불변·독립 Fraction14 | README4개 언어의 shell27개 일치·변경 Markdown 경로·gofmt·고정 Dart formatter40파일0변경·diff 통과. runtime 실행 없음 |

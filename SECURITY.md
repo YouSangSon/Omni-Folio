@@ -1,6 +1,6 @@
 # Security Policy
 
-Omni-Folio는 계좌·거래·주문 데이터를 다루는 개인용 금융 프로젝트입니다. 현재 지원 대상은 기본 branch의 최신 revision이며, local loopback profile만 검증돼 있습니다.
+Kairos는 계좌·거래·주문 데이터를 다루는 개인용 금융 프로젝트입니다. 현재 지원 대상은 기본 branch의 최신 revision이며, local loopback profile만 검증돼 있습니다.
 
 ## 취약점 보고
 

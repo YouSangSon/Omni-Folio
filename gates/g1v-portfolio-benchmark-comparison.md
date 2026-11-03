@@ -1,6 +1,6 @@
 # G1.26 같은 기간의 KRW·USD 지수 비교
 
-상태: [PR #50](https://github.com/YouSangSon/Omni-Folio/pull/50)을 main `6f154ef3d2815b5cb116dc8385107a0ad877f625`에 병합했다. 실제 API404 RED와 테스트 입력·분석 실패를 보완한 최종 head `e757cfa375f64d5ee2a54b167d28db423077ad1a`의 원격 Core/Client 전체·새 web/ARM64 release·권한/소스 일치가 통과했다. 설계·최종 코드의 독립 리뷰에서 차단 사항이 없고 main merge의 전체 tree가 테스트한 head와 일치한다. 실제 시장 자료의 정의·사용 권한·정확성과 배포·전체 Goal 완료는 별도다.
+상태: [PR #50](https://github.com/YouSangSon/Kairos/pull/50)을 main `6f154ef3d2815b5cb116dc8385107a0ad877f625`에 병합했다. 실제 API404 RED와 테스트 입력·분석 실패를 보완한 최종 head `e757cfa375f64d5ee2a54b167d28db423077ad1a`의 원격 Core/Client 전체·새 web/ARM64 release·권한/소스 일치가 통과했다. 설계·최종 코드의 독립 리뷰에서 차단 사항이 없고 main merge의 전체 tree가 테스트한 head와 일치한다. 실제 시장 자료의 정의·사용 권한·정확성과 배포·전체 Goal 완료는 별도다.
 
 ## 문제와 작동 원리
 
@@ -54,7 +54,7 @@ flowchart LR
 ## 참고와 검증 범위
 
 - [PP benchmark 문서](https://help.portfolio-performance.info/en/how-to/benchmarking/)의 같은 reporting period로 시작을 맞추는 원리, [base currency](https://help.portfolio-performance.info/en/reference/file/currency/)의 통화 환산 개념, [historical prices](https://help.portfolio-performance.info/en/concepts/historical-prices/)의 외화 가격과 환율 필요성을 참고했다. 코드·원문·그림·시장 data를 복제하지 않았다. PP의 close/day/calendar 관례와 자체 exact 사건 시각·24h 정책이 같다고 주장하지 않는다.
-- RED: `74acdab7429bb52ce3a445dd9be47a94b277403f`, [Core40188669188](https://github.com/YouSangSon/Omni-Folio/actions/runs/40188669188), `TestPortfolioBenchmarksComparesKRWAndUSDWithOneTWRObservation`이 실제 HTTP404로 실패했다. 이후 전체 검사는 건너뛰었다.
+- RED: `74acdab7429bb52ce3a445dd9be47a94b277403f`, [Core40188669188](https://github.com/YouSangSon/Kairos/actions/runs/40188669188), `TestPortfolioBenchmarksComparesKRWAndUSDWithOneTWRObservation`이 실제 HTTP404로 실패했다. 이후 전체 검사는 건너뛰었다.
 - Python 표준 Fraction과 Decimal precision500/half-even의 독립 수치13개와 최대 %p 길이2개를 만들었다. +10% 지수와−10% FX의−1% KRW, 두 recurring ratio,0/전액손실, tie 반올림, native 한도 초과·KRW 계산 가능을 포함한다. 이는 가벼운 참조 계산이며 runtime 검사가 아니다.
 - Go는 실제 SQLite/HTTP의 같은 clock·TWR 골든 보존·두 통화/FX·최신 known/버전 혼합 금지·nanosecond/24h·부분 FX·32/33개·한도 밖 손상·취소·query 거부·OpenAPI DTO 연결과 공유 응답 상태를 원격 검사했다. Flutter도 같은 응답의 parser·GET·화면 경로·오류/실패 보존·dispose·0/전액손실·native 독립 상태와 자동 접근성/작은 화면/200%/양쪽 theme를 원격 검사했다. 독립 리뷰의 비차단 제안인 세 목록 상태의 서로 다른 안내문도 assertion으로 확인했다.
 - 로컬에서는 gofmt·고정 Dart formatter·JSON syntax·문서/참조 확인과 위 작은 참조 계산만 수행했다. Go/Flutter runtime·native build·DB stack은 실행하지 않았다. 아래 실행 증거는 기존 무료 공개 Ubuntu workflow의 최종 head에서 나온 것이다.
@@ -62,8 +62,8 @@ flowchart LR
 
 ### 실패를 보완한 근거
 
-- [첫 Core 실행](https://github.com/YouSangSon/Omni-Folio/actions/runs/40191808448)은 FX source/pair/observed_at 중복 금지 조건을 위반한 테스트 입력에서 실패했다. 같은 시각의 두 행을 허용하도록 저장 계약을 약화하지 않고 두 번째 기록의 거절과 원래 유효한 native/KRW 결과 보존을 검사하도록 고쳤다. [첫 Client 실행](https://github.com/YouSangSon/Omni-Folio/actions/runs/40191808424)은 lazy Overview 항목이 아직 생성되지 않아 그 항목의 ancestor에서 Scrollable을 찾지 못했다. 기존 TWR 테스트의 OverviewPage descendant Scrollable 경로를 재사용했다.
-- [다음 Client 실행](https://github.com/YouSangSon/Omni-Folio/actions/runs/40192021622)은 집중63개·format 통과 후 두 fake의 명시 import에서 새 타입이 빠진 것과 parser throw의 중괄호 규칙으로 분석이 실패했다. 필요한 타입과 중괄호만 보완했다. 그 시점의 [Core 실행](https://github.com/YouSangSon/Omni-Folio/actions/runs/40192021614)은 집중 통과 후 전체 검사 중 소유 실행만 취소해 최종 head의 중복 전체 실행을 줄였다. 취소된 검사는 전체 성공으로 집계하지 않는다.
+- [첫 Core 실행](https://github.com/YouSangSon/Kairos/actions/runs/40191808448)은 FX source/pair/observed_at 중복 금지 조건을 위반한 테스트 입력에서 실패했다. 같은 시각의 두 행을 허용하도록 저장 계약을 약화하지 않고 두 번째 기록의 거절과 원래 유효한 native/KRW 결과 보존을 검사하도록 고쳤다. [첫 Client 실행](https://github.com/YouSangSon/Kairos/actions/runs/40191808424)은 lazy Overview 항목이 아직 생성되지 않아 그 항목의 ancestor에서 Scrollable을 찾지 못했다. 기존 TWR 테스트의 OverviewPage descendant Scrollable 경로를 재사용했다.
+- [다음 Client 실행](https://github.com/YouSangSon/Kairos/actions/runs/40192021622)은 집중63개·format 통과 후 두 fake의 명시 import에서 새 타입이 빠진 것과 parser throw의 중괄호 규칙으로 분석이 실패했다. 필요한 타입과 중괄호만 보완했다. 그 시점의 [Core 실행](https://github.com/YouSangSon/Kairos/actions/runs/40192021614)은 집중 통과 후 전체 검사 중 소유 실행만 취소해 최종 head의 중복 전체 실행을 줄였다. 취소된 검사는 전체 성공으로 집계하지 않는다.
 - 위 보완은 테스트·import·문장 블록에 한정되며 금융 계산·wire 계약·schema를 바꾸지 않았다. 초기 실패와 취소 로그는 각각 보관했다.
 
 ### 최종 원격 실행 증거
@@ -71,8 +71,8 @@ flowchart LR
 | 대상 | 확인한 결과 |
 |---|---|
 | 최종 head | `e757cfa375f64d5ee2a54b167d28db423077ad1a` |
-| [Core40192233253](https://github.com/YouSangSon/Omni-Folio/actions/runs/40192233253) / job121165497476 | 집중 Go1.321s, 전체 core450.026s·내부5패키지, vet/format, Python39, JSON syntax30, 소유 자원 cleanup·source identity 모두 통과 |
-| [Client40192233250](https://github.com/YouSangSon/Omni-Folio/actions/runs/40192233250) / job121165487729 | 집중63·전체327, Dart29파일 변경0·analyze, web/Android ARM64 release·권한 반례8개·source identity 모두 통과 |
+| [Core40192233253](https://github.com/YouSangSon/Kairos/actions/runs/40192233253) / job121165497476 | 집중 Go1.321s, 전체 core450.026s·내부5패키지, vet/format, Python39, JSON syntax30, 소유 자원 cleanup·source identity 모두 통과 |
+| [Client40192233250](https://github.com/YouSangSon/Kairos/actions/runs/40192233250) / job121165487729 | 집중63·전체327, Dart29파일 변경0·analyze, web/Android ARM64 release·권한 반례8개·source identity 모두 통과 |
 | client tree | `41118df2bac1c1923748aa589c8a50cb87cd7861` |
 | 새 APK | 23,481,098 bytes, SHA256 `729e3636ce65d64f5d459e99b9ca3c2f2195f1063723d99cac86c01e6bceeacc` |
 | release 등록 코드 | SHA256 `5d31e4d80984b4f5254d2e6629d2cc2b16760ab4774a94faa863c48897f18326`, 테스트 plugin 제외·기존 file selector 유지 |

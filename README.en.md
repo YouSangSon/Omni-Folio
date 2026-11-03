@@ -1,6 +1,24 @@
-# Omni-Folio
+<div align="center">
+
+# Kairos
+
+**Read opportunities. Manage risk.**
+
+A personal investment system for long-term wealth: gather information, decide, invest, rebalance, and review.
+
+[![Core checks](https://github.com/YouSangSon/Kairos/actions/workflows/core-checks.yml/badge.svg)](https://github.com/YouSangSon/Kairos/actions/workflows/core-checks.yml)
+[![Client release](https://github.com/YouSangSon/Kairos/actions/workflows/client-android-release.yml/badge.svg)](https://github.com/YouSangSon/Kairos/actions/workflows/client-android-release.yml)
+![Flutter](https://img.shields.io/badge/Flutter-3.47.1-02569B?logo=flutter&logoColor=white)
+![Go](https://img.shields.io/badge/Go-1.24.5-00ADD8?logo=go&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.14.5-3776AB?logo=python&logoColor=white)
+
+[Purpose](#purpose) · [Current status](#status) · [Quick start](#quick-start) · [Documentation](#documentation)
 
 [한국어](README.md) · [日本語](README.ja.md) · [English](README.en.md) · [简体中文](README.zh-CN.md)
+
+</div>
+
+---
 
 A project to build a personal investment management system that automatically gathers information, detects opportunities and risks, and recommends actions or invests and rebalances within limits authorized in advance.
 
@@ -79,8 +97,8 @@ Required tools:
 The project's [`.tool-versions`](.tool-versions) pins Flutter 3.47.1 stable, Go 1.24.5, and Python 3.14.5. The Python research runtime has no third-party packages.
 
 ```sh
-git clone https://github.com/YouSangSon/Omni-Folio.git
-cd Omni-Folio
+git clone https://github.com/YouSangSon/Kairos.git
+cd Kairos
 asdf install
 make bootstrap
 make check
@@ -140,6 +158,9 @@ make client-ios-release API_URL=http://127.0.0.1:8080
 ```
 
 The outputs are `output/ios-release-<source SHA>/Runner.app` and `build.json`. `COMPLETE` confirms that binary checks and owned temporary-resource cleanup succeeded. Existing output is preserved. Signing, installation, physical-device, and store checks are separate. See the [build mechanism and evidence](gates/g2-client.md#ios-release-packaging-2026-10-25).
+
+<details>
+<summary><strong>Explore workflows and commands</strong></summary>
 
 <a id="workflows"></a>
 
@@ -623,6 +644,8 @@ Compose runs a non-root/read-only core after a one-shot migration and exposes th
 
 Runtime limits allocate `0.25` CPU and `512 MiB` to `migrate`, and `0.75` CPU and `1536 MiB` to `core`, totaling `1 vCPU` and `2 GiB`. Each container rotates logs across `3` files of `10 MB`. These are not build-resource limits or throughput guarantees. For private remote verification, first check the [shared-VM entry conditions](gates/g6-deployment.md#single-node-resource-budget) and use SSH. Application of these settings in the VM runtime remains unverified.
 
+</details>
+
 <a id="documentation"></a>
 
 ## Repository layout
@@ -661,3 +684,5 @@ Find documents by purpose in [`docs/README.md`](docs/README.md). Do not attach s
 ## License
 
 No separate open-source license has been granted. Public visibility of the repository is not the same as permission to reuse its code.
+
+[Name and existing settings](docs/project-identity.md)

@@ -1,4 +1,4 @@
-# Omni Folio Design System Master
+# Kairos Design System Master
 
 Flutter app UI의 기본 계약이다. 페이지별 문서는 이 계약을 좁힐 수는 있어도 신뢰, 접근성, 상태 표시 규칙을 완화할 수 없다. 마케팅·scroll storytelling·hover-only 상호작용과 CSS 구현 규칙은 적용하지 않는다.
 

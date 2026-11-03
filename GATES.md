@@ -1,4 +1,4 @@
-# Omni Folio Gates
+# Kairos Gates
 
 ## Goal
 

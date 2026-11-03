@@ -1,6 +1,24 @@
-# Omni-Folio
+<div align="center">
+
+# Kairos
+
+**機会を読み、リスクを管理する。**
+
+情報収集から判断・投資・リバランス・振り返りまで、長期の資産形成を支える個人向け投資運用システム。
+
+[![Core checks](https://github.com/YouSangSon/Kairos/actions/workflows/core-checks.yml/badge.svg)](https://github.com/YouSangSon/Kairos/actions/workflows/core-checks.yml)
+[![Client release](https://github.com/YouSangSon/Kairos/actions/workflows/client-android-release.yml/badge.svg)](https://github.com/YouSangSon/Kairos/actions/workflows/client-android-release.yml)
+![Flutter](https://img.shields.io/badge/Flutter-3.47.1-02569B?logo=flutter&logoColor=white)
+![Go](https://img.shields.io/badge/Go-1.24.5-00ADD8?logo=go&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.14.5-3776AB?logo=python&logoColor=white)
+
+[プロジェクトの目標](#purpose) · [現在の状態](#status) · [クイックスタート](#quick-start) · [ドキュメント](#documentation)
 
 [한국어](README.md) · [日本語](README.ja.md) · [English](README.en.md) · [简体中文](README.zh-CN.md)
+
+</div>
+
+---
 
 情報を自動収集して投資機会とリスクを捉え、根拠のある投資行動を提案するか、事前に許可された範囲で自動投資・リバランスを行う個人向け投資運用システムを目指すプロジェクトです。
 
@@ -79,8 +97,8 @@ flowchart LR
 プロジェクトの [`.tool-versions`](.tool-versions) は Flutter 3.47.1 stable、Go 1.24.5、Python 3.14.5 を固定しています。Python research runtime にサードパーティーパッケージはありません。
 
 ```sh
-git clone https://github.com/YouSangSon/Omni-Folio.git
-cd Omni-Folio
+git clone https://github.com/YouSangSon/Kairos.git
+cd Kairos
 asdf install
 make bootstrap
 make check
@@ -140,6 +158,9 @@ make client-ios-release API_URL=http://127.0.0.1:8080
 ```
 
 出力は `output/ios-release-<source SHA>/Runner.app` と `build.json` です。`COMPLETE` がある場合に、バイナリ検査と所有する一時リソースの回収まで成功しています。既存の出力は上書きしません。署名・インストール・実機・ストア検証は別途必要です。[ビルドの仕組みと検証根拠](gates/g2-client.md#ios-release-packaging-2026-10-25)を参照してください。
+
+<details>
+<summary><strong>利用フローとコマンドの詳細</strong></summary>
 
 <a id="workflows"></a>
 
@@ -623,6 +644,8 @@ Compose は one-shot migration 後に non-root/read-only core を実行し、API
 
 実行上限は `migrate` が `0.25` CPU・`512 MiB`、`core` が `0.75` CPU・`1536 MiB` で、合計 `1 vCPU`・`2 GiB` です。各コンテナーのログは `10 MB` のファイル `3` 個でローテーションします。ビルドのリソース上限や処理性能の保証ではありません。非公開のリモート検証では、先に[共有 VM の開始条件](gates/g6-deployment.md#single-node-resource-budget)を確認して SSH を使ってください。VM ランタイムへの適用は未検証です。
 
+</details>
+
 <a id="documentation"></a>
 
 ## リポジトリ構成
@@ -661,3 +684,5 @@ docs/              目標、ADR、研究、broker/UX ドキュメント
 ## ライセンス
 
 現在、別途オープンソースライセンスを付与していません。リポジトリの公開閲覧が可能であることと、コードを再利用する権利は同じではありません。
+
+[名称と既存の設定](docs/project-identity.md)

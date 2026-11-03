@@ -52,7 +52,7 @@ class _OmniFolioAppState extends State<OmniFolioApp> {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'Omni Folio',
+    title: 'Kairos',
     theme: _theme(Brightness.light),
     darkTheme: _theme(Brightness.dark),
     themeMode: ThemeMode.system,
@@ -87,7 +87,7 @@ class _OmniFolioAppState extends State<OmniFolioApp> {
             );
             return Scaffold(
               appBar: AppBar(
-                title: Text(wide ? 'Omni Folio' : labels[_tab]),
+                title: Text(wide ? 'Kairos' : labels[_tab]),
                 actions: [
                   Builder(
                     builder: (context) => IconButton(

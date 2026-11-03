@@ -22,7 +22,7 @@ backup20은 source/candidate/restore의 관심목록 hash·revision·개수를 �
 
 ## 검증 근거
 
-- RED: `cf3e4a6061e33e90e8a5d6180b393ddd924b3542`, [Core run40632161851](https://github.com/YouSangSon/Omni-Folio/actions/runs/40632161851), job122630802609. 실제 GET `/v1/watchlist`가404를 반환했다. 전체 검사와 source identity는 skipped이며 통과로 세지 않는다.
+- RED: `cf3e4a6061e33e90e8a5d6180b393ddd924b3542`, [Core run40632161851](https://github.com/YouSangSon/Kairos/actions/runs/40632161851), job122630802609. 실제 GET `/v1/watchlist`가404를 반환했다. 전체 검사와 source identity는 skipped이며 통과로 세지 않는다.
 - 검증 대상: 서버 HTTP·동시 CAS·동일 요청 재시도·ABA·cap·Origin·clock·철회·가격 충돌·private 값 비노출·현재/과거 백업, shared `golden-watchlist.json` producer/consumer, bounded HTTP와 Flutter 요청 수명·폼·이동·접근성.
 - 로컬에서는 정적 JSON/참조·diff·고정 formatter만 사용한다. runtime·테스트·analyze·빌드는 실행하지 않는다. 기존 무료 표준 Ubuntu CI의 최종 소스 검사 결과를 아래에 기록한다.
 
@@ -30,12 +30,12 @@ backup20은 source/candidate/restore의 관심목록 hash·revision·개수를 �
 
 ## 최종 검증과 병합 근거
 
-최종 head `da49b77ebd7942debc93ec9d0514bf57f7e80a2d`를 [PR #61](https://github.com/YouSangSon/Omni-Folio/pull/61)로 main `034d546ea1ea379a8640a1b09d924bdbd2de89d4`에 병합했다. ancestry와 전체 tree `7c3d00922698ae92df856897d523b1c4e83972fe` 일치를 확인했다. 이후 문서 변경은 검증된 코드·계약·workflow가 같은지 대조해 근거를 재사용한다.
+최종 head `da49b77ebd7942debc93ec9d0514bf57f7e80a2d`를 [PR #61](https://github.com/YouSangSon/Kairos/pull/61)로 main `034d546ea1ea379a8640a1b09d924bdbd2de89d4`에 병합했다. ancestry와 전체 tree `7c3d00922698ae92df856897d523b1c4e83972fe` 일치를 확인했다. 이후 문서 변경은 검증된 코드·계약·workflow가 같은지 대조해 근거를 재사용한다.
 
 | 검증 | 근거 | 결과 |
 | --- | --- | --- |
-| Core | head `1296bbf0d92f981e72b229e8ad86efd9ffaf2d60`, [run40635432865](https://github.com/YouSangSon/Omni-Folio/actions/runs/40635432865), job122641207638 | 관심목록 집중2.210s·root 전체446.025s·내부5 package·vet/형식·Python39·JSON 구문39·자원 정리·source identity 통과 |
-| Client | 최종 head, [run40636055417](https://github.com/YouSangSon/Omni-Folio/actions/runs/40636055417), job122643168088 | 집중22/전체457·format42파일0변경·analyze·web/Android ARM64 release·권한 반례8·source identity 통과 |
+| Core | head `1296bbf0d92f981e72b229e8ad86efd9ffaf2d60`, [run40635432865](https://github.com/YouSangSon/Kairos/actions/runs/40635432865), job122641207638 | 관심목록 집중2.210s·root 전체446.025s·내부5 package·vet/형식·Python39·JSON 구문39·자원 정리·source identity 통과 |
+| Client | 최종 head, [run40636055417](https://github.com/YouSangSon/Kairos/actions/runs/40636055417), job122643168088 | 집중22/전체457·format42파일0변경·analyze·web/Android ARM64 release·권한 반례8·source identity 통과 |
 | APK | client tree `ff3d36ccec088bc3458ea1ef93e7401ffde1ec2e` | 23677898 bytes, SHA256 `3df29b09bd85894d0a2e4ee9d0d7940be7a5b98ba120e12988d94184a9817f8b` |
 | Android 등록·권한 | registrant SHA256 `5d31e4d80984b4f5254d2e6629d2cc2b16760ab4774a94faa863c48897f18326` | file selector 등록·IntegrationTestPlugin 제외·INTERNET와 signature receiver 권한 확인 |
 | 로컬 정적 확인 | JSON 구문39·OpenAPI 참조322·기존 path/schema 불변 | README 네 언어 shell29개 일치·변경 Markdown 경로·gofmt·고정 Dart formatter·diff 확인. runtime 실행 없음 |

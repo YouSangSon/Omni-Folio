@@ -66,10 +66,10 @@
 - Modify: `PLAN.md`
 - Modify: `GATES.md`
 - Modify: `CONTEXT.md`
-- Modify: `docs/omni-folio-plan.md`
+- Modify: `docs/kairos-plan.md`
 
 - [ ] Record RED/GREEN evidence and explicitly retain financial performance and automatic rollback as open follow-ups.
 - [ ] Obtain an independent read-only review of derivation, state guards, recovery, legacy migration, and no-authority-mutation boundary.
 - [ ] Run `make check`, `make smoke`, `cd services/core && go test -race -count=1 ./...`, `cd services/core && govulncheck ./...`, and `git diff --check`.
 - [ ] Confirm no owned listener, smoke directory, test database, Python cache, Flutter build artifact, container, or pod remains.
-- [ ] Sync the durable boundary to the Omni-Folio project wiki.
+- [ ] Sync the durable boundary to the Kairos project wiki.

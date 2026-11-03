@@ -22,4 +22,4 @@ Parallax's containment/redaction helpers are not ported yet because the current 
 
 ## Provenance rule
 
-If future work copies a substantial implementation rather than adapting a concept, preserve the originating MIT copyright notice in the copied file or an adjacent `NOTICE`, pin the source revision, and add a contract test in Omni Folio before using it.
+If future work copies a substantial implementation rather than adapting a concept, preserve the originating MIT copyright notice in the copied file or an adjacent `NOTICE`, pin the source revision, and add a contract test in Kairos before using it.

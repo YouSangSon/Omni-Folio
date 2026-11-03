@@ -16,11 +16,11 @@
 
 ## 검증 근거와 범위
 
-RED head `616c309`의 [무료 표준 Core CI](https://github.com/YouSangSon/Omni-Folio/actions/runs/40153465449)에서 기존 명령의 `unknown command "paper-input-status"`를 재현했다. `TestPaperInputStatus*`는 미관찰·import-only·신호/주문·과거 선택, none/no-delta·HALT, 이전 verified backup, 실제 read-only 쓰기 거절·특수문자 URI, 취소·손상·오류 redaction을 다룬다. 저장 내용 충돌·중간 봉 누락·최초 receipt byte 충돌은 hash를 다시 맞춘 입력으로 저장 경계까지 검증한다.
+RED head `616c309`의 [무료 표준 Core CI](https://github.com/YouSangSon/Kairos/actions/runs/40153465449)에서 기존 명령의 `unknown command "paper-input-status"`를 재현했다. `TestPaperInputStatus*`는 미관찰·import-only·신호/주문·과거 선택, none/no-delta·HALT, 이전 verified backup, 실제 read-only 쓰기 거절·특수문자 URI, 취소·손상·오류 redaction을 다룬다. 저장 내용 충돌·중간 봉 누락·최초 receipt byte 충돌은 hash를 다시 맞춘 입력으로 저장 경계까지 검증한다.
 
-검사와 최종 통과 결과는 [PR #38](https://github.com/YouSangSon/Omni-Folio/pull/38)의 해당 head에 연결한다. `.github/workflows/core-checks.yml`은 public/same-repo PR만 고정 action·표준 runner·read-only token으로 실행하고 cache/artifact를 업로드하지 않는다. 집중 검사는 기존 `make test`, 최종 검사는 `make check DART=true FLUTTER=true CORE_TEST_PACKAGES='-timeout=30m ./...'`로 소유 preflight/cleanup을 유지한다. Flutter 소스는 같으므로 이번 Core 검사에서 Dart format·Flutter analyze/test를 실행하지 않는다.
+검사와 최종 통과 결과는 [PR #38](https://github.com/YouSangSon/Kairos/pull/38)의 해당 head에 연결한다. `.github/workflows/core-checks.yml`은 public/same-repo PR만 고정 action·표준 runner·read-only token으로 실행하고 cache/artifact를 업로드하지 않는다. 집중 검사는 기존 `make test`, 최종 검사는 `make check DART=true FLUTTER=true CORE_TEST_PACKAGES='-timeout=30m ./...'`로 소유 preflight/cleanup을 유지한다. Flutter 소스는 같으므로 이번 Core 검사에서 Dart format·Flutter analyze/test를 실행하지 않는다.
 
-최종 head `ade041a1fa543e4c086c97e751420431519089f7`의 [Core CI #40155050448](https://github.com/YouSangSon/Omni-Folio/actions/runs/40155050448)은 2026-10-25에 전체 성공했다. Ubuntu 24.04 표준 runner에서 Go 1.24.5·Python 3.14.5 pin을 확인했다.
+최종 head `ade041a1fa543e4c086c97e751420431519089f7`의 [Core CI #40155050448](https://github.com/YouSangSon/Kairos/actions/runs/40155050448)은 2026-10-25에 전체 성공했다. Ubuntu 24.04 표준 runner에서 Go 1.24.5·Python 3.14.5 pin을 확인했다.
 
 - 집중 `make test FLUTTER=true CORE_TEST_PACKAGES='-run=^TestPaperInputStatus -count=1 -timeout=10m ./...'`: 새 Go 시나리오 8.560초, Python39와 소유 자원 cleanup 통과.
 - 최종 `make check DART=true FLUTTER=true CORE_TEST_PACKAGES='-timeout=30m ./...'`: Go format/vet·전체 검사(core408.602초와 internal packages), Python compile/unit39·JSON17 구문 검사와 소유 자원 cleanup 통과. 별도 `git diff --exit-code`도 통과했다. 중간 컴파일·SIGINT 실패를 이 성공으로 덮어 쓰지 않는다.
@@ -32,6 +32,6 @@ RED head `616c309`의 [무료 표준 Core CI](https://github.com/YouSangSon/Omni
 
 첫 구현은 기존 시각 helper의 `bool` 반환형을 오류로 연결해 컴파일에 실패했다. 이를 교정한 뒤 새 Go 조회·native CLI 검사는 통과했지만, 기존 Python watcher의 SIGINT 종료 검사가 타임아웃됐다. 전체 Core 검사는 이 단계에서 시작하지 않았다. 실패를 전체 통과로 합산하지 않는다.
 
-[통제된 RED](https://github.com/YouSangSon/Omni-Folio/actions/runs/40154797894)의 `513ba84`는 별도 launcher가 `SIGINT=SIG_IGN`을 설정·확인한 뒤 실제 모듈을 `execv`한다. 첫 제안 뒤 SIGINT를 보내도 기존 5초 안에 끝나지 않았다. [Python의 기본 signal 규칙](https://docs.python.org/3.14/library/signal.html#general-rules)은 부모가 바꾼 SIGINT 상태가 기본 `KeyboardInterrupt` 처리의 조건임을 설명한다. Makefile background wrapper가 disposition을 초기화하지 않는 점은 소스로 확인했고, 통제된 상속 무시는 원격으로 재현했다.
+[통제된 RED](https://github.com/YouSangSon/Kairos/actions/runs/40154797894)의 `513ba84`는 별도 launcher가 `SIGINT=SIG_IGN`을 설정·확인한 뒤 실제 모듈을 `execv`한다. 첫 제안 뒤 SIGINT를 보내도 기존 5초 안에 끝나지 않았다. [Python의 기본 signal 규칙](https://docs.python.org/3.14/library/signal.html#general-rules)은 부모가 바꾼 SIGINT 상태가 기본 `KeyboardInterrupt` 처리의 조건임을 설명한다. Makefile background wrapper가 disposition을 초기화하지 않는 점은 소스로 확인했고, 통제된 상속 무시는 원격으로 재현했다.
 
 수정은 [`signal_cli.py`](../services/research/omni_research/signal_cli.py)의 CLI 실행 진입점에서만 `signal.default_int_handler`를 등록하는 것이다. 기존 `KeyboardInterrupt → 130`과 보관 함수의 `finally` 정리를 재사용한다. import/library 호출의 전역 signal 정책과 SIGTERM의 OS 기본 종료, 공통 Makefile owner/PGID cleanup은 변경하지 않는다. 일반 상속·명시적 상속 무시와 SIGTERM/SIGKILL·잘못된 입력 사례를 유지하며 종료 대기를 늘리지 않는다. 모든 중단 위치나 실제 정전을 증명하는 범위는 아니다.

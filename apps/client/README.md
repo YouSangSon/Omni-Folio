@@ -1,4 +1,4 @@
-# Omni Folio Client
+# Kairos Client
 
 Flutter client for iOS, Android, and app-centric web. The current slice shows ledger trust state, holdings, a clearly labeled local-sample asset chart with client-side 30/90/365-day/all display ranges and a matching exact OHLCV alternative, CSV preview, and idempotent apply receipts; it never submits orders.
 

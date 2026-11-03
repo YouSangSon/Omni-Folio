@@ -73,7 +73,7 @@
 ### Task 4: Evidence, documentation, and local checkpoint
 
 **Files:**
-- Modify: `PLAN.md`, `GATES.md`, `CONTEXT.md`, `DESIGN.md`, `docs/omni-folio-plan.md`
+- Modify: `PLAN.md`, `GATES.md`, `CONTEXT.md`, `DESIGN.md`, `docs/kairos-plan.md`
 - Create: `gates/g1d-fx-exchange.md`
 
 **Interfaces:**

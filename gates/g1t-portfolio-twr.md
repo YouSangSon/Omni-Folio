@@ -1,6 +1,6 @@
 # G1.24 입출금 경계의 누적 TWR
 
-상태: [PR #46](https://github.com/YouSangSon/Omni-Folio/pull/46)의 구현·독립 금융 리뷰와 보완분 재검토, 최종 무료 원격 Core/Client 검사·새 web/Android 릴리스가 통과해 main에 병합했다. 배포·실제 broker 성과 검증과 전체 Goal 완료는 별도다.
+상태: [PR #46](https://github.com/YouSangSon/Kairos/pull/46)의 구현·독립 금융 리뷰와 보완분 재검토, 최종 무료 원격 Core/Client 검사·새 web/Android 릴리스가 통과해 main에 병합했다. 배포·실제 broker 성과 검증과 전체 Goal 완료는 별도다.
 
 ## 문제와 원리
 
@@ -47,12 +47,12 @@
 
 ## 검증과 미확인
 
-- RED: 커밋 `2662bbb7d069cd5ca8bc86780769d24952957129`, [Core 40166668438](https://github.com/YouSangSon/Omni-Folio/actions/runs/40166668438), `TestPortfolioTWRNeutralizesAdditionalCapital`에서 실제 API404. 집중 실패 뒤 전체 검사는 건너뛰었다.
+- RED: 커밋 `2662bbb7d069cd5ca8bc86780769d24952957129`, [Core 40166668438](https://github.com/YouSangSon/Kairos/actions/runs/40166668438), `TestPortfolioTWRNeutralizesAdditionalCapital`에서 실제 API404. 집중 실패 뒤 전체 검사는 건너뛰었다.
 - Python 표준 `Fraction`의 exact 곱과 별도 Decimal100/half-even으로 수치11사례를 만들었다. PP의 두1% 구간·추가입금·부분출금·손실·실제0·비유한 소수·반올림 경계를 포함한다. 이는 가벼운 참조 데이터 계산이다.
 - 집중 Go 회귀는 실제 SQLite 원장/HTTP·공유 응답, 정정·같은 시각/나노초 순서·두 시점 FX와24시간·분할 단위·중간 소진/기말 전액손실·잔액 대조·budget·손상/취소를 대상으로 한다. Flutter는 같은 실제 응답 골든과 닫힌 parser·GET 경로·실패 보존·dispose·상태 구분·화면 연결을 검사한다.
 - 최종 검증 head `ca7b93e961c570b19e4e34b8873a092d2a61fb2d`와 구현 main `ca4f7dc88a7b33ffa73f050bc3ef08e467d8d999`의 전체 tree가 같음을 확인했다. client tree는 `f580739e2ab4a0eeac85eb60a71542a46265a296`이다. 설계·최종 금융 코드와 설명/parser/분할 경계 보완 delta의 독립 리뷰에서 남은 차단 사항이 없었다. 마지막 스타일 보완은 중괄호4곳·테스트 이름 표기만 바꿨고 계산 의미를 유지했다.
-- [Core CI40181637147](https://github.com/YouSangSon/Omni-Folio/actions/runs/40181637147): `make test FLUTTER=true CORE_TEST_PACKAGES='-run=^TestPortfolioTWR -count=1 -timeout=10m ./...'`의 core 집중2.489초와 `make check DART=true FLUTTER=true CORE_TEST_PACKAGES='-timeout=30m ./...'`의 core 전체428.562초·내부 패키지·Go vet/format·Python39·JSON24·소유 자원 cleanup/source identity가 통과했다. 이는 해당 CI 소요이며 성능 개선율이 아니다.
-- [Client CI40181637149](https://github.com/YouSangSon/Omni-Folio/actions/runs/40181637149): 집중44·전체264, Dart format27파일 변경0/analyze, 새 web release와 ARM64 APK·권한 반례8·소스 일치가 통과했다. 명령은 `flutter test --no-pub --concurrency=1 test/portfolio_twr_test.dart`와 전체 `flutter test --no-pub --concurrency=1`이다. 실제 0·전액손실·전액출금/계산 불가·sample·이전 응답 보존·같은 시각/나노초·양쪽 theme·375px/가로·200% text/reduced motion과 자동 action label/tap target을 포함한다.
+- [Core CI40181637147](https://github.com/YouSangSon/Kairos/actions/runs/40181637147): `make test FLUTTER=true CORE_TEST_PACKAGES='-run=^TestPortfolioTWR -count=1 -timeout=10m ./...'`의 core 집중2.489초와 `make check DART=true FLUTTER=true CORE_TEST_PACKAGES='-timeout=30m ./...'`의 core 전체428.562초·내부 패키지·Go vet/format·Python39·JSON24·소유 자원 cleanup/source identity가 통과했다. 이는 해당 CI 소요이며 성능 개선율이 아니다.
+- [Client CI40181637149](https://github.com/YouSangSon/Kairos/actions/runs/40181637149): 집중44·전체264, Dart format27파일 변경0/analyze, 새 web release와 ARM64 APK·권한 반례8·소스 일치가 통과했다. 명령은 `flutter test --no-pub --concurrency=1 test/portfolio_twr_test.dart`와 전체 `flutter test --no-pub --concurrency=1`이다. 실제 0·전액손실·전액출금/계산 불가·sample·이전 응답 보존·같은 시각/나노초·양쪽 theme·375px/가로·200% text/reduced motion과 자동 action label/tap target을 포함한다.
 - APK는23,481,098 bytes·SHA256 `529d7b585183666a239da38902f5e4b0f5b1170da8677b74e7aa47e2e26a875a`, registrant SHA256 `5d31e4d80984b4f5254d2e6629d2cc2b16760ab4774a94faa863c48897f18326`이다. 기존 INTERNET·signature-protected dynamic receiver 두 권한만 허용했고 artifact/cache 업로드는 없다.
 - 첫 후보는 Flutter38통과 후 semantics handle의 테스트 종료 전 해제 누락으로1개가 실패했다. 본문 `try/finally`로 해제해 집중44개가 통과했고, 이어진 분석에서 중괄호/문자열 표기 규칙5건을 수정했다. 두 중간 Core 집중 검사는 통과했고 변경된 최종 head의 전체 검사와 중복되는 중간 full 실행은 소유권을 확인해 취소했다. 취소한 검사를 통과로 계산하지 않는다. 실패·취소·최종 로그는 `docs/_internal/skill-outputs/goal-20261025-twr-*`에 보존한다.
 - 계약 리뷰에서 TWR에 남은 XIRR 설명과 계산 불가 사유/count 모순을 교정했다. 비표본 사유를 하나로 제한하고 `no_external_cash_flows`의0건, `cash_flow_limit`의1,000 초과, 나머지 계산 입력 사유의 양수 경계를 검증한다. 분할과 가격 관측 시각이 정확히 같은 경우의 거절도 고정했다.

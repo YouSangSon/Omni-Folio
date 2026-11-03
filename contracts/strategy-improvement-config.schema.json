@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://omni-folio.local/contracts/strategy-improvement-config.v1.schema.json",
-  "title": "Omni-Folio Strategy Improvement Config v1",
+  "title": "Kairos Strategy Improvement Config v1",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "experiment_id", "data", "strategy", "execution", "splits", "promotion"],

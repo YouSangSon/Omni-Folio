@@ -1,8 +1,8 @@
-# Omni Folio Goal Prompt
+# Kairos Goal Prompt
 
-Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장·기능을 단계적으로 추가할 수 있는 멀티 증권사 주식 앱으로 완성하라.
+Kairos를 개인이 실제로 오래 사용할 수 있고 증권사·시장·기능을 단계적으로 추가할 수 있는 멀티 증권사 주식 앱으로 완성하라.
 
-이 문서는 Omni Folio의 제품 목표, 실행 권한, 안전 상한, 아키텍처 원칙과 완료 조건을 정의하는 단일 goal prompt다. 구현을 시작하기 전에 [`PLAN.md`](PLAN.md), [`GATES.md`](GATES.md), [`CONTEXT.md`](CONTEXT.md), [`DESIGN.md`](DESIGN.md), [`docs/omni-folio-plan.md`](docs/omni-folio-plan.md), [`docs/omni-folio-research-report.md`](docs/omni-folio-research-report.md)를 읽는다. 현재 구현 순서와 완료 상태는 `PLAN.md`, promotion 근거는 `GATES.md`와 [`gates/`](gates/)만 정본으로 삼고 이 문서에 진행 로그를 복제하지 않는다.
+이 문서는 Kairos의 제품 목표, 실행 권한, 안전 상한, 아키텍처 원칙과 완료 조건을 정의하는 단일 goal prompt다. 구현을 시작하기 전에 [`PLAN.md`](PLAN.md), [`GATES.md`](GATES.md), [`CONTEXT.md`](CONTEXT.md), [`DESIGN.md`](DESIGN.md), [`docs/kairos-plan.md`](docs/kairos-plan.md), [`docs/kairos-research-report.md`](docs/kairos-research-report.md)를 읽는다. 현재 구현 순서와 완료 상태는 `PLAN.md`, promotion 근거는 `GATES.md`와 [`gates/`](gates/)만 정본으로 삼고 이 문서에 진행 로그를 복제하지 않는다.
 
 ## 최종 목표
 
@@ -23,7 +23,7 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 
 ## 반드시 지킬 원칙
 
-- 현재 작업공간과 `docs/omni-folio-research-report.md`, `docs/omni-folio-plan.md`를 먼저 읽고 현재 상태를 기준으로 작업한다.
+- 현재 작업공간과 `docs/kairos-research-report.md`, `docs/kairos-plan.md`를 먼저 읽고 현재 상태를 기준으로 작업한다.
 - 최종 목표는 여러 증권사 지원이지만 첫 어댑터는 **키움 REST API**로 고정한다. 국내주식 read-only, 차트·실시간, 키움 모의주문을 순서대로 완성한 뒤 **토스증권 Open API**를 두 번째 어댑터로 추가한다.
 - 브로커 어댑터와 시장 데이터 어댑터를 분리한다.
 - 거래 원장을 source of truth로 삼고 잔고·손익·성과는 원장에서 결정적으로 계산한다.
@@ -32,11 +32,11 @@ Omni Folio를 개인이 실제로 오래 사용할 수 있고 증권사·시장�
 - 환전 원장 event는 실제로 매도한 통화·금액과 매수한 통화·금액을 하나의 atomic record로 보존한다. 두 금액에서 환율을 역산해 현재 시세나 평가환율로 승격하지 않으며, 수수료가 있으면 별도 `FEE` event로 기록한다.
 - 평가용 환율은 방향이 명시된 direct observation으로 별도 보존한다. `rate`는 기준 통화 1단위당 상대 통화 단위이며 source·source observation ID·observed/fetched/recorded 시각과 canonical hash를 포함한다. 역환율·교차환율·보간·오래된 값 대체는 버전된 별도 정책과 골든 검증 없이는 만들지 않는다.
 - 클라이언트는 asdf로 stable 버전을 고정한 Flutter 하나로 iOS·Android·app-centric web을 제공한다. 공개 리서치·문서형 콘텐츠나 SEO 요구가 실제로 생길 때만 Next.js를 별도 web surface로 추가하며 Flutter 제품 화면을 중복 구현하지 않는다. 이전 React/PWA 우선 권장은 **superseded**다.
-- Flutter UX는 영웅문을 복제하지 않는다. 토스증권에서 참고한 쉬운 용어, 한 화면 한 결정, 점진적 상세 공개, 국내·미국의 일관된 흐름, 읽기 쉬운 차트, 명확한 주문 확인과 접근성을 Omni Folio 고유 디자인으로 구현한다.
+- Flutter UX는 영웅문을 복제하지 않는다. 토스증권에서 참고한 쉬운 용어, 한 화면 한 결정, 점진적 상세 공개, 국내·미국의 일관된 흐름, 읽기 쉬운 차트, 명확한 주문 확인과 접근성을 Kairos 고유 디자인으로 구현한다.
 - Go 모듈러 모놀리스가 ledger, order, risk, broker credential과 broker submit authority를 소유한다. Python은 research/backtest와 재현 가능한 산출물만 담당하며 broker credential, 운영 DB 쓰기, order-submit 권한을 갖지 않는다.
 - API 키와 계좌 식별자는 서버 측 안전한 저장소에만 두며 클라이언트, 로그, export, 오류 메시지에 노출하지 않는다.
 - 배포 가능한 Go 모듈러 모놀리스와 SQLite single-writer local로 시작한다. 로컬과 단일 노드 클라우드는 같은 OCI image를 사용하고 설정·secret·영속 저장소만 실행 프로필으로 바꾼다. 측정된 필요가 생기기 전에는 microservice, Redis, message broker, 동적 plugin SDK를 추가하지 않는다.
-- 신뢰할 수 있는 프레임워크·라이브러리는 회피하지 않는다. 직접 구현보다 정확성·성능·유지보수성이 나을 때 채택하되 공식 저장소의 활성도, license, 보안 이력, release 고정·lockfile, 공급망 검사와 Omni Folio 골든 fixture 교차검증을 통과해야 한다.
+- 신뢰할 수 있는 프레임워크·라이브러리는 회피하지 않는다. 직접 구현보다 정확성·성능·유지보수성이 나을 때 채택하되 공식 저장소의 활성도, license, 보안 이력, release 고정·lockfile, 공급망 검사와 Kairos 골든 fixture 교차검증을 통과해야 한다.
 - 새 의존성은 기능별로 하나의 주 구현만 선택한다. 백테스트·차트·Decimal처럼 핵심 결과를 만드는 라이브러리는 입력 snapshot과 버전을 manifest에 남기고 reference fixture와 결과가 어긋나면 승격을 차단한다.
 - 테스트가 만든 프로세스, listener, 임시 DB·디렉터리, bytecode/coverage/build 산출물, 컨테이너, Pod, volume, network와 Kind cluster는 성공·실패·SIGINT/SIGTERM 중단 경로 모두에서 소유 범위 안에서 회수한다. 각 test/check/smoke 실행은 고유 session ID·명시적 temp root·PID/PGID와 process start identity를 가지고 `t.Cleanup`·`defer`·shell `trap`으로 종료하며, 다음 실행은 죽은 owner가 남긴 명시적 Omni-Folio 자원만 선제 회수한다. 종료 후 pre/post inventory에서 owned 잔여물이 하나라도 있으면 테스트를 실패로 처리한다. 새 테스트·스모크·로컬 Kubernetes 검증은 이 cleanup contract에 묶인 wrapper나 같은 수준의 cleanup proof 없이는 완료로 보지 않는다. 현재 테스트는 Podman/Kind 자원을 만들지 않는다. 이를 도입할 때는 생성 직후 session temp root에 exact container/volume/network ID와 Kind cluster name을 기록하고 project·owner·session label을 함께 검증한 뒤 그 실행이 기록한 자원만 회수한다. 공용 label이나 이름 prefix만으로 다른 동시 실행의 자원을 삭제하거나 전역 prune·넓은 경로 삭제를 하지 않는다. SIGKILL·host crash처럼 trap이 실행될 수 없는 경우에도 다음 실행의 stale-owner 회수가 동일한 소유권 증거와 기록된 resource ID로 복구해야 한다.
 - 실전 주문은 절대 자동 활성화하지 않는다. 모의투자 검증, 체결-원장 reconciliation, 실패 복구, 사용자 명시 승인 전에는 비활성 상태로 유지한다.

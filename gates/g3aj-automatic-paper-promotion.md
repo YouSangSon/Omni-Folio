@@ -4,7 +4,7 @@
 
 **원격 CI 통과·main 병합.** Go core는 등록된 v1 `paper_candidate`를 현재 선택 전략과 같은 입력의 buy-and-hold에 비교한다. 세 구간의 조건을 통과하고 현재 상태도 유지될 때만 paper 선택을 바꾼다. Python의 적응형 후보 탐색이나 그 결과의 `paper_candidate` 표시는 이 고정 후보 비교의 증명이 아니다. v2 결과는 기존 registry와 신호 제출에서 계속 거부된다.
 
-테스트 head는 `4a9b7e5fc3ef306cc05b08a07e1db92ce5c0c7f3`, [PR #65](https://github.com/YouSangSon/Omni-Folio/pull/65)의 main은 `ae47a51e11bc722dd38d05a04c3d0e9f834c7130`이다. head가 main의 조상이며 전체 Git tree가 같다. 뒤의 검증 기록 변경은 `PLAN.md`, `GATES.md`, 이 gate만 바꾸므로 실행 근거를 재사용한다.
+테스트 head는 `4a9b7e5fc3ef306cc05b08a07e1db92ce5c0c7f3`, [PR #65](https://github.com/YouSangSon/Kairos/pull/65)의 main은 `ae47a51e11bc722dd38d05a04c3d0e9f834c7130`이다. head가 main의 조상이며 전체 Git tree가 같다. 뒤의 검증 기록 변경은 `PLAN.md`, `GATES.md`, 이 gate만 바꾸므로 실행 근거를 재사용한다.
 
 ## 선택 이유와 재사용
 
@@ -75,10 +75,10 @@ CSV의 사용 권한, provider, 종목 식별·거래소·corporate action 등 m
 
 ## 검증 근거
 
-- 실제 RED: head `b8dec58517c98306316da1853c9e63ac9680e61e`, [Core40645288609 job122672570413](https://github.com/YouSangSon/Omni-Folio/actions/runs/40645288609/job/122672570413)에서 `paper-promote`가 `unknown command`로 실패했다. 이후 import 누락, restore의 외래키/trigger 계약과 시각 표현 차이, 기존 migration 테스트의 외래키 예상 목록을 수정했다. 실패·취소한 실행을 통과 근거로 세지 않는다.
+- 실제 RED: head `b8dec58517c98306316da1853c9e63ac9680e61e`, [Core40645288609 job122672570413](https://github.com/YouSangSon/Kairos/actions/runs/40645288609/job/122672570413)에서 `paper-promote`가 `unknown command`로 실패했다. 이후 import 누락, restore의 외래키/trigger 계약과 시각 표현 차이, 기존 migration 테스트의 외래키 예상 목록을 수정했다. 실패·취소한 실행을 통과 근거로 세지 않는다.
 - 독립 리뷰의 과거 구간 재사용, 현금·연구 cutoff 위조, 알 수 없는 migration trigger 삭제 지적을 보완하고 재검토했다. 실제 계좌의 손실 후 현금9977.44018, 상태 변경 시 선택 보류, 취소/abort/정확한 재시도, 입력 변조, backup 필수 proof, rollback 뒤 같은 후보의 재선택과 과거 신호 보존을 확인했다. Go/Python의 실제 fold 함수도 부분체결·고정 후보·holdout의 후보/현재 전략/기준선 다섯 사례로 대조했다.
-- [Core40652322333](https://github.com/YouSangSon/Omni-Folio/actions/runs/40652322333), job122695055782: 자동 비교32개와 기존 journal migration1개의 집중 검사가18.198초에 통과했다. 이어 `make check DART=true FLUTTER=true CORE_TEST_PACKAGES='-timeout=30m ./...'`의 Core 전체444.051초·내부6패키지·Python48·JSON43 파싱·Go vet/format·소유 자원 cleanup·소스 일치가 통과했다. Ubuntu24.04, Go1.24.5, Python3.14.5, Go 병렬도2/빌드 병렬도1의 기존 무료 CI다. 시간은 CI 실행 시간이며 성능 개선율이 아니다.
-- [Client40652322242](https://github.com/YouSangSon/Omni-Folio/actions/runs/40652322242), job122695055796: 집중22/전체457·Dart format42파일 변경0·analyze·web/ARM64 release·권한 반례8·패키지/소스 일치가 통과했다. client tree는 `ff3d36ccec088bc3458ea1ef93e7401ffde1ec2e`다.
+- [Core40652322333](https://github.com/YouSangSon/Kairos/actions/runs/40652322333), job122695055782: 자동 비교32개와 기존 journal migration1개의 집중 검사가18.198초에 통과했다. 이어 `make check DART=true FLUTTER=true CORE_TEST_PACKAGES='-timeout=30m ./...'`의 Core 전체444.051초·내부6패키지·Python48·JSON43 파싱·Go vet/format·소유 자원 cleanup·소스 일치가 통과했다. Ubuntu24.04, Go1.24.5, Python3.14.5, Go 병렬도2/빌드 병렬도1의 기존 무료 CI다. 시간은 CI 실행 시간이며 성능 개선율이 아니다.
+- [Client40652322242](https://github.com/YouSangSon/Kairos/actions/runs/40652322242), job122695055796: 집중22/전체457·Dart format42파일 변경0·analyze·web/ARM64 release·권한 반례8·패키지/소스 일치가 통과했다. client tree는 `ff3d36ccec088bc3458ea1ef93e7401ffde1ec2e`다.
 - APK는23,677,898bytes, SHA256 `d59b279fbad80f91661e0dc6fee8488827adba81df658e626a11c7c7d15cd8ae`, registrant SHA256 `5d31e4d80984b4f5254d2e6629d2cc2b16760ab4774a94faa863c48897f18326`이다. 기존 INTERNET·signature-protected receiver 권한만 허용했다. cache/artifact 업로드는 없으며 같은 client 소스라는 사실을 APK byte 재현성으로 확대하지 않는다.
 - 로컬은 gofmt·diff·JSON 파싱·README 네 언어의 동일 shell30개(sh29·bash1)와 상대 링크 확인만 수행했다. JSON 파싱은 JSON Schema 의미 검증 실행이 아니다. 공유 호스트의 앱·테스트·빌드, 실제 제공자·VM·새 iOS·실기기·실주문은 실행하지 않았다. RED부터 최종 CI까지의 로그는 `docs/_internal/skill-outputs/goal-20261028-promotion-*.log`에 보존했다.
 

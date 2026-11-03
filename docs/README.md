@@ -1,4 +1,4 @@
-# Omni-Folio Documentation
+# Kairos Documentation
 
 문서의 기준 진입점입니다. 같은 결정을 여러 파일에서 재정의하지 않고 아래 owner 문서로 연결합니다.
 
@@ -16,12 +16,13 @@
 
 | 목적 | 문서 | 역할 |
 |---|---|---|
+| 이름과 설정 호환성 | [project-identity.md](project-identity.md) | Kairos 이름과 기존 데이터·인증·패키지 식별자의 경계 |
 | 도메인 용어·불변식 | [`../CONTEXT.md`](../CONTEXT.md) | ledger, broker truth, reconciliation, live-disabled의 공통 언어 |
-| 상세 실행 계획 | [`omni-folio-plan.md`](omni-folio-plan.md) | 조사, 단계, 위험, review decision ledger |
-| API·오픈소스 조사 | [`omni-folio-research-report.md`](omni-folio-research-report.md) | 공식 소스와 후보 생태계 비교 |
+| 상세 실행 계획 | [`kairos-plan.md`](kairos-plan.md) | 조사, 단계, 위험, review decision ledger |
+| API·오픈소스 조사 | [`kairos-research-report.md`](kairos-research-report.md) | 공식 소스와 후보 생태계 비교 |
 | 브로커·UX 결정 | [`broker-priority-and-ux.md`](broker-priority-and-ux.md) | 키움 우선, 토스증권 두 번째, Toss-inspired 원칙 |
 | 로컬 프로젝트 재사용 | [`reuse-audit.md`](reuse-audit.md) | Parallax/Mimir/akasha에서 채택·보류·거절한 패턴과 provenance |
-| UI token | [`../design-system/omni-folio/MASTER.md`](../design-system/omni-folio/MASTER.md) | 색상, typography, state, responsive/accessibility 규칙 |
+| UI token | [`../design-system/kairos/MASTER.md`](../design-system/kairos/MASTER.md) | 색상, typography, state, responsive/accessibility 규칙 |
 | 보안 보고 | [`../SECURITY.md`](../SECURITY.md) | credential·취약점 보고와 사고 대응 |
 | 수동 모의 실행 | [`local-paper-workflow.md`](local-paper-workflow.md) | 원본 연구·신규 CSV, 명시적 1회 paper 실행과 재시도/종료 경계 |
 | 원장 CSV 열람 | [`../gates/g1r-ledger-activity-export.md`](../gates/g1r-ledger-activity-export.md) | 검증된 공개 활동의 private export, 출력 한도와 backup 구분 |

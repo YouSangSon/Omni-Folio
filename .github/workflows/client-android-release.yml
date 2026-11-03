@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   android:
-    if: github.repository == 'YouSangSon/Omni-Folio' && github.event.repository.private == false && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.repository == 'YouSangSon/Kairos' && github.event.repository.private == false && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     defaults:
       run:

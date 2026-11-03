@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://omni-folio.local/contracts/strategy-improvement-config.v2.schema.json",
-  "title": "Omni-Folio Strategy Improvement Config v2 (paper fill arithmetic)",
+  "title": "Kairos Strategy Improvement Config v2 (paper fill arithmetic)",
   "type": "object",
   "additionalProperties": false,
   "required": [

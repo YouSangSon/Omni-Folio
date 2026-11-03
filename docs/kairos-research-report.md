@@ -1,4 +1,4 @@
-# Omni Folio: 개인 주식 앱 레퍼런스 조사
+# Kairos: 개인 주식 앱 레퍼런스 조사
 
 조사일: 2026-08-23 KST, broker/UX 결정 갱신 2026-08-24 KST
 판정: **GO, 첫 릴리스는 주문·자동매매 없는 읽기 전용 포트폴리오 MVP로 시작**
@@ -85,20 +85,20 @@ Broker adapter                 Market-data adapter
 | [LEAN](https://github.com/QuantConnect/Lean) | 알고리즘 생명주기, Algorithm Framework, backtest/live/reconciliation, reality modeling | Apache-2.0. 구조 참고 가치는 높지만 전체 엔진 이식은 과함. |
 | [NautilusTrader](https://github.com/nautechsystems/nautilus_trader) | event-driven backtest/live 공통 구조, message bus, 고성능 실행 모델 | LGPL-3.0. 설계 참고 가치는 높지만 개인 앱 MVP에는 무겁다. |
 
-결론은 포크가 아니다. Ghostfolio/Wealthfolio의 화면과 import 흐름, Portfolio Performance의 계산 의미를 참고하되 Omni Folio에는 필요한 최소 원장과 어댑터만 구현한다.
+결론은 포크가 아니다. Ghostfolio/Wealthfolio의 화면과 import 흐름, Portfolio Performance의 계산 의미를 참고하되 Kairos에는 필요한 최소 원장과 어댑터만 구현한다.
 
 ### 자동매매·퀀트 엔진 레퍼런스
 
 2026-08-23 기준 공식 문서와 공식 GitHub만 확인했다. GitHub API 기준 최근 push와 라이선스는 구현 직전 다시 확인한다.
 
-| 프로젝트 | 공식 확인 근거 | 전략 API와 실행 모델 | Omni Folio에 넣을 경계 | 과한 기능 |
+| 프로젝트 | 공식 확인 근거 | 전략 API와 실행 모델 | Kairos에 넣을 경계 | 과한 기능 |
 |---|---|---|---|---|
 | [LEAN](https://github.com/QuantConnect/Lean) | [Algorithm Engine](https://www.quantconnect.com/docs/v2/writing-algorithms/key-concepts/algorithm-engine), [Algorithm Framework](https://www.quantconnect.com/docs/v2/writing-algorithms/algorithm-framework/overview), [Live Reconciliation](https://www.quantconnect.com/docs/v2/writing-algorithms/live-trading/reconciliation), GitHub Apache-2.0 | universe, alpha, portfolio construction, risk, execution처럼 전략 단계를 분리하고 backtest/live 주문·체결 모델을 함께 다룬다. | 전략이 직접 주문하지 않고 signal과 portfolio target을 만들며 risk와 execution이 별도로 처리하는 구조. live reconciliation과 fill/slippage/fee 모델. | 전체 C# 엔진, 클라우드 런타임, 다자산 옵션·선물 모델, QuantConnect 플랫폼 종속 기능을 그대로 이식하는 것. |
 | [NautilusTrader](https://github.com/nautechsystems/nautilus_trader) | [Architecture](https://nautilustrader.io/docs/latest/concepts/architecture/), [Backtesting](https://nautilustrader.io/docs/latest/concepts/backtesting/), [Live Trading](https://nautilustrader.io/docs/latest/concepts/live/), GitHub LGPL-3.0 | event-driven trading platform으로 backtest, sandbox, live에서 같은 kernel과 전략 개념을 재사용하며 risk/execution/reconciliation 경계를 둔다. | 교체 가능한 clock/data/execution adapter, deterministic event ordering, startup reconciliation, order/execution event log. | Rust/Python 고성능 엔진 전체, 외부 message bus, order book/HFT 세부 구조를 요구 없이 복제하는 것. |
 | [vectorbt](https://github.com/polakowo/vectorbt) | [Features](https://vectorbt.dev/getting-started/features/), [License](https://github.com/polakowo/vectorbt/blob/master/LICENSE.md), GitHub license auto-detection은 NOASSERTION | pandas/NumPy/Numba 중심의 벡터화 백테스트, 지표·signal·portfolio 분석에 강하다. | 리서치 단계의 빠른 파라미터 스윕과 결과 교차 검증. 내부 MVP는 단순 이벤트 백테스터부터 시작. | 실시간 주문 상태 머신, 브로커 체결 reconciliation, 장애 복구 엔진으로 쓰는 것. |
 | [Backtrader](https://github.com/mementum/backtrader) | [Concepts](https://www.backtrader.com/docu/concepts/), [Live Trading](https://www.backtrader.com/docu/live/live/), GitHub GPL-3.0 | Cerebro 중심으로 data feed, strategy, broker, sizer, analyzer를 연결한다. live trading 문서도 있다. | 전략 생명주기와 수수료·슬리피지·analyzer 개념 참고. | GPL 코어 의존, 신규 앱 핵심 엔진 채택, 오래된 live broker 구조에 맞추는 것. |
 
-Omni Folio는 일반 목적 엔진을 바로 새로 만들지 않는다. LEAN과 NautilusTrader를 짧게 POC해 KIS adapter, Python 전략 경험, backtest/live parity, 운영 복잡도, 라이선스를 비교하고 적합한 엔진이 있으면 재사용한다. 둘 다 맞지 않을 때만 아래 경계의 최소 일봉/분봉 엔진을 구현한다.
+Kairos는 일반 목적 엔진을 바로 새로 만들지 않는다. LEAN과 NautilusTrader를 짧게 POC해 KIS adapter, Python 전략 경험, backtest/live parity, 운영 복잡도, 라이선스를 비교하고 적합한 엔진이 있으면 재사용한다. 둘 다 맞지 않을 때만 아래 경계의 최소 일봉/분봉 엔진을 구현한다.
 
 ```text
 market data -> universe -> signal/alpha -> portfolio target -> risk
@@ -117,7 +117,7 @@ clock + event replay <- audit/run manifest <- execution <- order intent
 
 따라서 첫 구현은 설명 가능한 SMA crossover의 작은 유한 grid만 사용한다. 불변 데이터 snapshot의 pre-holdout 구간에서 expanding walk-forward fold를 만들고 각 fold의 학습 구간으로 후보를 선택한 뒤 다음 구간에서 out-of-sample 평가한다. 최종 후보도 pre-holdout만으로 선택하며 final holdout은 마지막 승격 gate에서 한 번만 연다. 신호 다음 bar부터만 체결 가능하게 하고 수수료·세금·슬리피지·지연 후 수익, 최대 낙폭, 최소 거래 수, turnover/capacity와 기존 champion 또는 단순 benchmark를 함께 비교한다. 같은 입력은 같은 winner와 artifact hash를 내야 한다.
 
-자동화 범위는 후보 생성, 평가, `paper_candidate`, paper/shadow 성능 감시와 rollback이다. 전략 소스를 스스로 고치거나 생성 코드를 동적으로 실행하지 않는다. FINRA도 자동 투자 도구의 가정과 한계를 이해하고 성과 보장을 경계하라고 안내하며, 2025년 auto-trading 안내에서는 검증되지 않은 수익성·AI 주장을 특히 경고한다. ([자동 투자 도구 안내](https://www.finra.org/investors/alerts/automated-investment-tools), [auto-trading 위험 안내](https://www.finra.org/investors/insights/auto-trading-unregistered-entities)) Omni Folio는 이를 제품 문구와 승격 정책에 반영해 수익을 약속하지 않고 canary/live 승격은 owner 승인과 공통 risk gate 밖에서 자동화하지 않는다.
+자동화 범위는 후보 생성, 평가, `paper_candidate`, paper/shadow 성능 감시와 rollback이다. 전략 소스를 스스로 고치거나 생성 코드를 동적으로 실행하지 않는다. FINRA도 자동 투자 도구의 가정과 한계를 이해하고 성과 보장을 경계하라고 안내하며, 2025년 auto-trading 안내에서는 검증되지 않은 수익성·AI 주장을 특히 경고한다. ([자동 투자 도구 안내](https://www.finra.org/investors/alerts/automated-investment-tools), [auto-trading 위험 안내](https://www.finra.org/investors/insights/auto-trading-unregistered-entities)) Kairos는 이를 제품 문구와 승격 정책에 반영해 수익을 약속하지 않고 canary/live 승격은 owner 승인과 공통 risk gate 밖에서 자동화하지 않는다.
 
 ## 3. 틀리면 안 되는 계산 로직
 
@@ -307,7 +307,7 @@ Python research/backtest
 
 이번 범위는 엔진 전체 재선정이 아니라 기존 SMA에서 offline 목표 수량을 생성하는 작은 연결이다. 다음 공식 문서 세 편을 직접 읽었으며 라이브러리 실행 POC나 수익률 비교 실험을 했다는 의미는 아니다.
 
-- QuantConnect는 alpha의 Insight, 포트폴리오의 목표 수량, 위험 조정, 실행을 별도 책임으로 나눈다. Omni-Folio도 Python 목표 제안에 계좌·주문 권한을 넣지 않고 Go의 기존 실행 경계로 전달하는 방향을 따른다. [Algorithm Framework Overview](https://www.quantconnect.com/docs/v2/writing-algorithms/algorithm-framework/overview)
+- QuantConnect는 alpha의 Insight, 포트폴리오의 목표 수량, 위험 조정, 실행을 별도 책임으로 나눈다. Kairos도 Python 목표 제안에 계좌·주문 권한을 넣지 않고 Go의 기존 실행 경계로 전달하는 방향을 따른다. [Algorithm Framework Overview](https://www.quantconnect.com/docs/v2/writing-algorithms/algorithm-framework/overview)
 - NautilusTrader는 bar 내부 경로를 실제로 알 수 없으며 bar가 완성된 뒤 전략이 관측해야 한다고 설명한다. 같은 bar의 open을 이미 관측한 close 신호에 쓰면 lookahead가 된다. 프로젝트의 신호 이후 eligible bar 및 persisted sequence cutoff를 유지해야 하는 이유다. [Bar Execution](https://nautilustrader.io/docs/latest/concepts/backtesting/bar-execution/)
 - NautilusTrader의 시장 업데이트, resting order 매칭, 전략 callback, queued command 처리 순서는 같은 timestamp의 실행도 순서 계약이 필요함을 보여준다. 프로젝트에 적용한 판단은 완료 봉 수집 → 이전 eligible 주문 처리 → 새 신호 기록을 별도 검증하고, 단순 시간 비교만으로 재시작·중복 방지가 됐다고 보지 않는 것이다. [Execution Flow](https://nautilustrader.io/docs/latest/concepts/backtesting/execution-flow/)
 

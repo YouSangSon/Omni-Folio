@@ -29,4 +29,4 @@ Connect a bounded local-fixture execution path through existing Go validation/st
 
 The singleton performance-runner lease is not the per-account execution lease. `Service.executionOwner` changes per process, so pretending another process already armed a usable CLI lease is insufficient. Define explicit paper-only invocation ownership and conditional cleanup; do not expose or automatically toggle generic broker execution authority. No credential, live order, external deployment or profitability evidence is supplied by this gate.
 
-Research rationale: [official-source addendum](../docs/omni-folio-research-report.md#2026-09-05-paper-신호실행-경계-추가-조사).
+Research rationale: [official-source addendum](../docs/kairos-research-report.md#2026-09-05-paper-신호실행-경계-추가-조사).

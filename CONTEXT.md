@@ -1,9 +1,9 @@
-# Omni Folio Domain Context
+# Kairos Domain Context
 
 ## Core language
 
 - **Ledger authority**: 거래, 현금 이동, 수수료, 세금, 기업행사, 정정을 기록하는 유일한 재무 기준. 보유 수량과 손익은 여기서 계산한다.
-- **Broker truth**: 외부 주문이 실제로 존재하고 어떤 상태인지에 대한 증권사의 사실. Omni Folio는 주문 의도와 위험 판단, 체결의 원장 반영 근거를 소유한다.
+- **Broker truth**: 외부 주문이 실제로 존재하고 어떤 상태인지에 대한 증권사의 사실. Kairos는 주문 의도와 위험 판단, 체결의 원장 반영 근거를 소유한다.
 - **Broker snapshot**: 한 번의 완결된 pagination에서 읽은 계좌·잔고·미체결 사실. 원장과 별도이며 전체 성공한 snapshot만 이전 known-good를 대체한다.
 - **Freshness**: source timestamp, 마지막 전체 성공 시각과 `fresh`, `stale`, `partial`, `error` 상태를 함께 나타내는 신뢰 정보. 서비스 readiness나 원장 검증 상태와 합치지 않는다.
 - **Market series**: 한 종목·거래소·시간대·interval에 속한 순서 보장 OHLCV bar와 source/as-of/freshness/price adjustment를 묶은 provider-neutral 조회 결과. 브로커 pagination·TR 필드는 포함하지 않는다.

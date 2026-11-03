@@ -222,7 +222,7 @@ git commit -m "feat(core): 회계 세션 복구 증명 추가"
 - Modify: `PLAN.md`
 - Modify: `GATES.md`
 - Modify: `CONTEXT.md`
-- Modify: `docs/omni-folio-plan.md`
+- Modify: `docs/kairos-plan.md`
 
 **Interfaces:**
 - Consumes: all implementation and verification evidence from Tasks 1-3.
@@ -254,4 +254,4 @@ Remove only test-owned Python bytecode/cache and explicit temporary artifacts. V
 
 - [ ] **Step 5: Sync durable memory and commit evidence**
 
-Update the Omni-Folio project hub and staged-architecture page. Commit only the related docs and report that push/deploy/live authority remain untouched.
+Update the Kairos project hub and staged-architecture page. Commit only the related docs and report that push/deploy/live authority remain untouched.

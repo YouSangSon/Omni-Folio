@@ -2,7 +2,7 @@
 
 ## 문제와 선택
 
-원장 화면의 최근 기록을 밖에서 확인하려면 일관된 관찰의 원본 숫자와 시각이 필요하다. 기존 backup은 복구용 자료이고 계좌·내부 참조까지 포함하므로 열람용 CSV와 역할이 다르다. [기존 Phase A 후속 계획](../docs/omni-folio-plan.md)에 따라 로컬 CLI 한 개를 추가하며 UI·새 저장소·CSV 재가져오기 형식은 만들지 않는다.
+원장 화면의 최근 기록을 밖에서 확인하려면 일관된 관찰의 원본 숫자와 시각이 필요하다. 기존 backup은 복구용 자료이고 계좌·내부 참조까지 포함하므로 열람용 CSV와 역할이 다르다. [기존 Phase A 후속 계획](../docs/kairos-plan.md)에 따라 로컬 CLI 한 개를 추가하며 UI·새 저장소·CSV 재가져오기 형식은 만들지 않는다.
 
 `ledger-export -db PATH -out FILE`은 기존 `LedgerActivity` 공개 projection을 재사용한다. HTTP의 50/100행 제한이나 페이지 cursor 계약을 바꾸지 않는다. 내부 조회 한 번의 10,000행 cap을 적용하고 다음 페이지가 있으면 전체 export를 거절한다. 이는 출력 행 수 제한이며 전체 원장 복구 검증의 메모리·처리 시간 상한이 아니다. 별도 SQL·페이지별 관찰 조합보다 기존 일관성·원문 검증을 공유하는 쪽을 선택했다.
 
@@ -21,15 +21,15 @@
 
 ## 검증 근거
 
-head `af6e9f7`의 [무료 표준 Core CI RED](https://github.com/YouSangSon/Omni-Folio/actions/runs/40156261837)에서 실제 실행 파일의 `unknown command "ledger-export"`를 확인했다. 전체 Core 검사는 이 실패 뒤 시작하지 않았다. RED fixture의 fee 기대값은 기존 seed의 `-1000`과 맞췄다.
+head `af6e9f7`의 [무료 표준 Core CI RED](https://github.com/YouSangSon/Kairos/actions/runs/40156261837)에서 실제 실행 파일의 `unknown command "ledger-export"`를 확인했다. 전체 Core 검사는 이 실패 뒤 시작하지 않았다. RED fixture의 fee 기대값은 기존 seed의 `-1000`과 맞췄다.
 
 `TestLedgerExport*`는 실제 CLI·12열/receipt hash/0600/redaction, 지원 event 종류·FX 두 leg·원문 정밀도·소수초 순서·정정, empty/10,000/10,001, 실제 유효한 수식형 저장 label·기존 파일/symlink/DB auxiliary 보존, URI escaping·actual read-only 쓰기 거절·취소·schema/legacy/transition 손상, 동시 공개 한 winner와 writer/byte cap 오류를 다룬다. 공유 writable 조상 거절, 실제 부분 임시 CSV가 32 MiB cap에서 실패한 뒤 제거되는 경우와 stdout 실패 뒤 완성 파일 보존도 포함한다. 독립 리뷰에서 빠진 import·조상 경로 검사·실제 부분 쓰기 검사를 찾아 보완했고 최종 읽기 전용 재검토에 남은 차단 지적은 없다.
 
-최종 head `0f79743a233e6ea441eefbb51c6d8545772c29d3`의 [무료 표준 Core CI #40157072472](https://github.com/YouSangSon/Omni-Folio/actions/runs/40157072472)는 2026-10-25에 전체 성공했다. Ubuntu 24.04·Go 1.24.5·Python 3.14.5 pin을 확인했다.
+최종 head `0f79743a233e6ea441eefbb51c6d8545772c29d3`의 [무료 표준 Core CI #40157072472](https://github.com/YouSangSon/Kairos/actions/runs/40157072472)는 2026-10-25에 전체 성공했다. Ubuntu 24.04·Go 1.24.5·Python 3.14.5 pin을 확인했다.
 
 - 집중 `make test FLUTTER=true CORE_TEST_PACKAGES='-run=^TestLedgerExport -count=1 -timeout=10m ./...'`: 실제 새 Go 시나리오 3.867초, Python39·소유 자원 cleanup 통과.
 - 최종 `make check DART=true FLUTTER=true CORE_TEST_PACKAGES='-timeout=30m ./...'`: Go format/vet·전체(core275.664초와 internal packages), Python compile/unit39·JSON17 구문 검사·소유 자원 cleanup 통과. `git diff --exit-code`도 통과했다. 같은 source의 전체 검사는 다시 실행하지 않았다.
-- [PR #40](https://github.com/YouSangSon/Omni-Folio/pull/40)의 main 병합 `a4778a011aa12a85446e1ce172fca8348beceae2`와 검증 head의 전체 tree가 같다. client tree `5dce64fdd8e36967da255d049c8260ab774acc5c`는 동일하여 기존 Flutter/native 근거를 재사용했다. 이번 CI는 Dart format·Flutter analyze/test를 실행하지 않았다. 브랜치 고유 커밋0·worktree 미사용 확인 뒤 이번 로컬·원격 작업 브랜치만 정리했다.
+- [PR #40](https://github.com/YouSangSon/Kairos/pull/40)의 main 병합 `a4778a011aa12a85446e1ce172fca8348beceae2`와 검증 head의 전체 tree가 같다. client tree `5dce64fdd8e36967da255d049c8260ab774acc5c`는 동일하여 기존 Flutter/native 근거를 재사용했다. 이번 CI는 Dart format·Flutter analyze/test를 실행하지 않았다. 브랜치 고유 커밋0·worktree 미사용 확인 뒤 이번 로컬·원격 작업 브랜치만 정리했다.
 - 로컬에서는 runtime/DB/native fixture를 실행하지 않고 format/diff·링크와 네 README의 명령/코드/링크 동등성만 확인했다. 기존 G1.21 valuation-metadata gate와 번호가 겹쳐 문서 후속에서 CSV gate를 G1.22로 정리했다. 이 후속은 문서만 바꾸며 위 source 검증을 재사용한다.
 
 ## 한계와 재개 조건

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://omni-folio.local/contracts/backup-manifest.v21.schema.json",
-  "title": "Omni-Folio Backup Manifest v21",
+  "title": "Kairos Backup Manifest v21",
   "description": "Current schema-v27 candidates require independently recomputed ledger, order, broker, registry, paper-promotion, lease, listing, legacy observation, benchmark, owner-FX and owner-price journal and watchlist singleton proofs. v21/schema27, v20/schema26, v19/schema25, v18/schema24, v17/schema23 and v16/schema22 retain chronological FIFO v2 replay authority; v15 and older remain archival. Legacy sources are verified at their own schema and migrated only in owned copies. New owner-price identity membership is checked against the verified canonical ledger. Schema validity is not activation authority: all proofs must match and the receipt must be verified and eligible_for_activation; an active runner lease blocks activation.",
   "type": "object",
   "additionalProperties": false,

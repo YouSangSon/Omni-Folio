@@ -205,7 +205,7 @@ git commit -m "feat(core): 키움 가격에 상장 소유권을 강제"
 - Modify: PLAN.md
 - Modify: GATES.md
 - Modify: CONTEXT.md
-- Modify: docs/omni-folio-plan.md
+- Modify: docs/kairos-plan.md
 - Modify: the design spec only if implementation evidence changes the contract.
 
 **Interfaces:**
@@ -245,6 +245,6 @@ Update the project wiki with the owner-declared and not-provider-verified distin
 - [ ] **Step 5: Commit Task 3**
 
 ~~~bash
-git add PLAN.md GATES.md CONTEXT.md docs/omni-folio-plan.md gates/g4u-kiwoom-listing-ownership.md docs/superpowers/specs/2026-08-30-kiwoom-listing-ownership-design.md
+git add PLAN.md GATES.md CONTEXT.md docs/kairos-plan.md gates/g4u-kiwoom-listing-ownership.md docs/superpowers/specs/2026-08-30-kiwoom-listing-ownership-design.md
 git commit -m "docs(core): 상장 소유권 검증 근거 기록"
 ~~~

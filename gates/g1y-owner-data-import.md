@@ -1,6 +1,6 @@
 # G1.29 앱에서 가격·환율·지수 파일 검토와 명시적 저장
 
-상태: 구현·필수 원격 검증·main 병합 완료 ([PR #57](https://github.com/YouSangSon/Omni-Folio/pull/57)). 전체 Goal 완료나 배포 완료를 뜻하지 않는다.
+상태: 구현·필수 원격 검증·main 병합 완료 ([PR #57](https://github.com/YouSangSon/Kairos/pull/57)). 전체 Goal 완료나 배포 완료를 뜻하지 않는다.
 
 ## 계약과 판단
 
@@ -32,8 +32,8 @@
 
 | 검증 | 최종 근거 | 결과 |
 | --- | --- | --- |
-| Core 집중/전체 | [run40296837285](https://github.com/YouSangSon/Omni-Folio/actions/runs/40296837285), job121484838821 | 새 HTTP 집중1.015s, root 전체450.130s와 내부5 package, vet/형식, Python39, JSON37, 소유 자원 정리·source identity 통과 |
-| Client | [run40296837322](https://github.com/YouSangSon/Omni-Folio/actions/runs/40296837322), job121484841313 | 집중15/전체418, format34파일0변경, analyze, web 및 ARM64 release, 권한 반례8·source identity 통과 |
+| Core 집중/전체 | [run40296837285](https://github.com/YouSangSon/Kairos/actions/runs/40296837285), job121484838821 | 새 HTTP 집중1.015s, root 전체450.130s와 내부5 package, vet/형식, Python39, JSON37, 소유 자원 정리·source identity 통과 |
+| Client | [run40296837322](https://github.com/YouSangSon/Kairos/actions/runs/40296837322), job121484841313 | 집중15/전체418, format34파일0변경, analyze, web 및 ARM64 release, 권한 반례8·source identity 통과 |
 | APK | client tree `592cc946c155b3466955740813c024087ee622cd` | 23546634 bytes, SHA256 `ca19ac80f72ed2e84fab72e7f8e11ee0947923959a90ffe72448e0838af7f20c` |
 | Plugin/권한 | registrant SHA256 `5d31e4d80984b4f5254d2e6629d2cc2b16760ab4774a94faa863c48897f18326` | Android file selector 등록, IntegrationTestPlugin 제외, INTERNET 및 signature receiver 권한만 허용 |
 | 로컬 정적 확인 | JSON37/로컬 OpenAPI ref/변경 Markdown 경로/4개 README | 실행 shell block27개가 KO/JA/EN/ZH에서 동일하고 기존 명령을 보존, gofmt·고정 Dart formatter·diff 통과. 로컬 runtime 검사 없음 |
