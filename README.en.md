@@ -2,11 +2,29 @@
 
 [한국어](README.md) · [日本語](README.ja.md) · [English](README.en.md) · [简体中文](README.zh-CN.md)
 
-A local-first platform for personal portfolios across multiple brokerages and safe automated trading. One Flutter client serves iOS, Android, and web; Go owns authority over the ledger, brokers, orders, and risk; Python handles reproducible research and backtesting only.
+A project to build a personal investment management system that automatically gathers information, detects opportunities and risks, and recommends actions or invests and rebalances within limits authorized in advance.
 
-[Current status](#status) · [Architecture](#architecture) · [Quick start](#quick-start) · [Workflows](#workflows) · [Commands](#commands) · [Documentation](#documentation) · [Safety principles](#safety)
+The goal is to build long-term wealth, including retirement funds, by improving investment returns, loss control, and operating efficiency together. It connects decision evidence with actual fills, costs, and PnL so that reviewed and validated results can inform the next decision and operating policy.
+
+[Project purpose](#purpose) · [Current status](#status) · [Architecture](#architecture) · [Quick start](#quick-start) · [Workflows](#workflows) · [Commands](#commands) · [Documentation](#documentation) · [Safety principles](#safety)
 
 The Korean README is the source of truth for keeping the structure, commands, and supported scope consistent across all four languages. Linked design and verification documents are available in Korean or English. README translations do not imply that the app supports those display languages.
+
+<a id="purpose"></a>
+
+## Project purpose
+
+The intended product connects these steps into one investment workflow. They are goals, not a claim that the entire workflow is implemented.
+
+1. **Gather and detect** — Collect market data, filings, news, and account information to identify investment opportunities and changing risks.
+2. **Evaluate and recommend** — Consider holdings, cash, and risk limits to recommend buying, selling, holding, and asset allocation with supporting reasons.
+3. **Invest and rebalance** — Let the user review and execute recommendations, or automatically place orders and adjust allocations within previously approved strategies, instruments, capital, and risk limits.
+4. **Record and review** — Link the information available at decision time to actual fills, fees, taxes, and PnL to understand what worked and where losses arose.
+5. **Validate and improve** — Compare returns after costs, maximum drawdown, capital exposure, and trading frequency to validate and improve strategies and operations. Automated improvement remains bounded; live activation and capital increases require separate approval.
+
+The current foundation includes an accurate ledger and portfolio, research and backtesting, and local paper execution, performance, halt, and recovery. Connecting continuous real-data collection and opportunity detection through recommendations, portfolio rebalancing, and live automation requires further implementation and verification. Detailed scope and exclusions follow [`goal.md`](goal.md).
+
+The local-first design prioritizes data ownership and standalone local use. One Flutter client serves iOS, Android, and web; Go owns authority over the ledger, brokers, orders, and risk; Python handles reproducible research and backtesting only.
 
 > [!IMPORTANT]
 > Live trading is currently disabled. The explicit command below can read a Kiwoom mock account; actual credentialed observation has not been performed. Backtest and strategy results in this repository do not guarantee returns and are not investment advice.
