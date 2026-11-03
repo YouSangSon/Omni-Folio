@@ -1,0 +1,12 @@
+{
+  "receipt_id": "receipt_golden_001",
+  "preview_id": "preview_golden_001",
+  "idempotency_key": "apply_golden_001",
+  "file_sha256": "3c6ccdd58c64f3b997533f0210b77111f3a060b84ad4b3367a5a705a9c615b29",
+  "ledger_revision_before": "rev_0000000000",
+  "ledger_revision_after": "rev_0000000003",
+  "applied_rows": 3,
+  "skipped_duplicate_rows": 0,
+  "received_at": "2026-01-10T15:01:00Z",
+  "recorded_at": "2026-01-10T15:01:00.125Z"
+}

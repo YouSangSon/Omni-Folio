@@ -1,0 +1,3497 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import 'api.dart';
+import 'csv_file.dart';
+import 'holding_valuation_page.dart';
+import 'import_apply.dart';
+import 'instrument_ledger_page.dart';
+import 'manual_entry_page.dart';
+import 'models.dart';
+import 'owner_data_import.dart';
+import 'owner_data_import_page.dart';
+import 'paper_monitor_page.dart';
+import 'paper_promotion_report_page.dart';
+import 'portfolio_xirr_page.dart';
+import 'public_research_page.dart';
+import 'research_report_page.dart';
+import 'watchlist.dart';
+import 'watchlist_page.dart';
+
+class OmniFolioApp extends StatefulWidget {
+  const OmniFolioApp({super.key, required this.api});
+  final OmniApi api;
+
+  @override
+  State<OmniFolioApp> createState() => _OmniFolioAppState();
+}
+
+class _OmniFolioAppState extends State<OmniFolioApp> {
+  late final WatchlistController _watchlist = WatchlistController(widget.api);
+  late final PortfolioController _portfolio = PortfolioController(widget.api)
+    ..refresh();
+  late final ImportApplyController _importApplies = ImportApplyController(
+    widget.api,
+  );
+  late final OwnerDataImportController _ownerImports =
+      OwnerDataImportController(
+        widget.api,
+        onStored: _portfolio.refreshAfterMarketDataImport,
+      );
+  var _tab = 0;
+
+  @override
+  void dispose() {
+    _watchlist.dispose();
+    _portfolio.dispose();
+    _importApplies.dispose();
+    _ownerImports.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    title: 'Kairos',
+    theme: _theme(Brightness.light),
+    darkTheme: _theme(Brightness.dark),
+    themeMode: ThemeMode.system,
+    home: AnimatedBuilder(
+      animation: _portfolio,
+      builder: (context, _) {
+        const labels = ['홈', '보유', '내역', '연결'];
+        final pages = [
+          OverviewPage(
+            controller: _portfolio,
+            onImport: () => setState(() => _tab = 2),
+            onHoldings: () => setState(() => _tab = 1),
+            onConnections: () => setState(() => _tab = 3),
+          ),
+          HoldingsPage(controller: _portfolio),
+          ActivityPage(api: widget.api, applies: _importApplies),
+          DataPage(
+            api: widget.api,
+            controller: _portfolio,
+            ownerImports: _ownerImports,
+          ),
+        ];
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth >= 900;
+            final content = Center(
+              child: ConstrainedBox(
+                key: const Key('portfolio-content-frame'),
+                constraints: const BoxConstraints(maxWidth: 1040),
+                child: pages[_tab],
+              ),
+            );
+            return Scaffold(
+              appBar: AppBar(
+                title: Text(wide ? 'Kairos' : labels[_tab]),
+                actions: [
+                  Builder(
+                    builder: (context) => IconButton(
+                      tooltip: '관심종목',
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => WatchlistPage(controller: _watchlist),
+                        ),
+                      ),
+                      icon: const Icon(Icons.bookmark_outline),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '데이터 새로고침',
+                    onPressed: _portfolio.busy ? null : _portfolio.refresh,
+                    icon: const Icon(Icons.refresh_rounded),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+              ),
+              body: SafeArea(
+                // Keep the page mounted when only navigation placement changes.
+                child: Row(
+                  children: [
+                    if (wide) ...[
+                      NavigationRail(
+                        selectedIndex: _tab,
+                        labelType: NavigationRailLabelType.all,
+                        groupAlignment: -0.8,
+                        onDestinationSelected: (index) =>
+                            setState(() => _tab = index),
+                        destinations: const [
+                          NavigationRailDestination(
+                            icon: Icon(Icons.home_outlined),
+                            selectedIcon: Icon(Icons.home_rounded),
+                            label: Text('홈'),
+                          ),
+                          NavigationRailDestination(
+                            icon: Icon(Icons.account_balance_wallet_outlined),
+                            selectedIcon: Icon(Icons.account_balance_wallet),
+                            label: Text('보유'),
+                          ),
+                          NavigationRailDestination(
+                            icon: Icon(Icons.receipt_long_outlined),
+                            selectedIcon: Icon(Icons.receipt_long),
+                            label: Text('내역'),
+                          ),
+                          NavigationRailDestination(
+                            icon: Icon(Icons.link_outlined),
+                            selectedIcon: Icon(Icons.link),
+                            label: Text('연결'),
+                          ),
+                        ],
+                      ),
+                      VerticalDivider(
+                        width: 1,
+                        color: Theme.of(context).dividerColor,
+                      ),
+                    ],
+                    Expanded(child: content),
+                  ],
+                ),
+              ),
+              bottomNavigationBar: wide
+                  ? null
+                  : NavigationBar(
+                      animationDuration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : null,
+                      selectedIndex: _tab,
+                      onDestinationSelected: (index) =>
+                          setState(() => _tab = index),
+                      destinations: const [
+                        NavigationDestination(
+                          icon: Icon(Icons.home_outlined),
+                          selectedIcon: Icon(Icons.home_rounded),
+                          label: '홈',
+                        ),
+                        NavigationDestination(
+                          icon: Icon(Icons.account_balance_wallet_outlined),
+                          selectedIcon: Icon(Icons.account_balance_wallet),
+                          label: '보유',
+                        ),
+                        NavigationDestination(
+                          icon: Icon(Icons.receipt_long_outlined),
+                          selectedIcon: Icon(Icons.receipt_long),
+                          label: '내역',
+                        ),
+                        NavigationDestination(
+                          icon: Icon(Icons.link_outlined),
+                          selectedIcon: Icon(Icons.link),
+                          label: '연결',
+                        ),
+                      ],
+                    ),
+            );
+          },
+        );
+      },
+    ),
+  );
+}
+
+ThemeData _theme(Brightness brightness) {
+  final dark = brightness == Brightness.dark;
+  final canvas = Color(dark ? 0xFF17171C : 0xFFF2F4F6);
+  final raised = Color(dark ? 0xFF202027 : 0xFFFFFFFF);
+  final primary = Color(dark ? 0xFFF2F4F6 : 0xFF191F28);
+  final secondary = Color(dark ? 0xFFB0B8C1 : 0xFF6B7684);
+  final action = Color(dark ? 0xFF60A5FA : 0xFF2563EB);
+  return ThemeData(
+    useMaterial3: true,
+    fontFamily: 'NotoSansKR',
+    brightness: brightness,
+    scaffoldBackgroundColor: canvas,
+    colorScheme: ColorScheme(
+      brightness: brightness,
+      primary: action,
+      onPrimary: dark ? const Color(0xFF0F172A) : Colors.white,
+      secondary: action,
+      onSecondary: dark ? const Color(0xFF0F172A) : Colors.white,
+      error: dark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C),
+      onError: dark ? const Color(0xFF0F172A) : Colors.white,
+      surface: raised,
+      onSurface: primary,
+    ),
+    appBarTheme: AppBarTheme(
+      backgroundColor: canvas,
+      foregroundColor: primary,
+      surfaceTintColor: Colors.transparent,
+      centerTitle: false,
+      elevation: 0,
+      titleSpacing: 20,
+      titleTextStyle: TextStyle(
+        fontFamily: 'NotoSansKR',
+        color: primary,
+        fontSize: 22,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: raised,
+      elevation: 0,
+      indicatorColor: action.withValues(alpha: 0.12),
+      iconTheme: WidgetStateProperty.resolveWith(
+        (states) => IconThemeData(
+          color: states.contains(WidgetState.selected) ? action : secondary,
+        ),
+      ),
+      labelTextStyle: WidgetStateProperty.resolveWith(
+        (states) => TextStyle(
+          fontFamily: 'NotoSansKR',
+          color: states.contains(WidgetState.selected) ? action : secondary,
+          fontSize: 12,
+          fontWeight: states.contains(WidgetState.selected)
+              ? FontWeight.w700
+              : FontWeight.w500,
+        ),
+      ),
+    ),
+    textTheme: TextTheme(
+      bodyLarge: TextStyle(fontSize: 16, color: primary),
+      bodyMedium: TextStyle(fontSize: 16, color: primary),
+      bodySmall: TextStyle(fontSize: 13, color: secondary),
+      titleMedium: TextStyle(
+        fontSize: 20,
+        fontWeight: FontWeight.w700,
+        color: primary,
+      ),
+      headlineMedium: TextStyle(
+        fontSize: 32,
+        fontWeight: FontWeight.w700,
+        color: primary,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
+    ),
+    cardTheme: CardThemeData(
+      color: raised,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide.none,
+      ),
+    ),
+    dividerTheme: DividerThemeData(
+      color: dark ? const Color(0xFF3A3A43) : const Color(0xFFD1D6DB),
+      thickness: 1,
+      space: 1,
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        minimumSize: const Size(double.infinity, 52),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        textStyle: const TextStyle(
+          fontFamily: 'NotoSansKR',
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(double.infinity, 52),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        textStyle: const TextStyle(
+          fontFamily: 'NotoSansKR',
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: raised,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide.none,
+      ),
+      contentPadding: EdgeInsets.all(16),
+    ),
+  );
+}
+
+class PortfolioController extends ChangeNotifier {
+  PortfolioController(this.api);
+  final OmniApi api;
+  ServiceStatus? status;
+  PortfolioSnapshot? snapshot;
+  CurrentPortfolioValuation? currentValuation;
+  BrokerReconciliation? reconciliation;
+  LocalOrderLog? orderLog;
+  String? error;
+  var reconciliationFailed = false;
+  var currentValuationFailed = false;
+  var orderLogFailed = false;
+  var busy = false;
+  var reconciliationBusy = false;
+  var currentValuationBusy = false;
+  var orderLogBusy = false;
+  var _disposed = false;
+  var _marketDataRefreshPending = false;
+
+  void refreshAfterMarketDataImport() {
+    _marketDataRefreshPending = true;
+    _drainMarketDataRefresh();
+  }
+
+  void _drainMarketDataRefresh() {
+    if (_disposed ||
+        !_marketDataRefreshPending ||
+        busy ||
+        currentValuationBusy) {
+      return;
+    }
+    _marketDataRefreshPending = false;
+    unawaited(refresh());
+  }
+
+  Future<void> refresh() async {
+    if (busy) return;
+    busy = true;
+    error = null;
+    _notify();
+    final optionalRefreshes = <Future<void>>[
+      if (!currentValuationBusy) refreshCurrentValuation(),
+      if (!reconciliationBusy) refreshReconciliation(),
+      if (!orderLogBusy) refreshLocalOrders(),
+    ];
+    final results = await Future.wait([
+      _settle(api.status()),
+      _settle(api.snapshot()),
+    ]);
+    final statusResult = results[0] as _Result<ServiceStatus>;
+    final snapshotResult = results[1] as _Result<PortfolioSnapshot>;
+    if (statusResult.value != null) status = statusResult.value;
+    if (snapshotResult.value != null) snapshot = snapshotResult.value;
+    error = statusResult.error ?? snapshotResult.error;
+    busy = false;
+    _notify();
+    _drainMarketDataRefresh();
+    await Future.wait(optionalRefreshes);
+    _drainMarketDataRefresh();
+  }
+
+  Future<void> refreshCurrentValuation() async {
+    if (currentValuationBusy) return;
+    currentValuationBusy = true;
+    currentValuationFailed = false;
+    _notify();
+    try {
+      currentValuation = await api.currentPortfolioValuation();
+    } catch (_) {
+      currentValuationFailed = true;
+    } finally {
+      currentValuationBusy = false;
+      _notify();
+      _drainMarketDataRefresh();
+    }
+  }
+
+  Future<void> refreshReconciliation() async {
+    if (reconciliationBusy) return;
+    reconciliationBusy = true;
+    reconciliationFailed = false;
+    _notify();
+    try {
+      reconciliation = await api.latestBrokerReconciliation();
+    } catch (_) {
+      reconciliationFailed = true;
+    } finally {
+      reconciliationBusy = false;
+      _notify();
+    }
+  }
+
+  Future<void> refreshLocalOrders() async {
+    if (orderLogBusy) return;
+    orderLogBusy = true;
+    orderLogFailed = false;
+    _notify();
+    try {
+      orderLog = await api.localOrders();
+    } catch (_) {
+      orderLogFailed = true;
+    } finally {
+      orderLogBusy = false;
+      _notify();
+    }
+  }
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  DataState get state {
+    if (busy && status == null && snapshot == null) return DataState.loading;
+    if (error != null && status == null && snapshot == null) {
+      return DataState.error;
+    }
+    if (error != null ||
+        status?.trustState == 'partial' ||
+        status?.trustState == 'error') {
+      return DataState.partial;
+    }
+    if (status?.trustState == 'never_verified') {
+      return DataState.neverVerified;
+    }
+    if (status?.trustState == 'stale') return DataState.stale;
+    if (status == null && snapshot == null) return DataState.empty;
+    return DataState.success;
+  }
+}
+
+enum DataState { loading, empty, error, partial, neverVerified, stale, success }
+
+class _Result<T> {
+  const _Result.value(this.value) : error = null;
+  const _Result.error(this.error) : value = null;
+  final T? value;
+  final String? error;
+}
+
+Future<_Result<T>> _settle<T>(Future<T> future) async {
+  try {
+    return _Result.value(await future);
+  } catch (_) {
+    return const _Result.error('데이터를 불러오지 못했습니다. 다시 시도하세요.');
+  }
+}
+
+class OverviewPage extends StatelessWidget {
+  const OverviewPage({
+    super.key,
+    required this.controller,
+    required this.onImport,
+    required this.onHoldings,
+    required this.onConnections,
+  });
+  final PortfolioController controller;
+  final VoidCallback onImport;
+  final VoidCallback onHoldings;
+  final VoidCallback onConnections;
+
+  @override
+  Widget build(BuildContext context) {
+    if (controller.state == DataState.loading) return const _Loading();
+    if (controller.state == DataState.error) {
+      return _FallbackWithOrderRisk(
+        orderRisk: _OverviewOrderRiskCard(
+          orderLog: controller.orderLog,
+          retainedError: controller.orderLogFailed,
+          busy: controller.orderLogBusy,
+          onDetails: onConnections,
+        ),
+        message: _Message(
+          icon: Icons.cloud_off,
+          title: '스냅샷을 불러오지 못했습니다',
+          body:
+              '${controller.error ?? '알 수 없는 오류'}\n저장된 데이터는 없으며 원장은 변경되지 않았습니다.',
+          action: controller.refresh,
+          actionLabel: '다시 시도',
+        ),
+      );
+    }
+    final snapshot = controller.snapshot;
+    final isFirstRunEmpty =
+        controller.state == DataState.neverVerified &&
+        snapshot != null &&
+        snapshot.cash.isEmpty &&
+        snapshot.holdings.isEmpty &&
+        snapshot.realizedPnl.isEmpty;
+    if (snapshot == null || isFirstRunEmpty) {
+      return _FallbackWithOrderRisk(
+        orderRisk: _OverviewOrderRiskCard(
+          orderLog: controller.orderLog,
+          retainedError: controller.orderLogFailed,
+          busy: controller.orderLogBusy,
+          onDetails: onConnections,
+        ),
+        message: _Message(
+          icon: Icons.inbox_outlined,
+          title: isFirstRunEmpty ? '첫 거래 내역을 가져오세요' : '아직 스냅샷이 없습니다',
+          body: '거래 내역을 미리 확인한 뒤 적용하면 현금과 보유 내역이 표시됩니다.',
+          action: onImport,
+          actionLabel: '거래 내역 가져오기',
+        ),
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      children: [
+        Text('내 투자 기록', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 12),
+        _TrustBanner(
+          state: controller.state,
+          status: controller.status,
+          retainedError: controller.error,
+          reconciliation: controller.reconciliation,
+          reconciliationFailed: controller.reconciliationFailed,
+          reconciliationBusy: controller.reconciliationBusy,
+        ),
+        _OverviewOrderRiskCard(
+          orderLog: controller.orderLog,
+          retainedError: controller.orderLogFailed,
+          busy: controller.orderLogBusy,
+          onDetails: onConnections,
+        ),
+        const SizedBox(height: 12),
+        _CurrentPortfolioValuationCard(
+          valuation: controller.currentValuation,
+          snapshotRevision: snapshot.ledgerRevision,
+          busy: controller.currentValuationBusy,
+          retainedError: controller.currentValuationFailed,
+        ),
+        const SizedBox(height: 12),
+        _PortfolioHero(snapshot: snapshot),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () => Navigator.of(context).push<void>(
+            MaterialPageRoute(
+              builder: (_) => PortfolioXirrPage(api: controller.api),
+            ),
+          ),
+          icon: const Icon(Icons.trending_up),
+          label: const Text('입출금을 반영한 수익률 보기', textAlign: TextAlign.center),
+        ),
+        const SizedBox(height: 12),
+
+        if (snapshot.holdings.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          _SectionCard(
+            title: '보유 자산',
+            child: Column(
+              children: [
+                for (final holding in snapshot.holdings.take(3)) ...[
+                  _HoldingRow(
+                    holding: holding,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => AssetDetailPage(
+                          api: controller.api,
+                          holding: holding,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                ],
+                if (snapshot.holdings.length > 3)
+                  TextButton(
+                    onPressed: onHoldings,
+                    child: Text('보유 탭에서 전체 ${snapshot.holdings.length}종목 보기'),
+                  ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        _OverviewReconciliationCard(
+          reconciliation: controller.reconciliation,
+          retainedError: controller.reconciliationFailed,
+          busy: controller.reconciliationBusy,
+          onDetails: onConnections,
+        ),
+      ],
+    );
+  }
+}
+
+class HoldingsPage extends StatelessWidget {
+  const HoldingsPage({super.key, required this.controller});
+  final PortfolioController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final holdings = controller.snapshot?.holdings;
+    if (holdings == null || holdings.isEmpty) {
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+        children: [
+          _header(context, holdings?.length),
+          const SizedBox(height: 16),
+          _SectionCard(
+            title: holdings == null ? '보유 데이터 없음' : '보유 종목 없음',
+            child: Text(
+              holdings == null
+                  ? '홈에서 데이터를 새로고침하세요.'
+                  : '적용된 거래가 없거나 모두 매도되었습니다.',
+            ),
+          ),
+        ],
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      itemCount: holdings.length + 1,
+      separatorBuilder: (_, index) => SizedBox(height: index == 0 ? 16 : 8),
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return _header(context, holdings.length);
+        }
+        final holding = holdings[index - 1];
+        return Card(
+          clipBehavior: Clip.antiAlias,
+          child: _HoldingRow(
+            holding: holding,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    AssetDetailPage(api: controller.api, holding: holding),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _header(BuildContext context, int? count) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        count == null ? '보유 자산' : '$count종목',
+        style: Theme.of(context).textTheme.headlineMedium,
+      ),
+      const SizedBox(height: 4),
+      Text(
+        '로컬 원장의 수량과 FIFO 원가 기준입니다.',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+      const SizedBox(height: 12),
+      OutlinedButton(
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => HoldingValuationPage(api: controller.api),
+          ),
+        ),
+        child: const Text('저장 가격으로 평가 보기', textAlign: TextAlign.center),
+      ),
+    ],
+  );
+}
+
+class _PortfolioHero extends StatelessWidget {
+  const _PortfolioHero({required this.snapshot});
+  final PortfolioSnapshot snapshot;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Semantics(
+              container: true,
+              header: true,
+              child: Text(
+                '현금 잔액',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _moneySummary(snapshot.cash),
+              style: Theme.of(context).textTheme.headlineMedium,
+              semanticsLabel: '현금 ${_moneySummary(snapshot.cash)}',
+            ),
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 12),
+            Text(
+              '최근 원장 기록 · 이벤트 ${snapshot.eventCount}건 · 가져오기 ${snapshot.receiptCount}건',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 4),
+            Text(_time(snapshot.recordedAt), style: _tabular(context)),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 24,
+              runSpacing: 12,
+              children: [
+                _HeroMetric(
+                  label: '보유 자산',
+                  value: '${snapshot.holdings.length}종목',
+                ),
+                _RealizedPnl(snapshot.realizedPnl),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text('평가금액 미포함', style: Theme.of(context).textTheme.bodySmall),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CurrentPortfolioValuationCard extends StatelessWidget {
+  const _CurrentPortfolioValuationCard({
+    required this.valuation,
+    required this.snapshotRevision,
+    required this.busy,
+    required this.retainedError,
+  });
+
+  final CurrentPortfolioValuation? valuation;
+  final String snapshotRevision;
+  final bool busy;
+  final bool retainedError;
+
+  @override
+  Widget build(BuildContext context) {
+    final current = valuation;
+    if (current == null) {
+      final title = busy ? '전체 평가 계산 중' : '전체 평가를 불러오지 못했습니다';
+      final body = busy
+          ? '같은 원장 시점의 저장 가격과 직접 환율을 확인하고 있습니다.'
+          : '현금과 보유 내역은 계속 볼 수 있습니다. 새로고침하면 다시 계산합니다.';
+      return Card(
+        child: Semantics(
+          container: true,
+          liveRegion: !busy,
+          excludeSemantics: true,
+          label: '$title. $body',
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  busy ? Icons.hourglass_top_rounded : Icons.info_outline,
+                  color: busy ? null : _warningColor(context),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(body, style: Theme.of(context).textTheme.bodySmall),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final mismatch = current.ledgerRevision != snapshotRevision;
+    final valuationTimeText = _time(DateTime.parse(current.valuationAsOf));
+    final total = current.totalValue;
+    if (total == null) {
+      final empty = current.status == 'empty';
+      final title = empty ? '평가할 자산 없음' : '전체 평가를 계산할 수 없음';
+      final body = empty
+          ? '이 평가 시점의 원장에는 평가할 현금과 보유 자산이 없습니다.'
+          : '필요한 저장 가격 또는 직접 환율 ${current.missingInputCount}건을 확인하세요. 부분 합계는 표시하지 않습니다.';
+      final notices = [
+        if (current.ownerDeclaredFx) '직접 입력 환율 사용 · 시세 제공자가 검증한 값이 아닙니다.',
+        if (current.ownerDeclaredPrice) '직접 입력 가격 사용 · 시세 제공자가 검증한 값이 아닙니다.',
+        if (current.sample) '예시 자료 포함 · 실제 계좌 평가가 아닙니다.',
+        if (mismatch) '원장 갱신 전 저장 평가',
+        if (busy) '새 평가 계산 중 · 현재 표시 상태 유지',
+        if (retainedError) '새로고침 실패 · 마지막 정상 상태 유지',
+      ];
+      return Card(
+        child: Semantics(
+          container: true,
+          liveRegion: true,
+          excludeSemantics: true,
+          label: [
+            title,
+            body,
+            ...notices,
+            '평가 시각 $valuationTimeText',
+          ].join('\n'),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 6),
+                Text(body),
+                for (final notice in notices) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    notice,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: _warningColor(context),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Text(
+                  '평가 시각 $valuationTimeText',
+                  style: _tabular(context).copyWith(
+                    fontSize: Theme.of(context).textTheme.bodySmall?.fontSize,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final totalText = _formattedMoney(total);
+    final cashText = _formattedMoney(current.cashValue!);
+    final holdingsText = _formattedMoney(current.holdingsValue!);
+    final isSample = current.status == 'stale_sample';
+    final authority = isSample
+        ? '저장된 로컬 샘플 기준 · 실시간·증권사 값 아님'
+        : '같은 원장 시점의 KRW 평가 · 증권사 잔고 값 아님';
+    final notices = [
+      authority,
+      if (current.ownerDeclaredFx) '직접 입력 환율 사용 · 시세 제공자가 검증한 값이 아닙니다.',
+      if (current.ownerDeclaredPrice) '직접 입력 가격 사용 · 시세 제공자가 검증한 값이 아닙니다.',
+      if (mismatch) '원장 갱신 전 저장 평가',
+      if (busy) '새 평가 계산 중 · 현재 표시값 유지',
+      if (retainedError) '새로고침 실패 · 마지막 정상 평가 유지',
+    ];
+    return Card(
+      child: Semantics(
+        container: true,
+        excludeSemantics: true,
+        label:
+            '총 자산 $totalText. 현금 $cashText. 보유 자산 $holdingsText. ${notices.join('. ')}. 평가 시각 $valuationTimeText',
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('총 자산', style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 4),
+              Text(
+                totalText,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 24,
+                runSpacing: 8,
+                children: [
+                  _HeroMetric(label: '현금', value: cashText),
+                  _HeroMetric(label: '보유 자산', value: holdingsText),
+                ],
+              ),
+              const SizedBox(height: 12),
+              for (final notice in notices) ...[
+                Text(
+                  notice,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: notice == authority && !isSample
+                        ? null
+                        : _warningColor(context),
+                  ),
+                ),
+                const SizedBox(height: 4),
+              ],
+              Text(
+                '평가 시각 $valuationTimeText',
+                style: _tabular(context).copyWith(
+                  fontSize: Theme.of(context).textTheme.bodySmall?.fontSize,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroMetric extends StatelessWidget {
+  const _HeroMetric({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: _tabular(context).copyWith(fontWeight: FontWeight.w700),
+        ),
+      ],
+    );
+  }
+}
+
+class _RealizedPnl extends StatelessWidget {
+  const _RealizedPnl(this.money);
+  final List<Money> money;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('실현 손익'),
+        const SizedBox(height: 2),
+        if (money.isEmpty)
+          Text('실현 변동 없음', style: _tabular(context))
+        else
+          for (final item in money)
+            Text(
+              '${_isZero(item.amount)
+                  ? '실현 변동 없음'
+                  : item.amount.startsWith('-')
+                  ? '실현 손실'
+                  : '실현 이익'} ${item.currency} ${_isZero(item.amount)
+                  ? '0'
+                  : item.amount.startsWith('-')
+                  ? item.amount
+                  : '+${item.amount}'}',
+              style: _tabular(context).copyWith(
+                color: _isZero(item.amount)
+                    ? Theme.of(context).colorScheme.onSurface
+                    : item.amount.startsWith('-')
+                    ? Theme.of(context).colorScheme.error
+                    : _positiveColor(context),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+      ],
+    );
+  }
+}
+
+class _HoldingRow extends StatelessWidget {
+  const _HoldingRow({required this.holding, required this.onTap});
+  final Holding holding;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final largeText = MediaQuery.textScalerOf(context).scale(16) > 22;
+      final details = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(holding.symbol, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            largeText
+                ? '수량 ${holding.quantity} · 원가 ${holding.currency} ${holding.costBasis}'
+                : '수량 ${holding.quantity}',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      );
+      return Semantics(
+        button: true,
+        excludeSemantics: true,
+        onTap: onTap,
+        label:
+            '${holding.symbol}, 수량 ${holding.quantity}, 원가 ${holding.currency} ${holding.costBasis}',
+        child: InkWell(
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 72),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.12),
+                    child: Text(
+                      holding.symbol.substring(0, 1),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: largeText
+                        ? details
+                        : Row(
+                            children: [
+                              Expanded(child: details),
+                              const SizedBox(width: 12),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    '${holding.currency} ${holding.costBasis}',
+                                    style: _tabular(
+                                      context,
+                                    ).copyWith(fontWeight: FontWeight.w700),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '원가',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.chevron_right_rounded),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+class AssetDetailPage extends StatefulWidget {
+  const AssetDetailPage({super.key, required this.api, required this.holding});
+  final OmniApi api;
+  final Holding holding;
+
+  @override
+  State<AssetDetailPage> createState() => _AssetDetailPageState();
+}
+
+class _AssetDetailPageState extends State<AssetDetailPage> {
+  MarketCandles? _candles;
+  String? _error;
+  var _busy = true;
+  var _tableVisible = false;
+  var _range = _ChartRange.all;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    if (_busy && _candles != null) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final candles = await widget.api.candles(widget.holding.symbol);
+      if (candles.symbol != widget.holding.symbol ||
+          (candles.instrumentId != null &&
+              (candles.instrumentId != widget.holding.instrumentId ||
+                  candles.currency != widget.holding.currency))) {
+        throw const FormatException('Market series does not match holding');
+      }
+      if (mounted) setState(() => _candles = candles);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = '시세를 불러오지 못했습니다. 다시 시도하세요.');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: Text(
+        '${widget.holding.symbol} 시세',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      actions: [
+        IconButton(
+          tooltip: '원장 평균단가·매매 보기',
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => InstrumentLedgerPage(
+                api: widget.api,
+                holding: widget.holding,
+              ),
+            ),
+          ),
+          icon: const Icon(Icons.receipt_long_outlined),
+        ),
+        IconButton(
+          tooltip: '공시·뉴스·분석 보기',
+          onPressed: () => selectPublicResearch(
+            context,
+            widget.api,
+            symbol: widget.holding.symbol,
+          ),
+          icon: const Icon(Icons.article_outlined),
+        ),
+        IconButton(
+          tooltip: '차트 새로고침',
+          onPressed: _busy ? null : _refresh,
+          icon: const Icon(Icons.refresh),
+        ),
+      ],
+    ),
+    body: SafeArea(child: _body(context)),
+  );
+
+  Widget _body(BuildContext context) {
+    if (_busy && _candles == null) return const _Loading();
+    if (_candles == null) {
+      return _Message(
+        icon: Icons.cloud_off,
+        title: '시세를 불러오지 못했습니다',
+        body: '${_error ?? '알 수 없는 오류'}\n원천/원천 기준/가져온 시각: 확인할 수 없음',
+        action: _refresh,
+        actionLabel: '다시 시도',
+      );
+    }
+    final candles = _candles!;
+    final visibleBars = _rangeBars(candles.bars);
+    return ListView(
+      key: const Key('asset-detail-scroll'),
+      padding: const EdgeInsets.all(16),
+      children: [
+        if (candles.sample) ...[
+          Semantics(
+            container: true,
+            liveRegion: true,
+            child: _Notice(
+              icon: Icons.science_outlined,
+              text: '샘플 데이터 · 실시간 아님',
+              color: _warningColor(context),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        _SectionCard(
+          title: '${candles.symbol} · ${candles.interval}',
+          child: _MarketMetadata(candles: candles),
+        ),
+        const SizedBox(height: 12),
+        if (_error != null) ...[
+          Semantics(
+            key: const Key('market-refresh-error'),
+            container: true,
+            excludeSemantics: true,
+            liveRegion: true,
+            label: '새로고침 실패: $_error. 마지막 정상 시세는 유지됩니다.',
+            child: _Notice(
+              icon: Icons.error_outline,
+              text: '새로고침 실패: $_error\n마지막 정상 시세는 유지됩니다.',
+              color: Theme.of(context).colorScheme.error,
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (candles.state == 'empty')
+          const _Message(
+            icon: Icons.show_chart,
+            title: '표시할 봉이 없습니다',
+            body: '선택한 종목의 일봉 데이터가 아직 없습니다.',
+          )
+        else ...[
+          if (candles.state == 'stale' || candles.state == 'partial') ...[
+            _Notice(
+              icon: candles.state == 'stale'
+                  ? Icons.schedule
+                  : Icons.warning_amber_rounded,
+              text: candles.state == 'stale'
+                  ? '오래된 시세입니다. 투자 판단 전 원천과 시각을 확인하세요.'
+                  : '일부 시세입니다. 누락 또는 경고를 확인하세요.',
+              color: _warningColor(context),
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (candles.issues.isNotEmpty) ...[
+            _Notice(
+              icon: Icons.info_outline,
+              text: candles.issues
+                  .map((issue) => '${issue.code}: ${issue.message}')
+                  .join('\n'),
+              color: _warningColor(context),
+            ),
+            const SizedBox(height: 12),
+          ],
+          _CandleChart(
+            candles: candles,
+            bars: visibleBars,
+            range: _range,
+            onRangeSelected: (range) => setState(() => _range = range),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () => setState(() => _tableVisible = !_tableVisible),
+            icon: Icon(_tableVisible ? Icons.expand_less : Icons.table_rows),
+            label: Text(_tableVisible ? 'OHLCV 표 닫기' : '정확한 OHLCV 표 보기'),
+          ),
+          if (_tableVisible) ...[
+            const SizedBox(height: 12),
+            _OhlcvTable(bars: visibleBars),
+          ],
+        ],
+      ],
+    );
+  }
+
+  List<MarketBar> _rangeBars(List<MarketBar> bars) {
+    final days = switch (_range) {
+      _ChartRange.days30 => 30,
+      _ChartRange.days90 => 90,
+      _ChartRange.days365 => 365,
+      _ChartRange.all => null,
+    };
+    if (bars.isEmpty || days == null) return bars;
+    final cutoff = DateTime.parse(bars.last.at).subtract(Duration(days: days));
+    return bars
+        .where((bar) => !DateTime.parse(bar.at).isBefore(cutoff))
+        .toList(growable: false);
+  }
+}
+
+enum _ChartRange { days30, days90, days365, all }
+
+class _MarketMetadata extends StatelessWidget {
+  const _MarketMetadata({required this.candles});
+  final MarketCandles candles;
+
+  @override
+  Widget build(BuildContext context) {
+    final priceAdjustment = switch (candles.priceAdjustment) {
+      'provider_adjusted' => '공급자 조정 가격 · 조정 정확성 미검증',
+      _ => '조정 여부 확인 안 됨',
+    };
+    return Text(
+      '거래소 ${candles.venue}\n가격 통화 ${candles.currency ?? '확인 안 됨'}\n'
+      '${candles.instrumentId == null ? '원장 종목과의 연결 확인 안 됨' : '자료에 명시된 종목·통화가 원장 종목과 일치'}\n'
+      '시간대 ${candles.timezone} · 봉 시각 의미 확인 안 됨\n'
+      '가격 기준 $priceAdjustment\n'
+      '평균단가·매매 기록을 겹쳐 표시할 수 없습니다. 가격 조정과 봉 시각의 의미를 확인해야 합니다.\n'
+      '원천 ${candles.source}\n원천 기준 ${candles.sourceAsOf ?? '없음'}\n가져온 시각 ${candles.fetchedAt}\n상태 ${candles.state}',
+      style: _tabular(context),
+    );
+  }
+}
+
+class _CandleChart extends StatelessWidget {
+  const _CandleChart({
+    required this.candles,
+    required this.bars,
+    required this.range,
+    required this.onRangeSelected,
+  });
+  final MarketCandles candles;
+  final List<MarketBar> bars;
+  final _ChartRange range;
+  final ValueChanged<_ChartRange> onRangeSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final rangeLabel = switch (range) {
+      _ChartRange.days30 => '최근 30일',
+      _ChartRange.days90 => '최근 90일',
+      _ChartRange.days365 => '최근 365일',
+      _ChartRange.all => '전체 기간',
+    };
+    Widget choice(String label, String semanticsLabel, _ChartRange value) {
+      final selected = range == value;
+      final key = switch (value) {
+        _ChartRange.days30 => const Key('chart-range-30d'),
+        _ChartRange.days90 => const Key('chart-range-90d'),
+        _ChartRange.days365 => const Key('chart-range-365d'),
+        _ChartRange.all => const Key('chart-range-all'),
+      };
+      return Semantics(
+        key: key,
+        label: semanticsLabel,
+        button: true,
+        selected: selected,
+        onTap: () => onRangeSelected(value),
+        excludeSemantics: true,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48),
+          child: ChoiceChip(
+            label: Text(label),
+            selected: selected,
+            onSelected: (_) => onRangeSelected(value),
+          ),
+        ),
+      );
+    }
+
+    final summary =
+        '${candles.symbol} ${candles.interval} 캔들 차트. '
+        '$rangeLabel, ${bars.length}개 봉, 상태 ${candles.state}. '
+        '${bars.first.at}부터 ${bars.last.at}까지. '
+        '시가 ${bars.first.open}, 종가 ${bars.last.close}. '
+        '정확한 OHLCV 표 보기 버튼으로 선택한 범위의 모든 값을 확인할 수 있습니다.';
+    return _SectionCard(
+      title: '시세 차트',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('표시 범위', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              choice('30일', '최근 30일', _ChartRange.days30),
+              choice('90일', '최근 90일', _ChartRange.days90),
+              choice('365일', '최근 365일', _ChartRange.days365),
+              choice('전체', '전체 기간', _ChartRange.all),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$rangeLabel · ${bars.first.at} ~ ${bars.last.at} · ${bars.length}개 봉',
+            style: _tabular(context),
+          ),
+          const SizedBox(height: 12),
+          Semantics(
+            container: true,
+            label: summary,
+            child: ExcludeSemantics(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final minimumWidth = bars.length * 4.0;
+                  final chartWidth = minimumWidth > constraints.maxWidth
+                      ? minimumWidth
+                      : constraints.maxWidth;
+                  return SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SizedBox(
+                      height: 260,
+                      width: chartWidth,
+                      child: RepaintBoundary(
+                        child: CustomPaint(
+                          painter: _CandlePainter(
+                            bars: bars,
+                            bull: _positiveColor(context),
+                            bear: Theme.of(context).colorScheme.error,
+                            axis: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.35),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _ChartLegend(
+                color: _positiveColor(context),
+                label: '상승 · 채운 몸통',
+                filled: true,
+              ),
+              _ChartLegend(
+                color: Theme.of(context).colorScheme.error,
+                label: '하락 · 빈 몸통',
+                filled: false,
+              ),
+              const _ChartLegend(
+                color: Colors.grey,
+                label: '아래 막대 · 거래량',
+                filled: true,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChartLegend extends StatelessWidget {
+  const _ChartLegend({
+    required this.color,
+    required this.label,
+    required this.filled,
+  });
+  final Color color;
+  final String label;
+  final bool filled;
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Container(
+        width: 14,
+        height: 14,
+        decoration: BoxDecoration(
+          color: filled ? color : Colors.transparent,
+          border: Border.all(color: color),
+        ),
+      ),
+      const SizedBox(width: 6),
+      Expanded(child: Text(label)),
+    ],
+  );
+}
+
+class _CandlePainter extends CustomPainter {
+  const _CandlePainter({
+    required this.bars,
+    required this.bull,
+    required this.bear,
+    required this.axis,
+  });
+  final List<MarketBar> bars;
+  final Color bull;
+  final Color bear;
+  final Color axis;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const padding = 10.0;
+    final priceHeight = size.height * 0.72;
+    double geometry(String value) {
+      final parsed = double.tryParse(value);
+      return parsed != null && parsed.isFinite ? parsed : 0;
+    }
+
+    final values = bars
+        .expand((bar) => [bar.low, bar.high])
+        .map(geometry)
+        .toList();
+    final min = values.reduce((a, b) => a < b ? a : b);
+    final max = values.reduce((a, b) => a > b ? a : b);
+    final flat = max == min;
+    final range = flat ? 1.0 : max - min;
+    final maxVolume = bars
+        .map((bar) => geometry(bar.volume))
+        .reduce((a, b) => a > b ? a : b);
+    final spacing = (size.width - padding * 2) / bars.length;
+    final width = (spacing * 0.62).clamp(2.0, 16.0);
+    final axisPaint = Paint()
+      ..color = axis
+      ..strokeWidth = 1;
+    canvas.drawLine(
+      Offset(padding, priceHeight),
+      Offset(size.width - padding, priceHeight),
+      axisPaint,
+    );
+    for (var index = 0; index < bars.length; index++) {
+      final bar = bars[index];
+      final x = padding + spacing * (index + 0.5);
+      double y(String value) => flat
+          ? padding + (priceHeight - padding * 2) / 2
+          : padding +
+                (max - geometry(value)) / range * (priceHeight - padding * 2);
+      final open = y(bar.open);
+      final close = y(bar.close);
+      final rising = geometry(bar.close) >= geometry(bar.open);
+      final color = rising ? bull : bear;
+      final paint = Paint()
+        ..color = color
+        ..strokeWidth = 1.5
+        ..style = PaintingStyle.stroke;
+      canvas.drawLine(Offset(x, y(bar.high)), Offset(x, y(bar.low)), paint);
+      final body = Rect.fromLTRB(
+        x - width / 2,
+        open < close ? open : close,
+        x + width / 2,
+        open < close ? close : open,
+      );
+      if (rising) {
+        paint.style = PaintingStyle.fill;
+      }
+      canvas.drawRect(
+        body.height < 1
+            ? Rect.fromLTWH(body.left, body.top, body.width, 1)
+            : body,
+        paint,
+      );
+      final volumeHeight = maxVolume == 0
+          ? 0.0
+          : geometry(bar.volume) /
+                maxVolume *
+                (size.height - priceHeight - padding);
+      canvas.drawRect(
+        Rect.fromLTWH(
+          x - width / 2,
+          size.height - volumeHeight,
+          width,
+          volumeHeight,
+        ),
+        Paint()..color = color.withValues(alpha: 0.55),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CandlePainter oldDelegate) =>
+      oldDelegate.bars != bars ||
+      oldDelegate.bull != bull ||
+      oldDelegate.bear != bear ||
+      oldDelegate.axis != axis;
+}
+
+class _OhlcvTable extends StatelessWidget {
+  const _OhlcvTable({required this.bars});
+  final List<MarketBar> bars;
+
+  @override
+  Widget build(BuildContext context) => _SectionCard(
+    title: 'OHLCV 표',
+    child: SizedBox(
+      height: 360,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: SizedBox(
+          width: 1320,
+          child: Column(
+            children: [
+              const _OhlcvRow.header(),
+              const Divider(height: 1),
+              Expanded(
+                child: ListView.builder(
+                  key: const Key('ohlcv-table-rows'),
+                  itemExtent: 56,
+                  itemCount: bars.length,
+                  itemBuilder: (context, index) => _OhlcvRow(bar: bars[index]),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _OhlcvRow extends StatelessWidget {
+  const _OhlcvRow.header() : bar = null;
+  const _OhlcvRow({required this.bar});
+  final MarketBar? bar;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = bar;
+    if (value == null) {
+      return const Row(
+        children: [
+          _TableCell(
+            '시각',
+            width: 420,
+            header: true,
+            semanticKey: Key('ohlcv-header-at'),
+          ),
+          _TableCell('시가', width: 180, header: true),
+          _TableCell('고가', width: 180, header: true),
+          _TableCell('저가', width: 180, header: true),
+          _TableCell('종가', width: 180, header: true),
+          _TableCell('거래량', width: 180, header: true),
+        ],
+      );
+    }
+    return Row(
+      children: [
+        _TableCell(
+          value.at,
+          width: 420,
+          semanticLabel: '행 ${value.at}, 시각 ${value.at}',
+        ),
+        _TableCell(
+          value.open,
+          width: 180,
+          semanticLabel: '행 ${value.at}, 시가 ${value.open}',
+        ),
+        _TableCell(
+          value.high,
+          width: 180,
+          semanticLabel: '행 ${value.at}, 고가 ${value.high}',
+        ),
+        _TableCell(
+          value.low,
+          width: 180,
+          semanticLabel: '행 ${value.at}, 저가 ${value.low}',
+        ),
+        _TableCell(
+          value.close,
+          width: 180,
+          semanticLabel: '행 ${value.at}, 종가 ${value.close}',
+        ),
+        _TableCell(
+          value.volume,
+          width: 180,
+          semanticLabel: '행 ${value.at}, 거래량 ${value.volume}',
+        ),
+      ],
+    );
+  }
+}
+
+class _TableCell extends StatelessWidget {
+  const _TableCell(
+    this.value, {
+    required this.width,
+    this.semanticLabel,
+    this.header = false,
+    this.semanticKey,
+  });
+  final String value;
+  final double width;
+  final String? semanticLabel;
+  final bool header;
+  final Key? semanticKey;
+  @override
+  Widget build(BuildContext context) => Semantics(
+    key: semanticKey,
+    container: true,
+    excludeSemantics: true,
+    header: header,
+    label: semanticLabel ?? value,
+    child: SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Text(value, style: _tabular(context)),
+      ),
+    ),
+  );
+}
+
+class _FallbackWithOrderRisk extends StatelessWidget {
+  const _FallbackWithOrderRisk({
+    required this.orderRisk,
+    required this.message,
+  });
+
+  final Widget orderRisk;
+  final Widget message;
+
+  @override
+  Widget build(BuildContext context) => ListView(
+    padding: const EdgeInsets.all(16),
+    children: [message, const SizedBox(height: 12), orderRisk],
+  );
+}
+
+class _OverviewOrderRiskCard extends StatelessWidget {
+  const _OverviewOrderRiskCard({
+    required this.orderLog,
+    required this.retainedError,
+    required this.busy,
+    required this.onDetails,
+  });
+
+  final LocalOrderLog? orderLog;
+  final bool retainedError;
+  final bool busy;
+  final VoidCallback onDetails;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget spaced(Widget child) =>
+        Padding(padding: const EdgeInsets.only(top: 12), child: child);
+
+    final value = orderLog;
+    if (busy && value == null) {
+      return spaced(
+        const _SectionCard(title: '로컬 주문 기록', child: _Loading(compact: true)),
+      );
+    }
+    if (value == null) {
+      return spaced(
+        _SectionCard(
+          title: '로컬 주문 기록',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Semantics(
+                container: true,
+                liveRegion: retainedError,
+                child: Text(
+                  retainedError
+                      ? '주문 기록을 불러오지 못했습니다.'
+                      : '아직 주문 기록을 확인하지 못했습니다.',
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '로컬 주문 기록과 현재 브로커 상태는 별개입니다.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: onDetails,
+                child: const Text('주문 기록 자세히 보기'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final submitUnknown = value.orders
+        .where((order) => order.pendingAction == 'SUBMIT')
+        .length;
+    final cancelUnknown = value.orders
+        .where((order) => order.pendingAction == 'CANCEL')
+        .length;
+    final unresolved = submitUnknown + cancelUnknown;
+    if (unresolved == 0 && !busy && !retainedError) {
+      return const SizedBox.shrink();
+    }
+    if (unresolved == 0) {
+      final text = retainedError
+          ? '새로고침에 실패해 마지막 정상 로컬 주문 기록을 유지합니다.'
+          : '로컬 주문 기록을 다시 확인하는 중입니다.';
+      return spaced(
+        _SectionCard(
+          title: '로컬 주문 기록',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Semantics(container: true, liveRegion: true, child: Text(text)),
+              const SizedBox(height: 4),
+              Text(
+                '현재 브로커 상태를 새로 확인한 결과가 아닙니다.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: onDetails,
+                child: const Text('주문 기록 자세히 보기'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    final unresolvedOrders = value.orders.where(
+      (order) => order.pendingAction != 'none',
+    );
+    final lastRecordedAt = unresolvedOrders
+        .map((order) => DateTime.parse(order.lastRecordedAt))
+        .reduce((left, right) => left.isAfter(right) ? left : right);
+    final status = '확인 필요한 주문 $unresolved건';
+    final detail = '접수 미확정 $submitUnknown건 · 취소 미확정 $cancelUnknown건';
+    final lastRecord = '마지막 로컬 기록 ${_time(lastRecordedAt)}';
+    final semantics =
+        '로컬 주문 기록, 현재 브로커 상태 아님, $status, $detail, 재주문·추가 조작 금지, $lastRecord';
+    return spaced(
+      _SectionCard(
+        title: '로컬 주문 기록',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Semantics(
+              container: true,
+              excludeSemantics: true,
+              liveRegion: unresolved > 0 || retainedError,
+              label: semantics,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '로컬 주문 기록 · 현재 브로커 상태 아님',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(status, style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  Text(detail, style: _tabular(context)),
+                  const SizedBox(height: 8),
+                  Text(
+                    '재주문·추가 조작 금지',
+                    style: TextStyle(color: _warningColor(context)),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    lastRecord,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            if (busy) ...[
+              const SizedBox(height: 12),
+              _Notice(
+                icon: Icons.sync,
+                text: '로컬 주문 기록을 다시 확인하는 중입니다.',
+                color: _warningColor(context),
+              ),
+            ],
+            if (retainedError) ...[
+              const SizedBox(height: 12),
+              _Notice(
+                icon: Icons.warning_amber_rounded,
+                text: '새로고침에 실패해 마지막 정상 주문 기록을 유지합니다.',
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ],
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: onDetails,
+              child: const Text('주문 기록 자세히 보기'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OverviewReconciliationCard extends StatelessWidget {
+  const _OverviewReconciliationCard({
+    required this.reconciliation,
+    required this.retainedError,
+    required this.busy,
+    required this.onDetails,
+  });
+
+  final BrokerReconciliation? reconciliation;
+  final bool retainedError;
+  final bool busy;
+  final VoidCallback onDetails;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = reconciliation;
+    if (busy && value == null) {
+      return const _SectionCard(
+        title: '증권사 잔고 대조',
+        child: _Loading(compact: true),
+      );
+    }
+    if (value == null) {
+      return _SectionCard(
+        title: '증권사 잔고 대조',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(retainedError ? '대조 결과를 불러오지 못했습니다.' : '아직 저장된 대조 기록이 없습니다.'),
+            const SizedBox(height: 4),
+            Text(
+              '로컬 원장 확인과 증권사 잔고 대조는 별개입니다.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: onDetails,
+              child: const Text('연결에서 자세히 보기'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final differences = value.positionDifferences;
+    final mismatchCount = differences.where((item) => !item.match).length;
+    final status = differences.isEmpty
+        ? '대조할 보유 종목 없음'
+        : value.allPositionsMatch
+        ? '${differences.length}개 모두 일치'
+        : '${differences.length}개 중 $mismatchCount개 불일치';
+    final fetchedAt = _time(DateTime.parse(value.fetchedAt));
+    final recordedAt = _time(DateTime.parse(value.recordedAt));
+    final semantics =
+        '증권사 잔고 대조, 마지막 저장 기록, 현재 상태 아님, $status, 증권사 $fetchedAt, 저장 $recordedAt';
+    return _SectionCard(
+      title: '증권사 잔고 대조',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            container: true,
+            excludeSemantics: true,
+            label: semantics,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '마지막 저장 기록 · 현재 상태 아님',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 8),
+                Text(status, style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 4),
+                Text(
+                  '증권사 $fetchedAt · 저장 $recordedAt',
+                  style: _tabular(context),
+                ),
+              ],
+            ),
+          ),
+          if (busy) ...[
+            const SizedBox(height: 12),
+            const _ReconciliationRefreshingNotice(),
+          ],
+          if (retainedError) ...[
+            const SizedBox(height: 12),
+            _Notice(
+              icon: Icons.warning_amber_rounded,
+              text: '새로고침에 실패해 마지막 정상 대조 기록을 유지합니다.',
+              color: Theme.of(context).colorScheme.error,
+            ),
+          ],
+          const SizedBox(height: 12),
+          OutlinedButton(
+            onPressed: onDetails,
+            child: const Text('연결에서 자세히 보기'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TrustBanner extends StatelessWidget {
+  const _TrustBanner({
+    required this.state,
+    required this.status,
+    required this.retainedError,
+    required this.reconciliation,
+    required this.reconciliationFailed,
+    required this.reconciliationBusy,
+  });
+  final DataState state;
+  final ServiceStatus? status;
+  final String? retainedError;
+  final BrokerReconciliation? reconciliation;
+  final bool reconciliationFailed;
+  final bool reconciliationBusy;
+
+  @override
+  Widget build(BuildContext context) {
+    final isGood = state == DataState.success;
+    final color = switch (state) {
+      DataState.success => _positiveColor(context),
+      DataState.neverVerified => _warningColor(context),
+      DataState.stale => _warningColor(context),
+      _ => Theme.of(context).colorScheme.error,
+    };
+    final label = switch (state) {
+      DataState.success => '로컬 기록 확인 완료',
+      DataState.neverVerified => '아직 확인되지 않음',
+      DataState.stale => '새로고침 필요',
+      DataState.partial => '일부 데이터 확인 필요',
+      _ => '확인 필요',
+    };
+    final verified = status?.lastVerifiedAt == null
+        ? '없음'
+        : _time(status!.lastVerifiedAt!);
+    final error = retainedError == null
+        ? ''
+        : '\n새로고침 실패: ${retainedError!}\n마지막 정상 스냅샷은 유지됩니다.';
+    final reconciliationText = reconciliation == null
+        ? reconciliationBusy
+              ? '증권사 잔고 대조 확인 중'
+              : !reconciliationFailed
+              ? '증권사 잔고 대조 기록 없음'
+              : '증권사 잔고 대조 확인 실패'
+        : reconciliationBusy
+        ? '증권사 잔고 대조 저장 기록 다시 확인 중 · 현재 상태 아님'
+        : '증권사 잔고 대조 저장 기록 · 현재 상태 아님';
+    final text =
+        '데이터 상태: $label\n로컬 원장 마지막 확인 $verified\n$reconciliationText$error';
+    return Semantics(
+      container: true,
+      excludeSemantics: true,
+      liveRegion: !isGood,
+      label: text,
+      child: _Notice(
+        icon: isGood ? Icons.verified : Icons.warning_amber_rounded,
+        color: color,
+        text: text,
+      ),
+    );
+  }
+}
+
+class ActivityPage extends StatefulWidget {
+  const ActivityPage({super.key, required this.api, this.applies});
+  final OmniApi api;
+  final ImportApplyController? applies;
+
+  @override
+  State<ActivityPage> createState() => _ActivityPageState();
+}
+
+class _ActivityPageState extends State<ActivityPage> {
+  final _csv = TextEditingController();
+  final _scroll = ScrollController();
+  final _activityHistoryKey = GlobalKey();
+  ImportPreview? _preview;
+  ApplyReceipt? _receipt;
+  ApplyReceipt? _previousReceipt;
+  late final ImportApplyController _applies;
+  late final bool _ownsApplies;
+  late int _seenCompletion;
+  late int _seenRejection;
+  LedgerActivityPage? _firstActivities;
+  LedgerActivityPage? _activities;
+  final List<({String cursor, String upperBoundOccurredAt})>
+  _activityCursorTrail = [];
+  String? _error;
+  var _previewBusy = false;
+  var _manualOpen = false;
+  var _fileBusy = false;
+  var _activityBusy = false;
+  var _activityFailed = false;
+  var _activityPagingFailed = false;
+  var _activityPageIndex = 0;
+  var _activityEpoch = 0;
+  int? _queuedFirstPageEpoch;
+  var _queuedFirstPageReveal = false;
+
+  bool get _busy => _previewBusy || _applies.busy;
+
+  @override
+  void initState() {
+    super.initState();
+    _ownsApplies = widget.applies == null;
+    _applies = widget.applies ?? ImportApplyController(widget.api);
+    _seenCompletion = _applies.completionSerial;
+    _seenRejection = _applies.rejectionSerial;
+    _previousReceipt = _applies.completion?.receipt;
+    _applies.addListener(_applyStateChanged);
+    _refreshActivities(revealResult: false);
+  }
+
+  @override
+  void dispose() {
+    _activityEpoch += 1;
+    _applies.removeListener(_applyStateChanged);
+    if (_ownsApplies) _applies.dispose();
+    _csv.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _applyStateChanged() {
+    if (!mounted) return;
+    var refresh = false;
+    setState(() {
+      if (_seenCompletion != _applies.completionSerial) {
+        _seenCompletion = _applies.completionSerial;
+        final completed = _applies.completion!;
+        if (completed.csv == _csv.text) {
+          _receipt = completed.receipt;
+          _previousReceipt = null;
+          if (_preview?.previewId != completed.previewId) _preview = null;
+        } else {
+          _previousReceipt = completed.receipt;
+          _receipt = null;
+          _preview = null;
+          _error = '이전 입력의 반영이 완료됐습니다. 현재 CSV는 새로 미리보기를 만드세요.';
+        }
+        refresh = true;
+      }
+      if (_seenRejection != _applies.rejectionSerial) {
+        _seenRejection = _applies.rejectionSerial;
+        _preview = null;
+        _receipt = null;
+      }
+    });
+    if (refresh) unawaited(_refreshActivities(revealResult: false));
+  }
+
+  Future<void> _openManualEntry() async {
+    if (_busy || _fileBusy || _manualOpen || _applies.pending != null) return;
+    setState(() => _manualOpen = true);
+    try {
+      final csv = await Navigator.of(context).push<String>(
+        MaterialPageRoute(builder: (_) => const ManualEntryPage()),
+      );
+      if (!mounted || csv == null || csv == _csv.text) return;
+      _csv.text = csv;
+      _error = null;
+      _invalidatePreviewOnEdit(csv);
+    } finally {
+      if (mounted) setState(() => _manualOpen = false);
+    }
+  }
+
+  Future<void> _refreshActivities({bool revealResult = true}) async {
+    if (!mounted) return;
+    final epoch = ++_activityEpoch;
+    if (_activityBusy) {
+      _queuedFirstPageEpoch = epoch;
+      _queuedFirstPageReveal = revealResult;
+      setState(() {
+        _activityFailed = false;
+        _activityPagingFailed = false;
+      });
+      return;
+    }
+    await _loadActivityPage(
+      epoch: epoch,
+      refreshFirst: true,
+      revealResult: revealResult,
+    );
+  }
+
+  Future<void> _loadActivityPage({
+    required int epoch,
+    required bool refreshFirst,
+    String? cursor,
+    String? upperBoundOccurredAt,
+    String? lowerBoundOccurredAt,
+    int targetPageIndex = 0,
+    bool movingOlder = false,
+    bool revealResult = true,
+  }) async {
+    if (!mounted || _activityBusy) return;
+    setState(() {
+      _activityBusy = true;
+      _activityFailed = false;
+      _activityPagingFailed = false;
+    });
+    try {
+      final activities = await widget.api.ledgerActivities(cursor: cursor);
+      if (!mounted || epoch != _activityEpoch) return;
+      if (cursor != null) {
+        final first = _firstActivities;
+        if (first == null || upperBoundOccurredAt == null) {
+          throw const FormatException('Missing activity page snapshot');
+        }
+        activities.requireContinuationOf(
+          initial: first,
+          upperBoundOccurredAt: upperBoundOccurredAt,
+          requestedCursor: cursor,
+          lowerBoundOccurredAt: lowerBoundOccurredAt,
+          traversedCursors: _activityCursorTrail
+              .take(targetPageIndex - 1)
+              .map((step) => step.cursor),
+        );
+      }
+      setState(() {
+        if (refreshFirst) {
+          _firstActivities = activities;
+          _activities = activities;
+          _activityPageIndex = 0;
+          _activityCursorTrail.clear();
+        } else {
+          _activities = activities;
+          _activityPageIndex = targetPageIndex;
+          if (movingOlder) {
+            _activityCursorTrail.removeRange(
+              targetPageIndex - 1,
+              _activityCursorTrail.length,
+            );
+            _activityCursorTrail.add((
+              cursor: cursor!,
+              upperBoundOccurredAt: upperBoundOccurredAt!,
+            ));
+          } else if (_activityCursorTrail.length > targetPageIndex) {
+            _activityCursorTrail.removeRange(
+              targetPageIndex,
+              _activityCursorTrail.length,
+            );
+          }
+        }
+        _activityFailed = false;
+        _activityPagingFailed = false;
+      });
+      if (revealResult) _revealActivityHistory();
+    } catch (_) {
+      if (mounted && epoch == _activityEpoch) {
+        setState(() {
+          _activityFailed = true;
+          _activityPagingFailed = cursor != null;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _activityBusy = false);
+        final queuedEpoch = _queuedFirstPageEpoch;
+        if (queuedEpoch != null) {
+          final revealQueuedResult = _queuedFirstPageReveal;
+          _queuedFirstPageEpoch = null;
+          _queuedFirstPageReveal = false;
+          await _loadActivityPage(
+            epoch: queuedEpoch,
+            refreshFirst: true,
+            revealResult: revealQueuedResult,
+          );
+        }
+      }
+    }
+  }
+
+  void _revealActivityHistory() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final historyContext = _activityHistoryKey.currentContext;
+      if (!mounted || historyContext == null || !_scroll.hasClients) return;
+      Scrollable.ensureVisible(
+        historyContext,
+        duration: Duration.zero,
+        alignment: 0,
+      );
+    });
+  }
+
+  Future<void> _showOlderActivities() async {
+    final activities = _activities;
+    final cursor = activities?.nextCursor;
+    if (_activityBusy || activities == null || cursor == null) return;
+    await _loadActivityPage(
+      epoch: _activityEpoch,
+      refreshFirst: false,
+      cursor: cursor,
+      upperBoundOccurredAt: activities.events.last.occurredAt,
+      targetPageIndex: _activityPageIndex + 1,
+      movingOlder: true,
+    );
+  }
+
+  Future<void> _showNewerActivities() async {
+    final activities = _activities;
+    if (_activityBusy || _activityPageIndex == 0 || activities == null) return;
+    if (_activityPageIndex == 1) {
+      setState(() {
+        _activities = _firstActivities;
+        _activityPageIndex = 0;
+        _activityCursorTrail.clear();
+        _activityFailed = false;
+        _activityPagingFailed = false;
+      });
+      _revealActivityHistory();
+      return;
+    }
+    final targetPageIndex = _activityPageIndex - 1;
+    final step = _activityCursorTrail[targetPageIndex - 1];
+    await _loadActivityPage(
+      epoch: _activityEpoch,
+      refreshFirst: false,
+      cursor: step.cursor,
+      upperBoundOccurredAt: step.upperBoundOccurredAt,
+      lowerBoundOccurredAt: activities.events.first.occurredAt,
+      targetPageIndex: targetPageIndex,
+    );
+  }
+
+  Future<void> _selectCsvFile() async {
+    if (_busy || _fileBusy) return;
+    setState(() => _fileBusy = true);
+    try {
+      final csv = await selectCsvFile();
+      if (!mounted || csv == null || csv == _csv.text) return;
+      _csv.text = csv;
+      _error = null;
+      _invalidatePreviewOnEdit(csv);
+    } on CsvFileException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error =
+              'CSV 파일을 읽지 못했습니다. 다시 선택하거나 내용을 붙여 넣으세요. 기존 입력과 결과는 유지됩니다.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _fileBusy = false);
+    }
+  }
+
+  Future<void> _previewCsv() async {
+    if (_busy || _fileBusy) return;
+    if (_csv.text.trim().isEmpty) {
+      setState(() => _error = 'CSV 내용을 붙여 넣으세요. 미리보기는 원장을 변경하지 않습니다.');
+      return;
+    }
+    final csv = _csv.text;
+    setState(() {
+      _previewBusy = true;
+      _error = null;
+      _receipt = null;
+    });
+    try {
+      final preview = await widget.api.preview(csv);
+      if (mounted && _csv.text == csv) {
+        setState(() => _preview = preview);
+      } else if (mounted) {
+        setState(() => _error = 'CSV 내용이 변경되어 이전 미리보기는 무효입니다. 새 미리보기를 만드세요.');
+      }
+    } catch (_) {
+      if (mounted && _csv.text == csv) {
+        setState(() {
+          _error = '미리보기를 완료하지 못했습니다. 입력을 확인한 뒤 다시 시도하세요.';
+          if (_preview != null) _error = '$_error\n이전 미리보기는 유지됩니다.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _previewBusy = false);
+    }
+  }
+
+  Future<void> _apply() async {
+    if (_busy || _fileBusy) return;
+    final preview = _preview;
+    if (preview == null || !preview.canApply) return;
+    setState(() => _error = null);
+    await _applies.apply(preview, _csv.text);
+  }
+
+  void _invalidatePreviewOnEdit(String _) {
+    if (_preview == null && _receipt == null) {
+      setState(() {});
+      return;
+    }
+    setState(() {
+      _preview = null;
+      _receipt = null;
+      _error = 'CSV 내용이 변경되어 이전 미리보기는 무효입니다. 새 미리보기를 만드세요.';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => ListView(
+    controller: _scroll,
+    padding: const EdgeInsets.all(16),
+    children: [
+      _SectionCard(
+        title: '거래 내역 가져오기',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('UTF-8·최대 1MiB CSV를 선택하거나 붙여 넣으세요. 선택만으로 전송되지 않습니다.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _csv,
+              readOnly: _fileBusy,
+              onChanged: _invalidatePreviewOnEdit,
+              minLines: 6,
+              maxLines: 12,
+              keyboardType: TextInputType.multiline,
+              decoration: const InputDecoration(
+                labelText: 'CSV 텍스트',
+                hintText: 'header\nrow…',
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _busy || _fileBusy ? null : _selectCsvFile,
+                  icon: const Icon(Icons.file_open_outlined),
+                  label: const Text('CSV 파일 선택'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 52),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed:
+                      _busy ||
+                          _fileBusy ||
+                          _manualOpen ||
+                          _applies.pending != null
+                      ? null
+                      : _openManualEntry,
+                  icon: const Icon(Icons.edit_note_outlined),
+                  label: const Text('거래 직접 입력'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 52),
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _busy || _fileBusy ? null : _previewCsv,
+                  icon: const Icon(Icons.preview),
+                  label: const Text('미리보기 만들기'),
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(0, 52),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      if (_busy || _fileBusy)
+        const Padding(
+          padding: EdgeInsets.all(16),
+          child: _Loading(compact: true),
+        ),
+      if (_error != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Semantics(
+            key: const Key('import-error'),
+            container: true,
+            liveRegion: true,
+            child: _Notice(
+              icon: Icons.error_outline,
+              text: _error!,
+              color: Theme.of(context).colorScheme.error,
+            ),
+          ),
+        ),
+      if (_applies.pending != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Semantics(
+                container: true,
+                liveRegion: true,
+                child: _Notice(
+                  icon: Icons.history,
+                  color: _applies.busy
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.error,
+                  text: _applies.busy
+                      ? _applies.pending!.csv == _csv.text
+                            ? '이 입력의 반영 요청을 처리하고 있습니다.'
+                            : '이전 입력의 반영 요청을 처리하고 있습니다. 현재 CSV의 결과가 아닙니다.'
+                      : _applies.pending!.csv == _csv.text
+                      ? '거래 내역의 반영 여부를 확인하지 못했습니다. 같은 요청을 다시 시도해도 중복 반영되지 않습니다.'
+                      : '이전 CSV의 반영 여부를 확인하지 못했습니다. 현재 입력은 보존합니다. 같은 거래를 새로 작성하지 말고 이전 요청을 재시도하세요.',
+                ),
+              ),
+              if (!_applies.busy) ...[
+                const SizedBox(height: 8),
+                const Text('반영 여부를 확인할 때까지 앱을 닫거나 같은 거래를 새로 작성하지 마세요.'),
+              ],
+              if (_preview?.canApply != true ||
+                  _applies.pending!.csv != _csv.text) ...[
+                const SizedBox(height: 8),
+                const Text('재시도는 원래 요청을 사용하며, 아직 반영되지 않았다면 원장을 변경할 수 있습니다.'),
+                const SizedBox(height: 8),
+                ElevatedButton(
+                  onPressed: _busy || _fileBusy ? null : _applies.retry,
+                  child: const Text('이전 요청 재시도'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      if (_applies.failure == ImportApplyFailure.rejected)
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: _Notice(
+            icon: Icons.error_outline,
+            text: '이전 반영 요청이 거절되었습니다. 입력을 확인해 새 미리보기를 만드세요.',
+            color: Theme.of(context).colorScheme.error,
+          ),
+        ),
+      if (_preview != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: _PreviewCard(
+            preview: _preview!,
+            onApply:
+                _busy ||
+                    _fileBusy ||
+                    (_applies.pending != null &&
+                        _applies.pending!.csv != _csv.text)
+                ? null
+                : _apply,
+          ),
+        ),
+      if (_receipt != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: _ReceiptCard(receipt: _receipt!),
+        ),
+      if (_previousReceipt != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: _ReceiptCard(receipt: _previousReceipt!, previousInput: true),
+        ),
+      if (_receipt != null ||
+          _previousReceipt != null ||
+          (_csv.text.isEmpty && _preview == null && _error == null)) ...[
+        const SizedBox(height: 12),
+        _ActivityHistoryCard(
+          key: _activityHistoryKey,
+          page: _activities,
+          busy: _activityBusy,
+          failed: _activityFailed,
+          pagingFailed: _activityPagingFailed,
+          pageIndex: _activityPageIndex,
+          onRetry: () => _refreshActivities(),
+          onOlder: _showOlderActivities,
+          onNewer: _showNewerActivities,
+        ),
+      ],
+    ],
+  );
+}
+
+class _ActivityHistoryCard extends StatelessWidget {
+  const _ActivityHistoryCard({
+    super.key,
+    required this.page,
+    required this.busy,
+    required this.failed,
+    required this.pagingFailed,
+    required this.pageIndex,
+    required this.onRetry,
+    required this.onOlder,
+    required this.onNewer,
+  });
+
+  final LedgerActivityPage? page;
+  final bool busy;
+  final bool failed;
+  final bool pagingFailed;
+  final int pageIndex;
+  final VoidCallback onRetry;
+  final VoidCallback onOlder;
+  final VoidCallback onNewer;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = page;
+    return _SectionCard(
+      title: '최근 거래',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (value == null && busy) const _Loading(compact: true),
+          if (value == null && failed) ...[
+            Semantics(
+              liveRegion: true,
+              child: _Notice(
+                icon: Icons.error_outline,
+                text: '거래 내역을 불러오지 못했습니다. 다시 시도하세요.',
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: onRetry,
+              child: const Text('최근 거래 다시 불러오기'),
+            ),
+          ],
+          if (value != null) ...[
+            const Text('로컬 원장 기록 · 현재 증권사 상태 아님'),
+            const SizedBox(height: 4),
+            Text(
+              '기록 ${_time(DateTime.parse(value.recordedAt))} · 원장 ${value.ledgerRevision}',
+              style: _tabular(context),
+            ),
+            if (busy) ...[
+              const SizedBox(height: 8),
+              Semantics(
+                liveRegion: true,
+                child: _Notice(
+                  icon: Icons.sync,
+                  text: '거래 내역 페이지를 불러오는 중입니다.',
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ],
+            if (failed) ...[
+              const SizedBox(height: 8),
+              Semantics(
+                liveRegion: true,
+                child: _Notice(
+                  icon: Icons.error_outline,
+                  text: pagingFailed
+                      ? '거래 페이지를 불러오지 못해 현재 페이지를 유지합니다.'
+                      : '새로고침에 실패해 마지막 정상 거래 내역을 유지합니다.',
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Semantics(
+              liveRegion: true,
+              label: '거래 내역 페이지 ${pageIndex + 1}, ${value.events.length}건',
+              child: Text(
+                '페이지 ${pageIndex + 1} · ${value.events.length}건',
+                style: _tabular(context),
+              ),
+            ),
+            if (pageIndex > 0 || value.nextCursor != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                '한 페이지에 최대 50건만 표시합니다.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+              if (pageIndex > 0)
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 48),
+                  child: OutlinedButton.icon(
+                    onPressed: busy ? null : onNewer,
+                    icon: const Icon(Icons.arrow_upward_rounded),
+                    label: const Text('더 최근 거래'),
+                  ),
+                ),
+              if (pageIndex > 0 && value.nextCursor != null)
+                const SizedBox(height: 8),
+              if (value.nextCursor != null)
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 48),
+                  child: OutlinedButton.icon(
+                    onPressed: busy ? null : onOlder,
+                    icon: const Icon(Icons.arrow_downward_rounded),
+                    label: const Text('더 오래된 거래'),
+                  ),
+                ),
+            ],
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: onRetry,
+              child: const Text('최근 거래 다시 불러오기'),
+            ),
+            const SizedBox(height: 12),
+            if (value.events.isEmpty)
+              const Text('아직 가져온 거래가 없습니다. 아래에서 CSV 거래 내역을 가져오세요.')
+            else
+              for (var index = 0; index < value.events.length; index++) ...[
+                if (index > 0) const Divider(height: 24),
+                _ActivityRow(event: value.events[index]),
+              ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ActivityRow extends StatelessWidget {
+  const _ActivityRow({required this.event});
+  final LedgerActivity event;
+
+  @override
+  Widget build(BuildContext context) {
+    final occurred = _time(DateTime.parse(event.occurredAt));
+    if (event.type == 'FX_EXCHANGE') {
+      final sold = event.amount.substring(1);
+      final summary =
+          '환전 · ${event.currency} $sold 매도 → ${event.counterCurrency} ${event.counterAmount} 매수';
+      return Semantics(
+        container: true,
+        excludeSemantics: true,
+        label:
+            '$occurred, 환전, ${event.currency} $sold 매도, ${event.counterCurrency} ${event.counterAmount} 매수, 현재 환율 아님',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(summary, style: const TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            const Text('환율이나 현재 시세를 뜻하지 않습니다.'),
+            const SizedBox(height: 4),
+            Text(occurred, style: _tabular(context)),
+          ],
+        ),
+      );
+    }
+    final type = _activityType(event.type);
+    final title = event.symbol == null ? type : '$type · ${event.symbol}';
+    final details = <String>[
+      if (event.quantity != null) '수량 ${event.quantity}',
+      '${event.currency} ${event.amount}',
+      if (event.price != null) '가격 ${event.price}',
+      if (event.fee != null) '수수료 ${event.fee}',
+    ];
+    final semantics = [
+      occurred,
+      type,
+      if (event.symbol != null) event.symbol!,
+      ...details,
+      if (event.isCorrection) '원본 보존, 반대 금액으로 상쇄',
+    ].join(', ');
+    return Semantics(
+      container: true,
+      excludeSemantics: true,
+      label: semantics,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Text(details.take(2).join(' · '), style: _tabular(context)),
+          if (details.length > 2) ...[
+            const SizedBox(height: 4),
+            Text(details.skip(2).join(' · '), style: _tabular(context)),
+          ],
+          if (event.isCorrection) ...[
+            const SizedBox(height: 4),
+            const Text('원본 기록은 보존되고 반대 금액으로 상쇄됩니다.'),
+          ],
+          const SizedBox(height: 4),
+          Text(occurred, style: _tabular(context)),
+        ],
+      ),
+    );
+  }
+}
+
+String _activityType(String type) => switch (type) {
+  'BUY' => '매수',
+  'SELL' => '매도',
+  'DEPOSIT' => '입금',
+  'WITHDRAWAL' => '출금',
+  'DIVIDEND' => '배당',
+  'FEE' => '수수료',
+  'TAX' => '세금',
+  'SPLIT' => '주식 분할',
+  'CASH_VOID' => '현금 기록 취소',
+  _ => type,
+};
+
+class DataPage extends StatelessWidget {
+  const DataPage({
+    super.key,
+    required this.api,
+    required this.controller,
+    this.ownerImports,
+  });
+  final OmniApi api;
+  final PortfolioController controller;
+  final OwnerDataImportController? ownerImports;
+
+  @override
+  Widget build(BuildContext context) {
+    final baseUrl = api is RestOmniApi
+        ? (api as RestOmniApi).baseUrl
+        : '테스트 API';
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _Notice(
+          icon: Icons.block,
+          text: '실전 주문 꺼짐 · 로컬 거래 내역 가져오기와 가격·환율·지수 파일을 지원합니다.',
+          color: _warningColor(context),
+        ),
+        const SizedBox(height: 12),
+        _SectionCard(
+          title: '연결 정보',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('기본 주소: $baseUrl', style: _tabular(context)),
+              const SizedBox(height: 8),
+              const Text(
+                'API 주소는 앱 빌드 설정에서만 바꿀 수 있습니다. 캐시는 읽기 전용이며 오프라인 주문을 저장하지 않습니다.',
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (ownerImports != null) ...[
+          _SectionCard(
+            title: '가격·환율·비교 지수',
+            child: OutlinedButton.icon(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      OwnerDataImportPage(controller: ownerImports!),
+                ),
+              ),
+              icon: const Icon(Icons.file_open_outlined),
+              label: const Text('가격·환율·지수 파일 가져오기'),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        _buildReconciliation(context),
+        const SizedBox(height: 12),
+        _buildLocalOrders(context),
+        const SizedBox(height: 12),
+        _SectionCard(
+          title: '공시·뉴스·분석',
+          child: OutlinedButton.icon(
+            onPressed: () => selectPublicResearch(context, api),
+            icon: const Icon(Icons.article_outlined),
+            label: const Text('시장·종목 선택해 읽기'),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _SectionCard(
+          title: '백테스트 보고서',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('가장 나중에 등록된 연구 결과 · 지표 재계산 안 함'),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => ResearchReportPage(api: api),
+                  ),
+                ),
+                icon: const Icon(Icons.analytics_outlined),
+                label: const Text('백테스트 보고서 보기'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _SectionCard(
+          title: '모의 전략 비교',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('저장된 모의 비교 기록을 요청할 때만 불러옵니다.'),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => PaperPromotionReportPage(api: api),
+                  ),
+                ),
+                icon: const Icon(Icons.compare_arrows),
+                label: const Text('모의 전략 비교 보기'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _SectionCard(
+          title: '모의 자동매매 상태',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('저장된 로컬 모의 데이터를 요청할 때만 불러옵니다.'),
+              const SizedBox(height: 4),
+              Text(
+                '프로세스 생존, 현재 증권사 상태 또는 실행 권한을 뜻하지 않습니다.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => PaperMonitorPage(api: api),
+                  ),
+                ),
+                icon: const Icon(Icons.monitor_heart_outlined),
+                label: const Text('모의 자동매매 상태 보기'),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLocalOrders(BuildContext context) {
+    final orderLog = controller.orderLog;
+    if (controller.orderLogBusy && orderLog == null) {
+      return const _SectionCard(
+        title: '로컬 주문 기록',
+        child: _Loading(compact: true),
+      );
+    }
+    if (controller.orderLogFailed && orderLog == null) {
+      return _SectionCard(
+        title: '로컬 주문 기록',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('주문 기록을 불러오지 못했습니다.'),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              onPressed: controller.refreshLocalOrders,
+              child: const Text('로컬 주문 기록 다시 불러오기'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (orderLog == null) return const SizedBox.shrink();
+    return _LocalOrderLogCard(
+      orderLog: orderLog,
+      retainedError: controller.orderLogFailed,
+      busy: controller.orderLogBusy,
+      onRefresh: controller.refreshLocalOrders,
+    );
+  }
+
+  Widget _buildReconciliation(BuildContext context) {
+    final reconciliation = controller.reconciliation;
+    if (controller.reconciliationBusy && reconciliation == null) {
+      return const _SectionCard(
+        title: '증권사 잔고 대조',
+        child: _Loading(compact: true),
+      );
+    }
+    if (controller.reconciliationFailed && reconciliation == null) {
+      return _SectionCard(
+        title: '증권사 잔고 대조',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('대조 결과를 불러오지 못했습니다'),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              onPressed: controller.refreshReconciliation,
+              child: const Text('대조 결과 다시 불러오기'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (reconciliation == null) {
+      return _SectionCard(
+        title: '증권사 잔고 대조',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('아직 증권사 대조 기록이 없습니다'),
+            const SizedBox(height: 4),
+            Text(
+              '로컬 원장 확인과 증권사 잔고 대조는 별개입니다.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      );
+    }
+    return _BrokerReconciliationCard(
+      reconciliation: reconciliation,
+      retainedError: controller.reconciliationFailed,
+      busy: controller.reconciliationBusy,
+      onRefresh: controller.refreshReconciliation,
+    );
+  }
+}
+
+class _LocalOrderLogCard extends StatelessWidget {
+  const _LocalOrderLogCard({
+    required this.orderLog,
+    required this.retainedError,
+    required this.busy,
+    required this.onRefresh,
+  });
+
+  final LocalOrderLog orderLog;
+  final bool retainedError;
+  final bool busy;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) => _SectionCard(
+    title: '로컬 주문 기록',
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _Notice(
+          icon: Icons.history,
+          text: '로컬 주문 기록 · 현재 브로커 상태가 아닙니다.\n이 화면은 증권사를 새로 조회하지 않습니다.',
+          color: _warningColor(context),
+        ),
+        if (orderLog.orders.isEmpty) ...[
+          const SizedBox(height: 12),
+          const Text('아직 저장된 주문 기록이 없습니다'),
+        ],
+        for (final order in orderLog.orders) ...[
+          const Divider(height: 24),
+          _LocalOrderRow(order: order),
+        ],
+        if (busy) ...[
+          const SizedBox(height: 12),
+          _Notice(
+            icon: Icons.sync,
+            text: '로컬 주문 기록을 다시 확인하는 중입니다. 마지막 정상 기록을 유지합니다.',
+            color: _warningColor(context),
+          ),
+        ],
+        if (retainedError) ...[
+          const SizedBox(height: 12),
+          _Notice(
+            icon: Icons.warning_amber_rounded,
+            text: '새로고침 실패: 주문 기록을 불러오지 못했습니다.\n마지막 정상 주문 기록은 유지됩니다.',
+            color: Theme.of(context).colorScheme.error,
+          ),
+        ],
+        const SizedBox(height: 12),
+        ElevatedButton.icon(
+          onPressed: busy ? null : onRefresh,
+          icon: const Icon(Icons.refresh),
+          label: const Text('로컬 주문 기록 다시 불러오기'),
+        ),
+      ],
+    ),
+  );
+}
+
+class _LocalOrderRow extends StatelessWidget {
+  const _LocalOrderRow({required this.order});
+
+  final LocalOrderView order;
+
+  @override
+  Widget build(BuildContext context) {
+    final mode = order.mode == 'synthetic' ? '합성 테스트' : '로컬 페이퍼';
+    final side = order.side == 'BUY' ? '매수' : '매도';
+    final status = _localOrderStatus(order.status, order.pendingAction);
+    final semanticsStatus =
+        order.pendingAction == 'CANCEL' && order.status == 'FILLED'
+        ? '체결됨, 취소 결과 확인 중, 추가 조작 금지'
+        : order.status == 'SUBMIT_UNKNOWN'
+        ? '브로커 결과 미확정, 재주문 금지'
+        : status.$1;
+    return Semantics(
+      container: true,
+      excludeSemantics: true,
+      label:
+          '$mode 주문, ${order.symbol} $side 지정가, 주문 수량 ${order.quantity}, 체결 수량 ${order.filledQuantity}, ${order.currency} ${order.limitPrice}, $semanticsStatus',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(status.$1, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(status.$2),
+          const SizedBox(height: 8),
+          Text('$mode · ${order.symbol} · $side · 지정가'),
+          const SizedBox(height: 4),
+          Text(
+            '주문 ${order.quantity}주 · 체결 ${order.filledQuantity}주\n${order.currency} ${order.limitPrice} · ${_time(DateTime.parse(order.lastRecordedAt))}',
+            style: _tabular(context),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+(String, String) _localOrderStatus(String status, String pendingAction) {
+  if (pendingAction == 'CANCEL' && status == 'FILLED') {
+    return (
+      '체결됨 · 취소 결과 확인 중',
+      '주문은 로컬 기록상 전량 체결됐지만 증권사 취소 결과를 아직 확인하지 못했습니다. 추가 조작 금지.',
+    );
+  }
+  return switch (status) {
+    'RECORDED' => ('로컬 기록 저장', '주문 의도가 로컬 로그에 저장되었습니다.'),
+    'READY' => ('로컬 전송 준비', '위험 검사를 통과한 로컬 기록입니다.'),
+    'RISK_REJECTED' => ('위험 검사 차단', '위험 규칙이 주문 전송을 차단했습니다.'),
+    'SUBMIT_UNKNOWN' => (
+      '브로커 결과 미확정 · 재주문 금지',
+      '증권사 접수 결과를 아직 확인하지 못했습니다. 같은 주문을 다시 보내면 안 됩니다.',
+    ),
+    'OPEN' => ('로컬 기록: 접수', '저장된 이벤트에서 접수 상태로 재생되었습니다.'),
+    'REJECTED' => ('로컬 기록: 거절', '저장된 이벤트에서 거절 상태로 재생되었습니다.'),
+    'PARTIALLY_FILLED' => ('로컬 기록: 일부 체결', '저장된 이벤트에서 일부 체결로 재생되었습니다.'),
+    'CANCEL_UNKNOWN' => ('취소 결과 미확정 · 추가 조작 금지', '증권사 취소 결과를 아직 확인하지 못했습니다.'),
+    'CANCELED' => ('로컬 기록: 취소', '저장된 이벤트에서 취소 상태로 재생되었습니다.'),
+    'FILLED' => ('로컬 기록: 체결', '저장된 이벤트에서 체결 상태로 재생되었습니다.'),
+    _ => throw StateError('validated local order status required'),
+  };
+}
+
+class _BrokerReconciliationCard extends StatelessWidget {
+  const _BrokerReconciliationCard({
+    required this.reconciliation,
+    required this.retainedError,
+    required this.busy,
+    required this.onRefresh,
+  });
+
+  final BrokerReconciliation reconciliation;
+  final bool retainedError;
+  final bool busy;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final differences = reconciliation.positionDifferences;
+    final mismatchCount = differences.where((item) => !item.match).length;
+    final status = reconciliation.allPositionsMatch
+        ? '일치 · ${differences.length}종목의 보유 수량이 원장과 같습니다.'
+        : '불일치 · $mismatchCount/${differences.length}종목의 보유 수량이 다릅니다.';
+    final environment = reconciliation.environment == 'mock' ? '모의투자' : '실전';
+    return _SectionCard(
+      title: '증권사 잔고 대조',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _Notice(
+            icon: Icons.history,
+            text:
+                '마지막 저장 스냅샷 · 현재 상태 아님\n현재 대조 범위는 보유 수량입니다. 현금, 평가금액, 수수료, 주문 체결은 대조하지 않았습니다.',
+            color: _warningColor(context),
+          ),
+          const SizedBox(height: 12),
+          Text('키움 · $environment · ${reconciliation.exchange}'),
+          const SizedBox(height: 4),
+          Text(
+            '증권사 ${_time(DateTime.parse(reconciliation.fetchedAt))} · 저장 ${_time(DateTime.parse(reconciliation.recordedAt))}\n원장 ${reconciliation.ledgerRevision}',
+            style: _tabular(context),
+          ),
+          const SizedBox(height: 12),
+          Semantics(
+            container: true,
+            label: status,
+            child: Text(status, style: Theme.of(context).textTheme.titleMedium),
+          ),
+          if (differences.isEmpty) ...[
+            const SizedBox(height: 8),
+            const Text('현재 대조할 보유 종목이 없습니다.'),
+          ],
+          for (final difference in differences) ...[
+            const Divider(height: 24),
+            _BrokerDifferenceRow(difference: difference),
+          ],
+          if (busy) ...[
+            const SizedBox(height: 12),
+            const _ReconciliationRefreshingNotice(),
+          ],
+          if (retainedError) ...[
+            const SizedBox(height: 12),
+            _Notice(
+              icon: Icons.warning_amber_rounded,
+              text: '대조 결과 새로고침에 실패했습니다.\n마지막 정상 대조 기록은 유지됩니다.',
+              color: Theme.of(context).colorScheme.error,
+            ),
+          ],
+          const SizedBox(height: 12),
+          ElevatedButton.icon(
+            onPressed: busy ? null : onRefresh,
+            icon: const Icon(Icons.refresh),
+            label: const Text('저장된 대조 다시 불러오기'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReconciliationRefreshingNotice extends StatelessWidget {
+  const _ReconciliationRefreshingNotice();
+
+  static const text = '저장된 대조를 다시 불러오는 중입니다. 마지막 정상 기록을 유지합니다.';
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    container: true,
+    excludeSemantics: true,
+    liveRegion: true,
+    label: text,
+    child: _Notice(icon: Icons.sync, text: text, color: _warningColor(context)),
+  );
+}
+
+class _BrokerDifferenceRow extends StatelessWidget {
+  const _BrokerDifferenceRow({required this.difference});
+  final BrokerPositionDifference difference;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = difference.match ? '일치' : '불일치';
+    final semantics =
+        '${difference.symbol} $status, 증권사 수량 ${difference.brokerQuantity}, 원장 수량 ${difference.ledgerQuantity}, 차이 ${difference.difference}';
+    return Semantics(
+      container: true,
+      excludeSemantics: true,
+      label: semantics,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('${difference.symbol} · $status'),
+          const SizedBox(height: 4),
+          Text(
+            '증권사 ${difference.brokerQuantity} · 원장 ${difference.ledgerQuantity} · 차이 ${difference.difference}',
+            style: _tabular(context),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PreviewCard extends StatelessWidget {
+  const _PreviewCard({required this.preview, required this.onApply});
+  final ImportPreview preview;
+  final VoidCallback? onApply;
+
+  @override
+  Widget build(BuildContext context) => _SectionCard(
+    title: '미리보기 결과',
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '신규 ${preview.newRows} · 중복 ${preview.duplicateRows} · 오류 ${preview.errorRows} · 미해결 ${preview.unresolvedRows}',
+          style: _tabular(context),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          preview.canApply
+              ? '적용 가능: 이 미리보기만 원장에 원자적으로 반영됩니다.'
+              : '적용 차단: 오류 또는 미해결 행을 고친 뒤 새 미리보기를 만드세요.',
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '스키마 ${preview.schemaVersion} · 매핑 ${preview.mappingVersion}',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 12),
+        ...preview.rows.take(5).map((row) {
+          final target = row.correctionTarget;
+          if (row.transactionType == 'FX_EXCHANGE') {
+            final soldAmount = row.amount!.substring(1);
+            final label =
+                '환전 행 ${row.rowNumber}, ${row.currency} $soldAmount 매도, ${row.counterCurrency} ${row.counterAmount} 매수';
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Semantics(
+                container: true,
+                excludeSemantics: true,
+                label: label,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '환전 · ${row.currency} $soldAmount 매도 → ${row.counterCurrency} ${row.counterAmount} 매수',
+                      style: _tabular(context),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text('환율을 계산하거나 현재 시세를 뜻하지 않습니다.'),
+                  ],
+                ),
+              ),
+            );
+          }
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: target == null
+                ? Text(
+                    '행 ${row.rowNumber}: ${row.status}${row.symbol == null ? '' : ' · ${row.symbol!}'}${row.errors.isEmpty ? '' : ' · ${row.errors.join(', ')}'}',
+                    style: _tabular(context),
+                  )
+                : Semantics(
+                    container: true,
+                    excludeSemantics: true,
+                    label:
+                        '정정 행 ${row.rowNumber}, 원본 ${target.type}, ${target.currency} ${target.amount}, source ${target.sourceEventId}, 반전 ${row.currency} ${row.amount}',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('행 ${row.rowNumber}: ${row.status} · 정정'),
+                        const SizedBox(height: 4),
+                        const Text('원본 기록은 보존되고 반대 금액으로 상쇄됩니다.'),
+                        const SizedBox(height: 4),
+                        Text(
+                          '원본 ${target.type} · ${target.currency} ${target.amount} · source ${target.sourceEventId}',
+                          style: _tabular(context),
+                        ),
+                        Text(
+                          '정정 ${row.transactionType} · ${row.currency} ${row.amount}',
+                          style: _tabular(context),
+                        ),
+                      ],
+                    ),
+                  ),
+          );
+        }),
+        const SizedBox(height: 8),
+        ElevatedButton.icon(
+          onPressed: preview.canApply ? onApply : null,
+          icon: const Icon(Icons.check_circle_outline),
+          label: const Text('원자적으로 적용'),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ReceiptCard extends StatelessWidget {
+  const _ReceiptCard({required this.receipt, this.previousInput = false});
+  final ApplyReceipt receipt;
+  final bool previousInput;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    liveRegion: true,
+    label:
+        '${previousInput ? '이전 입력 적용 확인' : '적용 확인'} receipt ${receipt.receiptId}',
+    child: _SectionCard(
+      title: previousInput ? '이전 입력 적용 확인' : '적용 확인',
+      child: Text(
+        '${previousInput ? '이전 요청의 결과이며 현재 CSV의 반영 결과가 아닙니다.\n' : ''}원자적 적용 완료\n적용 ${receipt.appliedRows}건 · 중복 제외 ${receipt.skippedDuplicateRows}건\nReceipt ${receipt.receiptId}\n원장 ${receipt.ledgerRevisionAfter} · ${_time(receipt.recordedAt)}',
+        style: _tabular(context),
+      ),
+    ),
+  );
+}
+
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.title, required this.child});
+  final String title;
+  final Widget child;
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            container: true,
+            header: true,
+            child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+          ),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    ),
+  );
+}
+
+class _Notice extends StatelessWidget {
+  const _Notice({required this.icon, required this.text, required this.color});
+  final IconData icon;
+  final String text;
+  final Color color;
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      border: Border.all(color: color),
+      borderRadius: BorderRadius.circular(16),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: color),
+        const SizedBox(width: 12),
+        Expanded(child: Text(text)),
+      ],
+    ),
+  );
+}
+
+class _Message extends StatelessWidget {
+  const _Message({
+    required this.icon,
+    required this.title,
+    required this.body,
+    this.action,
+    this.actionLabel,
+  });
+  final IconData icon;
+  final String title;
+  final String body;
+  final VoidCallback? action;
+  final String? actionLabel;
+  @override
+  Widget build(BuildContext context) => Center(
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: Theme.of(
+                context,
+              ).colorScheme.primary.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              size: 34,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleMedium,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(body, textAlign: TextAlign.center),
+          if (action != null) ...[
+            const SizedBox(height: 16),
+            SizedBox(
+              key: const Key('empty-primary-action'),
+              width: 320,
+              child: ElevatedButton(
+                onPressed: action,
+                child: Text(actionLabel!),
+              ),
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
+}
+
+class _Loading extends StatelessWidget {
+  const _Loading({this.compact = false});
+  final bool compact;
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: '데이터를 불러오는 중',
+    liveRegion: true,
+    child: Center(
+      child: SizedBox(
+        height: compact ? 24 : 48,
+        width: compact ? 24 : 48,
+        child: MediaQuery.disableAnimationsOf(context)
+            ? const Icon(Icons.hourglass_empty)
+            : const CircularProgressIndicator(),
+      ),
+    ),
+  );
+}
+
+TextStyle _tabular(BuildContext context) => Theme.of(context)
+    .textTheme
+    .bodyLarge!
+    .copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
+
+Color _positiveColor(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.dark
+    ? const Color(0xFF34D399)
+    : const Color(0xFF047857);
+
+Color _warningColor(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.dark
+    ? const Color(0xFFFCD34D)
+    : const Color(0xFFA16207);
+
+String _moneySummary(List<Money> money) => money.isEmpty
+    ? '없음'
+    : money.map((item) => '${item.currency} ${item.amount}').join(' · ');
+
+String _formattedMoney(Money money) {
+  final negative = money.amount.startsWith('-');
+  final unsigned = negative ? money.amount.substring(1) : money.amount;
+  final parts = unsigned.split('.');
+  final whole = parts.first;
+  final buffer = StringBuffer();
+  for (var index = 0; index < whole.length; index += 1) {
+    if (index > 0 && (whole.length - index) % 3 == 0) buffer.write(',');
+    buffer.write(whole[index]);
+  }
+  final fraction = parts.length == 1 ? '' : '.${parts[1]}';
+  return '${money.currency} ${negative ? '-' : ''}$buffer$fraction';
+}
+
+bool _isZero(String amount) => RegExp(r'^-?0(?:\.0+)?$').hasMatch(amount);
+
+String _time(DateTime value) => value.toLocal().toString().substring(0, 16);

@@ -1,0 +1,690 @@
+<div align="center">
+
+<img src="docs/assets/kairos-icon.png" width="96" height="96" alt="Kairos" />
+
+# Kairos
+
+**发现机会，管理风险。**
+
+从信息收集到判断、投资、再平衡与复盘，为长期财富积累打造的个人投资管理系统。
+
+[![Core checks](https://github.com/YouSangSon/Kairos/actions/workflows/core-checks.yml/badge.svg)](https://github.com/YouSangSon/Kairos/actions/workflows/core-checks.yml)
+[![Client release](https://github.com/YouSangSon/Kairos/actions/workflows/client-android-release.yml/badge.svg)](https://github.com/YouSangSon/Kairos/actions/workflows/client-android-release.yml)
+![Flutter](https://img.shields.io/badge/Flutter-3.47.1-02569B?logo=flutter&logoColor=white)
+![Go](https://img.shields.io/badge/Go-1.24.5-00ADD8?logo=go&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.14.5-3776AB?logo=python&logoColor=white)
+
+[项目目标](#purpose) · [当前状态](#status) · [快速开始](#quick-start) · [文档](#documentation)
+
+[한국어](README.md) · [日本語](README.ja.md) · [English](README.en.md) · [简体中文](README.zh-CN.md)
+
+</div>
+
+---
+
+本项目旨在构建个人投资管理系统：自动收集信息、发现投资机会和风险，提供有依据的投资行动建议，或在事先授权的范围内自动投资与再平衡。
+
+目标是为包括退休资金在内的长期资产积累，同时改善投资收益、损失控制和运作效率。将决策依据与实际成交、成本和损益关联起来复盘，把经过验证的结果用于下一次判断和运作。
+
+[项目目标](#purpose) · [当前状态](#status) · [架构](#architecture) · [快速开始](#quick-start) · [使用流程](#workflows) · [命令](#commands) · [文档](#documentation) · [安全原则](#safety)
+
+以韩语 README 为基准，同步更新四种语言的结构、命令与支持范围。链接中的详细设计和验证文档以韩语或英语提供。README 的翻译不代表应用支持对应的显示语言。
+
+<a id="purpose"></a>
+
+## 项目目标
+
+将以下环节连接为完整的投资运作流程。这些是产品目标，并不表示已全部实现。
+
+1. **收集与识别** — 汇集行情、公告、新闻和账户信息，发现投资机会与风险变化。
+2. **判断与建议** — 结合持仓、现金和风险限额，对买入、卖出、持有及资产配置提出有依据的建议。
+3. **投资与再平衡** — 用户审核建议后执行，或在预先批准的策略、标的、资金和风险限额内自动下单、调整配置。
+4. **记录与复盘** — 将决策时的信息与实际成交、手续费、税费和损益关联，分析哪些做法有效、损失发生在哪里。
+5. **验证与改进** — 比较扣除成本后的收益率、最大回撤、资金敞口和交易频率，验证并改进策略与运作方式。自动改进的范围受到限制；启用实盘和增加资金需要另行批准。
+
+目前的基础包括准确的账本与投资组合、研究与回测，以及本地模拟执行、绩效、停止与恢复。要从真实数据的持续收集和机会识别，连接到投资建议、组合再平衡及实盘自动运作，还需要进一步实现与验证。详细范围与排除项见 [`PLAN.md`](PLAN.md)。
+
+采用本地优先架构，优先保障数据所有权和本地独立使用。通过 Flutter 同时提供 iOS、Android 和 web 客户端；Go 掌管账本、券商、订单与风险权限；Python 仅负责可复现的研究和回测。
+
+> [!IMPORTANT]
+> 当前实盘交易未启用。Kiwoom 模拟账户可通过下述显式命令读取，但尚未进行真实凭据认证观察。本仓库的回测与策略结果不保证收益，也不构成投资建议。
+
+<a id="status"></a>
+
+## 当前状态
+
+| Gate | 状态 | 证据 |
+|---|---|---|
+| G0 架构与契约 | 本地通过 | 带版本的 OpenAPI/JSON Schema、运行时职责分离、仓库统一命令 |
+| G1 本地账本 | 既有范围及 v27 已验证 | CSV 审核与原子应用，精确重放交易、现金、拆股和 FX，FIFO 成本与存储价格估值。schema v27/backup v21 及历史格式恢复已通过远程 CI 并合并至 main ([验证记录](gates/g3aj-automatic-paper-promotion.md)) |
+| G2 Flutter 客户端 | 部分通过 | iOS、Android、web 发布构建、自动解析器和组件检查，以及 Android 模拟器帧性能测量。已验证未签名 iOS 包排除测试插件。真机、手动屏幕阅读器及应用商店验证仍待完成 |
+| G3 研究与模拟执行 | 部分通过 | 可复现的回测、walk-forward、留出集评估、候选注册、本地模拟成交、绩效、停止与恢复。长期运行和源数据传递的完整性尚未验证 |
+| G4 券商、图表与订单 | 进行中 | 本地样本图表、已存储的对账和订单记录查询、不使用凭据的 Kiwoom 合成契约。使用真实认证的行情与模拟订单观察、结果未确定订单的恢复及所有实盘阶段仍待完成 |
+
+详细状态和完成条件由 [`PLAN.md`](PLAN.md) 与 [`GATES.md`](GATES.md) 管理。
+
+<a id="architecture"></a>
+
+## 架构
+
+```mermaid
+flowchart LR
+    Client["Flutter\niOS · Android · web"] -->|"versioned HTTP · decimal strings"| Core["Go core\nledger · portfolio · broker · orders · risk"]
+    Core --> DB["SQLite\nlocal single writer"]
+    Core -. "G4 first" .-> Kiwoom["Kiwoom REST · WebSocket"]
+    Core -. "second adapter" .-> Toss["Toss Securities Open API"]
+    Research["Python research\nbacktest · walk-forward"] -->|"versioned evidence only"| Core
+    Research -. "no credentials · no submit" .-> Guard["Live order boundary"]
+```
+
+- Flutter 和 Python 不持有券商凭据，也没有提交订单的权限。
+- 只有 Go core 能修改权威账本和订单状态。
+- SQLite 是本地单写入者阶段的有意选择。在取得 PostgreSQL 迁移、恢复和负载证据之前，不创建多副本或 Kubernetes manifest。
+- 进入 G6 后，本地 Kubernetes 验证以 `Kind + Podman` 为标准。目前尚未创建 Kind 集群，在取得 G6 证据之前也不创建 manifest。
+- 参考 Toss Securities 易懂的用语和清晰克制的信息层级，但不复制其界面、商标或商业外观。
+
+决策依据见 [`docs/adr/0001-runtime-and-monorepo.md`](docs/adr/0001-runtime-and-monorepo.md)，券商接入顺序和 UX 契约遵循 [`docs/broker-priority-and-ux.md`](docs/broker-priority-and-ux.md)。
+
+<a id="quick-start"></a>
+
+## 快速开始
+
+所需工具：
+
+- GNU Make 3.81+
+- asdf 0.20+
+- `curl`
+- Docker Engine + Compose v2（仅容器运行时需要）
+
+项目的 [`.tool-versions`](.tool-versions) 固定使用 Flutter 3.47.1 stable、Go 1.24.5 和 Python 3.14.5。Python 研究运行时不使用第三方包。
+
+```sh
+git clone https://github.com/YouSangSon/Kairos.git
+cd Kairos
+asdf install
+make bootstrap
+make check
+make smoke
+```
+
+`make test`、`make check`、`make smoke` 会在每次运行的临时根目录中记录 owner PID、命令、启动标识，以及子进程 PGID 和启动标识。在成功、失败或收到 SIGINT/SIGTERM 时，trap 会清理进程组和 temp/build/coverage/bytecode；若因 SIGKILL 等原因跳过 trap，下一次运行会凭相同的所有权证据回收残留进程组和根目录。PID 被复用或并发运行的进程会被保留；即使进程组 leader 已先退出，属于本次运行的子进程也会被回收。当前测试不创建 Podman/Kind 资源。之后的本地 Kubernetes 验证只会按每次运行的 session label 和记录的 resource ID 清理；在对应 wrapper 建立之前，普通清理不会删除其他会话的容器或集群。如需连同全部 Flutter/QA 缓存一起清空，请使用 `make clean`。
+
+### 运行应用
+
+第一个终端：
+
+```sh
+make run-core WEB_ORIGIN=http://localhost:8081
+```
+
+第二个终端：
+
+```sh
+make seed-demo
+make run-client
+```
+
+- API：`http://127.0.0.1:8080`
+- Flutter web：`http://localhost:8081`
+- 本地数据库：`data/omni-folio.db`
+
+`make seed-demo` 通过实际的 preview/apply API 导入现有 `golden-import.csv`，填入 USD 现金、AAPL 持仓数量与 FIFO 成本、已实现盈亏，让首屏具备可判断的数据。它不创建额外的 mock API 或绕过正常流程写入，也不会重复插入已应用的事件。如需直接使用个人数据，只需跳过此命令。在运行中的应用顶部点击刷新即可看到样本账本。
+
+`make run-core` 显式传入 `contracts/fixtures/market-bars.csv`，因此可从 AAPL 持仓查看样本证券图表。界面和 API 均将其标记为 `샘플 데이터 · 실시간 아님`（样本数据，非实时）。如需验证不提供 fixture 时的 fail-closed 行为，请使用 `make run-core MARKET_FIXTURE=`。
+
+使用其他 API 端口时，需要同时修改 core 和 client。
+
+```sh
+make run-core CORE_ADDR=127.0.0.1:18080 WEB_ORIGIN=http://localhost:8081
+make seed-demo API_URL=http://127.0.0.1:18080
+make run-client API_URL=http://127.0.0.1:18080
+```
+
+`OMNI_API_URL` 是 Flutter 构建时的值，不得放入秘密信息。Make 不会自动读取 `.env`。
+
+在 Android ARM64 设备或模拟器上验证本地 API 时，按下面的方式安装 release APK。先在主机上启动 core，并使用 `adb devices` 中显示的 ID。设备的 `127.0.0.1` 指向设备自身，因此需要通过 `adb reverse` 连接主机 API。此 APK 目前使用 debug key 签名，仅用于本地验证；应用商店分发验证另行进行。
+
+```sh
+cd apps/client
+flutter build apk --release --target-platform android-arm64 --dart-define=OMNI_API_URL=http://127.0.0.1:8080
+OMNI_ANDROID_DEVICE=emulator-5554
+adb -s "$OMNI_ANDROID_DEVICE" reverse tcp:8080 tcp:8080
+adb -s "$OMNI_ANDROID_DEVICE" install -r build/app/outputs/flutter-apk/app-release.apk
+```
+
+在 macOS 和 Xcode 上构建不含测试插件的未签名 iOS 发布包时，请在仓库根目录执行。需要固定版本的 Flutter SDK 和已缓存的依赖。此流程仅从已提交应用的临时副本中移除 `integration_test`，并确认生产依赖锁定内容不变，因此原应用的 profile harness 得以保留。
+
+```sh
+make check-ios-release
+make client-ios-release API_URL=http://127.0.0.1:8080
+```
+
+输出为 `output/ios-release-<source SHA>/Runner.app` 和 `build.json`。存在 `COMPLETE` 才表示二进制检查和所属临时资源清理均已成功。不会覆盖已有输出。签名、安装、真机和应用商店验证需另行进行。参见[构建原理与验证依据](gates/g2-client.md#ios-release-packaging-2026-10-25)。
+
+<details>
+<summary><strong>查看使用流程和命令详情</strong></summary>
+
+<a id="workflows"></a>
+
+## 可验证的端到端功能切片
+
+### CSV 导入
+
+Preview 不修改账本。将返回的 `preview_id` 与新的幂等键一起提交给 apply。
+
+在交易记录页面粘贴文本，或通过 `CSV 파일 선택` 读取不超过 `1MiB` 的 `UTF-8` 文件。仅选择文件不会发送或应用数据；确认内容后，分别执行预览和应用。取消或读取错误会保留原有输入与结果。[文件输入验证范围](gates/g4p-first-run-import-recovery.md#csv-file-selection)
+
+无需 CSV 文件准备一条记录时，使用 `거래 직접 입력` → `검토용 초안 만들기`。这会替换整个 CSV 草稿；取消会保留原有输入与结果。支持全部 10 种记录类型，买卖现金金额以精确十进制计算。使用当前本地默认账户 `account-main` 和默认证券映射 `AAPL`，不会发送订单。从草稿分别执行预览和应用。如果应用结果未知，请保持应用打开并重试同一请求，不要重新录入同一交易。修改 CSV 或切换标签页后，使用 `이전 요청 재시도` 发送原始请求。如果尚未应用，此次重试可能修改账本。重试信息仅在本次应用会话中保留。[直接输入与结果归属](gates/g4p-first-run-import-recovery.md#manual-entry)
+
+CSV type 包括 `DEPOSIT`、`WITHDRAWAL`、`BUY`、`SELL`、`DIVIDEND`、`FEE`、`TAX`、`SPLIT`、`CASH_VOID`、`FX_EXCHANGE`。金额和数量使用规范十进制字符串；现金事件的正负号与拆股的零现金影响会在 apply 前验证。只有 `CASH_VOID` 使用可选的 `corrects_source_event_id` 列，其金额必须与已应用的同账户、同币种现金类事件精确相反。原始事件不会被删除；Flutter 预览会同时显示原始 source/type/currency/amount 和冲销金额。`FX_EXCHANGE` 要求在同一行提供卖出侧的 `currency`/负数 `amount`，以及不同买入侧的 `counter_currency`/正数 `counter_amount`。这两个金额不代表汇率或当前行情，手续费通过单独的 `FEE` 行记录。
+
+```sh
+preview_file="$(mktemp)"
+curl -fsS -X POST \
+  -H 'Content-Type: text/csv' \
+  --data-binary @contracts/fixtures/golden-import.csv \
+  http://127.0.0.1:8080/v1/imports/preview > "$preview_file"
+
+preview_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["preview_id"])' "$preview_file")"
+curl -fsS -X POST \
+  -H 'Content-Type: application/json' \
+  --data "{\"preview_id\":\"$preview_id\",\"idempotency_key\":\"local-apply-001\"}" \
+  http://127.0.0.1:8080/v1/imports/apply
+
+curl -fsS http://127.0.0.1:8080/v1/portfolio/snapshot
+rm -f "$preview_file"
+```
+
+Golden fixture 的预期结果为新增 3 行、revision `rev_0000000003`、USD 现金 `778`、AAPL 6 股、成本基础 `300.6`。动态 ID 和时间戳每次运行都会不同。
+
+### 导出账本活动 CSV
+
+将已验证账本的公开活动字段保存为 CSV。导出保留同一次数据库观察中的倒序记录，排除账户和内部 ID。数字与时间保留原始字符串，原记录与更正记录都会保留。
+
+```sh
+mkdir -p -m 700 data/exports
+(cd services/core && go run . ledger-export \
+  -db ../../data/omni-folio.db \
+  -out ../../data/exports/ledger.csv)
+```
+
+`ledger-activity-export.v1` 收据包含 revision、行数和 SHA256。不会覆盖已有输出。超过 10,000 行或 32 MiB，或存在不安全的证券标记时，导出会失败。输出文件夹必须属于当前用户、不得允许其他用户写入，并且上级路径也必须可信。此 CSV 既不是 backup，也不是重新导入格式。在电子表格中请将所有列作为文本导入。[契约与限制](gates/g1r-ledger-activity-export.md)
+
+### 切换现有账本的时间重放策略
+
+schema27/backup v21 使用按精确 UTC 顺序重放的 FIFO v2 策略。已有账本的数据库仅执行 migrate 无法正常运行。停止旧 core、保留原始备份后，请遵循 [G1.20 的 preview → 审核 → activate → 验证新备份流程](gates/g1p-chronological-ledger-replay.md#로컬-전환-절차)。历史备份的存档验证与当前策略的激活是两项不同的操作。
+
+### 本地样本 OHLCV 图表
+
+```sh
+curl -fsS 'http://127.0.0.1:8080/v1/market-data/candles?symbol=AAPL&interval=1d'
+```
+
+响应使用规范十进制字符串，并返回 `price_adjustment=unspecified`、`source=local_fixture`、`sample=true`、`state=stale`。从持仓界面打开 AAPL，可查看价格与成交量图表、以最后收到的 K 线为基准的 `30일/90일/365일/전체`（30 天/90 天/365 天/全部）显示范围、价格复权依据、source/as-of、屏幕阅读器摘要，以及与所选范围一致的精确 OHLCV 表。`unspecified` 表示尚未确认是否复权。客户端的范围选择不代表重新查询行情或证明 K 线完整性；fixture 仅用于契约和 UI 验证，不是当前行情或投资决策资料。
+
+现有 `market-bars.csv` 不提供证券 ID 和价格币种，因此 API 的 `instrument_id` 与 `currency` 为 `null`。界面也会说明无法确认关联关系和币种。可通过 `make run-core MARKET_FIXTURE=contracts/fixtures/market-bars-identified.csv` 读取明确指定 ID 和币种的样本。扩展 CSV 必须在原有 10 列后精确追加 `instrument_id,currency`，且所有行的值必须相同。这两个值只是数据源的声明，不代表经过交易所验证。详情界面会拒绝 ID 或币种与所选持仓不符的数据，并保留之前的正常数据及其时间。
+
+两种格式均为 `bar_time_basis=unspecified`。`at` 只是用于排序的时间表示，不能证明交易日、K 线起止时间或成交归属的 K 线。由于价格复权与时间基准尚未确认，目前不显示平均成本线或账本买卖标记。原始 CSV 和研究 artifact hash 不变。验证范围见 [G4W](gates/g4w-chart-source-basis.md)。
+
+### 证券账本平均成本与交易记录
+
+在持仓 → 证券详情 → 顶部 `원장 평균단가·매매 보기`（查看账本平均成本与交易）中，可查看当前剩余持仓的平均成本及最近 50 笔买卖记录。即使行情查询失败，仍可进入。刷新失败时会同时保留之前的结果和基准时间。
+
+```sh
+curl -fsS 'http://127.0.0.1:8080/v1/portfolio/instrument-ledger?instrument_id=instrument_aapl&currency=USD'
+```
+
+直接使用现有 snapshot 中的证券 ID 和币种。在同一账本版本下汇总所有已导入账户；剩余 FIFO 成本和数量保持精确十进制字符串，仅平均值按 half-even 规则保留 8 位小数。Golden fixture 为 6 股、成本 USD 300.6、平均 USD 50.1。数量为 0 时平均值为 `null`；完全没有买卖记录时返回 404。`has_more=true` 表示省略了更早的买卖记录。
+
+买卖行保留未经拆股调整的原始记录，当前成本则反映账本拆股事件。本地记录不代表券商确认的成交，该界面也不会启用图表上的平均线或买卖标记。参见 [G4X 验证范围](gates/g4x-instrument-ledger-detail.md)。
+
+### 直接汇率观测基础
+
+G1.10 将方向为 `1 base_currency = rate quote_currency` 的汇率观测值保存在 schema v10 的 `STRICT`/仅插入序列中。验证数据源观测标识、精确十进制汇率、observed/fetched/recorded UTC 时间和规范行哈希，并拒绝相同 source、pair、observed-at 的冲突。`GET /v1/market-data/fx/latest` 仅返回在显式 `as_of` 之前已观测且已接收的精确方向数据，并保持 `sample=true`、`state=stale`。不会自动计算反向汇率，也不会将 `FX_EXCHANGE` 的现金侧用作汇率。
+
+保留此 fixture writer 和 GET 契约。直接输入汇率使用下方独立的版本 journal，不会混入此 GET。尚无 provider 自动采集或 scheduler；`PortfolioSnapshot.valuation_status` 继续保持 `unavailable`。
+
+### 直接输入汇率的版本保存与收益计算
+
+将完整的直接汇率文件导入现有 DB 后，现金、当前 KRW 估值、TWR、XIRR 和 USD 指数的 KRW 换算会使用同一输入版本。方向为 `1 USD = rate KRW`，不会推算反向或交叉汇率。
+
+```sh
+(cd services/core && go run . owner-fx-import -db ../../data/omni-folio.db -input ../../contracts/fixtures/owner-fx-usdkrw-sample.json)
+```
+
+这个过时的 `sample=true` 示例为合成资料，不能满足当前估值的24小时条件。实际输入遵循[封闭输入契约](contracts/owner-fx-series.schema.json)。修正时使用新的 `source_version` 提交全部数据点；空的 `points` 撤回该方向的使用。缺失点不会从旧版本补齐，重试旧版本也不会重新激活它。同一方向不能混合 fixture 和直接输入，撤回后仍保留来源归属。
+
+`storage_check=verified` 仅证明存储完整性。即使 `sample=false`，韩语应用仍显示直接输入汇率的提示。观测、获取、记录时间和24小时条件分别验证，不认证证券价格、券商行情或提供者数据的准确性。[策略、恢复和验证范围](gates/g1w-owner-fx-series.md)
+
+### 使用直接输入的证券价格计算估值与收益
+
+针对已通过CSV录入账本的证券，将价格文件导入现有DB。使用账本的canonical ID（`AAPL`对应`instrument_aapl`）；不为显示名称的大小写修改账本。
+
+```sh
+(cd services/core && go run . owner-price-import -db ../../data/omni-folio.db -input ../../contracts/fixtures/owner-price-aapl-sample.json)
+```
+
+[输入契约](contracts/owner-price-series.schema.json)中的`unadjusted`表示所有者声明的观测时刻账本每股、以指定货币计价的价格，不追溯调整拆股或股息。拆股后的持仓需要严格晚于最后一次拆股时刻的价格。这个过时的`sample=true`合成示例不满足当前估值的24小时条件。
+
+每个证券与货币使用最新文件的全部数据点，连接估值、TWR、XIRR及KRW/USD指数比较。新的`source_version`替换所有点，空的`points`撤回使用；缺失的历史点不从旧版本补齐，重试旧文件也不会重新激活它。同一证券与货币不能混合现有fixture/Kiwoom价格，撤回后仍保留此区分。韩语应用中的直接输入价格提示独立于sample和汇率提示。存储验证不认证提供者的准确性或当前市场价格。[单位、恢复与验证范围](gates/g1x-owner-price-series.md)
+
+在韩语应用的 **连接 → 导入价格、汇率和指数文件** 中选择UTF-8 JSON（最大1MiB），再明确执行 **检查输入格式 → 保存已检查文件**。支持KRW和USD两种指数。检查仅验证输入格式，不保证准入、最新性或提供方认证。新版本替换整个序列；空的价格或汇率序列撤回观测。如果保存结果不确定，请使用同一原文重试，直至收到匹配的回执。页面切换期间保留待处理请求，应用退出后不保留。请确认文件的永久存储权限。[契约与验证范围](gates/g1y-owner-data-import.md)
+
+### 考虑出入金的年化收益率
+
+在首页通过 `입출금을 반영한 수익률 보기` 查看账本开始以来的 `XIRR`。它结合带日期的外部现金流和当前 KRW 估值，不会将交易、股息或费用重复计为额外出入金。按 UTC 实际日历天数及一年365天进行年化。
+
+只有确认唯一的结果才显示为主要收益率。尚未证明唯一的值仅在详情中作为参考候选；缺少价格、历史汇率或数值计算失败都不会被替换为 0%。只要使用了任何样例观测，就保留 sample 标识。应用不会将其表述为已验证的券商当前投资表现。
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/portfolio/xirr
+```
+
+[政策、来源与验证范围](gates/g1s-portfolio-xirr.md)
+
+### 排除出入金影响的累计收益率
+
+在收益率详情中通过 `입출금 영향을 뺀 누적 수익률 보기` 查看账本开始以来的 `TWR`。它连接外部现金流边界之间的资产变化，不进行年化。同一时刻先处理外部现金流；已撤销的原始现金记录也会从历史余额中移除。
+
+任一边界缺少历史价格或直接汇率，或观测超过24小时，均不计算结果。中间资本为0或负数、拆股价格单位不明确的路径也显示为不可计算。全额取款不会显示为全部亏损；包含示例观测的结果不代表实际投资表现。
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/portfolio/twr
+```
+
+[计算规则、来源与验证范围](gates/g1t-portfolio-twr.md)
+
+### 出入金区间表现图表与数据表
+
+在 TWR 详情通过 `입출금 구간별 성과 보기` 查看同一响应中的 KRW 累计收益率及计算点图表、数据表。仅在外部现金流边界和查询期末估值，因此一次入金只有两个点。虚线不代表每日价格路径；估值边界时间与市场价格观测时间不同。
+
+保留价格、汇率来源及示例警告。刷新失败时保留之前的完整响应与原始基准时间。数据表提供服务器舍入后的比率及同一时刻的处理阶段。实际行情、每日历史和部署验证仍属独立范围。
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/portfolio/twr/checkpoints
+```
+
+[合同、计算原理与验证范围](gates/g1z-twr-checkpoints.md)
+
+### KRW 与 USD 比较指数原始版本的保存
+
+比较输入同时支持 `KRW` 和 `USD`。请提供明确声明 `price_index`、`gross_total_return` 或 `net_total_return` 的标准化指数文件。下列两个文件均为 `sample` 示例，并非实际市场数据。
+
+对于包含股息再投资的比较，优先评估KRW版KOSPI 200 TR与USD版S&P 500 Total Return。输入文件需要确认准确序列、货币版本、观测时刻及存储/展示权限。目前尚未取得实际数据与使用权限。参见[官方定义、使用条件及导入步骤](gates/g1u-benchmark-series.md#benchmark-source-policy)。
+
+```sh
+(cd services/core && go run . benchmark-import -db ../../data/omni-folio.db -input ../../contracts/fixtures/benchmark-krw-sample.json)
+(cd services/core && go run . benchmark-import -db ../../data/omni-folio.db -input ../../contracts/fixtures/benchmark-usd-sample.json)
+(cd services/core && go run . benchmark-status -db ../../data/omni-folio.db -benchmark-id synthetic_usd)
+```
+
+`authority=owner_declared` 表示所有者提供的资料，`storage_check=verified` 仅确认保存内容的完整性。同一 `source_version` 的内容或 `fetched_at` 发生变化时会作为冲突拒绝；重试旧版本不会改变最新选择。实际指数的股息、拆股定义和数据使用权限仍需单独确认。下文提供基于已保存资料的同期比较。
+
+[输入契约、恢复政策与验证范围](gates/g1u-benchmark-series.md)
+
+### 比较同一期间的指数
+
+在 TWR 详情通过 `같은 기간의 지수와 비교하기` 一起查看每个已保存指数的最新版本。一个响应统一账本、报告时点和比较期间。`KRW` 指数保持原币口径，`USD` 指数分别显示原币收益率和韩元换算收益率。
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/portfolio/benchmarks
+```
+
+差值是公开的组合收益率减去韩元口径指数收益率，单位为 `%p`。界面同时标明股息和税务口径；缺少汇率时保留原币数值。超过24小时的观测、起始指数为0或资料缺失均显示为不可计算，不把示例视为实际业绩认证。一次最多比较32个指数；刷新失败时保留上次比较整体及其时点。
+
+[政策、来源与验证范围](gates/g1v-portfolio-benchmark-comparison.md)
+
+### 自选股与已保存价格
+
+从应用顶部的 `관심종목` 可添加或删除最多50个韩国（XKRX·KRW）和美国（XNAS/XNYS·USD）代码。列表作为个人设置保存在服务器中，与持仓、账本及证券登记权限分离。输入代码不代表已经确认其实际上市状态。
+
+仅显示市场、代码和币种均匹配的已保存价格。请分别查看手动输入、样例、过期价格提示及观测时间。缺少数据或来源不明确时隐藏该项价格，其他项目仍保留。新增自选股可能没有价格；现有价格文件导入仍仅允许账本中出现过的证券。
+
+保存结果不确定时，可重试同一变更或重新读取当前列表。待确认请求在应用运行期间切换页面时保留，退出应用后不保留。不提供实时行情连接或自动刷新。
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/watchlist
+```
+
+[保存、重试、恢复约定及验证范围](gates/g4y-stored-watchlist.md)
+
+### 使用直接汇率进行现金估值
+
+G1.11 的 `GET /v1/portfolio/cash-valuation` 仅将通过重放验证的当前账本现金换算为请求指定的基准币种。必须提供规范 UTC `as_of` 和 `base_currency`，并在同一读取事务内验证账本事件和完整 FX 序列。除相同币种和零余额外，只使用 `cash currency -> base currency` 方向的直接观测值，有效范围包含观测时间起满 24 小时的边界。不使用反向汇率、交叉汇率、插值、`FX_EXCHANGE` 推断或显示用舍入。
+
+只要有一组货币对缺失或超过 24 小时，就只返回原币现金行和问题，隐藏汇总总额。即使 local fixture 生成完整结果，也仍为 `sample=true`、`status=stale_sample`。此 API 仅处理现金，不评估持仓、盈亏、绩效或当前行情，也尚未连接 Flutter 界面。`PortfolioSnapshot.valuation_status` 继续保持 `unavailable`。
+
+```sh
+curl -fsS 'http://127.0.0.1:8080/v1/portfolio/cash-valuation?base_currency=KRW&as_of=2026-01-11T14:00:00Z'
+```
+
+### 持久化证券价格观测基础
+
+G1.12 在持仓估值之前，将 local fixture 的证券价格保存在 schema v11 引入的 `STRICT`/仅插入序列中。验证 source identity、instrument ID、symbol、venue、currency、正数规范价格、`price_adjustment=unspecified`、observed/fetched/recorded UTC 时间和规范行哈希。内部精确 as-of 查询固定所有标识维度，只选择三个时间均不晚于 cutoff 的观测值。
+
+G4U checkpoint 的 backup v8 验证价格序列的 digest/count，并在不修改原件的自有副本中将 legacy artifact 迁移到 schema v13。当前 schema v27/backup v21 也保留该价格证明。空恢复候选必须具有与内嵌 migration 相同的表 DDL、latest index 和仅插入 trigger。未增加公共 API、Flutter 界面、provider 请求、scheduler 或基于券商数据的持仓、盈亏、绩效估值；`PortfolioSnapshot.valuation_status` 继续保持 `unavailable`。
+
+### 使用存储价格进行原币持仓估值
+
+G1.13 的 `native_holding_valuation_v1` 在同一只读事务中重新验证当前账本 snapshot、仅追加事件证明和完整证券价格序列。只有与持仓的内部 instrument ID、symbol、currency 关联的 as-of venue 恰好只有一个时，才使用 24 小时内的 local fixture 价格计算原币市值和未实现盈亏。若存在多个 venue、缺失、过期或未来的 observed/fetched/recorded 值，就在对应行留下经过脱敏的问题，并隐藏所有按币种汇总的数据。
+
+G1.15 将此现有模型连接到 `GET /v1/portfolio/holding-valuation` 和 Flutter 持仓中的 `저장 가격으로 평가 보기`（查看存储价格估值）详情。响应不包含内部 instrument/observation ID；数量、成本、原币估值、未实现盈亏与价格来源信息均显示在同一账本 revision 下。省略 `as_of` 时使用服务器当前 UTC 时间，显式 cutoff 只接受规范 UTC。查询失败时，同时保留之前结果的基准时间和 revision，不暴露错误详情。
+
+```sh
+curl -fsS 'http://127.0.0.1:8080/v1/portfolio/holding-valuation'
+```
+
+若没有存储价格或价格已超过 24 小时，合计会被隐藏。`make seed-demo` 只填入交易账本，因此价格缺失属于正常情况。即使所有价格齐全，结果仍属于本地样本/过期数据，不跨币种求和，也不使用当前汇率换算历史成本。未增加 provider 数据接入、整个投资组合总额或实盘/当前价格的权威依据，`PortfolioSnapshot.valuation_status` 继续保持 `unavailable`。从 G1.14 起，snapshot/OpenAPI 显式标明 `fifo_exact_else_half_even_residual_8_v1`。现有有限十进制的 FIFO 分摊保持精确，仅对循环小数使用 half-even 量化；剩余成本保留在未平仓 lot 中，最终清仓时全部消耗。此分析策略不能替代税务成本规则。
+
+### 不使用凭据的 Kiwoom 最新成交
+
+G4Q 通过现有 Kiwoom OAuth/read transport 的合成内存响应，验证官方 `ka10079` 单 tick 响应。规范内部 DTO 仅返回 KRX 6 位 symbol、精确价格绝对值、provider `cntr_tm` 和独立的 fetch 时间；若存在无效行、时间倒退、同一秒内不同价格或晚于本地接收时间的成交，则整体拒绝。
+
+G4Q 本身不增加真实凭据、外部请求、公共 API 或数据库写入者。由于官方响应没有持久事件 ID 和明确的 timezone/price-adjustment 依据，G4S 下一阶段只将其保存为保守的观测槽位，而非 trade ID。
+
+### 不使用凭据的 Kiwoom 持久化最新成交观测
+
+G4S 仅通过 Go 内部 writer，将 G4Q 的 `KiwoomLatestTrade` DTO 写入 schema v12 扩展的价格序列。source 区分为 `kiwoom_mock` 和 `kiwoom_production`；标识不是 provider trade ID，而是由 `ka10079`、环境、内部 instrument ID、`XKRX`、6 位 symbol、`KRW`、`unspecified` 和 provider 观测秒组成的观测槽位。同一槽位同一价格即使重复 fetch 也为 no-op；同一秒内不同价格、被篡改的 ID 和非 KRX/KRW 标识都会被拒绝。
+
+这些存储值还不是估值的权威依据。现有持仓估值和公共 snapshot 继续仅读取 `local_fixture`，未增加 scheduler、route、Flutter 界面、真实凭据或下单判断。
+
+### 所有者声明的证券挂牌归属
+
+G4U 通过 schema v13 的仅追加 `DECLARE`/`REVOKE` 账本，让所有者明确声明 `(venue,symbol,currency)` 与内部 instrument ID 的当前关系。若不存在 active listing，或其已撤销、损坏，Kiwoom one-shot capture 会在请求 token 前停止；新价格 writer 会在插入事务中再次确认相同关系。保留现有 v12 价格，但不会从证券代码惯例或历史价格推导归属。
+
+Backup v8 在原件和恢复候选间比较完整 listing hash 及 event/active count。此账本不代表 provider 验证、历史生效日期、时效性，也不赋予估值、策略或订单权限；目前也没有外部注册 API/UI。
+
+### 不使用凭据的 Kiwoom 实时价格
+
+G4R 仅使用标准库验证官方 WebSocket `0B` 的单个 KRX 格式 symbol 注册 packet 和 `REAL` JSON frame。带符号的当前价保留为精确绝对值，字段 `20` 保留为不含日期的 `provider_clock`，本地接收时间单独保存为 `received_at`。同一 frame 中相同 symbol/clock/price 只返回一次；同一 clock 的不同价格会作为歧义错误整体拒绝。外部输入限制为 1 MiB 和 100 entries。
+
+目前没有 WebSocket 连接、LOGIN/PING、重连与重新订阅、背压、凭据、持久化或公共 API/UI。在实际观察之前也不解释官方 FID `9081` 的值含义，因此 DTO 不声称其 venue。由此，此内部 DTO 不能作为实时性、当前性、时效性或持久成交与价格观测的证据。
+
+### 内部合成订单恢复、执行权限、对账与模拟提交
+
+K2A/K2B0 在 Go 内部验证 Kiwoom `LIMIT`/`KRW`/`KRX` intent、仅追加生命周期、`SUBMIT_UNKNOWN` 防重复、撤单/成交重放，以及已知订单号的原子成交核对调整。K2B1 将明确日期的合成 `kt00009` 成交行保存为不可用于关联的扫描记录。K2C 验证默认阻断的 kill switch、进程级 lease/fencing，以及 `005930`、`000660` BUY 的 10 股、单笔订单 100 万韩元、账户活跃预留额 100 万韩元限制。K2B2 使用合成凭据和内存 transport 复现官方 `kt10000` 模拟限价请求，验证 token preflight、持久化 dispatch-before-write、不重试写入、不透明 ACK 及 unknown/reject 分支。不存在外部券商调用、公共下单 API/UI 或实盘权限。
+
+```sh
+cd services/core
+go test -run '^(TestK2A|TestK2B0|TestK2B1|TestK2B2|TestK2C)' -count=1 ./...
+```
+
+K2B0 即使看到属性和时间相同的订单，也不会将其与没有订单号的 `SUBMIT_UNKNOWN` 关联。K2B1 的末页分页也不代表已取得完整成交历史，不会将日期与缺少 timezone 的成交时间拼成 UTC。K2B2 写入不会自动重试，包括 401；结果不明确时，会等待查询与对账，而非重新下单。使用真实凭据的模拟环境观察、未知提交的查询恢复、现金/持仓/手续费/亏损/市场时间/过期数据限制、owner/strategy 审批、broker/ledger 对账和 Flutter 下单流程仍待完成。
+
+### 不使用凭据的已知有效券商快照
+
+G4H 仅将现有合成 `KiwoomSnapshot` 中 `complete=true` 的 KRX snapshot 原子保存到 Go 内部 SQLite。相同 account/environment/exchange/fetched-at 且 payload 相同的记录不会重复存储 raw snapshot，但会按 ledger revision 单独保留对账记录。payload 冲突或 snapshot 不完整时，不会覆盖之前的已知有效结果。保存时，将该 ledger revision 下 KRX/KRW 证券数量与券商数量的差额固定为精确十进制值。
+
+```sh
+cd services/core
+go test -run '^TestG4H' -count=1 ./...
+```
+
+G4U checkpoint 的 schema v13/backup v8 以仅插入方式保护 ledger event、cash-void/FX guard、直接 FX 观测、证券价格观测、证券挂牌关系、券商原始快照、带 revision 的券商对账、执行权限事件、风险预留、策略注册表，以及当时的合成/模拟订单。当前 schema v27/backup v21 同时保留这些证明，以及 G3.8C2 模拟记账、G3.8C3 账户全局绩效、G3.8D 策略窗口证据和 G3.8E 模拟安全策略/动作恢复。G4H 本身不证明凭据、券商请求、调度、官方时效性/timezone、现金与估值金额对账、公共 API/UI 或实盘就绪。
+
+### 已存储券商对账的只读视图
+
+G4K 通过 `GET /v1/broker-reconciliation/latest` 读取 G4H 最新存储的结果，显示在 Flutter 的 `연결`（连接）界面。API 仅返回 provider/environment/exchange、存储时间、ledger revision 和精确的持仓数量差额，不暴露 account reference、内部 ID/hash 或 raw snapshot。`freshness=unverified` 和 `마지막 저장 스냅샷 · 현재 상태 아님`（最后保存的快照，非当前状态）明确说明此结果不是实时余额。
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/broker-reconciliation/latest
+```
+
+没有存储记录时返回 404；若最新 raw snapshot 缺少对账记录，或 hash/metadata 损坏，则不会退回历史结果，而是以通用化的 500 响应执行 fail-closed。G4M 在首页汇总同一存储对象的匹配/不匹配数量、采集与存储时间，并通过 `연결에서 자세히 보기`（在连接中查看详情）打开各证券差额。两个界面都不刷新券商数据或执行订单，也不会声称已核对现金、估值金额、手续费、订单或成交。
+
+### 本地订单生命周期只读视图
+
+G4L 重新执行现有仅追加订单日志的恢复证明后，通过 `GET /v1/orders` 仅返回用于显示的生命周期。响应包含 `source=local_order_log`、`broker_freshness=unverified`，不包含 account/client/provider/internal ID。Flutter 的 `연결` 界面不会重新查询券商、发送或撤销订单，并将结果未确定的订单显示为 `브로커 결과 미확정 · 재주문 금지`（券商结果未确定，禁止重新下单）。
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/orders
+```
+
+空日志返回 `orders=[]`；hash、metadata、状态转换重放或记录时间只要有一项损坏，就以通用化的 500 响应执行 fail-closed。刷新失败时保留最后的正常界面，但不将其标为当前券商状态。
+
+### Mimir 公告、新闻与分析
+
+在独立的 Mimir checkout 中运行 `python -m mimir.export_research --data-root /local/mimir/data --config-dir /local/mimir/config --since 2026-11-01 --until 2026-11-03 --out /local/research/mimir.json`，只导出已存资料，再用 `make run-core RESEARCH_FEED=/local/research/mimir.json` 连接。合成输入必须添加 `--sample`。从**连接 → 选择市场和证券**、自选列表或持仓详情打开 native 阅读页。持仓详情必须明确选择市场。来源记录并非使用权批准，Mimir 分析也不是订单信号。刷新失败保留上次正常观测，正常空响应会清空旧内容。[限制、错误与验证](gates/g3am-mimir-public-research.md)。
+
+### 研究与自动改进
+
+注册后，可在应用的 **연결（连接）→ 백테스트 보고서 보기**（查看回测报告）中查询最后注册的结果。`GET /v1/research/report` 按注册顺序选择一项，也包含晋级失败的结果。该结果与当前选择的策略无关。没有数据时显示空状态；最新数据损坏或不属于支持格式时，不会用旧数据替代。手动刷新失败时，保留界面上已有的结果和观测时间。
+
+界面读取已存储的指标，不使用原始 K 线重新计算。分段验证展示每段重新选择的候选的平均收益率、最大回撤及合计已完成交易；最终候选的参数仅用于单独的留出集评估。这不代表当前投资组合绩效或下单权限。[支持格式与验证](gates/g3ag-research-report.md)
+
+```sh
+make run-research
+make run-improvement
+```
+
+如需基于研究候选计算新的 SMA 信号，请使用下列离线 CLI。`research.csv` 必须是实际用于生成候选的原始数据；`latest.csv` 是同一 KRX 6 位证券的有序 OHLCV。最后时间必须晚于研究样本；为判断前一次交叉，需要至少 slow window + 1 根 K 线。详细契约和限制遵循 [G3.8G1](gates/g3q-paper-signal-proposals.md)。
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research python3 -m omni_research.signal_cli \
+  --bars /path/to/latest.csv \
+  --research-bars /path/to/research.csv \
+  --artifact /path/to/strategy-improvement-result.json
+```
+
+stdout 的 JSON 是从不可信本地输入计算得到的目标数量**提案**，不会执行订单。自身 hash 和输入中的 promotion 标记不能证明研究绩效，因此不能省略 Go 注册结果及当前选择状态的验证。`none` 表示没有新提案，`death_cross` 的 `"0"` 是清仓目标。在上述命令中添加 `--watch`，即可在每次观测到新的最后一根 K 线时输出 NDJSON 提案。请先阅读[仅生成提案的 watch 的传递与重启限制](gates/g3t-paper-proposal-watch.md)。当前 `paper-run-loop` 仅执行绩效评估和安全策略，持续输入与模拟成交的连接仍属于 G3.8G2 的待办范围。
+
+[手动本地 paper 使用方法](docs/local-paper-workflow.md)中的 `paper-init`、`paper-import-bars`、`paper-execute -arm-paper` 将初始化、原始 CSV 验证、模拟成交、绩效安全策略与新提案接收串联起来。这是不连接实际券商的 fixture 执行，退出时会停止自身执行权限。真实 OS signal/stale-owner 及组合重启验证已在 [G3.8G2B](gates/g3s-local-paper-workflow.md) 本地通过。这不代表已完成全天候自动交易或实盘交易。
+
+Python 的 `--bundle` 会一起输出提案和计算所用的原始 CSV。通过 Go `paper-execute -bundle FILE -arm-paper` 一次传递后，不会重新读取原始路径，而是执行现有验证。单个 CSV 限制为 1 MiB，完整 JSON 限制为 4 MiB。[精确字节传递 gate](gates/g3u-paper-input-bundle.md)
+
+使用 `paper-input-status -db PATH -account ACCOUNT -selection-event EVENT -bundle FILE`，可通过只读连接将一份已保存输入与 DB 中的 K 线、首次 receipt、信号及订单记录逐项核对。这些记录不代表完成 ACK、freshness 或执行授权；查询不会决定是否重新执行。[使用方法与含义](docs/local-paper-workflow.md#saved-input-status)
+
+`--watch --bundle` 可通过 stdin pipe 连接单独的 `paper-execute-stream -arm-paper`。此命令只激活一次，在输入间隔中也会续租所有权 lease，并在停止、EOF 或错误时清理 reader 和权限。它不是自动重新激活机制或持久队列；请通过数据库记录而非 stdout 确认执行情况。[连续 fixture 使用方法](docs/local-paper-workflow.md#명시적으로-연속-fixture-소비하기)、[验证 gate](gates/g3w-paper-input-stream.md)
+
+策略改进 runner 使用 expanding walk-forward 评估有限的仅做多 SMA 候选，且每次运行只打开最终留出集一次。结果只能为 `paper_candidate` 或 `no_promotion`，不会获得凭据、下单或晋级实盘的权限。
+
+如需使用整数股的 paper 成交、手续费、税费和部分成交进行评估，请向同一 CLI 传入 `--config contracts/fixtures/strategy-improvement-paper-config.json`。此 v2 精确计算金额，将比率按 half-even 舍入到小数点后28位，并与现有 v1 结果区分。下方注册示例仅适用于 v1。当前 registry 和信号提交均拒绝 v2；其结果不代表自动晋级，也不证明与完整 paper runner 等价。参见[计算契约与验证](gates/g3ai-paper-compatible-research.md)。
+
+Go core 将 v1 本地结果注册到 schema v13 引入、并保留到 schema v27 的仅插入 registry 中。`paper_candidate` 是提案；`no_promotion` 作为拒绝证据保留，但不可被选中。手动选择使用显式 CLI 和当前 selection event；rollback 追加事件，退回前一次选择或 `no_strategy`。
+
+```sh
+candidate_file="$(mktemp)"
+PYTHONPATH=services/research python3 -m omni_research.improve_cli \
+  --bars contracts/fixtures/strategy-market-bars.csv \
+  --config contracts/fixtures/strategy-improvement-config.json \
+  --output "$candidate_file"
+
+(cd services/core && go run . strategy-register \
+  -db ../../data/omni-folio.db \
+  -artifact "$candidate_file")
+rm -f "$candidate_file"
+```
+
+按注册结果的 `result_sha256` 进行选择时，使用 `strategy-select -result-sha256 ... -expected-current-event ...`。首次 expected event 为 `no_event`，之后使用 `strategy-status` 或前一次输出的 `current_event_id`。回退时，将当前 event ID 同时作为 `-expected-current-event` 和 `-source-event` 传给 `strategy-rollback`。此手动 rollback 会在同一事务中先 halt/fence 所有活跃执行权限，再追加选择历史；任意记录失败，整个事务都会回滚。仅有选择状态不会产生下单权限。
+
+### 本地 paper 候选的自动比较
+
+本地实现的 `paper-promote` 将已注册的 v1 候选与当前选择策略及同一输入上的 buy-and-hold 比较。Go 在三个各含30根新 K 线的区间内，以相同数量、初始现金和成交成本独立计算固定策略。Python 的候选搜索结果本身不能证明这次比较。评估区间必须晚于所有已注册研究及此前比较的结束时间。
+
+数据库必须恰好有一个已有 paper 账户会话，且需要当前选择。账户必须没有持仓或进行中的订单；所有执行权限必须停止，且须满足全局 runner lease 和未完成链的限制。比较区间不能与已注册的研究区间或已使用的比较区间重叠。请将以下路径和 ID 换成实际值。
+
+```sh
+(cd services/core && go run . paper-promote \
+  -db ../../data/omni-folio.db \
+  -account '<EXISTING_PAPER_ACCOUNT>' \
+  -candidate-result-sha '<REGISTERED_RESULT_SHA256>' \
+  -expected-selection-event '<CURRENT_EVENT_ID>' \
+  -attempt-id paper_compare_001 \
+  -bars /absolute/path/to/fresh-forward-bars.csv)
+
+(cd services/core && go run . paper-promotion-status \
+  -db ../../data/omni-folio.db -attempt-id paper_compare_001)
+
+# Only if the pending attempt should be aborted:
+(cd services/core && go run . paper-promotion-abort \
+  -db ../../data/omni-folio.db -attempt-id paper_compare_001)
+```
+
+结果不确定时，请先使用相同 attempt ID 查询状态。完全相同的请求重试会返回已保存的 `PENDING` 或完成结果，不会重新计算。仅在需要中止时显式执行 `abort`。已记录的比较区间在 `HOLD`、`ERROR`、中止或进程退出后仍不可重用；不会仅凭经过时间推测 `PENDING` 已过期。自动选中候选的后续信号时间必须严格晚于比较结束时间，rollback 后重新选择也保留此限制。
+
+此操作不会自动激活、创建或重置账户，也不会执行实盘交易。CSV 使用权、提供方和证券 metadata 均未验证，buy-and-hold 并非真实指数数据。receipt 不包含原始 CSV，但数据库和备份会保留。[命令、恢复契约与验证状态](gates/g3aj-automatic-paper-promotion.md)
+
+### 交接一份已保存的研究结果
+
+将已通过 `improve_cli --output` 保存的 v1 研究 JSON 交给 `paper-improve`。Go 会注册结果；需要比较时，将候选策略与捕获的当前策略在新的 forward K 线上评估，并在满足条件时选择候选策略。无需手动复制 SHA 和选择事件，上述手动命令仍可使用。此命令不运行 Python、不定期搜索、不自动激活执行权限，也不创建或初始化新数据库或账户，并继续拒绝 v2。
+
+```sh
+(cd services/core && go run . paper-improve \
+  -db ../../data/omni-folio.db -account '<EXISTING_ACCOUNT_REF>' \
+  -artifact /absolute/path/to/research-result.json \
+  -bars /absolute/path/to/fresh-forward-bars.csv \
+  -attempt-id paper_improve_001)
+```
+
+`research_not_candidate` 表示研究自身报告了 `no_promotion`，不是 Go 比较的 `HOLD`。`already_selected` 表示捕获状态时已选中相同结果。两种情况均返回 `registered=true`、`attempt_recorded=false`、`comparison=null`，不预留 ID，也不消耗区间。只有保存比较 claim 后，ID 才与输入绑定。
+
+注册后即使比较失败，注册仍可能保留。结果不确定时，请用 `strategy-status` 检查策略状态，并用相同 attempt ID 的 `paper-promotion-status` 检查比较状态。使用相同文件、账户和 ID 重试时，从已保存的 claim 开始按幂等方式处理。[交接契约](gates/g3al-paper-improvement-handoff.md)
+
+### 查看已保存的模拟策略比较
+
+在应用中打开 `연결` → `모의 전략 비교 보기`，即可查看最近一条比较请求。如果已保存比较结果，页面会按计入成本的指标比较候选策略、请求时选中的策略，以及同一证券的买入并持有模型。三个区间各含30根 K 线，彼此独立；服务器会根据已保存的输入重新计算并验证指标。如果最近请求尚无决定，页面显示 `결정 기록 없음`，而不会显示较早的成功结果。
+
+页面区分比较判定和最终应用决定；如果选中了候选策略，还会显示该次选择记录是否仍为当前选择。仅在打开页面或手动刷新时查询；刷新失败时，保留上一次成功结果及其原始观测时间。
+
+该报告不验证当前行情数据的新鲜度或外部指数，也不授予自动交易执行权限。响应不包含账户 ID、原始 CSV 或现金金额。[报告契约](gates/g3ak-paper-promotion-report.md)
+
+```sh
+curl -fsS http://127.0.0.1:8080/v1/paper/promotion-report
+```
+
+### 不使用凭据的模拟记账与绩效证据
+
+G3.8C2 使用 `paper-signal.v3` 的事务所持 sequence cutoff 之后精确符合条件的已收盘 K 线。成交价是用已知最终成交量的 K 线开盘价进行事后建模，因此不能作为开盘集合竞价或实盘券商成交证据。Account-global session 和当前 policy SHA 必须一致；带符号的目标差额产生 BUY/SELL，目标为零则请求全部减仓。每个 account/symbol 最多只有一个 active order。
+
+KRX 数量必须为整股，最大 `4611686018427387903`，容量为 `floor(volume * max_participation)`。每笔非零成交精确应用固定 KRW 手续费、仅 SELL 收取的税及不利滑点。仅通过 `order_events.FILL_RECORDED` journal 重放，派生 cash、FIFO lot/cost、fee、tax、slippage 和 realized PnL，并阻止透支和超额卖出。接纳与成交均要求当前 lease/fence，且不写入 Kiwoom transport 或总账。此 C2 checkpoint 的数据库/备份契约为 schema v17/backup v11，现由 C3 契约承接。
+
+```sh
+cd services/core
+go test -run '^TestG38C2Paper' -count=1 ./...
+```
+
+G3.8C3 固定事务当前的 order/market cutoff，以及全部未平仓头寸在同一 `as_of` 下完整的 `paper_fixture` 日 K 线收盘价。仅现金的数据点也要求同一 cutoff 下的收盘价 anchor；通过唯一成交 journal 的重放，计算账户全局 cash、open cost、market value、已实现/未实现/总 PnL、equity，以及按 half-even 保留 8 位小数的 return/drawdown。
+
+G3.8D 仅使用当前选择之后、绑定同一 selection ID 和 strategy result 的 C3 数据点。第一个点为零收益基线，之后的点精确重新计算该区间的 peak、return 和 drawdown。当时的 schema v19/backup v13 可独立恢复此仅追加策略窗口序列；v12/schema v18 在不修改原件的自有副本中迁移，并生成空的 D log。
+
+G3.8E 增加 `paper-strategy-performance-safety.v1`，只消费已恢复的最新同一 selection 的 G3.8D 行。少于 2 个样本时为 `INSUFFICIENT`；max drawdown 大于等于 0.1 时优先为 `HALT_AND_ROLLBACK`；否则 cumulative return 小于等于 -0.05 时为 `HALT_AND_ROLLBACK`；其余为 `HOLD`。action 是一个事务：按字典序对捕获的 armed account 执行确定性的 fencing halt，并对精确匹配的当前选择进行一次退栈回退；schema v20/backup v14 与 v13 自有副本证明会验证完整来源链。此内部边界不代表 scheduler、公共 API/UI、券商调用、晋级、部署、实盘权限或盈利能力。验证依据见 [`gates/g3n-paper-performance-policy.md`](gates/g3n-paper-performance-policy.md)。
+
+G3.8F1 增加可由外部 timer、launchd、systemd timer 或 Kubernetes CronJob 调用的本地单次 CLI。`omni-core paper-run-due -db <path> -account <kiwoom_account_...>` 选择最新可用的 local fixture close，依次完成 G3.8C3 账户绩效、G3.8D 策略窗口绩效和 G3.8E 安全策略。同一 close 的完成链在重试或两个 owner 并发执行时，也会在 root recovery 验证后收敛到相同的持久化结果。详细依据见 [`gates/g3o-scheduled-paper-runner.md`](gates/g3o-scheduled-paper-runner.md)。
+
+G3.8F2 增加 `omni-core paper-run-loop -db <path> -account <kiwoom_account_...>`。schema v21 的 singleton lease 将当前策略选择与账户绑定，并使 fencing token 单调递增；runner 使用 10 秒 heartbeat 和 30 秒 TTL，在 C3/D/E 的每个事务中重新验证精确 claim。stale owner 仅在 TTL 到期后才会被回收；SIGINT/SIGTERM、错误或正常 rollback 退出时，只会有条件地释放自己的 claim。由于当前 selection 是全局的，此本地 runner 也采用全局串行执行。详细依据见 [`gates/g3p-always-on-paper-runner.md`](gates/g3p-always-on-paper-runner.md)。
+
+这些证据来自本地事后 fixture 结果。虽然已增加 daemon 进程本身，但没有增加公共 API/UI、基于券商数据的估值、凭据/实盘执行、部署、告警、CronJob 打包、shadow/live 晋级，也不构成盈利能力声明。
+
+<a id="commands"></a>
+
+### 读取 Kiwoom 模拟账户
+
+请由用户在 macOS 钥匙串访问中准备通用密码。固定 service 为 `com.omni-folio.kiwoom.mock.readonly.v1`，account 为 `credentials`。密码内容为仅包含 `schema_version`、`app_key`、`secret_key`、`alias_key_base64`、`account_number` 五个字段的 JSON。版本为 `kiwoom-mock-read.v1`，alias key 为32字节的规范标准 Base64，账号为10位数字。app key 和 secret key 各不超过1,024字节，不能全为空白或包含控制字符。JSON 总大小不超过8 KiB。不要将秘密放入 shell 参数、环境变量或仓库文件。
+
+```sh
+(cd services/core && go run . kiwoom-mock-sync \
+  -db ../../data/omni-folio.db -ledger-account account-main)
+```
+
+两个参数均为必填，DB 必须已存在并完成 migration。只有 Go 读取固定 Keychain 项目并获取 mock/KRX 的账户、估值和未成交订单页。首次成功会在既有 journal 中将 `account-main` 绑定至一个模拟账户。更改账户或 alias key、已有多个账户或 production KRX 历史时均拒绝。保存前在同一写事务内再次验证恢复状态和绑定，并对账当时的账本 revision 与数量。刷新应用已有连接页面即可查看保存的对账。
+
+stdout 仅包含提供方、模式、时间、账本 revision、数量和持仓数量是否一致。输出失败可能发生在持久提交之后，请先查看既有 `GET /v1/broker-reconciliation/latest`，再重新获取。提供方失败会保留上次正常 snapshot。OAuth、401 刷新及分页在同一进程内至少间隔1秒，多个进程不共享限速。整个命令限制为2分钟，每次调用限制为10秒。
+
+`complete` 表示所需读取及分页全部成功，不代表提供方全局同一时点 snapshot、现金与成交对账、账户当前安全性或真实认证成功。公开 freshness 仍为 `unverified`，不会新增账本修正、验证时间更新、执行权限或订单提交。[输入、恢复契约与验证范围](gates/g4z-kiwoom-mock-sync.md)
+
+### 将 Kiwoom 模拟 K 线保存为研究文件
+
+使用同一 Keychain 项读取模拟日线或分钟线，保存到新的 private JSON 文件。输出目录必须归当前用户所有，并禁止其他用户写入。
+
+```sh
+mkdir -p -m 700 data/candles
+(cd services/core && go run . kiwoom-mock-candles \
+  -symbol 005930 -interval 1d -out ../../data/candles/005930-1d.json)
+```
+
+三个参数都必须提供。文件保留实际请求、提供方原始时间和 UTC 获取时间，回执返回行数及文件 SHA256。已有输出不会被覆盖。发布后发生错误时，完整文件仍可能保留；请先检查已有文件，再为新观测使用其他路径。这不是已验证 K 线完成、价格调整单位或当前价格的 paper 输入。[支持的 interval、限制与恢复契约](gates/g4aa-kiwoom-mock-candle-capture.md)
+
+### 使用已保存的日线运行扣除成本的研究
+
+将上述日线 capture 用于现有 SMA 参数搜索、walk-forward 和最终 holdout 计算。仅支持 v2 配置，行数必须与 train、validation、holdout 的总数完全一致。以下配置需要120行，公开的单行 capture 示例不足以运行。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research python3 -B -m omni_research.capture_cli \
+  --capture data/candles/005930-1d.json \
+  --config contracts/fixtures/strategy-improvement-paper-config.json
+```
+
+报告仅输出到 stdout。请另行保留原始 capture，使用 shell 重定向保存时请选择其他路径。命令不保证 shell 重定向的防覆盖或原子发布。报告保留原始 bytes 的 SHA256、请求、原始日期、获取 clock 及不确定性。日期仍为行标签，不会转换为发布时刻。即使所有数值门槛通过，策略注册、`paper-improve` 和 paper proposal 也会拒绝此格式。[契约、验证与后续连接](gates/g3an-captured-candle-research.md)
+
+## 主要命令
+
+```text
+make bootstrap        准备本地依赖
+make format           应用 Go/Dart 格式化
+make lint             执行 Go vet、Flutter analyze、Python compile 检查
+make test             运行 Go、Flutter、Python 单元测试
+make check            检查 format、lint、test、JSON contract 后清理测试产物
+make clean            清理本地生成物，包括 Flutter/QA 缓存
+make smoke            使用临时数据库检查 ledger、本地 market HTTP 端到端功能切片
+make run-core         migrate 后运行本地 Go API 与显式样本 market fixture
+make run-client       运行 Flutter web 客户端
+make run-research     运行确定性的回测 fixture
+make run-improvement  运行 walk-forward 策略 fixture
+```
+
+## 使用容器运行
+
+```sh
+cp .env.example .env
+docker compose -f infra/compose.yaml config --quiet
+docker compose -f infra/compose.yaml up --build
+curl -fsS http://127.0.0.1:8080/readyz
+docker compose -f infra/compose.yaml down
+```
+
+Compose 在一次性 migration 后运行 non-root/read-only core，并仅在 loopback 暴露 API。由于没有认证和 TLS，不得作为公开服务使用。Named volume 在 `down` 后仍会保留。只有在明确要删除本地账本数据时，才使用 `down -v`。
+
+运行上限为：`migrate` 使用 `0.25` CPU 和 `512 MiB`，`core` 使用 `0.75` CPU 和 `1536 MiB`，合计 `1 vCPU` 和 `2 GiB`。每个容器的日志按 `3` 个 `10 MB` 文件轮转。这些限制不约束构建资源，也不保证处理性能。进行非公开远程验证前，请先确认[共享 VM 准入条件](gates/g6-deployment.md#single-node-resource-budget)，并通过 SSH 访问。目前尚未验证这些设置在 VM 运行时的实际应用。
+
+</details>
+
+<a id="documentation"></a>
+
+## 仓库结构
+
+```text
+apps/client/       Flutter iOS · Android · web 客户端
+services/core/     Go 账本/API 权限主体
+services/research/ Python 回测与策略改进
+contracts/         OpenAPI、JSON Schema、跨运行时 fixture
+gates/             各阶段验收与证据
+infra/             本地 OCI/Compose profile
+docs/              目标、ADR、研究、broker/UX 文档
+```
+
+可在 [`docs/README.md`](docs/README.md) 中按用途查找文档。请勿将安全漏洞或暴露的凭据附在公开 issue 中；请遵循 [`SECURITY.md`](SECURITY.md) 的流程。
+
+## 故障排查
+
+- `go: go.mod file not found`：请在仓库根目录使用 `make bootstrap` 或根目录 Make 命令。
+- Flutter device/package 错误：运行 `flutter doctor`、`cd apps/client && flutter pub get`。没有 Chrome 时，使用 `FLUTTER_DEVICE=web-server make run-client`。
+- `8080` 端口冲突：参照上面的 `18080` 示例，同时修改 core 和 `API_URL`。
+- 浏览器 API 失败：确保 Flutter host/port 与 `WEB_ORIGIN` 精确一致。不支持 wildcard CORS。
+- Compose `unhealthy`：通过 `docker compose -f infra/compose.yaml logs core` 检查 `/readyz` 失败原因。
+- SQLite 移动/备份：先停止 core。`*.db-wal` 和 `*.db-shm` 是同一数据库的运行时 sidecar。
+
+<a id="safety"></a>
+
+## 安全原则
+
+- 实盘交易默认关闭，不能通过 UI 开关或单个环境变量启用。
+- 不要将 broker secret、access token、真实账号或原始交易导出放入 Git、fixture 或日志。
+- K2A 在 timeout/crash 后将订单保留为 `SUBMIT_UNKNOWN`，并阻止同一订单及该账户的新提交。K2C 增加默认阻断的 kill switch、数据库 lease/fencing 和不可变预留。K2B2 mock write 在持久化 dispatch 后只尝试一次，不会因响应不明确而重新下单。不会仅凭 K2B0/K2B1 的查询结果擅自确定 unknown 状态。
+- 策略不会仅凭收益率晋级。必须考虑成本、延迟、未来信息泄漏、回撤、运行健康状况及 owner 审批。
+- 首先证明生存能力与可恢复性。无法保证收益。
+
+## 许可证
+
+本仓库仅供公开查阅，不授予开源许可证。复用、修改或分发原创代码和文档，需要获得版权所有者的单独书面许可。法律或 GitHub 条款赋予的权利以及第三方组件的现有许可证不受影响。详见 [LICENSE](LICENSE)。
+
+[名称与现有设置](docs/project-identity.md)

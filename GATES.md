@@ -1,0 +1,205 @@
+# Kairos Gates
+
+## Goal
+
+iOS·Android·web에서 사용할 수 있고 local/single-node에서 시작해 검증 후 PostgreSQL·Kubernetes로 승격 가능한 개인용 멀티 증권 앱을 만든다. 원장, 주문, 백테스트, 자동매매는 정확성·복구·fail-closed 증거 없이는 다음 단계로 넘어가지 않는다.
+
+## Gate tree
+
+```text
+G0 architecture and contracts
+├─ G0.1 runtime/state authority ADR
+├─ G0.2 OpenAPI and cross-runtime decimal contract
+└─ G0.3 runnable monorepo commands
+   |
+G1 ledger vertical slice
+├─ G1.1 migrate + canonical transaction
+├─ G1.2 CSV preview + idempotent atomic apply
+├─ G1.3 FIFO snapshot + provenance
+├─ G1.4 backup + verified restore
+├─ G1.5 exact cash flows + stock-split replay
+├─ G1.6 append-only cash-flow void + schema v8 restore proof
+├─ G1.7 restore mismatch error redaction
+├─ G1.8 exact two-leg FX exchange + schema v9/v8 restore proof
+├─ G1.9 replay-verified sanitized ledger activity read
+├─ G1.10 append-only direct FX observation + schema v10/backup v6 proof
+├─ G1.11 replay-verified direct-FX cash-only valuation
+├─ G1.12 append-only security price observation + schema v11/backup v7 proof
+├─ G1.13 replay-verified native-currency holding valuation
+├─ G1.14 versioned recurring FIFO cost allocation + residual conservation
+├─ G1.15 sanitized stored-price holding valuation API and Flutter detail
+├─ G1.16 revision-bound Flutter ledger activity pagination
+├─ G1.17 one-cutoff current KRW whole-portfolio valuation
+├─ G1.18 current valuation release browser and single-announcement semantics
+├─ G1.19 exact fractional-second activity ordering and valuation cutoff
+├─ G1.20 versioned chronological FIFO and explicit legacy replay activation
+├─ G1.21 duplicate-import valuation and complete recorded-time cutoff
+├─ G1.22 verified public ledger activity CSV export
+├─ G1.23 retrospective portfolio XIRR and explicit root confidence
+├─ G1.24 retrospective cash-flow-boundary cumulative TWR (gates/g1t-portfolio-twr.md)
+├─ G1.25 immutable KRW/USD benchmark index versions and backup proof (gates/g1u-benchmark-series.md)
+├─ G1.26 same-period native/KRW benchmark comparison (gates/g1v-portfolio-benchmark-comparison.md)
+├─ G1.27 complete owner FX versions, performance and recovery (gates/g1w-owner-fx-series.md)
+├─ G1.28 owner security price versions, units and performance (gates/g1x-owner-price-series.md)
+├─ G1.29 app owner-data review, explicit storage and immutable retry (gates/g1y-owner-data-import.md)
+└─ G1.30 same-observation TWR checkpoints, chart and accessible table (gates/g1z-twr-checkpoints.md)
+   |
+G2 client vertical slice
+├─ G2.1 Flutter iOS/Android/web build
+├─ G2.2 trust status + import preview/apply receipt
+└─ G2.3 accessibility + frame budget
+   |
+G3 research vertical slice
+├─ G3.1 deterministic run manifest
+├─ G3.2 fee/slippage/lookahead fixtures
+├─ G3.3 no credential/order permission proof
+├─ G3.4 Go/SQLite append-only paper-candidate registry and rollback proof
+├─ G3.5 strategy-selection-bound order record and durable-dispatch proof
+├─ G3.6 credential-free target-netted paper fill, replay and restore proof
+├─ G3.7 atomic execution halt and strategy rollback proof
+├─ G3.8A append-only paper operational evaluation evidence
+├─ G3.8B Go-trusted strategy execution-policy contract
+├─ G3.8C1 immutable account-global paper accounting session
+├─ G3.8C2 SELL and capital-safe paper accounting
+├─ G3.8C3 immutable marks and account-global performance evidence
+├─ G3.8D current-selection strategy-window performance evidence
+├─ G3.8E versioned paper performance safety policy and atomic automatic action
+├─ G3.8F scheduled local paper policy runner
+│  ├─ G3.8F1 one-shot paper policy command
+│  ├─ G3.8F2 DB-leased/fenced always-on runner
+│  └─ G3.8F3 latest pending current-selection policy recovery
+├─ G3.8G offline proposals and local paper workflow subgates
+├─ G3.8H stored paper policy status API and Flutter view
+├─ G3.9 stored research report API and Flutter view
+└─ G3AN captured daily observations in shared offline research, structurally barred from paper authority
+   |
+G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
+├─ G4A Kiwoom K0 read contract
+├─ G4B provider-neutral local sample OHLCV and asset-detail chart
+├─ G4C Kiwoom K1 synthetic candle contract
+├─ G4D market-data price-adjustment consumer contract
+├─ G4E/K2A Kiwoom internal synthetic order-state log
+├─ G4F/K2B0 Kiwoom known-order execution reconciliation
+├─ G4G/K2B1 Kiwoom synthetic dated execution scan
+├─ G4H Kiwoom broker known-good snapshot persistence
+├─ G4I/K2C internal synthetic execution authority proof
+├─ G4J/K2B2 credential-free Kiwoom mock LIMIT submit transport
+├─ G4K stored broker/ledger position reconciliation read view
+├─ G4L verified local order-lifecycle read view
+├─ G4M overview stored-reconciliation trust summary
+├─ G4N local order pending-action and overview warning contract
+├─ G4O local daily chart display-range selection
+├─ G4W chart source identity/currency and unknown time basis disclosure
+├─ G4X revision-consistent instrument ledger average cost and original trades
+├─ G4Y persistent watchlist with native stored-price and partial-availability states
+├─ G4P first-run empty-snapshot import recovery
+├─ G4Q Kiwoom credential-free latest-trade normalization
+├─ G4R Kiwoom credential-free 0B realtime-price frame contract
+├─ G4S Kiwoom credential-free durable latest-trade observation
+├─ G4T Kiwoom credential-free one-shot latest-trade capture
+├─ G4U owner-declared instrument listing ownership and Kiwoom enforcement
+├─ G4V/K2B3 provider-bound credential-free LIMIT dispatch capability port
+├─ G4Z explicit Keychain-backed mock/KRX snapshot sync to the existing reconciliation view
+├─ G4AA explicit mock candle capture with request/raw-time/fetch provenance for research
+├─ K2B Kiwoom mock-order broker transport and lookup recovery
+└─ then Toss Securities read-only as the second adapter
+   |
+G5 paper -> shadow -> canary -> limited live
+   |
+G6 PostgreSQL and Kubernetes promotion
+```
+
+## Root completion evidence
+
+- G3AN은 G4AA 일봉 capture를 기존 비용 차감 후보·walk-forward·holdout 계산으로 연결한다. 원본 bytes hash·요청·날짜·나노초 조회 clock과 불확실성을 보존하며 별도 보고서 형식으로 운영 등록을 차단한다. 독립 리뷰·집중/race·최종 Core/research/contracts, native CLI QA 3개와 소유 자원 정리를 로컬 통과했다. 원격 CI·main 반영과 운영 연결은 별도다. [계약과 현재 검증 범위](gates/g3an-captured-candle-research.md).
+
+- G4AA는 명시적 CLI로 mock 봉의 요청·원본 시간·조회 시간을 새 연구 JSON에 보존한다. 독립 리뷰·집중/race·전체 Core/research/contracts와 실제 test-main TLS·production 조기 거절을 로컬 검증했다. closed-bar/paper/live 권한과 실제 인증 관찰은 별도다. [계약과 검증 범위](gates/g4aa-kiwoom-mock-candle-capture.md).
+
+- G3AM은 별도 Mimir가 저장 공시·뉴스·분석을 제한된 공개 파일로 내보내고 기존 Go GET과 Flutter 읽기 화면에 연결한다. 관심종목 시장은 거래소에서 가져오며 보유·연결 화면은 시장을 직접 고른다. 출처·사용 근거와 연구 의견의 한계를 보존하고 원장·주문 상태를 쓰지 않는다. [계약과 로컬 검증 범위](gates/g3am-mimir-public-research.md).
+- G4Z는 기존 Keychain 항목을 사용하는 명시적 모의 계좌 읽기를 기존 Go client·snapshot journal·대조 GET으로 연결한다. 단일 모의 계좌 바인딩과 저장 시점 재검증을 유지하며 실제 Keychain·외부 제공자 인증 관찰은 미수행이다. [계약과 로컬 검증](gates/g4z-kiwoom-mock-sync.md).
+- G3AL은 저장된 연구 결과를 등록하고 기존 Go 모의 비교로 넘긴다. unknown-command RED·독립 리뷰 후 Core 전체 CI와 고정 Go1.24.5의 집중 race·native smoke·cleanup을 통과해 main에 병합했다. Client는 검증 입력의 Git 객체 일치로 통과 근거를 재사용했다. 등록과 claim의 별도 저장 및 claim 이후의 ID 구속을 유지한다. [인계 계약과 최종 근거](gates/g3al-paper-improvement-handoff.md).
+- G3AK는 최신 모의 비교 요청의 결정·재계산 지표·현재 선택 이벤트 상태를 공개한다. 실제 HTTP404 RED·독립 리뷰 후 Core/Client 전체 CI·web/ARM64 release를 통과하고 main에 병합했다. 기존 실행 권한과 저장 계약을 유지한다. [읽기 계약과 최종 근거](gates/g3ak-paper-promotion-report.md).
+- G3AJ는 Go가 고정 후보와 현재 전략을 새 구간에서 비교해 paper 선택을 바꾼다. claim 선기록·시간 cutoff·현재 상태 CAS·복구 재계산을 집중33·Core/Client 전체 CI와 독립 리뷰로 검증하고 main에 병합했다. 기존 계좌의 현금·실행 권한과 수동 선택 계약을 유지한다. [계약과 최종 근거](gates/g3aj-automatic-paper-promotion.md).
+- G3AI는 기존 v1 계약을 유지하는 별도 연구 v2의 정수 수량·정확한 비용·부분체결·단일 입력 캡처를 검증한다. 실제 Go/Python 공통49사례·전체 CI와 v2 registry 거절을 통과했으며 자동 승격·운영 runner 전체 동등성은 별도다. [계산 계약과 최종 근거](gates/g3ai-paper-compatible-research.md).
+
+- `make check` 또는 동등한 단일 명령이 각 활성 서브프로젝트의 format, lint, unit, contract test를 실행한다.
+- 검증 명령은 성공·실패·중단 뒤 자신이 만든 프로세스, 임시 파일, Podman/Kind/Testcontainers 리소스를 소유 label·세션·명시적 ID 기준으로 회수하며 전역 prune을 사용하지 않는다.
+- 2026-09-08 프로세스 관측 불가 사전 차단 40개 하위 사례, 실제 smoke build failure 자손 회수, 성공·실패·SIGINT·SIGTERM 11개 process-tree matrix를 통과했다. 최종 `make check`는 Go 전체·Flutter 98개·Python 34개·JSON 17개를, 실제 `make smoke`는 build/migrate/server/API와 종료 후 소유 자원 부재를 통과했다. SIGKILL·host crash guardian은 미증명이다. [세부 gate](gates/g0-resource-preflight.md)
+- 동일 fixture의 decimal·ID·timestamp가 Flutter, Go, Python contract test에서 일치한다.
+- 2026-08-30 `make check`와 `make smoke`는 실제 preview/apply API를 쓰는 demo seed의 적용·완전 중복 no-op·충돌 fail-closed와 65개 Flutter parser/widget 검증을 통과했다. G2의 physical-device profile과 수동 screen-reader 증거는 여전히 열려 있다.
+- G3.8C1은 계좌 전역 최초 선택 artifact의 불변 starting-capital authority만 증명한다. schema v15/backup v10의 독립 session digest/count, exact restore objects, v9/schema-v14 owned-copy empty-session proof와 strategy/order corruption fail-closed가 필요하며, runner·성과·profit·production readiness를 뜻하지 않는다. 세부 근거는 [`gates/g3j-paper-accounting-session.md`](gates/g3j-paper-accounting-session.md)에 둔다.
+- G3.8C2는 account-global session과 같은 execution policy에 묶인 ex-post closed-bar BUY/SELL, exact cost와 replay-derived cash/FIFO/PnL, schema v17/backup v11 복구만 증명한다. 브로커 체결, marks/equity/returns/drawdown, scheduler, threshold, 자동 halt/rollback 또는 live readiness가 아니다. 구현·태스크 리뷰와 fresh local/mock 명령 근거는 [`gates/g3k-paper-fill-accounting.md`](gates/g3k-paper-fill-accounting.md)에 분리한다.
+- G3.8C3는 transaction-current order/market cutoff, complete `paper_fixture` daily-close marks, account-global cash/equity/return/drawdown, insert-only recovery proof를 local에서 검증한다. 이는 profit, threshold, automatic halt/rollback, public UI, broker truth, deployment 또는 live readiness가 아니며, 세부 근거는 [`gates/g3l-paper-performance-evidence.md`](gates/g3l-paper-performance-evidence.md)에 둔다.
+- G3.8D는 current non-`no_strategy` selection의 첫 C3 point를 attribution anchor로 삼는 strategy-window paper performance evidence와 schema v19/backup v13 proof를 검증한다. 이는 threshold, decision, automatic halt/rollback, public UI, broker truth, deployment 또는 live readiness가 아니며, 세부 근거는 [`gates/g3m-paper-strategy-performance.md`](gates/g3m-paper-strategy-performance.md)에 둔다.
+- G3.8E는 복구 검증된 latest same-selection G3.8D evidence에만 고정 v1 local paper threshold를 적용하고, action이면 모든 captured armed authority의 결정적 halt와 exact one-pop rollback을 한 transaction에서 append한다. schema v20/backup v14, v13 owned-copy, full forward/reverse recovery와 cleanup matrix를 검증하지만 scheduler, public API/UI, broker call, promotion, deployment, live authority 또는 수익성을 뜻하지 않는다. 세부 근거는 [`gates/g3n-paper-performance-policy.md`](gates/g3n-paper-performance-policy.md)에 둔다.
+- G3.8F1은 external scheduler가 호출할 수 있는 local one-shot CLI `paper-run-due`와 내부 `runDuePaperPerformancePolicy`를 추가한다. 최신 available local fixture close만 as_of로 쓰고 C3/D/E idempotent journal을 재사용해 retry와 두 owner 동시 실행이 같은 durable 결과로 수렴함을 검증하며, 완료 chain retry 전 paper 성과 정책 root recovery를 다시 증명한다. daemon, public API/UI, broker call, credential, deployment, shadow/live promotion 또는 수익성을 뜻하지 않는다. 세부 근거는 [`gates/g3o-scheduled-paper-runner.md`](gates/g3o-scheduled-paper-runner.md)에 둔다.
+- G3.8F2는 전역 current strategy selection과 exact account를 묶는 schema v21 singleton lease, 단조 증가 fencing token, 10초 heartbeat/30초 TTL, stale-owner 회수, C3/D/E transaction 내부 exact fence 재검증과 `paper-run-loop`의 success/failure/SIGINT/SIGTERM cleanup을 local에서 검증한다. 현재 selection 자체가 전역이므로 runner도 전역 직렬화하며, broker call·credential·public API/UI·deployment·shadow/live authority 또는 수익성을 뜻하지 않는다. 세부 근거는 [`gates/g3p-always-on-paper-runner.md`](gates/g3p-always-on-paper-runner.md)에 둔다.
+- local 검증, broker sandbox, live readiness, 실제 운영 증거를 따로 보고한다.
+- G3.8F3은 성과 전용 scheduler의 최신 저장 C3에 미완료 D/E가 있으면 현재 선택 일치 시 그 정책부터 완료한다. 중간 누적 손실을 최신 회복 가격으로 건너뛰던 RED를 교정하고, HOLD 후 진행·no_strategy 재시도·이전 선택 보존과 focused race·전체 check·smoke·소유 자원 정리를 통과했다. 오래된 누락 소급 복구와 주문·체결은 포함하지 않는다. [세부 gate](gates/g3ae-paper-pending-policy-recovery.md)
+- G1.15는 기존 native holding 계산을 sanitized GET과 독립 Flutter 상세에 연결한다. 같은 원장 revision의 수량·원가·가격·평가, exact nanosecond 24시간 경계, 통화별 합계와 sample/stale 경계, empty/partial/retained-error 화면 및 내부 ID 비노출을 로컬 검증한다. 2026-09-05 `make check`는 Go 전체, Flutter 74개, Python 17개, JSON 계약 15개와 scoped cleanup을 통과했다. 전체 계좌 평가, broker-backed freshness, 물리기기·수동 screen-reader 검증 또는 배포 증거는 아니다. 세부 근거는 [`gates/g1k-holding-valuation-view.md`](gates/g1k-holding-valuation-view.md)에 둔다.
+- G1.16은 G1.9의 revision-bound cursor를 Flutter에서 50건 단위로 탐색하고 첫 snapshot·nanosecond 순서·cursor trail·known-good 오류 보존을 강제한다. 최종 `make check`의 Go 전체·Flutter 98개·Python 34개·JSON 17개와 실제 release Chrome의 101→102건 snapshot 교체·3개 페이지 왕복·오류 보존·loopback 외 요청 0개를 통과했다. broker activity, physical-device accessibility, 배포·live readiness는 아니다. [세부 gate](gates/g1l-ledger-activity-pagination.md)
+- G1.17은 서버 소유 UTC cutoff 하나와 read transaction 하나에서 replay-verified 원장 cash와 보유자산 시장가를 KRW로 exact 합산한다. local fixture 가격과 `currency -> KRW` 직접 FX만 사용하고 하나라도 missing/stale/ambiguous이면 cash/holdings/total aggregate를 모두 숨긴다. Flutter는 optional read로 알려진 정상 응답과 원래 revision/cutoff를 함께 보존하며 local sample·현재 증권사 값 아님·revision mismatch를 표시한다. 원가 환산·PnL·성과·provider freshness·broker/live truth는 아니다. [세부 gate](gates/g1m-current-portfolio-valuation.md)
+- G1.19는 canonical UTC 소수초의 거래 내역 정렬·cursor 경계와 현재 평가 cutoff를 같은 정확한 시각 순서로 처리한다. 기존 FIFO·snapshot·backup 정책 교정은 별도 후속 과제다. [세부 gate](gates/g1o-exact-activity-cutoff.md)
+- G1.20은 UTC 순서의 원장 재생을 영속 selector·명시적 전환 receipt와 schema22/backup v16으로 연결한다. 과거 golden 보관 검증과 현재 활성화를 구분하며, 최종 전체 check·로컬 smoke·소유 자원 정리를 통과했다. [세부 gate](gates/g1p-chronological-ledger-replay.md)
+- G1.22는 동일 DB 관찰의 공개 원장 활동을 원문 정밀도·최신 순서·정정 행을 유지한 private CSV로 저장한다. 실제 CLI·출력/경로 경계·부분 쓰기 정리와 원격 Core 검사가 통과했다. 계좌·내부 ID·정정 대상 연결이 없어 backup·재가져오기 형식은 아니다. [세부 gate](gates/g1r-ledger-activity-export.md)
+- G1.21은 중복 import가 바꾼 metadata 시각과 마지막 event 시각의 잘못된 동일성 검사를 제거한다. 기존 평가 응답·metadata cutoff는 유지하고 전체 event 기록 시각까지 같은 transaction에서 검사한다. [세부 gate](gates/g1q-valuation-metadata-cutoff.md)
+- G4V/K2B3는 Kiwoom mock LIMIT submit을 provider/mode-bound value capability 뒤로 옮겨 application service에서 credential·환경·provider error 타입을 제거한다. zero/mismatch capability는 preflight 전에 차단하고 durable dispatch-before-write, one-shot write, definitive reject와 conservative unknown, raw detail redaction을 유지한다. 새 provider, credential, public API/UI, DB/schema 또는 live authority는 아니다. [세부 gate](gates/g4v-k2b3-limit-order-dispatch-port.md)
+- G4W는 차트 원천의 명시적 종목·통화를 선택 holding과 비교하고 legacy 누락·가격 조정·봉 시각의 미확인 상태를 표시한다. 평균단가와 매매 marker는 계속 후속 gate다. [세부 gate](gates/g4w-chart-source-basis.md)
+- G4X는 현재 잔여 FIFO 원가·수량과 원본 매매를 동일 원장 revision에서 조회한다. 평균만 표시 반올림하며 최근 50건 한계, 로컬 기록·분할 기준 차이를 밝힌다. [세부 gate](gates/g4x-instrument-ledger-detail.md)
+- external deploy, credential, live 주문, push는 명시 승인 없이는 실행하지 않는다.
+- G3.8G1은 기존 SMA 판정을 공유한 offline 목표 제안과 입력 hash·종목·연구 이후 시점 경계만 증명한다. 2026-09-05 `make check`의 Go 전체·Flutter 전체·Python 25개·JSON 16개 구문 검사·owned cleanup self-test가 통과했다. JSON schema 필드/분기는 별도 회귀 검사이며 완전한 JSON Schema validator 실행은 아니다. 재해시 가능한 비신뢰 입력은 Go registry·선택 검증을 대체하지 않는다. 신호 admission·session/bar ingress·paper 체결 운영 연결은 G3.8G2에 남아 있다. [세부 gate](gates/g3q-paper-signal-proposals.md)
+
+- G3.8G2A는 비신뢰 proposal을 저장 series에서 독립 검증하고 현재 선택·소유 lease 확인과 v3 signal/OPEN paper order 기록을 한 transaction으로 연결한다. `make check` 통과 후 재시도 수정은 focused race로 검증했다. 만료 후 기존 결과 재조회와 무주문 결정의 불변성도 확인했다. 수동 CLI·원본 CSV ingress·초기화·lease 종료는 아래 G3.8G2B에서 검증하며, 지속 제안 생성·수집·실행을 포함한 G3.8G2 전체는 미완료다. [세부 gate](gates/g3r-paper-proposal-admission.md)
+
+- G3.8G2B는 수동 로컬 초기화·CSV/연구 원본 검증·fill→policy→signal 실행 경로와 소유권 보존 중지를 로컬 검증했다. FIFO 거절·누락 봉 부분체결·정책중지 재시작에 더해 실제 실행 파일의 SIGINT/SIGTERM, SIGKILL 후 실제 TTL 만료·중복 없는 복구를 확인했다. 리뷰 보강 후 `make check`와 소유 자원 정리가 통과했다. 상시 실행·증권사 연결·배포 증거가 아니며 전체 G3.8G2는 미완료다. [gate](gates/g3s-local-paper-workflow.md), [사용법](docs/local-paper-workflow.md)
+
+- G3.8G2C는 `signal_cli --watch`로 같은 연구 후보의 새 마지막 봉 제안을 자동 생성한다. 생성·프레이밍만 담당하며 durable 전달·Go 접수·주문 실행은 아직 연결하지 않는다. 반복 입력과 입출력/프로세스 실패, 전체 `make check`·소유 자원 정리를 로컬 통과했다. [gate](gates/g3t-paper-proposal-watch.md)
+
+- G3.8G2D는 Python 제안과 정확한 두 CSV byte를 단일 bundle로 전달하고 기존 Go 수동 실행 검증을 재사용한다. 원본 경로 교체·재시도·hash mismatch·잘못된 JSON/Unicode·크기/FIFO 경계와 전체 `make check`가 로컬 통과했다. 스트림 소비·지속 실행 lease는 아직 미완료이며 G3.8G2 전체 완료가 아니다. [gate](gates/g3u-paper-input-bundle.md)
+
+- G3.8G2E는 유효한 현재 owner의 execution/global lease를 원자 갱신하며 기존 수동 실행 단계에서 사용한다. 최초 TTL 이후 새 체결·이력 복구·동시 갱신·실패 rollback과 전체 check, 최종 코드의 targeted race/실제 중단 복구가 통과했다. 갱신은 재활성화가 아니며 continuous 소비·idle heartbeat·장기 처리량은 미완료다. [gate](gates/g3v-paper-execution-heartbeat.md)
+
+- G3.8G2F는 pipe의 bounded LF bundle을 기존 실행 경로로 순차 소비하고 idle 구간에 두 lease를 함께 갱신한다. 실제 signal·최초 30초 이후 갱신·외부 halt·EOF 재연결 중복 방지와 전체 check가 로컬 통과했다. 단일 arm, 취소 가능한 reader의 close/join, 새 데이터 없는 Python 출력 단절 종료를 확인했다. 장기 부하·durable 전달·소스 누락 방지 및 전체 G3.8G2는 미완료다. [gate](gates/g3w-paper-input-stream.md)
+
+- G3.8G2G는 실제 Python watch→Go pipe에서 연속 CSV 갱신·체결·정책 halt·양방향 종료·명시적 재연결과 별도 context 복구를 검증했다. 취소된 DB 읽기를 일반 무결성 오류로 바꾸던 분기에서 취소 identity를 보존하며, focused race와 최종 전체 check·소유 자원 정리가 통과했다. 짧은 로컬 연결 증거이며 장기 운영·소스 완결성·broker/live 준비가 아니다. [gate](gates/g3x-paper-pipeline.md)
+
+- G3.8G2H는 실제 갱신 1,000회에서 이력 구간별 갱신/전체 정책 복구 지연을 로컬 측정했다. 갱신 p95는 첫 구간 10.64ms에서 마지막 구간 28.39ms로 증가했다. 논리 시간 가속·warm cache·고정 주문 이력의 진단이며 상시 운영 보증이나 최적화 결과가 아니다. 기존 검증을 유지하고 원인별 프로파일링을 다음 성능 단계로 둔다. [gate](gates/g3y-paper-history-profile.md)
+
+- G3.8G2I는 동일 transaction 안의 중복 authority 이력 읽기를 제거했다. 전체 복구·소유권·취소 검증은 유지하고, legacy 조기 반환을 전체 검증으로 오인하지 않도록 공통 runner proof에 migration 이력 검사를 추가했다. 과거 손상·migration 표시 변조와 focused race, 전체 check·정리가 통과했다. 마지막 구간 갱신 p95 28.39→19.99ms는 단일 로컬 비교이며 최대 지연·장기 운영 보증이 아니다. [gate](gates/g3z-paper-renewal-replay.md)
+
+- G3.8G2J는 실제 clock의 Python→Go 지속 연결에서 122.029초·120회 관찰·12개 입력·13개 정책·11회 갱신을 검증했다. 최소 관찰 lease 여유는 12.005초이고 종료 후 전체 복구·권한 반환·소스 보존이 통과했다. 기존 종료/재연결 회귀도 통과했으며 하루 운영·시장 freshness·durable queue는 여전히 미검증이다. [gate](gates/g3aa-paper-real-clock-soak.md)
+
+- G3.8G2K는 밀린 봉마다 체결→성과→정책을 완료해 중간 손실 이후 체결을 막고, 저장된 성과의 미완료 정책부터 재시작한다. 선택 이전 새 성과와 다른 선택의 cached 정책 재사용을 차단하며 기존 접수 signal의 주문 복구 계약은 유지했다. 실제 signal 복구·opt-in soak 포함 전체 check·focused race·리뷰·소유 자원 정리가 통과했다. 수동 성과 전용 명령의 조합과 기존 과거 누락 소급 삽입, 전체 G3.8G2 완료를 뜻하지 않는다. [gate](gates/g3ab-paper-chronological-recovery.md)
+
+- G3.8G2L은 Python이 관찰한 정확한 bundle을 선택적으로 stdout 전에 보관한다. 같은 이름의 다른 내용을 덮어쓰지 않으며 저장 실패·동시 생성·출력 단절과 보관 파일의 기존 Go 실행 경로를 검증했다. Go 전체·Python39·리뷰·소유 자원 정리가 통과했다. 보관은 처리 완료 ACK·자동 재실행·소스 완결성·freshness 보증이 아니며 G3.8G2는 계속 미완료다. [gate](gates/g3af-paper-input-capture.md)
+
+- G3.8H는 연결 화면에서 저장된 모의 정책 상태를 요청할 때만 조회한다. 전체 복구를 검증한 단일 DB 관찰에 미완료 정책·최근 결정·소유권 기록을 담으며 계좌 ID·금융 수치·실행 권한은 노출하지 않는다. 전체 check와 최종 focused race·Flutter 84·리뷰·owned cleanup이 통과했다. 물리 기기·브라우저 실렌더링·알림 전달·상시 운영 증거는 아니다. [gate](gates/g3ac-paper-monitor.md)
+
+- G3.8H 브라우저 후속은 실제 Go API에서 정책 없음·저장 정책·offline 보존·키보드 복귀와 375/768/1440 렌더링을 확인하고, 실행 불가 문서 alias를 실제 CLI 회귀 테스트로 교정했다. 소유 자원 정리 통과. visual baseline·physical profile·cold-start offline 한글 표시는 아직 증명하지 않았다. [gate](gates/g3ad-paper-monitor-browser.md)
+
+- G2 로컬 폰트 전달은 고정 Noto/OFL·Cupertino 자산과 공통 버튼 폰트 수정으로 외부 한글 fallback 의존을 제거했다. Flutter 85·새 release 브라우저의 loopback-only 17 GET/외부 요청 0·owned cleanup 통과. 9.9 MiB payload, 물리 glyph/profile과 offline-origin bootstrap은 별도다. [gate](gates/g2d-local-fonts.md)
+
+- G3.9는 최신 등록 연구를 읽는 GET·Flutter 보고서와 지표 원문 정밀도·관측 보존을 검증한다. Go 전체·Flutter135·Python39·JSON17의 결합 검증과 실제 Python 등록→release 브라우저, offline 보존·키보드 복구·375px 다크 화면을 확인했다. 최신 등록은 현재 선택 전략과 무관하며, 지표 재계산·현재 포트폴리오 성과·실전 준비를 증명하지 않는다. [세부 gate](gates/g3ag-research-report.md)
+
+- G2 Android release는 debug/profile에만 있던 네트워크 권한을 공통 manifest에 추가하고, 실제 APK·설치 권한·native 원장/보고서 조회·연결 실패 보존과 복구·다크 화면을 검증했다. 두 wrapper exit0와 소유 기기·서버·포트 정리를 확인했으며 physical/iOS 최신 빌드·스토어 계측 격리 gate는 열려 있다. [근거](gates/g2-client.md#android-release-networking-2026-10-25)
+
+- G2 iOS 무서명 release 경로는 원본 profile harness를 보존하며 staging에서 테스트 플러그인을 제거하고 운영 의존성 잠금·원본 파일·완성 바이너리 hash를 확인한다. unit/fake 11개, 실제 Xcode `-jobs 1` 빌드와 소유 임시 자원 정리가 통과했다. 서명·실기기·스토어·새 target의 실제 SIGINT와 G2 전체는 미완료다. [근거](gates/g2-client.md#ios-release-packaging-2026-10-25)
+
+세부 acceptance는 [`gates/`](gates/)의 leaf gate를 따른다.
+
+- G1.23은 외부 입출금과 현재 KRW 자산을 같은 관찰에서 검증하는 회고 XIRR 단위다. 유일근·참고 후보·계산 불가를 구분하며 독립 골든·원격 Core/Client 검사와 새 web/Android 릴리스가 통과했다. TWR·benchmark·실제 증권사 성과를 대신하지 않는다. [정책과 검증](gates/g1s-portfolio-xirr.md)
+- G1.24는 외부 입출금 경계와 기말을 같은 관찰에서 평가하는 누적 TWR 단위다. exact 시각/정정·분할 가격 단위·양수 중간 자본과 전액 출금/손실의 구분, 닫힌 상태 계약과 독립 수치·원격 Core/Client 전체·새 web/Android 릴리스가 통과했다. 실제 broker 성과·benchmark·재투자 자동 연결은 별도다. [정책과 검증](gates/g1t-portfolio-twr.md)
+
+- G1.25는 KRW·USD 지수 입력·보관/복구의 선행 단위다. owner 선언과 저장 무결성을 구분하고, 버전 충돌·재시도·추가 trigger/민감 오류·v16 권한을 검증했다. 독립 리뷰와 보완분 재검토, 최종 원격 Core/Client 전체·web/ARM64 release·소스 일치 통과 후 병합했다. 비교·환산·화면은 G1.26에 별도로 기록한다. [계약과 검증](gates/g1u-benchmark-series.md)
+
+- G1.26은 TWR과 같은 관찰의 지수 비교 API/화면이다. 최신 known 버전과 실제 관측·FX 시각을 고정하며 native/KRW 미계산과 %p를 구분한다. 실제 API404 RED·테스트 입력/분석 보완·독립 리뷰 후 최종 Core 전체·Python39/JSON30·Flutter63/327·web/ARM64 release·권한/소스 일치를 통과해 병합했다. 실제 시장 자료·배포·전체 Goal 완료는 별도다. [정책과 검증](gates/g1v-portfolio-benchmark-comparison.md)
+
+- G1.27은 직접 입력 환율의 완전한 버전·수정/철회·재시도·같은 관찰의 평가/성과와 UI 출처 안내를 연결한다. source와 sample을 분리하고 schema24/backup18의 새 증명과 이전v17/v16 권한을 보존한다. 실제 RED·독립 리뷰·접근성 자원 해제 보완 후 최종 Core 전체·Python39/JSON33·Flutter36/363·web/ARM64 release·권한/소스 일치를 통과해 병합했다. 실제 시장 자료·provider·배포·전체 Goal 완료는 별도다. [정책과 검증](gates/g1w-owner-fx-series.md)
+
+- G1.28은 원장에 반영된 종목의 완전한 직접 입력 가격과 출처·sample·분할 단위를 평가/성과/UI에 연결했다. 독립 리뷰와 실제 CLI RED·계약/명령 전달 보완 후 최종 Core 전체·Python39/JSON36·Flutter40/403·web/ARM64·권한/소스 일치를 통과해 테스트 tree와 동일한 main에 병합했다. 실제 시장 자료·provider·배포와 전체 Goal 완료는 별도다. [계약과 검증](gates/g1x-owner-price-series.md)
+
+- 실제 KRW·USD 벤치마크 도입 기준은 [G1.25 source owner](gates/g1u-benchmark-series.md#benchmark-source-policy)에 둔다. 세전 TR 후보의 정의와 데이터 저장/표시 권한을 구분했으며 실제 파일·시각·사용권 확보는 미완료다. 이 문서 보완을 실제 자료 검증이나 전체 Goal 완료로 세지 않는다.
+
+- G1.29는 앱의 가격·환율·KRW/USD 지수 파일 입력 검토와 명시적 저장을 연결했다. 불확실한 원본은 후속4xx에도 일치 확인서까지 유지하며 관련 조회 완료 후 갱신한다. 실제 HTTP RED·독립 리뷰와 최종 Core 전체450.130s·Python39/JSON37·Flutter15/418·분석·web/ARM64·권한/소스 일치를 통과해 테스트 tree와 같은 main에 병합했다. 실제 자료·권리·앱 재시작·실기기·VM/배포·전체 Goal 완료는 별도 ([gate](gates/g1y-owner-data-import.md)).
+
+- G1.30은 같은 관찰의 TWR 계산점·차트·표를 연결했다. 독립 리뷰와 표 출처·스크롤 반례 보완 후 최종 Core/Client 필수 전체·분석·web/ARM64·권한/소스 일치를 통과해 테스트 tree와 같은 main에 병합했다. 일별 이력·실제 자료·배포·전체 Goal 완료는 별도다 ([gate](gates/g1z-twr-checkpoints.md)).

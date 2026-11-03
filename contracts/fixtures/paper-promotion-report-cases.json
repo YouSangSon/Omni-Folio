@@ -1,0 +1,509 @@
+{
+  "description": "Synthetic public observations. PROMOTE metrics come from the actual Go comparison fixture in Core CI40657897797; HOLD swaps the fixed strategies. No account, attempt, selection, input or financial-account identifiers.",
+  "cases": [
+    {
+      "name": "empty",
+      "response": {
+        "schema_version": "paper-promotion-report.v1",
+        "mode": "paper_comparison_only",
+        "observed_at": "2026-10-27T15:00:00Z",
+        "attempt": null
+      }
+    },
+    {
+      "name": "promoted-current",
+      "response": {
+        "schema_version": "paper-promotion-report.v1",
+        "mode": "paper_comparison_only",
+        "observed_at": "2026-10-27T15:00:00Z",
+        "attempt": {
+          "symbol": "005930",
+          "claimed_at": "2026-10-27T15:00:00Z",
+          "decided_at": "2026-10-27T15:00:00Z",
+          "comparison_start": "2026-05-07T00:00:00Z",
+          "comparison_end": "2026-08-04T00:00:00Z",
+          "candidate": {
+            "fast_window": 2,
+            "slow_window": 5,
+            "quantity": "10"
+          },
+          "incumbent": {
+            "fast_window": 3,
+            "slow_window": 6,
+            "quantity": "10"
+          },
+          "decision": "PROMOTE",
+          "reason_code": "all_forward_gates_passed",
+          "promotion_selection_status": "current",
+          "comparison": {
+            "policy_version": "paper-forward-comparison.v1",
+            "metrics_verification": "recomputed_from_stored_input",
+            "decision": "PROMOTE",
+            "reason_code": "all_forward_gates_passed",
+            "windows": [
+              {
+                "start": "2026-05-07T00:00:00Z",
+                "end": "2026-06-05T00:00:00Z",
+                "candidate": {
+                  "after_cost_return": "0.014734027",
+                  "max_drawdown": "0.000112",
+                  "round_trips": "1",
+                  "turnover": "0.038985"
+                },
+                "incumbent": {
+                  "after_cost_return": "0.013733027",
+                  "max_drawdown": "0.000113",
+                  "round_trips": "1",
+                  "turnover": "0.039986"
+                },
+                "buy_and_hold": {
+                  "after_cost_return": "0.007727027",
+                  "max_drawdown": "0.010119",
+                  "round_trips": "1",
+                  "turnover": "0.045992"
+                }
+              },
+              {
+                "start": "2026-06-06T00:00:00Z",
+                "end": "2026-07-05T00:00:00Z",
+                "candidate": {
+                  "after_cost_return": "0.014734027",
+                  "max_drawdown": "0.000112",
+                  "round_trips": "1",
+                  "turnover": "0.038985"
+                },
+                "incumbent": {
+                  "after_cost_return": "0.013733027",
+                  "max_drawdown": "0.000113",
+                  "round_trips": "1",
+                  "turnover": "0.039986"
+                },
+                "buy_and_hold": {
+                  "after_cost_return": "0.007727027",
+                  "max_drawdown": "0.010119",
+                  "round_trips": "1",
+                  "turnover": "0.045992"
+                }
+              },
+              {
+                "start": "2026-07-06T00:00:00Z",
+                "end": "2026-08-04T00:00:00Z",
+                "candidate": {
+                  "after_cost_return": "0.014734027",
+                  "max_drawdown": "0.000112",
+                  "round_trips": "1",
+                  "turnover": "0.038985"
+                },
+                "incumbent": {
+                  "after_cost_return": "0.013733027",
+                  "max_drawdown": "0.000113",
+                  "round_trips": "1",
+                  "turnover": "0.039986"
+                },
+                "buy_and_hold": {
+                  "after_cost_return": "0.007727027",
+                  "max_drawdown": "0.010119",
+                  "round_trips": "1",
+                  "turnover": "0.045992"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "pending",
+      "response": {
+        "schema_version": "paper-promotion-report.v1",
+        "mode": "paper_comparison_only",
+        "observed_at": "2026-10-27T15:00:00Z",
+        "attempt": {
+          "symbol": "005930",
+          "claimed_at": "2026-10-27T15:00:00Z",
+          "decided_at": null,
+          "comparison_start": "2026-05-07T00:00:00Z",
+          "comparison_end": "2026-08-04T00:00:00Z",
+          "candidate": {
+            "fast_window": 2,
+            "slow_window": 5,
+            "quantity": "10"
+          },
+          "incumbent": {
+            "fast_window": 3,
+            "slow_window": 6,
+            "quantity": "10"
+          },
+          "decision": "PENDING",
+          "reason_code": "comparison_claimed",
+          "promotion_selection_status": "not_promoted",
+          "comparison": null
+        }
+      }
+    },
+    {
+      "name": "error",
+      "response": {
+        "schema_version": "paper-promotion-report.v1",
+        "mode": "paper_comparison_only",
+        "observed_at": "2026-10-27T15:00:00Z",
+        "attempt": {
+          "symbol": "005930",
+          "claimed_at": "2026-10-27T15:00:00Z",
+          "decided_at": "2026-10-27T15:00:00Z",
+          "comparison_start": "2026-05-07T00:00:00Z",
+          "comparison_end": "2026-08-04T00:00:00Z",
+          "candidate": {
+            "fast_window": 2,
+            "slow_window": 5,
+            "quantity": "10"
+          },
+          "incumbent": {
+            "fast_window": 3,
+            "slow_window": 6,
+            "quantity": "10"
+          },
+          "decision": "ERROR",
+          "reason_code": "comparison_failed",
+          "promotion_selection_status": "not_promoted",
+          "comparison": null
+        }
+      }
+    },
+    {
+      "name": "aborted",
+      "response": {
+        "schema_version": "paper-promotion-report.v1",
+        "mode": "paper_comparison_only",
+        "observed_at": "2026-10-27T15:00:00Z",
+        "attempt": {
+          "symbol": "005930",
+          "claimed_at": "2026-10-27T15:00:00Z",
+          "decided_at": "2026-10-27T15:00:00Z",
+          "comparison_start": "2026-05-07T00:00:00Z",
+          "comparison_end": "2026-08-04T00:00:00Z",
+          "candidate": {
+            "fast_window": 2,
+            "slow_window": 5,
+            "quantity": "10"
+          },
+          "incumbent": {
+            "fast_window": 3,
+            "slow_window": 6,
+            "quantity": "10"
+          },
+          "decision": "ABORTED",
+          "reason_code": "explicit_abort",
+          "promotion_selection_status": "not_promoted",
+          "comparison": null
+        }
+      }
+    },
+    {
+      "name": "stale",
+      "response": {
+        "schema_version": "paper-promotion-report.v1",
+        "mode": "paper_comparison_only",
+        "observed_at": "2026-10-27T15:00:00Z",
+        "attempt": {
+          "symbol": "005930",
+          "claimed_at": "2026-10-27T15:00:00Z",
+          "decided_at": "2026-10-27T15:00:00Z",
+          "comparison_start": "2026-05-07T00:00:00Z",
+          "comparison_end": "2026-08-04T00:00:00Z",
+          "candidate": {
+            "fast_window": 2,
+            "slow_window": 5,
+            "quantity": "10"
+          },
+          "incumbent": {
+            "fast_window": 3,
+            "slow_window": 6,
+            "quantity": "10"
+          },
+          "decision": "STALE",
+          "reason_code": "account_or_selection_changed",
+          "promotion_selection_status": "not_promoted",
+          "comparison": {
+            "policy_version": "paper-forward-comparison.v1",
+            "metrics_verification": "recomputed_from_stored_input",
+            "decision": "PROMOTE",
+            "reason_code": "all_forward_gates_passed",
+            "windows": [
+              {
+                "start": "2026-05-07T00:00:00Z",
+                "end": "2026-06-05T00:00:00Z",
+                "candidate": {
+                  "after_cost_return": "0.014734027",
+                  "max_drawdown": "0.000112",
+                  "round_trips": "1",
+                  "turnover": "0.038985"
+                },
+                "incumbent": {
+                  "after_cost_return": "0.013733027",
+                  "max_drawdown": "0.000113",
+                  "round_trips": "1",
+                  "turnover": "0.039986"
+                },
+                "buy_and_hold": {
+                  "after_cost_return": "0.007727027",
+                  "max_drawdown": "0.010119",
+                  "round_trips": "1",
+                  "turnover": "0.045992"
+                }
+              },
+              {
+                "start": "2026-06-06T00:00:00Z",
+                "end": "2026-07-05T00:00:00Z",
+                "candidate": {
+                  "after_cost_return": "0.014734027",
+                  "max_drawdown": "0.000112",
+                  "round_trips": "1",
+                  "turnover": "0.038985"
+                },
+                "incumbent": {
+                  "after_cost_return": "0.013733027",
+                  "max_drawdown": "0.000113",
+                  "round_trips": "1",
+                  "turnover": "0.039986"
+                },
+                "buy_and_hold": {
+                  "after_cost_return": "0.007727027",
+                  "max_drawdown": "0.010119",
+                  "round_trips": "1",
+                  "turnover": "0.045992"
+                }
+              },
+              {
+                "start": "2026-07-06T00:00:00Z",
+                "end": "2026-08-04T00:00:00Z",
+                "candidate": {
+                  "after_cost_return": "0.014734027",
+                  "max_drawdown": "0.000112",
+                  "round_trips": "1",
+                  "turnover": "0.038985"
+                },
+                "incumbent": {
+                  "after_cost_return": "0.013733027",
+                  "max_drawdown": "0.000113",
+                  "round_trips": "1",
+                  "turnover": "0.039986"
+                },
+                "buy_and_hold": {
+                  "after_cost_return": "0.007727027",
+                  "max_drawdown": "0.010119",
+                  "round_trips": "1",
+                  "turnover": "0.045992"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "promoted-superseded",
+      "response": {
+        "schema_version": "paper-promotion-report.v1",
+        "mode": "paper_comparison_only",
+        "observed_at": "2026-10-27T15:00:00Z",
+        "attempt": {
+          "symbol": "005930",
+          "claimed_at": "2026-10-27T15:00:00Z",
+          "decided_at": "2026-10-27T15:00:00Z",
+          "comparison_start": "2026-05-07T00:00:00Z",
+          "comparison_end": "2026-08-04T00:00:00Z",
+          "candidate": {
+            "fast_window": 2,
+            "slow_window": 5,
+            "quantity": "10"
+          },
+          "incumbent": {
+            "fast_window": 3,
+            "slow_window": 6,
+            "quantity": "10"
+          },
+          "decision": "PROMOTE",
+          "reason_code": "all_forward_gates_passed",
+          "promotion_selection_status": "superseded",
+          "comparison": {
+            "policy_version": "paper-forward-comparison.v1",
+            "metrics_verification": "recomputed_from_stored_input",
+            "decision": "PROMOTE",
+            "reason_code": "all_forward_gates_passed",
+            "windows": [
+              {
+                "start": "2026-05-07T00:00:00Z",
+                "end": "2026-06-05T00:00:00Z",
+                "candidate": {
+                  "after_cost_return": "0.014734027",
+                  "max_drawdown": "0.000112",
+                  "round_trips": "1",
+                  "turnover": "0.038985"
+                },
+                "incumbent": {
+                  "after_cost_return": "0.013733027",
+                  "max_drawdown": "0.000113",
+                  "round_trips": "1",
+                  "turnover": "0.039986"
+                },
+                "buy_and_hold": {
+                  "after_cost_return": "0.007727027",
+                  "max_drawdown": "0.010119",
+                  "round_trips": "1",
+                  "turnover": "0.045992"
+                }
+              },
+              {
+                "start": "2026-06-06T00:00:00Z",
+                "end": "2026-07-05T00:00:00Z",
+                "candidate": {
+                  "after_cost_return": "0.014734027",
+                  "max_drawdown": "0.000112",
+                  "round_trips": "1",
+                  "turnover": "0.038985"
+                },
+                "incumbent": {
+                  "after_cost_return": "0.013733027",
+                  "max_drawdown": "0.000113",
+                  "round_trips": "1",
+                  "turnover": "0.039986"
+                },
+                "buy_and_hold": {
+                  "after_cost_return": "0.007727027",
+                  "max_drawdown": "0.010119",
+                  "round_trips": "1",
+                  "turnover": "0.045992"
+                }
+              },
+              {
+                "start": "2026-07-06T00:00:00Z",
+                "end": "2026-08-04T00:00:00Z",
+                "candidate": {
+                  "after_cost_return": "0.014734027",
+                  "max_drawdown": "0.000112",
+                  "round_trips": "1",
+                  "turnover": "0.038985"
+                },
+                "incumbent": {
+                  "after_cost_return": "0.013733027",
+                  "max_drawdown": "0.000113",
+                  "round_trips": "1",
+                  "turnover": "0.039986"
+                },
+                "buy_and_hold": {
+                  "after_cost_return": "0.007727027",
+                  "max_drawdown": "0.010119",
+                  "round_trips": "1",
+                  "turnover": "0.045992"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "held",
+      "response": {
+        "schema_version": "paper-promotion-report.v1",
+        "mode": "paper_comparison_only",
+        "observed_at": "2026-10-27T15:00:00Z",
+        "attempt": {
+          "symbol": "005930",
+          "claimed_at": "2026-10-27T15:00:00Z",
+          "decided_at": "2026-10-27T15:00:00Z",
+          "comparison_start": "2026-05-07T00:00:00Z",
+          "comparison_end": "2026-08-04T00:00:00Z",
+          "candidate": {
+            "fast_window": 3,
+            "slow_window": 6,
+            "quantity": "10"
+          },
+          "incumbent": {
+            "fast_window": 2,
+            "slow_window": 5,
+            "quantity": "10"
+          },
+          "decision": "HOLD",
+          "reason_code": "candidate_return_below_incumbent",
+          "promotion_selection_status": "not_promoted",
+          "comparison": {
+            "policy_version": "paper-forward-comparison.v1",
+            "metrics_verification": "recomputed_from_stored_input",
+            "decision": "HOLD",
+            "reason_code": "candidate_return_below_incumbent",
+            "windows": [
+              {
+                "start": "2026-05-07T00:00:00Z",
+                "end": "2026-06-05T00:00:00Z",
+                "candidate": {
+                  "after_cost_return": "0.013733027",
+                  "max_drawdown": "0.000113",
+                  "round_trips": "1",
+                  "turnover": "0.039986"
+                },
+                "incumbent": {
+                  "after_cost_return": "0.014734027",
+                  "max_drawdown": "0.000112",
+                  "round_trips": "1",
+                  "turnover": "0.038985"
+                },
+                "buy_and_hold": {
+                  "after_cost_return": "0.007727027",
+                  "max_drawdown": "0.010119",
+                  "round_trips": "1",
+                  "turnover": "0.045992"
+                }
+              },
+              {
+                "start": "2026-06-06T00:00:00Z",
+                "end": "2026-07-05T00:00:00Z",
+                "candidate": {
+                  "after_cost_return": "0.013733027",
+                  "max_drawdown": "0.000113",
+                  "round_trips": "1",
+                  "turnover": "0.039986"
+                },
+                "incumbent": {
+                  "after_cost_return": "0.014734027",
+                  "max_drawdown": "0.000112",
+                  "round_trips": "1",
+                  "turnover": "0.038985"
+                },
+                "buy_and_hold": {
+                  "after_cost_return": "0.007727027",
+                  "max_drawdown": "0.010119",
+                  "round_trips": "1",
+                  "turnover": "0.045992"
+                }
+              },
+              {
+                "start": "2026-07-06T00:00:00Z",
+                "end": "2026-08-04T00:00:00Z",
+                "candidate": {
+                  "after_cost_return": "0.013733027",
+                  "max_drawdown": "0.000113",
+                  "round_trips": "1",
+                  "turnover": "0.039986"
+                },
+                "incumbent": {
+                  "after_cost_return": "0.014734027",
+                  "max_drawdown": "0.000112",
+                  "round_trips": "1",
+                  "turnover": "0.038985"
+                },
+                "buy_and_hold": {
+                  "after_cost_return": "0.007727027",
+                  "max_drawdown": "0.010119",
+                  "round_trips": "1",
+                  "turnover": "0.045992"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

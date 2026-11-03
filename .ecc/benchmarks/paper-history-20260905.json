@@ -1,0 +1,34 @@
+{
+  "schema_version": "paper-history-profile.v1",
+  "measured_on": "2026-09-05",
+  "production_commit": "f31dbcad3ac22c7629550fd1802c74fc6c0dd32d",
+  "command": "OMNI_PAPER_PROFILE=1 GOFLAGS='-run=TestPaperHistoryProfile|TestPaperLatencySummary -count=1 -v' make test FLUTTER=true",
+  "method": "100 samples per growing-history band; real SQLite transactions; injected logical lease clock; monotonic elapsed nanoseconds; warm single process, not an isolated host or real-time soak",
+  "fixture": "One paper account, selection and symbol; one initial open order, no new orders or fills during renewal; essentially fixed policy history; recovery measured immediately after renewal",
+  "go": "go1.26.7",
+  "os": "darwin",
+  "arch": "arm64",
+  "logical_cpus": 10,
+  "gomaxprocs": 10,
+  "sqlite": "3.46.1",
+  "bands": [
+    {
+      "prior_renewals": 0,
+      "final_renewals": 100,
+      "renewal": {"samples": 100, "p50_ns": 7996875, "p95_ns": 10639917, "p99_ns": 21067209, "max_ns": 23109041},
+      "recovery": {"samples": 100, "p50_ns": 5621833, "p95_ns": 6184667, "p99_ns": 6277375, "max_ns": 6489875}
+    },
+    {
+      "prior_renewals": 300,
+      "final_renewals": 400,
+      "renewal": {"samples": 100, "p50_ns": 13674167, "p95_ns": 17704458, "p99_ns": 22677250, "max_ns": 27614166},
+      "recovery": {"samples": 100, "p50_ns": 9269500, "p95_ns": 10284041, "p99_ns": 10927208, "max_ns": 11232750}
+    },
+    {
+      "prior_renewals": 900,
+      "final_renewals": 1000,
+      "renewal": {"samples": 100, "p50_ns": 24837250, "p95_ns": 28388125, "p99_ns": 30781291, "max_ns": 34700125},
+      "recovery": {"samples": 100, "p50_ns": 16421167, "p95_ns": 17276958, "p99_ns": 17715417, "max_ns": 18265084}
+    }
+  ]
+}

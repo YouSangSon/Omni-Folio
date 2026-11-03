@@ -1,0 +1,4069 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"database/sql"
+	"embed"
+	"encoding/csv"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"math/big"
+	"mime"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	_ "github.com/mattn/go-sqlite3"
+	"omni-folio/services/core/internal/exact"
+)
+
+const (
+	maxBodyBytes                       = 1 << 20
+	maxImportRows                      = 10_000
+	latestSchema                       = 27
+	zeroTime                           = "1970-01-01T00:00:00Z"
+	csvSchema                          = "omni-folio.csv.v1"
+	mappingSchema                      = "canonical-transaction.v4"
+	backupFormat                       = "omni-folio-backup.v21"
+	backupSchema                       = "omni-folio.sqlite.v27"
+	legacyPaperRunnerFormat            = "omni-folio-backup.v14"
+	legacyPaperRunnerSchema            = "omni-folio.sqlite.v20"
+	legacyPaperPerformancePolicyFormat = "omni-folio-backup.v13"
+	legacyPaperPerformancePolicySchema = "omni-folio.sqlite.v19"
+	legacyStrategyPerformanceFormat    = "omni-folio-backup.v12"
+	legacyStrategyPerformanceSchema    = "omni-folio.sqlite.v18"
+	legacyPaperPerformanceBackupFormat = "omni-folio-backup.v11"
+	legacyPaperPerformanceBackupSchema = "omni-folio.sqlite.v17"
+	legacyPaperFillBackupFormat        = "omni-folio-backup.v10"
+	legacyPaperFillBackupSchema        = "omni-folio.sqlite.v15"
+	legacyPaperAccountingBackupFormat  = "omni-folio-backup.v9"
+	legacyPaperAccountingBackupSchema  = "omni-folio.sqlite.v14"
+	legacyBackupFormat                 = "omni-folio-backup.v5"
+	legacyFXBackupFormat               = "omni-folio-backup.v6"
+	legacyPriceBackupFormat            = "omni-folio-backup.v7"
+	legacyListingBackupFormat          = "omni-folio-backup.v8"
+)
+
+//go:embed migrations/*.sql
+var migrationFiles embed.FS
+
+type Service struct {
+	db                *sql.DB
+	now               func() time.Time
+	id                func(string) string
+	ttl               time.Duration
+	marketData        MarketDataPort
+	researchFeed      string
+	executionOwner    string
+	paperRunnerOwner  string
+	activityCursorKey [32]byte
+}
+
+type APIError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Field   string `json:"field,omitempty"`
+}
+
+type Transaction struct {
+	EventID               string `json:"event_id"`
+	SourceEventID         string `json:"source_event_id"`
+	AccountID             string `json:"account_id"`
+	Type                  string `json:"type"`
+	OccurredAt            string `json:"occurred_at"`
+	InstrumentID          string `json:"instrument_id,omitempty"`
+	Symbol                string `json:"symbol,omitempty"`
+	Quantity              string `json:"quantity,omitempty"`
+	Price                 string `json:"price,omitempty"`
+	Fee                   string `json:"fee,omitempty"`
+	Currency              string `json:"currency"`
+	Amount                string `json:"amount"`
+	CounterCurrency       string `json:"counter_currency,omitempty"`
+	CounterAmount         string `json:"counter_amount,omitempty"`
+	CorrectsSourceEventID string `json:"corrects_source_event_id,omitempty"`
+}
+
+type PreviewRow struct {
+	RowNumber        int               `json:"row_number"`
+	Status           string            `json:"status"`
+	Transaction      *Transaction      `json:"transaction,omitempty"`
+	CorrectionTarget *CorrectionTarget `json:"correction_target,omitempty"`
+	DuplicateOf      string            `json:"duplicate_of,omitempty"`
+	Errors           []APIError        `json:"errors,omitempty"`
+	Resolution       *Resolution       `json:"resolution,omitempty"`
+}
+
+type CorrectionTarget struct {
+	SourceEventID string `json:"source_event_id"`
+	Type          string `json:"type"`
+	Currency      string `json:"currency"`
+	Amount        string `json:"amount"`
+}
+
+type Resolution struct {
+	Kind           string   `json:"kind"`
+	SourceField    string   `json:"source_field"`
+	SourceValue    string   `json:"source_value"`
+	RequiredAction string   `json:"required_action"`
+	CandidateIDs   []string `json:"candidate_ids"`
+}
+
+type PreviewTotals struct {
+	TotalRows      int `json:"total_rows"`
+	NewRows        int `json:"new_rows"`
+	DuplicateRows  int `json:"duplicate_rows"`
+	ErrorRows      int `json:"error_rows"`
+	UnresolvedRows int `json:"unresolved_rows"`
+}
+
+type ImportPreview struct {
+	PreviewID          string        `json:"preview_id"`
+	FileSHA256         string        `json:"file_sha256"`
+	SchemaVersion      string        `json:"schema_version"`
+	MappingVersion     string        `json:"mapping_version"`
+	LedgerRevision     string        `json:"ledger_revision"`
+	PreviewFingerprint string        `json:"preview_fingerprint"`
+	CanApply           bool          `json:"can_apply"`
+	Rows               []PreviewRow  `json:"rows"`
+	Totals             PreviewTotals `json:"totals"`
+}
+
+type ApplyRequest struct {
+	PreviewID      string `json:"preview_id"`
+	IdempotencyKey string `json:"idempotency_key"`
+}
+
+type ApplyReceipt struct {
+	ReceiptID            string `json:"receipt_id"`
+	PreviewID            string `json:"preview_id"`
+	IdempotencyKey       string `json:"idempotency_key"`
+	FileSHA256           string `json:"file_sha256"`
+	LedgerRevisionBefore string `json:"ledger_revision_before"`
+	LedgerRevisionAfter  string `json:"ledger_revision_after"`
+	AppliedRows          int    `json:"applied_rows"`
+	SkippedDuplicateRows int    `json:"skipped_duplicate_rows"`
+	ReceivedAt           string `json:"received_at"`
+	RecordedAt           string `json:"recorded_at"`
+}
+
+type Money struct {
+	Currency string `json:"currency"`
+	Amount   string `json:"amount"`
+}
+
+type Holding struct {
+	InstrumentID string `json:"instrument_id"`
+	Symbol       string `json:"symbol"`
+	Quantity     string `json:"quantity"`
+	CostBasis    string `json:"cost_basis"`
+	Currency     string `json:"currency"`
+}
+
+type Provenance struct {
+	EventIDs   []string `json:"event_ids"`
+	ReceiptIDs []string `json:"receipt_ids"`
+}
+
+type PortfolioSnapshot struct {
+	PortfolioID     string     `json:"portfolio_id"`
+	LedgerRevision  string     `json:"ledger_revision"`
+	CostBasisPolicy string     `json:"cost_basis_policy"`
+	AsOf            string     `json:"as_of"`
+	RecordedAt      string     `json:"recorded_at"`
+	LiveEnabled     bool       `json:"live_enabled"`
+	ValuationStatus string     `json:"valuation_status"`
+	Cash            []Money    `json:"cash"`
+	Holdings        []Holding  `json:"holdings"`
+	RealizedPnL     []Money    `json:"realized_pnl"`
+	Provenance      Provenance `json:"provenance"`
+}
+
+const fifoCostBasisPolicy = "fifo_utc_nanosecond_exact_else_half_even_residual_8_v2"
+
+type BackupManifest struct {
+	FormatVersion                            string              `json:"format_version"`
+	SchemaVersion                            string              `json:"schema_version"`
+	CreatedAt                                string              `json:"created_at"`
+	SourceLedgerRevision                     string              `json:"source_ledger_revision"`
+	OrderStateSHA256                         string              `json:"order_state_sha256"`
+	OrderCount                               int                 `json:"order_count"`
+	OrderEventCount                          int                 `json:"order_event_count"`
+	ExecutionAuthoritySHA256                 string              `json:"execution_authority_sha256"`
+	ExecutionAuthorityEventCount             int                 `json:"execution_authority_event_count"`
+	RiskReservationSHA256                    string              `json:"risk_reservation_sha256"`
+	RiskReservationCount                     int                 `json:"risk_reservation_count"`
+	BrokerStateSHA256                        string              `json:"broker_state_sha256"`
+	BrokerSnapshotCount                      int                 `json:"broker_snapshot_count"`
+	BrokerReconciliationCount                int                 `json:"broker_reconciliation_count"`
+	StrategyRegistrySHA256                   string              `json:"strategy_registry_sha256"`
+	StrategyEvidenceCount                    int                 `json:"strategy_evidence_count"`
+	StrategySelectionEventCount              int                 `json:"strategy_selection_event_count"`
+	PaperPromotionStateSHA256                string              `json:"paper_promotion_state_sha256"`
+	PaperPromotionClaimCount                 int                 `json:"paper_promotion_claim_count"`
+	PaperPromotionDecisionCount              int                 `json:"paper_promotion_decision_count"`
+	PaperEvaluationEventCount                int                 `json:"paper_evaluation_event_count"`
+	PaperAccountingStateSHA256               string              `json:"paper_accounting_state_sha256"`
+	PaperAccountingSessionCount              int                 `json:"paper_accounting_session_count"`
+	PaperMarketBarObservationCount           int                 `json:"paper_market_bar_observation_count"`
+	PaperSignalEventCount                    int                 `json:"paper_signal_event_count"`
+	PaperExecutionAuthorizationCount         int                 `json:"paper_execution_authorization_count"`
+	PaperCapitalizedFillCount                int                 `json:"paper_capitalized_fill_count"`
+	PaperPerformanceStateSHA256              string              `json:"paper_performance_state_sha256"`
+	PaperPerformanceEventCount               int                 `json:"paper_performance_event_count"`
+	PaperPerformanceMarkCount                int                 `json:"paper_performance_mark_count"`
+	PaperStrategyPerformanceStateSHA256      string              `json:"paper_strategy_performance_state_sha256"`
+	PaperStrategyPerformanceEventCount       int                 `json:"paper_strategy_performance_event_count"`
+	PaperStrategyPerformanceSampleCount      int                 `json:"paper_strategy_performance_sample_count"`
+	PaperPerformancePolicyStateSHA256        string              `json:"paper_performance_policy_state_sha256"`
+	PaperPerformancePolicyEventCount         int                 `json:"paper_performance_policy_event_count"`
+	PaperPerformancePolicyActionCount        int                 `json:"paper_performance_policy_action_count"`
+	PaperPerformancePolicyAutomaticHaltCount int                 `json:"paper_performance_policy_automatic_halt_count"`
+	PaperRunnerLeaseStateSHA256              string              `json:"paper_runner_lease_state_sha256"`
+	PaperRunnerLeaseCount                    int                 `json:"paper_runner_lease_count"`
+	ActivePaperRunnerLeaseCount              int                 `json:"active_paper_runner_lease_count"`
+	SelectedStrategyResultSHA256             string              `json:"selected_strategy_result_sha256"`
+	FXObservationStateSHA256                 string              `json:"fx_observation_state_sha256"`
+	FXObservationCount                       int                 `json:"fx_observation_count"`
+	SecurityPriceObservationStateSHA256      string              `json:"security_price_observation_state_sha256"`
+	SecurityPriceObservationCount            int                 `json:"security_price_observation_count"`
+	InstrumentListingStateSHA256             string              `json:"instrument_listing_state_sha256"`
+	InstrumentListingEventCount              int                 `json:"instrument_listing_event_count"`
+	ActiveInstrumentListingCount             int                 `json:"active_instrument_listing_count"`
+	BenchmarkSeriesStateSHA256               string              `json:"benchmark_series_state_sha256"`
+	BenchmarkSeriesVersionCount              int                 `json:"benchmark_series_version_count"`
+	BenchmarkSeriesPointCount                int                 `json:"benchmark_series_point_count"`
+	OwnerFXSeriesStateSHA256                 string              `json:"owner_fx_series_state_sha256"`
+	OwnerPriceSeriesStateSHA256              string              `json:"owner_price_series_state_sha256"`
+	OwnerFXSeriesVersionCount                int                 `json:"owner_fx_series_version_count"`
+	OwnerPriceSeriesVersionCount             int                 `json:"owner_price_series_version_count"`
+	OwnerFXSeriesPointCount                  int                 `json:"owner_fx_series_point_count"`
+	OwnerPriceSeriesPointCount               int                 `json:"owner_price_series_point_count"`
+	WatchlistStateSHA256                     string              `json:"watchlist_state_sha256"`
+	WatchlistRevision                        int64               `json:"watchlist_revision"`
+	WatchlistEntryCount                      int                 `json:"watchlist_entry_count"`
+	DBSHA256                                 string              `json:"db_sha256"`
+	SizeBytes                                int64               `json:"size_bytes"`
+	ExpectedSnapshotSHA256                   string              `json:"expected_snapshot_sha256"`
+	Encryption                               BackupEncryption    `json:"encryption"`
+	VerificationReceipt                      VerificationReceipt `json:"verification_receipt"`
+}
+
+type BackupEncryption struct {
+	Encrypted bool   `json:"encrypted"`
+	Algorithm string `json:"algorithm"`
+}
+
+type VerificationReceipt struct {
+	ReceiptID                                    string   `json:"receipt_id"`
+	CandidateID                                  string   `json:"candidate_id"`
+	VerifiedAt                                   string   `json:"verified_at"`
+	Status                                       string   `json:"status"`
+	IntegrityCheck                               string   `json:"integrity_check"`
+	GoldenSnapshotCheck                          string   `json:"golden_snapshot_check"`
+	OrderStateCheck                              string   `json:"order_state_check"`
+	BrokerStateCheck                             string   `json:"broker_state_check"`
+	StrategyRegistryCheck                        string   `json:"strategy_registry_check"`
+	FXObservationCheck                           string   `json:"fx_observation_check"`
+	SecurityPriceObservationCheck                string   `json:"security_price_observation_check"`
+	InstrumentListingCheck                       string   `json:"instrument_listing_check"`
+	BenchmarkSeriesCheck                         string   `json:"benchmark_series_check"`
+	OwnerFXSeriesCheck                           string   `json:"owner_fx_series_check"`
+	OwnerPriceSeriesCheck                        string   `json:"owner_price_series_check"`
+	WatchlistCheck                               string   `json:"watchlist_check"`
+	CandidateWatchlistStateSHA256                string   `json:"candidate_watchlist_state_sha256"`
+	CandidateWatchlistRevision                   int64    `json:"candidate_watchlist_revision"`
+	CandidateWatchlistEntryCount                 int      `json:"candidate_watchlist_entry_count"`
+	PaperPerformanceCheck                        string   `json:"paper_performance_check"`
+	PaperStrategyPerformanceCheck                string   `json:"paper_strategy_performance_check"`
+	PaperPerformancePolicyCheck                  string   `json:"paper_performance_policy_check"`
+	PaperRunnerLeaseCheck                        string   `json:"paper_runner_lease_check"`
+	CandidateDBSHA256                            string   `json:"candidate_db_sha256"`
+	CandidateSnapshotSHA256                      string   `json:"candidate_snapshot_sha256"`
+	CandidateOrderStateSHA256                    string   `json:"candidate_order_state_sha256"`
+	CandidateBrokerStateSHA256                   string   `json:"candidate_broker_state_sha256"`
+	CandidateStrategyRegistrySHA256              string   `json:"candidate_strategy_registry_sha256"`
+	CandidatePaperPromotionStateSHA256           string   `json:"candidate_paper_promotion_state_sha256"`
+	CandidatePaperAccountingStateSHA256          string   `json:"candidate_paper_accounting_state_sha256"`
+	CandidateFXObservationStateSHA256            string   `json:"candidate_fx_observation_state_sha256"`
+	CandidateSecurityPriceObservationStateSHA256 string   `json:"candidate_security_price_observation_state_sha256"`
+	CandidateInstrumentListingStateSHA256        string   `json:"candidate_instrument_listing_state_sha256"`
+	CandidateBenchmarkSeriesStateSHA256          string   `json:"candidate_benchmark_series_state_sha256"`
+	CandidateBenchmarkSeriesVersionCount         int      `json:"candidate_benchmark_series_version_count"`
+	CandidateBenchmarkSeriesPointCount           int      `json:"candidate_benchmark_series_point_count"`
+	CandidateOwnerFXSeriesStateSHA256            string   `json:"candidate_owner_fx_series_state_sha256"`
+	CandidateOwnerPriceSeriesStateSHA256         string   `json:"candidate_owner_price_series_state_sha256"`
+	CandidateOwnerFXSeriesVersionCount           int      `json:"candidate_owner_fx_series_version_count"`
+	CandidateOwnerPriceSeriesVersionCount        int      `json:"candidate_owner_price_series_version_count"`
+	CandidateOwnerFXSeriesPointCount             int      `json:"candidate_owner_fx_series_point_count"`
+	CandidateOwnerPriceSeriesPointCount          int      `json:"candidate_owner_price_series_point_count"`
+	CandidatePaperPerformanceStateSHA256         string   `json:"candidate_paper_performance_state_sha256"`
+	CandidatePaperStrategyPerformanceStateSHA256 string   `json:"candidate_paper_strategy_performance_state_sha256"`
+	CandidatePaperPerformancePolicyStateSHA256   string   `json:"candidate_paper_performance_policy_state_sha256"`
+	CandidatePaperRunnerLeaseStateSHA256         string   `json:"candidate_paper_runner_lease_state_sha256"`
+	EligibleForActivation                        bool     `json:"eligible_for_activation"`
+	Errors                                       []string `json:"errors"`
+}
+
+type appError struct {
+	status int
+	body   APIError
+}
+
+func (e *appError) Error() string { return e.body.Message }
+
+func openDB(path string) (*sql.DB, error) {
+	if path == "" {
+		return nil, errors.New("database path is required")
+	}
+	db, err := sql.Open("sqlite3", path+"?_busy_timeout=5000&_foreign_keys=on&_txlock=immediate")
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
+func openExistingDB(path string) (*sql.DB, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("database must already exist; run migrate first: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("database path must be a regular file")
+	}
+	return openDB(path)
+}
+
+func requireSchema(db *sql.DB) error {
+	return requireSchemaContext(context.Background(), db)
+}
+
+func requireSchemaContext(ctx context.Context, q orderQuerier) error {
+	return requireSchemaVersionContext(ctx, q, latestSchema)
+}
+
+func requireSchemaVersionContext(ctx context.Context, q orderQuerier, expected int) error {
+	var first, latest, count int
+	if err := q.QueryRowContext(ctx, `SELECT COALESCE(MIN(version), 0), COALESCE(MAX(version), 0), COUNT(*) FROM schema_migrations`).Scan(&first, &latest, &count); err != nil {
+		return fmt.Errorf("database is not migrated; run migrate first: %w", err)
+	}
+	if first != 1 || latest != expected || count != expected {
+		return fmt.Errorf("unsupported schema history %d..%d (%d migrations)", first, latest, count)
+	}
+	return nil
+}
+
+// requireServerStartupRecovery is the one-time fail-closed check before a server listener is constructed.
+func requireServerStartupRecovery(db *sql.DB) error {
+	if err := requireSchema(db); err != nil {
+		return err
+	}
+	if err := proveLedgerReplayState(context.Background(), db, false); err != nil {
+		return fmt.Errorf("ledger replay startup recovery: %w", err)
+	}
+	if _, err := provePaperPerformancePolicyRecovery(context.Background(), db); err != nil {
+		return fmt.Errorf("paper performance policy startup recovery: %w", err)
+	}
+	if _, err := provePaperRunnerLeaseRecovery(context.Background(), db); err != nil {
+		return fmt.Errorf("paper runner lease startup recovery: %w", err)
+	}
+	if _, err := provePaperPromotionRecovery(context.Background(), db); err != nil {
+		return fmt.Errorf("paper promotion startup recovery: %w", err)
+	}
+	if _, err := proveBenchmarkSeriesRecovery(context.Background(), db); err != nil {
+		return fmt.Errorf("benchmark series startup recovery: %w", err)
+	}
+	if _, err := proveOwnerFXSeriesRecovery(context.Background(), db); err != nil {
+		return fmt.Errorf("owner FX series startup recovery: %w", err)
+	}
+	if _, err := proveOwnerPriceSeriesRecovery(context.Background(), db); err != nil {
+		return fmt.Errorf("owner price series startup recovery: %w", err)
+	}
+	if _, err := proveWatchlistRecovery(context.Background(), db); err != nil {
+		return fmt.Errorf("watchlist startup recovery: %w", err)
+	}
+	return nil
+}
+
+func migrate(db *sql.DB) error {
+	var exists int
+	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='schema_migrations'`).Scan(&exists); err != nil {
+		return err
+	}
+	current := 0
+	if exists != 0 {
+		var first, count int
+		if err := db.QueryRow(`SELECT COALESCE(MIN(version), 0), COALESCE(MAX(version), 0), COUNT(*) FROM schema_migrations`).Scan(&first, &current, &count); err != nil {
+			return err
+		}
+		if first != 1 || current > latestSchema || count != current {
+			return fmt.Errorf("unsupported schema version %d", current)
+		}
+	}
+	files := []string{"001_init.sql", "002_orders.sql", "003_broker_snapshots.sql", "004_execution_authority.sql", "005_ledger_events.sql", "006_strategy_registry.sql", "007_paper_orders.sql", "008_cash_void.sql", "009_fx_exchange.sql", "010_fx_observations.sql", "011_security_price_observations.sql", "012_kiwoom_security_price_observations.sql", "013_instrument_listing_events.sql", "014_paper_evaluation_events.sql", "015_paper_accounting_sessions.sql", "016_paper_market_signals.sql", "017_paper_execution_authorizations.sql", "018_paper_performance_events.sql", "019_paper_strategy_performance_events.sql", "020_paper_performance_policy_events.sql", "021_paper_runner_leases.sql", "022_ledger_replay_policy.sql", "023_benchmark_series_versions.sql", "024_owner_fx_series_versions.sql", "025_owner_price_series_versions.sql", "026_watchlist_state.sql", "027_paper_promotion.sql"}
+	for version := current + 1; version <= latestSchema; version++ {
+		script, err := migrationFiles.ReadFile("migrations/" + files[version-1])
+		if err != nil {
+			return err
+		}
+		disableForeignKeys := version == 7 || version == 20 || version == 27
+		checkForeignKeys := version >= 7
+		if disableForeignKeys {
+			if _, err := db.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
+				return err
+			}
+		}
+		tx, err := db.Begin()
+		if err != nil {
+			if disableForeignKeys {
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+			}
+			return err
+		}
+		var v20Before migration20Snapshot
+		var v27Before migration27Snapshot
+		if version == 20 {
+			v20Before, err = captureMigration20Snapshot(context.Background(), tx)
+			if err != nil {
+				tx.Rollback()
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+				return fmt.Errorf("migration 20 pre-rebuild proof: %w", err)
+			}
+			if err := dropMigration20DependentTriggers(tx, v20Before.DependentTriggers); err != nil {
+				tx.Rollback()
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+				return fmt.Errorf("migration 20 rebuild preparation: %w", err)
+			}
+		}
+		if version == 27 {
+			v27Before, err = captureMigration27Snapshot(context.Background(), tx)
+			if err == nil {
+				err = dropMigration20DependentTriggers(tx, v27Before.DependentTriggers)
+			}
+			if err != nil {
+				tx.Rollback()
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+				return fmt.Errorf("migration 27 pre-rebuild proof: %w", err)
+			}
+		}
+		if _, err := tx.Exec(string(script)); err != nil {
+			tx.Rollback()
+			if disableForeignKeys {
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+			}
+			return err
+		}
+		if version == 20 {
+			if err := restoreMigration20DependentTriggers(tx, v20Before.DependentTriggers); err != nil {
+				tx.Rollback()
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+				return fmt.Errorf("migration 20 trigger restoration: %w", err)
+			}
+			if err := verifyMigration20Snapshot(context.Background(), tx, v20Before); err != nil {
+				tx.Rollback()
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+				return fmt.Errorf("migration 20 rebuild proof: %w", err)
+			}
+		}
+		if version == 27 {
+			for _, index := range v27Before.SelectionIndexes {
+				if _, err = tx.Exec(index.SQL); err != nil {
+					break
+				}
+			}
+			if err == nil {
+				err = restoreMigration20DependentTriggers(tx, v27Before.DependentTriggers)
+			}
+			if err == nil {
+				err = verifyMigration27Snapshot(context.Background(), tx, v27Before)
+			}
+			if err != nil {
+				tx.Rollback()
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+				return fmt.Errorf("migration 27 rebuild proof: %w", err)
+			}
+		}
+		if _, err := tx.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)`, version, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+			tx.Rollback()
+			if disableForeignKeys {
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+			}
+			return err
+		}
+		if checkForeignKeys {
+			var violations int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&violations); err != nil || violations != 0 {
+				tx.Rollback()
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+				if err != nil {
+					return err
+				}
+				return fmt.Errorf("migration %d foreign-key check failed: violations=%d", version, violations)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			if disableForeignKeys {
+				_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+			}
+			return err
+		}
+		if disableForeignKeys {
+			if _, err := db.Exec(`PRAGMA foreign_keys=ON`); err != nil {
+				return err
+			}
+			var foreignKeysEnabled, violations int
+			if err := db.QueryRow(`PRAGMA foreign_keys`).Scan(&foreignKeysEnabled); err != nil || foreignKeysEnabled != 1 {
+				if err != nil {
+					return err
+				}
+				return fmt.Errorf("migration %d foreign keys are not enabled", version)
+			}
+			if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&violations); err != nil || violations != 0 {
+				if err != nil {
+					return err
+				}
+				return fmt.Errorf("migration %d post-enable foreign-key check failed: violations=%d", version, violations)
+			}
+		}
+	}
+	return nil
+}
+
+type migration20Trigger struct {
+	Name, Table, SQL string
+}
+
+func dropMigration20DependentTriggers(tx *sql.Tx, triggers []migration20Trigger) error {
+	for _, trigger := range triggers {
+		if _, err := tx.Exec(`DROP TRIGGER ` + quoteSQLiteIdentifier(trigger.Name)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func restoreMigration20DependentTriggers(tx *sql.Tx, triggers []migration20Trigger) error {
+	for _, trigger := range triggers {
+		if _, err := tx.Exec(trigger.SQL); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func quoteSQLiteIdentifier(value string) string {
+	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
+}
+
+type migration20JournalShape struct {
+	Rows        int
+	MaxSequence int64
+}
+
+type migration20ForeignKey struct {
+	Child, Parent, From, To, OnUpdate, OnDelete, Match string
+}
+
+const migration20CanonicalV19ForeignKeyInventorySHA256 = "665f412a571d311c990d15f579608f89d91cbd8376b97dc1fdd0dd2537e41cbd"
+
+type migration20Snapshot struct {
+	AuthoritySHA      string
+	AuthorityCount    int
+	AuthorityShape    migration20JournalShape
+	Strategy          strategyRegistryRecoveryProof
+	StrategyShape     migration20JournalShape
+	ForeignKeys       []migration20ForeignKey
+	DependentTriggers []migration20Trigger
+}
+
+func captureMigration20Snapshot(ctx context.Context, q orderQuerier) (migration20Snapshot, error) {
+	return captureMigration20SnapshotWithForeignKeyPreflight(ctx, q, true)
+}
+
+func captureMigration20PostRebuildSnapshot(ctx context.Context, q orderQuerier) (migration20Snapshot, error) {
+	return captureMigration20SnapshotWithForeignKeyPreflight(ctx, q, false)
+}
+
+func captureMigration20SnapshotWithForeignKeyPreflight(ctx context.Context, q orderQuerier, requireCanonicalV19ForeignKeys bool) (migration20Snapshot, error) {
+	var schemaVersion int
+	if err := q.QueryRowContext(ctx, `SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&schemaVersion); err != nil {
+		return migration20Snapshot{}, err
+	}
+	if schemaVersion != 19 {
+		return migration20Snapshot{}, fmt.Errorf("expected schema version 19, got %d", schemaVersion)
+	}
+	authoritySHA, authorityCount, err := proveExecutionAuthorityRecovery(ctx, q)
+	if err != nil {
+		return migration20Snapshot{}, err
+	}
+	strategy, err := proveStrategyRegistryRecovery(ctx, q)
+	if err != nil {
+		return migration20Snapshot{}, err
+	}
+	authorityShape, err := migration20JournalShapeFor(ctx, q, "execution_authority_events")
+	if err != nil {
+		return migration20Snapshot{}, err
+	}
+	strategyShape, err := migration20JournalShapeFor(ctx, q, "strategy_selection_events")
+	if err != nil {
+		return migration20Snapshot{}, err
+	}
+	foreignKeys, err := migration20ForeignKeyInventory(ctx, q)
+	if err != nil {
+		return migration20Snapshot{}, err
+	}
+	if requireCanonicalV19ForeignKeys && migration20ForeignKeyInventorySHA256(foreignKeys) != migration20CanonicalV19ForeignKeyInventorySHA256 {
+		return migration20Snapshot{}, errors.New("v19 foreign-key inventory does not match canonical migrations")
+	}
+	dependentTriggers, err := migration20DependentTriggerInventory(ctx, q)
+	if err != nil {
+		return migration20Snapshot{}, err
+	}
+	return migration20Snapshot{
+		AuthoritySHA: authoritySHA, AuthorityCount: authorityCount, AuthorityShape: authorityShape,
+		Strategy: strategy, StrategyShape: strategyShape, ForeignKeys: foreignKeys, DependentTriggers: dependentTriggers,
+	}, nil
+}
+
+func verifyMigration20Snapshot(ctx context.Context, q orderQuerier, before migration20Snapshot) error {
+	var schemaVersion int
+	if err := q.QueryRowContext(ctx, `SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&schemaVersion); err != nil {
+		return err
+	}
+	if schemaVersion != 19 {
+		return fmt.Errorf("schema history changed before migration record: %d", schemaVersion)
+	}
+	after, err := captureMigration20PostRebuildSnapshot(ctx, q)
+	if err != nil {
+		return err
+	}
+	if before.AuthoritySHA != after.AuthoritySHA || before.AuthorityCount != after.AuthorityCount || before.AuthorityShape != after.AuthorityShape ||
+		before.Strategy.SHA256 != after.Strategy.SHA256 || before.Strategy.Evidence != after.Strategy.Evidence ||
+		before.Strategy.Events != after.Strategy.Events || before.Strategy.Evaluations != after.Strategy.Evaluations ||
+		before.Strategy.SelectedResultSHA256 != after.Strategy.SelectedResultSHA256 || before.Strategy.CurrentEventID != after.Strategy.CurrentEventID ||
+		before.StrategyShape != after.StrategyShape {
+		return errors.New("authority or strategy journal was not preserved exactly")
+	}
+	expectedForeignKeys, err := migration20ExpectedForeignKeys(before.ForeignKeys)
+	if err != nil {
+		return err
+	}
+	if !sameMigration20ForeignKeys(expectedForeignKeys, after.ForeignKeys) {
+		return errors.New("foreign-key inventory was not preserved exactly")
+	}
+	if !sameMigration20Triggers(before.DependentTriggers, after.DependentTriggers) {
+		return errors.New("dependent trigger inventory was not preserved exactly")
+	}
+	if err := verifyMigration20TemporaryNames(ctx, q, after.ForeignKeys); err != nil {
+		return err
+	}
+	return nil
+}
+
+func migration20DependentTriggerInventory(ctx context.Context, q orderQuerier) ([]migration20Trigger, error) {
+	rows, err := q.QueryContext(ctx, `SELECT name,tbl_name,sql FROM sqlite_master
+		WHERE type='trigger' AND tbl_name NOT IN ('execution_authority_events','strategy_selection_events','paper_performance_policy_events')
+		AND (instr(sql, 'execution_authority_events') != 0 OR instr(sql, 'strategy_selection_events') != 0)
+		ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	var triggers []migration20Trigger
+	for rows.Next() {
+		var trigger migration20Trigger
+		if err := rows.Scan(&trigger.Name, &trigger.Table, &trigger.SQL); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		triggers = append(triggers, trigger)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	return triggers, nil
+}
+
+func sameMigration20Triggers(left, right []migration20Trigger) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func migration20JournalShapeFor(ctx context.Context, q orderQuerier, table string) (migration20JournalShape, error) {
+	if table != "execution_authority_events" && table != "strategy_selection_events" {
+		return migration20JournalShape{}, errors.New("unsupported migration journal")
+	}
+	var shape migration20JournalShape
+	err := q.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(MAX(sequence), 0) FROM `+table).Scan(&shape.Rows, &shape.MaxSequence)
+	return shape, err
+}
+
+func migration20ForeignKeyInventory(ctx context.Context, q orderQuerier) ([]migration20ForeignKey, error) {
+	rows, err := q.QueryContext(ctx, `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	var tables []string
+	for rows.Next() {
+		var table string
+		if err := rows.Scan(&table); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		tables = append(tables, table)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	var inventory []migration20ForeignKey
+	for _, table := range tables {
+		foreignRows, err := q.QueryContext(ctx, `SELECT "table","from","to","on_update","on_delete","match" FROM pragma_foreign_key_list(?)`, table)
+		if err != nil {
+			return nil, err
+		}
+		for foreignRows.Next() {
+			var item migration20ForeignKey
+			item.Child = table
+			if err := foreignRows.Scan(&item.Parent, &item.From, &item.To, &item.OnUpdate, &item.OnDelete, &item.Match); err != nil {
+				foreignRows.Close()
+				return nil, err
+			}
+			inventory = append(inventory, item)
+		}
+		if err := foreignRows.Err(); err != nil {
+			foreignRows.Close()
+			return nil, err
+		}
+		if err := foreignRows.Close(); err != nil {
+			return nil, err
+		}
+	}
+	sort.Slice(inventory, func(i, j int) bool {
+		return migration20ForeignKeyKey(inventory[i]) < migration20ForeignKeyKey(inventory[j])
+	})
+	return inventory, nil
+}
+
+func migration20ExpectedForeignKeys(before []migration20ForeignKey) ([]migration20ForeignKey, error) {
+	if migration20ForeignKeyInventorySHA256(before) != migration20CanonicalV19ForeignKeyInventorySHA256 {
+		return nil, errors.New("v19 foreign-key inventory does not match canonical migrations")
+	}
+	expected := append([]migration20ForeignKey(nil), before...)
+	expected = append(expected,
+		migration20ForeignKey{Child: "execution_authority_events", Parent: "paper_performance_policy_events", From: "paper_performance_policy_event_id", To: "policy_event_id", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+		migration20ForeignKey{Child: "strategy_selection_events", Parent: "paper_performance_policy_events", From: "paper_performance_policy_event_id", To: "policy_event_id", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+	)
+	expected = append(expected, migration20PolicyForeignKeys()...)
+	sort.Slice(expected, func(i, j int) bool {
+		return migration20ForeignKeyKey(expected[i]) < migration20ForeignKeyKey(expected[j])
+	})
+	return expected, nil
+}
+
+func migration20PolicyForeignKeys() []migration20ForeignKey {
+	const child = "paper_performance_policy_events"
+	return []migration20ForeignKey{
+		{Child: child, Parent: "paper_accounting_sessions", From: "paper_accounting_session_id", To: "session_id", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+		{Child: child, Parent: "strategy_selection_events", From: "strategy_selection_event_id", To: "event_id", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+		{Child: child, Parent: "strategy_research_evidence", From: "selected_strategy_result_ref", To: "result_sha256", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+		{Child: child, Parent: "paper_strategy_performance_events", From: "strategy_performance_id", To: "strategy_performance_id", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+		{Child: child, Parent: "paper_performance_events", From: "baseline_performance_id", To: "performance_id", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+		{Child: child, Parent: "paper_performance_events", From: "latest_performance_id", To: "performance_id", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+		{Child: child, Parent: "strategy_selection_events", From: "rollback_selection_event_id", To: "event_id", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+	}
+}
+
+func sameMigration20ForeignKeys(left, right []migration20ForeignKey) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func migration20ForeignKeyKey(item migration20ForeignKey) string {
+	return strings.Join([]string{item.Child, item.Parent, item.From, item.To, item.OnUpdate, item.OnDelete, item.Match}, "\x00")
+}
+
+func migration20ForeignKeyInventorySHA256(inventory []migration20ForeignKey) string {
+	keys := make([]string, 0, len(inventory))
+	for _, foreignKey := range inventory {
+		keys = append(keys, migration20ForeignKeyKey(foreignKey))
+	}
+	sort.Strings(keys)
+	hash := sha256.New()
+	for _, key := range keys {
+		_, _ = hash.Write([]byte(key))
+		_, _ = hash.Write([]byte{'\n'})
+	}
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+func verifyMigration20TemporaryNames(ctx context.Context, q orderQuerier, foreignKeys []migration20ForeignKey) error {
+	var temporaryTables int
+	if err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND (name GLOB '*_new' OR name GLOB '*_old')`).Scan(&temporaryTables); err != nil {
+		return err
+	}
+	if temporaryTables != 0 {
+		return errors.New("migration temporary table remains")
+	}
+	for _, foreignKey := range foreignKeys {
+		if strings.HasSuffix(foreignKey.Child, "_new") || strings.HasSuffix(foreignKey.Child, "_old") ||
+			strings.HasSuffix(foreignKey.Parent, "_new") || strings.HasSuffix(foreignKey.Parent, "_old") {
+			return errors.New("migration foreign key names a temporary table")
+		}
+	}
+	return nil
+}
+
+type migration27SchemaObject struct {
+	Type, Name, Table, SQL string
+}
+
+type migration27Snapshot struct {
+	Orders            orderRecoveryProof
+	Strategy          strategyRegistryRecoveryProof
+	SelectionShape    migration20JournalShape
+	ForeignKeys       []migration20ForeignKey
+	SchemaObjects     []migration27SchemaObject
+	SelectionIndexes  []migration27SchemaObject
+	DependentTriggers []migration20Trigger
+}
+
+func captureMigration27Snapshot(ctx context.Context, q orderQuerier) (migration27Snapshot, error) {
+	if err := requireSchemaVersionContext(ctx, q, 26); err != nil {
+		return migration27Snapshot{}, err
+	}
+	orders, err := proveOrderRecovery(ctx, q)
+	if err != nil {
+		return migration27Snapshot{}, err
+	}
+	strategy, err := proveStrategyRegistryRecovery(ctx, q)
+	if err != nil {
+		return migration27Snapshot{}, err
+	}
+	shape, err := migration20JournalShapeFor(ctx, q, "strategy_selection_events")
+	if err != nil {
+		return migration27Snapshot{}, err
+	}
+	foreignKeys, err := migration20ForeignKeyInventory(ctx, q)
+	if err != nil {
+		return migration27Snapshot{}, err
+	}
+	objects, indexes, triggers, err := migration27SchemaInventory(ctx, q)
+	if err != nil {
+		return migration27Snapshot{}, err
+	}
+	return migration27Snapshot{
+		Orders: orders, Strategy: strategy, SelectionShape: shape, ForeignKeys: foreignKeys,
+		SchemaObjects: objects, SelectionIndexes: indexes, DependentTriggers: triggers,
+	}, nil
+}
+
+func migration27SchemaInventory(ctx context.Context, q orderQuerier) ([]migration27SchemaObject, []migration27SchemaObject, []migration20Trigger, error) {
+	rows, err := q.QueryContext(ctx, `SELECT type,name,tbl_name,COALESCE(sql,'') FROM sqlite_master
+		WHERE name NOT LIKE 'sqlite_%' AND tbl_name NOT IN ('paper_promotion_claims','paper_promotion_decisions') ORDER BY type,name`)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer rows.Close()
+	var objects, indexes []migration27SchemaObject
+	var triggers []migration20Trigger
+	for rows.Next() {
+		var object migration27SchemaObject
+		if err := rows.Scan(&object.Type, &object.Name, &object.Table, &object.SQL); err != nil {
+			return nil, nil, nil, err
+		}
+		if object.Table == "strategy_selection_events" {
+			if object.Type == "trigger" {
+				switch object.Name {
+				case "strategy_selection_events_no_update", "strategy_selection_events_no_delete", "strategy_selection_events_state_guard":
+				default:
+					return nil, nil, nil, fmt.Errorf("unsupported strategy selection trigger %q", object.Name)
+				}
+			}
+			if object.Type == "index" && object.SQL != "" {
+				indexes = append(indexes, object)
+			}
+			continue
+		}
+		objects = append(objects, object)
+		if object.Type == "trigger" && strings.Contains(object.SQL, "strategy_selection_events") {
+			triggers = append(triggers, migration20Trigger{Name: object.Name, Table: object.Table, SQL: object.SQL})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, nil, nil, err
+	}
+	return objects, indexes, triggers, nil
+}
+
+func sameMigration27SchemaObjects(left, right []migration27SchemaObject) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func verifyMigration27Snapshot(ctx context.Context, q orderQuerier, before migration27Snapshot) error {
+	after, err := captureMigration27Snapshot(ctx, q)
+	if err != nil {
+		return err
+	}
+	if before.Orders != after.Orders || !sameStrategyRegistryProof(before.Strategy, after.Strategy) || before.SelectionShape != after.SelectionShape {
+		return errors.New("order or strategy journal was not preserved exactly")
+	}
+	if !sameMigration27SchemaObjects(before.SchemaObjects, after.SchemaObjects) ||
+		!sameMigration27SchemaObjects(before.SelectionIndexes, after.SelectionIndexes) || !sameMigration20Triggers(before.DependentTriggers, after.DependentTriggers) {
+		return errors.New("existing schema or dependent trigger inventory was not preserved exactly")
+	}
+	expected := append([]migration20ForeignKey(nil), before.ForeignKeys...)
+	expected = append(expected,
+		migration20ForeignKey{Child: "strategy_selection_events", Parent: "paper_promotion_decisions", From: "paper_promotion_attempt_id", To: "attempt_id", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+		migration20ForeignKey{Child: "paper_promotion_decisions", Parent: "paper_promotion_claims", From: "attempt_id", To: "attempt_id", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+		migration20ForeignKey{Child: "paper_promotion_decisions", Parent: "strategy_selection_events", From: "selection_event_id", To: "event_id", OnUpdate: "NO ACTION", OnDelete: "NO ACTION", Match: "NONE"},
+	)
+	sort.Slice(expected, func(i, j int) bool {
+		return migration20ForeignKeyKey(expected[i]) < migration20ForeignKeyKey(expected[j])
+	})
+	if !sameMigration20ForeignKeys(expected, after.ForeignKeys) {
+		return errors.New("foreign-key inventory was not preserved exactly")
+	}
+	var addedRows int
+	if err := q.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM paper_promotion_claims) +
+		(SELECT COUNT(*) FROM paper_promotion_decisions) + (SELECT COUNT(*) FROM strategy_selection_events WHERE paper_promotion_attempt_id IS NOT NULL)`).Scan(&addedRows); err != nil {
+		return err
+	}
+	if addedRows != 0 {
+		return errors.New("migration introduced paper promotion history")
+	}
+	return verifyMigration20TemporaryNames(ctx, q, after.ForeignKeys)
+}
+
+func newService(db *sql.DB, now func() time.Time, id func(string) string) *Service {
+	service := &Service{
+		db:               db,
+		now:              now,
+		id:               id,
+		ttl:              15 * time.Minute,
+		executionOwner:   randomID("execution_owner"),
+		paperRunnerOwner: randomID("paper_runner_owner"),
+	}
+	// ponytail: local single-process cursors expire on restart; inject one shared key before multi-replica pagination.
+	if _, err := rand.Read(service.activityCursorKey[:]); err != nil {
+		panic(err)
+	}
+	return service
+}
+
+func randomID(prefix string) string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return prefix + "_" + hex.EncodeToString(b)
+}
+
+func revision(n int64) string { return fmt.Sprintf("rev_%010d", n) }
+
+func (s *Service) routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+	mux.HandleFunc("GET /readyz", s.handleReady)
+	mux.HandleFunc("GET /v1/status", s.handleStatus)
+	mux.HandleFunc("GET /v1/watchlist", s.handleWatchlist)
+	mux.HandleFunc("POST /v1/watchlist", s.handleWatchlist)
+	mux.HandleFunc("GET /v1/market-data/candles", s.handleMarketDataCandles)
+	mux.HandleFunc("GET /v1/portfolio/instrument-ledger", s.handleInstrumentLedger)
+	mux.HandleFunc("GET /v1/market-data/fx/latest", s.handleLatestFXObservation)
+	mux.HandleFunc("GET /v1/portfolio/cash-valuation", s.handleCashValuation)
+	mux.HandleFunc("GET /v1/portfolio/holding-valuation", s.handleHoldingValuation)
+	mux.HandleFunc("GET /v1/portfolio/current-valuation", s.handleCurrentPortfolioValuation)
+	mux.HandleFunc("GET /v1/portfolio/xirr", s.handlePortfolioXIRR)
+	mux.HandleFunc("GET /v1/portfolio/twr", s.handlePortfolioTWR)
+	mux.HandleFunc("GET /v1/portfolio/twr/checkpoints", s.handlePortfolioTWRCheckpoints)
+	mux.HandleFunc("GET /v1/portfolio/benchmarks", s.handlePortfolioBenchmarks)
+	mux.HandleFunc("GET /v1/broker-reconciliation/latest", s.handleLatestBrokerReconciliation)
+	mux.HandleFunc("GET /v1/orders", s.handleLocalOrders)
+	mux.HandleFunc("GET /v1/paper/monitor", s.handlePaperMonitor)
+	mux.HandleFunc("GET /v1/paper/promotion-report", s.handlePaperPromotionReport)
+	mux.HandleFunc("GET /v1/research/report", s.handleResearchReport)
+	mux.HandleFunc("GET /v1/research/feed", s.handlePublicResearch)
+	mux.HandleFunc("GET /v1/ledger/activities", s.handleLedgerActivities)
+	mux.HandleFunc("POST /v1/imports/preview", s.handlePreview)
+	mux.HandleFunc("POST /v1/imports/apply", s.handleApply)
+	mux.HandleFunc("POST /v1/market-data/imports/preview", s.handleOwnerDataPreview)
+	mux.HandleFunc("POST /v1/market-data/imports/apply", s.handleOwnerDataApply)
+	mux.HandleFunc("GET /v1/portfolio/snapshot", s.handleSnapshot)
+	return mux
+}
+
+func (s *Service) handleReady(w http.ResponseWriter, r *http.Request) {
+	if err := requireSchema(s.db); err != nil {
+		writeError(w, readinessError(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func validateAllowedOrigin(origin string) error {
+	if origin == "" {
+		return nil
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" ||
+		parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.User != nil {
+		return fmt.Errorf("allow-origin must be an exact http(s) origin without path, query, credentials, or fragment")
+	}
+	return nil
+}
+
+func withCORS(next http.Handler, allowedOrigin string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isOwnerDataImportPath(r.URL.Path) || r.URL.Path == "/v1/watchlist" {
+			// CORS headers alone do not prevent writes from an unapproved browser origin.
+			origins, present := r.Header[http.CanonicalHeaderKey("Origin")]
+			if present && (len(origins) != 1 || origins[0] == "" || allowedOrigin == "" || origins[0] != allowedOrigin) {
+				if r.URL.Path == "/v1/watchlist" {
+					writeError(w, &appError{http.StatusForbidden, APIError{Code: "watchlist_origin_rejected", Message: "watchlist origin is not allowed"}})
+				} else {
+					writeError(w, &appError{http.StatusForbidden, APIError{Code: "owner_data_origin_rejected", Message: "owner data origin is not allowed"}})
+				}
+				return
+			}
+		}
+		if allowedOrigin == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Add("Vary", "Origin")
+		if r.Header.Get("Origin") != allowedOrigin {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+		if r.Method == http.MethodOptions {
+			w.Header().Add("Vary", "Access-Control-Request-Method")
+			w.Header().Add("Vary", "Access-Control-Request-Headers")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Service) handleStatus(w http.ResponseWriter, r *http.Request) {
+	var rev int64
+	var verified sql.NullString
+	if err := s.db.QueryRowContext(r.Context(), `SELECT revision, last_verified_at FROM ledger_meta WHERE singleton=1`).Scan(&rev, &verified); err != nil {
+		writeError(w, internalError(err))
+		return
+	}
+	var lastVerified *string
+	trustState := "never_verified"
+	if verified.Valid {
+		lastVerified = &verified.String
+		trustState = "verified"
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Service        string     `json:"service"`
+		LiveEnabled    bool       `json:"live_enabled"`
+		Mode           string     `json:"mode"`
+		TrustState     string     `json:"trust_state"`
+		LedgerRevision string     `json:"ledger_revision"`
+		LastVerifiedAt *string    `json:"last_verified_at"`
+		Issues         []APIError `json:"issues"`
+	}{"omni-folio", false, "local_import_only", trustState, revision(rev), lastVerified, []APIError{}})
+}
+
+func (s *Service) handlePreview(w http.ResponseWriter, r *http.Request) {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "text/csv" {
+		writeError(w, &appError{http.StatusBadRequest, APIError{Code: "invalid_content_type", Message: "Content-Type must be text/csv"}})
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, &appError{http.StatusBadRequest, APIError{Code: "invalid_body", Message: "CSV body is too large or unreadable"}})
+		return
+	}
+	preview, appErr := s.preview(r.Context(), body)
+	if appErr != nil {
+		writeError(w, appErr)
+		return
+	}
+	writeJSON(w, http.StatusOK, preview)
+}
+
+func (s *Service) handleApply(w http.ResponseWriter, r *http.Request) {
+	var req ApplyRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	receipt, appErr := s.apply(r.Context(), req)
+	if appErr != nil {
+		writeError(w, appErr)
+		return
+	}
+	writeJSON(w, http.StatusOK, receipt)
+}
+
+func (s *Service) handleSnapshot(w http.ResponseWriter, r *http.Request) {
+	tx, err := s.db.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		writeError(w, internalError(err))
+		return
+	}
+	defer tx.Rollback()
+	snapshot, err := snapshotFrom(r.Context(), tx)
+	if err != nil {
+		writeError(w, internalError(err))
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		writeError(w, internalError(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func (s *Service) handleLatestBrokerReconciliation(w http.ResponseWriter, r *http.Request) {
+	result, err := s.latestBrokerReconciliation(r.Context())
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, &appError{http.StatusNotFound, APIError{Code: "broker_reconciliation_not_found", Message: "broker reconciliation was not found"}})
+		return
+	}
+	if err != nil {
+		writeError(w, internalError(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) *appError {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		return &appError{http.StatusBadRequest, APIError{Code: "invalid_content_type", Message: "Content-Type must be application/json"}}
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		return &appError{http.StatusBadRequest, APIError{Code: "invalid_json", Message: "request body must match the contract"}}
+	}
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		return &appError{http.StatusBadRequest, APIError{Code: "invalid_json", Message: "request body must contain one JSON object"}}
+	}
+	return nil
+}
+
+type queryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func (s *Service) preview(ctx context.Context, body []byte) (*ImportPreview, *appError) {
+	if len(body) == 0 {
+		return nil, &appError{http.StatusBadRequest, APIError{Code: "empty_csv", Message: "CSV body must not be empty"}}
+	}
+	if len(body) > maxBodyBytes {
+		return nil, &appError{http.StatusBadRequest, APIError{Code: "csv_too_large", Message: "CSV body must not exceed 1048576 bytes"}}
+	}
+	if !utf8.Valid(body) {
+		return nil, &appError{http.StatusBadRequest, APIError{Code: "invalid_encoding", Message: "CSV body must be UTF-8"}}
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, internalError(err)
+	}
+	defer tx.Rollback()
+	var rev int64
+	if err := tx.QueryRowContext(ctx, `SELECT revision FROM ledger_meta WHERE singleton=1`).Scan(&rev); err != nil {
+		return nil, internalError(err)
+	}
+	rows, parseErr := s.parseCSV(ctx, tx, body)
+	if parseErr != nil {
+		return nil, parseErr
+	}
+	totals := PreviewTotals{TotalRows: len(rows)}
+	for _, row := range rows {
+		switch row.Status {
+		case "new":
+			totals.NewRows++
+		case "duplicate":
+			totals.DuplicateRows++
+		case "error":
+			totals.ErrorRows++
+		case "unresolved":
+			totals.UnresolvedRows++
+		}
+	}
+	hash := sha256.Sum256(body)
+	created := s.now().UTC()
+	preview := &ImportPreview{
+		PreviewID: s.id("preview"), FileSHA256: hex.EncodeToString(hash[:]), SchemaVersion: csvSchema, MappingVersion: mappingSchema,
+		LedgerRevision: revision(rev), CanApply: totals.ErrorRows == 0 && totals.UnresolvedRows == 0,
+		Rows: rows, Totals: totals,
+	}
+	preview.PreviewFingerprint = previewFingerprint(preview.FileSHA256, preview.SchemaVersion, preview.MappingVersion, preview.LedgerRevision)
+	encoded, err := json.Marshal(preview)
+	if err != nil {
+		return nil, internalError(err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO previews(preview_id,file_sha256,ledger_revision,can_apply,preview_json,expires_at,created_at) VALUES(?,?,?,?,?,?,?)`,
+		preview.PreviewID, preview.FileSHA256, rev, boolInt(preview.CanApply), string(encoded), created.Add(s.ttl).Format(time.RFC3339Nano), created.Format(time.RFC3339Nano)); err != nil {
+		return nil, internalError(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, internalError(err)
+	}
+	return preview, nil
+}
+
+func (s *Service) parseCSV(ctx context.Context, q queryer, body []byte) ([]PreviewRow, *appError) {
+	r := csv.NewReader(bytes.NewReader(body))
+	r.FieldsPerRecord = -1
+	records, err := r.ReadAll()
+	if err != nil || len(records) == 0 {
+		return nil, &appError{http.StatusBadRequest, APIError{Code: "invalid_csv", Message: "body must be valid CSV with a header"}}
+	}
+	if len(records)-1 > maxImportRows {
+		return nil, &appError{http.StatusBadRequest, APIError{Code: "too_many_rows", Message: "CSV must not contain more than 10000 data rows"}}
+	}
+	required := []string{"source_event_id", "account_id", "type", "occurred_at", "symbol", "quantity", "price", "fee", "currency", "amount"}
+	columns := make(map[string]int, len(records[0]))
+	for i, name := range records[0] {
+		if _, exists := columns[name]; exists {
+			return nil, &appError{http.StatusBadRequest, APIError{Code: "invalid_csv_header", Message: "CSV header names must be unique"}}
+		}
+		columns[name] = i
+	}
+	for _, name := range required {
+		if _, ok := columns[name]; !ok {
+			return nil, &appError{http.StatusBadRequest, APIError{Code: "invalid_csv_header", Message: "CSV is missing required column " + name, Field: name}}
+		}
+	}
+	value := func(record []string, name string) string {
+		i, ok := columns[name]
+		if !ok || i >= len(record) {
+			return ""
+		}
+		return record[i]
+	}
+	seen := map[string]PreviewRow{}
+	seenCorrectionTargets := map[string]bool{}
+	result := make([]PreviewRow, 0, len(records)-1)
+	for i, record := range records[1:] {
+		row := PreviewRow{RowNumber: i + 2}
+		tx, fieldErrors := s.normalize(record, value)
+		if len(fieldErrors) != 0 {
+			row.Status, row.Errors = "error", fieldErrors
+			result = append(result, row)
+			continue
+		}
+		if resolution := unresolved(tx); resolution != nil {
+			row.Status, row.Transaction, row.Resolution = "unresolved", tx, resolution
+			result = append(result, row)
+			continue
+		}
+		key := tx.AccountID + "\x00" + tx.SourceEventID
+		if prior, ok := seen[key]; ok {
+			if !sameTransaction(prior.Transaction, tx) {
+				row.Status, row.Transaction, row.Errors = "error", tx, []APIError{{Code: "source_event_conflict", Message: "source_event_id was already used with different transaction data", Field: "source_event_id"}}
+			} else {
+				tx.EventID = prior.Transaction.EventID
+				row.Status, row.Transaction, row.CorrectionTarget, row.DuplicateOf = "duplicate", tx, prior.CorrectionTarget, tx.EventID
+			}
+			result = append(result, row)
+			continue
+		}
+		stored, err := loadTransactionBySource(ctx, q, tx.AccountID, tx.SourceEventID)
+		switch {
+		case err == nil:
+			if !sameTransaction(stored, tx) {
+				row.Status, row.Transaction, row.Errors = "error", tx, []APIError{{Code: "source_event_conflict", Message: "source_event_id was already used with different transaction data", Field: "source_event_id"}}
+				break
+			}
+			tx.EventID = stored.EventID
+			row.Status, row.Transaction, row.DuplicateOf = "duplicate", tx, stored.EventID
+			if tx.Type == "CASH_VOID" {
+				target, validationErr, err := validateCashVoid(ctx, q, tx, false)
+				if err != nil {
+					return nil, internalError(err)
+				}
+				if validationErr != nil {
+					return nil, internalError(errors.New("stored cash void failed validation"))
+				}
+				row.CorrectionTarget = target
+			}
+		case errors.Is(err, sql.ErrNoRows):
+			row.Status, row.Transaction = "new", tx
+			if tx.Type == "CASH_VOID" {
+				target, validationErr, err := validateCashVoid(ctx, q, tx, true)
+				if err != nil {
+					return nil, internalError(err)
+				}
+				if validationErr != nil {
+					row.Status, row.Errors = "error", []APIError{*validationErr}
+				} else {
+					targetKey := tx.AccountID + "\x00" + tx.CorrectsSourceEventID
+					if seenCorrectionTargets[targetKey] {
+						row.Status, row.Errors = "error", []APIError{*invalidCorrection()}
+					} else {
+						seenCorrectionTargets[targetKey] = true
+						row.CorrectionTarget = target
+					}
+				}
+			}
+		case err != nil:
+			return nil, internalError(err)
+		}
+		if row.Status != "error" {
+			seen[key] = row
+		}
+		result = append(result, row)
+	}
+	return result, nil
+}
+
+func loadTransactionBySource(ctx context.Context, q queryer, accountID, sourceEventID string) (*Transaction, error) {
+	var tx Transaction
+	err := q.QueryRowContext(ctx, `SELECT event_id,source_event_id,account_id,type,occurred_at,COALESCE(instrument_id,''),COALESCE(symbol,''),COALESCE(quantity,''),COALESCE(price,''),COALESCE(fee,''),currency,amount,COALESCE(counter_currency,''),COALESCE(counter_amount,''),COALESCE(corrects_source_event_id,'') FROM events WHERE account_id=? AND source_event_id=?`, accountID, sourceEventID).Scan(
+		&tx.EventID, &tx.SourceEventID, &tx.AccountID, &tx.Type, &tx.OccurredAt, &tx.InstrumentID, &tx.Symbol, &tx.Quantity, &tx.Price, &tx.Fee, &tx.Currency, &tx.Amount, &tx.CounterCurrency, &tx.CounterAmount, &tx.CorrectsSourceEventID,
+	)
+	return &tx, err
+}
+
+func sameTransaction(a, b *Transaction) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	left, right := *a, *b
+	left.EventID, right.EventID = "", ""
+	return left == right
+}
+
+func validateCashVoid(ctx context.Context, q queryer, correction *Transaction, requireUnused bool) (*CorrectionTarget, *APIError, error) {
+	target, err := loadTransactionBySource(ctx, q, correction.AccountID, correction.CorrectsSourceEventID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, invalidCorrection(), nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	eligible := target.Type == "DEPOSIT" || target.Type == "WITHDRAWAL" || target.Type == "DIVIDEND" || target.Type == "FEE" || target.Type == "TAX"
+	targetTime, targetTimeErr := time.Parse(time.RFC3339Nano, target.OccurredAt)
+	correctionTime, correctionTimeErr := time.Parse(time.RFC3339Nano, correction.OccurredAt)
+	targetAmount, targetAmountErr := parseDecimal(target.Amount)
+	correctionAmount, correctionAmountErr := parseDecimal(correction.Amount)
+	if !eligible || target.Currency != correction.Currency || targetTimeErr != nil || correctionTimeErr != nil || correctionTime.Before(targetTime) || targetAmountErr != nil || correctionAmountErr != nil || new(big.Rat).Add(targetAmount, correctionAmount).Sign() != 0 {
+		return nil, invalidCorrection(), nil
+	}
+	if requireUnused {
+		var count int
+		if err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE account_id=? AND corrects_source_event_id=?`, correction.AccountID, correction.CorrectsSourceEventID).Scan(&count); err != nil {
+			return nil, nil, err
+		}
+		if count != 0 {
+			return nil, invalidCorrection(), nil
+		}
+	}
+	return &CorrectionTarget{SourceEventID: target.SourceEventID, Type: target.Type, Currency: target.Currency, Amount: target.Amount}, nil, nil
+}
+
+func invalidCorrection() *APIError {
+	return &APIError{Code: "invalid_correction", Message: "cash void does not exactly reverse one eligible existing cash event", Field: "corrects_source_event_id"}
+}
+
+func (s *Service) normalize(record []string, value func([]string, string) string) (*Transaction, []APIError) {
+	get := func(name string) string { return value(record, name) }
+	tx := &Transaction{
+		EventID: s.id("event"), SourceEventID: get("source_event_id"), AccountID: get("account_id"),
+		Type: get("type"), OccurredAt: get("occurred_at"), Symbol: get("symbol"), Quantity: get("quantity"),
+		Price: get("price"), Fee: get("fee"), Currency: get("currency"), Amount: get("amount"),
+		CounterCurrency: get("counter_currency"), CounterAmount: get("counter_amount"), CorrectsSourceEventID: get("corrects_source_event_id"),
+	}
+	var errs []APIError
+	for _, field := range []struct{ name, value string }{{"source_event_id", tx.SourceEventID}, {"account_id", tx.AccountID}} {
+		if field.value == "" {
+			errs = append(errs, APIError{"required", field.name + " is required", field.name})
+		}
+	}
+	if occurredAt, err := time.Parse(time.RFC3339, tx.OccurredAt); err != nil {
+		errs = append(errs, APIError{"invalid_datetime", "occurred_at must be an RFC 3339 timestamp", "occurred_at"})
+	} else {
+		tx.OccurredAt = occurredAt.UTC().Format(time.RFC3339Nano)
+	}
+	if len(tx.Currency) != 3 || tx.Currency != strings.ToUpper(tx.Currency) || strings.IndexFunc(tx.Currency, func(r rune) bool { return r < 'A' || r > 'Z' }) >= 0 {
+		errs = append(errs, APIError{"invalid_currency", "currency must be a three-letter uppercase code", "currency"})
+	}
+	amount, err := parseDecimal(tx.Amount)
+	if err != nil {
+		errs = append(errs, APIError{"invalid_decimal", "amount must be a canonical decimal", "amount"})
+	}
+	if tx.Type != "CASH_VOID" && tx.CorrectsSourceEventID != "" {
+		errs = append(errs, APIError{"invalid_fields", "corrects_source_event_id is only valid for CASH_VOID", "corrects_source_event_id"})
+	}
+	if tx.Type != "FX_EXCHANGE" && (tx.CounterCurrency != "" || tx.CounterAmount != "") {
+		errs = append(errs, APIError{"invalid_fields", "counter currency and amount are only valid for FX_EXCHANGE", "counter_currency"})
+	}
+	switch tx.Type {
+	case "DEPOSIT", "WITHDRAWAL", "FEE", "TAX":
+		if tx.Symbol != "" || tx.Quantity != "" || tx.Price != "" || tx.Fee != "" {
+			errs = append(errs, APIError{"invalid_fields", tx.Type + " trade fields must be empty", "symbol"})
+		}
+		tx.Symbol, tx.Quantity, tx.Price, tx.Fee = "", "", "", ""
+		if err == nil && ((tx.Type == "DEPOSIT" && amount.Sign() <= 0) || (tx.Type != "DEPOSIT" && amount.Sign() >= 0)) {
+			direction := "negative"
+			if tx.Type == "DEPOSIT" {
+				direction = "positive"
+			}
+			errs = append(errs, APIError{"invalid_amount", tx.Type + " amount must be " + direction, "amount"})
+		}
+	case "DIVIDEND":
+		if tx.Symbol == "" {
+			errs = append(errs, APIError{"required", "symbol is required for DIVIDEND", "symbol"})
+		} else {
+			tx.InstrumentID = instrumentIDForSymbol(tx.Symbol)
+		}
+		if tx.Quantity != "" || tx.Price != "" || tx.Fee != "" {
+			errs = append(errs, APIError{"invalid_fields", "DIVIDEND quantity, price, and fee must be empty", "quantity"})
+		}
+		tx.Quantity, tx.Price, tx.Fee = "", "", ""
+		if err == nil && amount.Sign() <= 0 {
+			errs = append(errs, APIError{"invalid_amount", "DIVIDEND amount must be positive", "amount"})
+		}
+	case "SPLIT":
+		if tx.Symbol == "" {
+			errs = append(errs, APIError{"required", "symbol is required for SPLIT", "symbol"})
+		} else {
+			tx.InstrumentID = instrumentIDForSymbol(tx.Symbol)
+		}
+		positiveDecimal(tx.Quantity, "quantity", &errs)
+		if tx.Price != "" || tx.Fee != "" {
+			errs = append(errs, APIError{"invalid_fields", "SPLIT price and fee must be empty", "price"})
+		}
+		tx.Price, tx.Fee = "", ""
+		if err == nil && amount.Sign() != 0 {
+			errs = append(errs, APIError{"invalid_amount", "SPLIT amount must be zero", "amount"})
+		}
+	case "CASH_VOID":
+		if tx.Symbol != "" || tx.Quantity != "" || tx.Price != "" || tx.Fee != "" {
+			errs = append(errs, APIError{"invalid_fields", "CASH_VOID trade fields must be empty", "symbol"})
+		}
+		tx.Symbol, tx.Quantity, tx.Price, tx.Fee = "", "", "", ""
+		if tx.CorrectsSourceEventID == "" {
+			errs = append(errs, APIError{"required", "corrects_source_event_id is required for CASH_VOID", "corrects_source_event_id"})
+		}
+		if err == nil && amount.Sign() == 0 {
+			errs = append(errs, APIError{"invalid_amount", "CASH_VOID amount must be non-zero", "amount"})
+		}
+	case "FX_EXCHANGE":
+		if tx.Symbol != "" || tx.Quantity != "" || tx.Price != "" || tx.Fee != "" {
+			errs = append(errs, APIError{"invalid_fields", "FX_EXCHANGE trade fields must be empty", "symbol"})
+		}
+		tx.Symbol, tx.Quantity, tx.Price, tx.Fee = "", "", "", ""
+		if err == nil && amount.Sign() >= 0 {
+			errs = append(errs, APIError{"invalid_amount", "FX_EXCHANGE amount must be negative", "amount"})
+		}
+		if tx.CounterCurrency == "" {
+			errs = append(errs, APIError{"required", "counter_currency is required for FX_EXCHANGE", "counter_currency"})
+		} else if len(tx.CounterCurrency) != 3 || tx.CounterCurrency != strings.ToUpper(tx.CounterCurrency) || strings.IndexFunc(tx.CounterCurrency, func(r rune) bool { return r < 'A' || r > 'Z' }) >= 0 {
+			errs = append(errs, APIError{"invalid_currency", "counter_currency must be a three-letter uppercase code", "counter_currency"})
+		} else if tx.CounterCurrency == tx.Currency {
+			errs = append(errs, APIError{"invalid_currency", "FX_EXCHANGE currencies must be different", "counter_currency"})
+		}
+		if tx.CounterAmount == "" {
+			errs = append(errs, APIError{"required", "counter_amount is required for FX_EXCHANGE", "counter_amount"})
+		} else if counterAmount, counterErr := parseDecimal(tx.CounterAmount); counterErr != nil {
+			errs = append(errs, APIError{"invalid_decimal", "counter_amount must be a canonical decimal", "counter_amount"})
+		} else if counterAmount.Sign() <= 0 {
+			errs = append(errs, APIError{"invalid_amount", "FX_EXCHANGE counter_amount must be positive", "counter_amount"})
+		}
+	case "BUY", "SELL":
+		if tx.Symbol == "" {
+			errs = append(errs, APIError{"required", "symbol is required for trades", "symbol"})
+		} else {
+			tx.InstrumentID = instrumentIDForSymbol(tx.Symbol)
+		}
+		quantity, quantityErr := positiveDecimal(tx.Quantity, "quantity", &errs)
+		price, priceErr := positiveDecimal(tx.Price, "price", &errs)
+		fee, feeErr := nonNegativeDecimal(tx.Fee, "fee", &errs)
+		if err == nil && quantityErr == nil && priceErr == nil && feeErr == nil {
+			expected := new(big.Rat).Mul(quantity, price)
+			expected.Add(expected, fee)
+			if tx.Type == "BUY" {
+				expected.Neg(expected)
+			} else {
+				expected.Sub(new(big.Rat).Mul(quantity, price), fee)
+			}
+			if expected.Cmp(amount) != 0 {
+				errs = append(errs, APIError{"amount_mismatch", "amount must equal the signed trade cash impact including fee", "amount"})
+			}
+		}
+	default:
+		errs = append(errs, APIError{"invalid_type", "unsupported transaction type", "type"})
+	}
+	return tx, errs
+}
+
+func instrumentIDForSymbol(symbol string) string {
+	return "instrument_" + strings.ToLower(symbol)
+}
+
+func positiveDecimal(raw, field string, errs *[]APIError) (*big.Rat, error) {
+	v, err := parseDecimal(raw)
+	if err != nil {
+		*errs = append(*errs, APIError{"invalid_decimal", field + " must be a canonical decimal", field})
+	} else if v.Sign() <= 0 {
+		err = errors.New("not positive")
+		*errs = append(*errs, APIError{"invalid_decimal", field + " must be positive", field})
+	}
+	return v, err
+}
+
+func nonNegativeDecimal(raw, field string, errs *[]APIError) (*big.Rat, error) {
+	v, err := parseDecimal(raw)
+	if err != nil {
+		*errs = append(*errs, APIError{"invalid_decimal", field + " must be a canonical decimal", field})
+	} else if v.Sign() < 0 {
+		err = errors.New("negative")
+		*errs = append(*errs, APIError{"invalid_decimal", field + " must be non-negative", field})
+	}
+	return v, err
+}
+
+func parseDecimal(raw string) (*big.Rat, error) {
+	return exact.ParseDecimal(raw)
+}
+
+func unresolved(tx *Transaction) *Resolution {
+	if tx.AccountID != "account-main" {
+		return &Resolution{
+			Kind: "account", SourceField: "account_id", SourceValue: tx.AccountID,
+			RequiredAction: "select_account", CandidateIDs: []string{"account-main"},
+		}
+	}
+	if tx.Symbol != "" && tx.Symbol != "AAPL" {
+		return &Resolution{
+			Kind: "instrument", SourceField: "symbol", SourceValue: tx.Symbol,
+			RequiredAction: "select_instrument", CandidateIDs: []string{"instrument_aapl"},
+		}
+	}
+	return nil
+}
+
+func previewFingerprint(fileSHA, schemaVersion, mappingVersion, ledgerRevision string) string {
+	binding, _ := json.Marshal(map[string]string{
+		"file_sha256": fileSHA, "schema_version": schemaVersion,
+		"mapping_version": mappingVersion, "ledger_revision": ledgerRevision,
+	})
+	hash := sha256.Sum256(binding)
+	return hex.EncodeToString(hash[:])
+}
+
+func (s *Service) apply(ctx context.Context, req ApplyRequest) (*ApplyReceipt, *appError) {
+	if req.PreviewID == "" || req.IdempotencyKey == "" {
+		return nil, &appError{http.StatusBadRequest, APIError{Code: "required", Message: "preview_id and idempotency_key are required"}}
+	}
+	received := s.now().UTC()
+	requestBytes, _ := json.Marshal(req)
+	requestHash := sha256.Sum256(requestBytes)
+	requestSHA := hex.EncodeToString(requestHash[:])
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, internalError(err)
+	}
+	defer tx.Rollback()
+	var priorHash, priorJSON string
+	err = tx.QueryRowContext(ctx, `SELECT request_sha256, receipt_json FROM receipts WHERE idempotency_key=?`, req.IdempotencyKey).Scan(&priorHash, &priorJSON)
+	if err == nil {
+		if priorHash != requestSHA {
+			return nil, &appError{http.StatusConflict, APIError{Code: "idempotency_conflict", Message: "idempotency_key was already used with a different payload"}}
+		}
+		var receipt ApplyReceipt
+		if err := json.Unmarshal([]byte(priorJSON), &receipt); err != nil {
+			return nil, internalError(err)
+		}
+		return &receipt, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, internalError(err)
+	}
+	var previewJSON, fileSHA, expiresAt string
+	var previewRev int64
+	var canApply int
+	if err := tx.QueryRowContext(ctx, `SELECT preview_json,file_sha256,ledger_revision,can_apply,expires_at FROM previews WHERE preview_id=?`, req.PreviewID).Scan(&previewJSON, &fileSHA, &previewRev, &canApply, &expiresAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, &appError{http.StatusBadRequest, APIError{Code: "preview_not_found", Message: "preview_id does not exist"}}
+		}
+		return nil, internalError(err)
+	}
+	expires, err := time.Parse(time.RFC3339Nano, expiresAt)
+	if err != nil || !received.Before(expires) {
+		return nil, &appError{http.StatusConflict, APIError{Code: "stale_preview", Message: "preview expired; create a new preview"}}
+	}
+	if canApply == 0 {
+		return nil, &appError{http.StatusBadRequest, APIError{Code: "preview_has_errors", Message: "preview contains invalid rows"}}
+	}
+	var currentRev int64
+	if err := tx.QueryRowContext(ctx, `SELECT revision FROM ledger_meta WHERE singleton=1`).Scan(&currentRev); err != nil {
+		return nil, internalError(err)
+	}
+	if currentRev != previewRev {
+		return nil, &appError{http.StatusConflict, APIError{Code: "stale_preview", Message: "ledger revision changed; create a new preview"}}
+	}
+	var preview ImportPreview
+	if err := json.Unmarshal([]byte(previewJSON), &preview); err != nil {
+		return nil, internalError(err)
+	}
+	expectedFingerprint := previewFingerprint(preview.FileSHA256, preview.SchemaVersion, preview.MappingVersion, preview.LedgerRevision)
+	if preview.SchemaVersion != csvSchema || preview.MappingVersion != mappingSchema || preview.PreviewFingerprint != expectedFingerprint ||
+		preview.FileSHA256 != fileSHA || preview.LedgerRevision != revision(previewRev) {
+		return nil, &appError{http.StatusConflict, APIError{Code: "stale_preview", Message: "preview binding changed; create a new preview"}}
+	}
+	receiptID := s.id("receipt")
+	recorded := s.now().UTC()
+	applied := 0
+	for _, row := range preview.Rows {
+		if row.Status != "new" {
+			continue
+		}
+		e := row.Transaction
+		if e == nil {
+			return nil, internalError(errors.New("preview new row has no transaction"))
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO events(event_id,source_event_id,account_id,type,occurred_at,instrument_id,symbol,quantity,price,fee,currency,amount,counter_currency,counter_amount,corrects_source_event_id,receipt_id,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			e.EventID, e.SourceEventID, e.AccountID, e.Type, e.OccurredAt, nullable(e.InstrumentID), nullable(e.Symbol), nullable(e.Quantity), nullable(e.Price), nullable(e.Fee), e.Currency, e.Amount, nullable(e.CounterCurrency), nullable(e.CounterAmount), nullable(e.CorrectsSourceEventID), receiptID, recorded.Format(time.RFC3339Nano)); err != nil {
+			return nil, internalError(err)
+		}
+		applied++
+	}
+	after := currentRev + int64(applied)
+	if _, err := tx.ExecContext(ctx, `UPDATE ledger_meta SET revision=?, recorded_at=?, last_verified_at=? WHERE singleton=1`, after, recorded.Format(time.RFC3339Nano), recorded.Format(time.RFC3339Nano)); err != nil {
+		return nil, internalError(err)
+	}
+	if _, err := snapshotFrom(ctx, tx); err != nil {
+		log.Printf("ledger invariant validation failed: %v", err)
+		return nil, &appError{http.StatusBadRequest, APIError{Code: "invalid_ledger", Message: "ledger invariant validation failed"}}
+	}
+	receipt := &ApplyReceipt{
+		ReceiptID: receiptID, PreviewID: req.PreviewID, IdempotencyKey: req.IdempotencyKey, FileSHA256: fileSHA,
+		LedgerRevisionBefore: revision(currentRev), LedgerRevisionAfter: revision(after), AppliedRows: applied,
+		SkippedDuplicateRows: preview.Totals.DuplicateRows, ReceivedAt: received.Format(time.RFC3339Nano), RecordedAt: recorded.Format(time.RFC3339Nano),
+	}
+	receiptBytes, _ := json.Marshal(receipt)
+	if _, err := tx.ExecContext(ctx, `INSERT INTO receipts(idempotency_key,request_sha256,receipt_id,receipt_json) VALUES(?,?,?,?)`, req.IdempotencyKey, requestSHA, receiptID, string(receiptBytes)); err != nil {
+		return nil, internalError(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, internalError(err)
+	}
+	return receipt, nil
+}
+
+type lot struct {
+	quantity *big.Rat
+	cost     *big.Rat
+}
+
+type position struct {
+	instrument, symbol, currency string
+	lots                         []lot
+}
+
+func snapshotFrom(ctx context.Context, q queryer) (*PortfolioSnapshot, error) {
+	if err := requireCurrentLedgerReplay(ctx, q); err != nil {
+		return nil, err
+	}
+	return snapshotFromPolicy(ctx, q, fifoCostBasisPolicy, -1)
+}
+
+func snapshotFromPolicy(ctx context.Context, q queryer, policy string, throughRevision int64) (*PortfolioSnapshot, error) {
+	order := "occurred_at, sequence"
+	if policy == fifoCostBasisPolicy {
+		order = "rtrim(occurred_at,'Z'), sequence"
+	} else if policy != legacyFIFOCostBasisPolicy {
+		return nil, errors.New("unsupported ledger replay policy")
+	}
+	var rev int64
+	var recorded string
+	if err := q.QueryRowContext(ctx, `SELECT revision, recorded_at FROM ledger_meta WHERE singleton=1`).Scan(&rev, &recorded); err != nil {
+		return nil, err
+	}
+	if throughRevision >= 0 {
+		if throughRevision > rev {
+			return nil, errors.New("ledger replay cutoff exceeds current revision")
+		}
+		rev = throughRevision
+		recorded = zeroTime
+		if rev > 0 {
+			if err := q.QueryRowContext(ctx, `SELECT recorded_at FROM events WHERE sequence=?`, rev).Scan(&recorded); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if !canonicalUTCString(recorded) {
+		return nil, errors.New("ledger recorded_at is not canonical UTC")
+	}
+	rows, err := q.QueryContext(ctx, `SELECT event_id,type,occurred_at,COALESCE(instrument_id,''),COALESCE(symbol,''),COALESCE(quantity,''),COALESCE(price,''),COALESCE(fee,''),currency,amount,COALESCE(counter_currency,''),COALESCE(counter_amount,''),receipt_id FROM events WHERE sequence<=? ORDER BY `+order, rev)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	cash := map[string]*big.Rat{}
+	realized := map[string]*big.Rat{}
+	positions := map[string]*position{}
+	eventIDs := []string{}
+	receiptIDs := []string{}
+	seenReceipt := map[string]bool{}
+	asOf := zeroTime
+	for rows.Next() {
+		var eventID, typ, occurredAt, instrument, symbol, quantityRaw, priceRaw, feeRaw, currency, amountRaw, counterCurrency, counterAmountRaw, receiptID string
+		if err := rows.Scan(&eventID, &typ, &occurredAt, &instrument, &symbol, &quantityRaw, &priceRaw, &feeRaw, &currency, &amountRaw, &counterCurrency, &counterAmountRaw, &receiptID); err != nil {
+			return nil, err
+		}
+		amount, err := parseDecimal(amountRaw)
+		if err != nil {
+			return nil, fmt.Errorf("event %s amount: %w", eventID, err)
+		}
+		addRat(cash, currency, amount)
+		eventIDs = append(eventIDs, eventID)
+		if !seenReceipt[receiptID] {
+			seenReceipt[receiptID] = true
+			receiptIDs = append(receiptIDs, receiptID)
+		}
+		if !canonicalUTCString(occurredAt) {
+			return nil, errors.New("ledger occurred_at is not canonical UTC")
+		}
+		if policy == fifoCostBasisPolicy || occurredAt > asOf {
+			asOf = occurredAt
+		}
+		if typ == "FX_EXCHANGE" {
+			counterAmount, err := parseDecimal(counterAmountRaw)
+			if err != nil {
+				return nil, fmt.Errorf("event %s counter amount: %w", eventID, err)
+			}
+			addRat(cash, counterCurrency, counterAmount)
+			continue
+		}
+		switch typ {
+		case "DEPOSIT", "WITHDRAWAL", "DIVIDEND", "FEE", "TAX", "CASH_VOID":
+			continue
+		}
+		quantity, err := parseDecimal(quantityRaw)
+		if err != nil {
+			return nil, err
+		}
+		key := instrument + "\x00" + currency
+		p := positions[key]
+		if typ == "SPLIT" {
+			if p == nil || len(p.lots) == 0 {
+				return nil, fmt.Errorf("SPLIT %s has no open holding", eventID)
+			}
+			for i := range p.lots {
+				p.lots[i].quantity.Mul(p.lots[i].quantity, quantity)
+			}
+			continue
+		}
+		price, err := parseDecimal(priceRaw)
+		if err != nil {
+			return nil, err
+		}
+		fee, err := parseDecimal(feeRaw)
+		if err != nil {
+			return nil, err
+		}
+		if p == nil {
+			p = &position{instrument: instrument, symbol: symbol, currency: currency}
+			positions[key] = p
+		}
+		if typ == "BUY" {
+			cost := new(big.Rat).Add(new(big.Rat).Mul(quantity, price), fee)
+			p.lots = append(p.lots, lot{new(big.Rat).Set(quantity), cost})
+			continue
+		}
+		remaining := new(big.Rat).Set(quantity)
+		allocatedCost := new(big.Rat)
+		for remaining.Sign() > 0 && len(p.lots) > 0 {
+			current := &p.lots[0]
+			take := new(big.Rat).Set(remaining)
+			if take.Cmp(current.quantity) > 0 {
+				take.Set(current.quantity)
+			}
+			allocation, err := fifoCostAllocation(current.cost, take, current.quantity)
+			if err != nil {
+				return nil, fmt.Errorf("SELL %s cost allocation: %w", eventID, err)
+			}
+			allocatedCost.Add(allocatedCost, allocation)
+			current.quantity.Sub(current.quantity, take)
+			current.cost.Sub(current.cost, allocation)
+			remaining.Sub(remaining, take)
+			if current.quantity.Sign() == 0 {
+				p.lots = p.lots[1:]
+			}
+		}
+		if remaining.Sign() != 0 {
+			return nil, fmt.Errorf("SELL %s exceeds available FIFO quantity", eventID)
+		}
+		addRat(realized, currency, new(big.Rat).Sub(amount, allocatedCost))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	snapshot := &PortfolioSnapshot{
+		PortfolioID: "portfolio_main", LedgerRevision: revision(rev), CostBasisPolicy: policy, AsOf: asOf, RecordedAt: recorded,
+		LiveEnabled: false, ValuationStatus: "unavailable", Cash: []Money{}, Holdings: []Holding{}, RealizedPnL: []Money{},
+		Provenance: Provenance{EventIDs: eventIDs, ReceiptIDs: receiptIDs},
+	}
+	for _, currency := range sortedKeys(cash) {
+		amount, err := formatDecimal(cash[currency])
+		if err != nil {
+			return nil, err
+		}
+		snapshot.Cash = append(snapshot.Cash, Money{currency, amount})
+	}
+	for _, key := range sortedPositionKeys(positions) {
+		p := positions[key]
+		quantity, cost := new(big.Rat), new(big.Rat)
+		for _, lot := range p.lots {
+			quantity.Add(quantity, lot.quantity)
+			cost.Add(cost, lot.cost)
+		}
+		if quantity.Sign() == 0 {
+			continue
+		}
+		quantityString, err := formatDecimal(quantity)
+		if err != nil {
+			return nil, err
+		}
+		costString, err := formatDecimal(cost)
+		if err != nil {
+			return nil, err
+		}
+		snapshot.Holdings = append(snapshot.Holdings, Holding{p.instrument, p.symbol, quantityString, costString, p.currency})
+	}
+	for _, currency := range sortedKeys(realized) {
+		amount, err := formatDecimal(realized[currency])
+		if err != nil {
+			return nil, err
+		}
+		snapshot.RealizedPnL = append(snapshot.RealizedPnL, Money{currency, amount})
+	}
+	return snapshot, nil
+}
+
+func fifoCostAllocation(cost, take, quantity *big.Rat) (*big.Rat, error) {
+	return exact.FIFOAllocation(cost, take, quantity)
+}
+
+func quantizeHalfEven(value *big.Rat, scale int) *big.Rat {
+	return exact.QuantizeHalfEven(value, scale)
+}
+
+func addRat(values map[string]*big.Rat, key string, value *big.Rat) {
+	if values[key] == nil {
+		values[key] = new(big.Rat)
+	}
+	values[key].Add(values[key], value)
+}
+
+func formatDecimal(value *big.Rat) (string, error) {
+	return exact.FormatDecimal(value)
+}
+
+func sortedKeys(values map[string]*big.Rat) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedPositionKeys(values map[string]*position) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		a, b := values[keys[i]], values[keys[j]]
+		if a.instrument == b.instrument {
+			return a.currency < b.currency
+		}
+		return a.instrument < b.instrument
+	})
+	return keys
+}
+
+func backupAndVerify(db *sql.DB, out, golden string) error {
+	_, err := createBackup(db, out, golden, out+".manifest.json", time.Now, randomID)
+	return err
+}
+
+func createBackup(db *sql.DB, out, golden, manifestPath string, now func() time.Time, id func(string) string) (_ *BackupManifest, resultErr error) {
+	if _, err := os.Stat(out); err == nil {
+		return nil, fmt.Errorf("backup target already exists: %s", out)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if _, err := os.Stat(manifestPath); err == nil {
+		return nil, fmt.Errorf("manifest target already exists: %s", manifestPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	candidateCreated, manifestCreated := false, false
+	defer func() {
+		if resultErr == nil {
+			return
+		}
+		var cleanupErr error
+		if manifestCreated {
+			if err := os.Remove(manifestPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+				cleanupErr = errors.Join(cleanupErr, err)
+			}
+		}
+		if candidateCreated {
+			if err := os.Remove(out); err != nil && !errors.Is(err, os.ErrNotExist) {
+				cleanupErr = errors.Join(cleanupErr, err)
+			}
+		}
+		if cleanupErr != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("discard failed backup candidate: %w", cleanupErr))
+		}
+	}()
+	var sourceRevision int64
+	if err := db.QueryRow(`SELECT revision FROM ledger_meta WHERE singleton=1`).Scan(&sourceRevision); err != nil {
+		return nil, err
+	}
+	sourceOrders, err := proveOrderRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source order recovery proof: %w", err)
+	}
+	sourceBroker, err := proveBrokerRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source broker recovery proof: %w", err)
+	}
+	sourceStrategy, err := proveStrategyRegistryRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source strategy registry recovery proof: %w", err)
+	}
+	sourcePaperPromotion, err := provePaperPromotionRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source paper promotion recovery proof: %w", err)
+	}
+	sourcePaperAccounting, err := provePaperAccountingRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source paper accounting recovery proof: %w", err)
+	}
+	sourcePaperPerformance, err := provePaperPerformanceRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source paper performance recovery proof: %w", err)
+	}
+	sourcePaperStrategyPerformance, err := provePaperStrategyPerformanceRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source paper strategy performance recovery proof: %w", err)
+	}
+	sourcePaperPerformancePolicy, err := provePaperPerformancePolicyRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source paper performance policy recovery proof: %w", err)
+	}
+	if _, err := provePaperRunnerLeaseRecovery(context.Background(), db); err != nil {
+		return nil, fmt.Errorf("source paper runner lease recovery proof: %w", err)
+	}
+	sourceFX, err := proveFXObservationRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source FX observation recovery proof: %w", err)
+	}
+	sourceSecurityPrices, err := proveSecurityPriceObservationRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source security price observation recovery proof: %w", err)
+	}
+	sourceInstrumentListings, err := proveInstrumentListingRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source instrument listing recovery proof: %w", err)
+	}
+	sourceBenchmark, err := proveBenchmarkSeriesRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source benchmark series recovery proof: %w", err)
+	}
+	sourceOwnerFX, err := proveOwnerFXSeriesRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source owner FX series recovery proof: %w", err)
+	}
+	sourceOwnerPrice, err := proveOwnerPriceSeriesRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source owner price series recovery proof: %w", err)
+	}
+	sourceWatchlist, err := proveWatchlistRecovery(context.Background(), db)
+	if err != nil {
+		return nil, fmt.Errorf("source watchlist recovery proof: %w", err)
+	}
+	createdAt := now().UTC()
+	quoted := strings.ReplaceAll(out, "'", "''")
+	if _, err := db.Exec(`VACUUM INTO '` + quoted + `'`); err != nil {
+		return nil, fmt.Errorf("consistent backup: %w", err)
+	}
+	candidateCreated = true
+	candidateOrders, err := verifyRestoreProof(out, golden)
+	if err != nil {
+		return nil, err
+	}
+	candidateBroker, err := verifyBrokerRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
+	candidateStrategy, err := verifyStrategyRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
+	candidatePaperPromotion, err := verifyPaperPromotionRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
+	candidatePaperAccounting, err := verifyPaperAccountingRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
+	candidatePaperPerformance, err := verifyPaperPerformanceRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
+	candidatePaperStrategyPerformance, err := verifyPaperStrategyPerformanceRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
+	candidatePaperPerformancePolicy, err := verifyPaperPerformancePolicyRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
+	candidatePaperRunnerLease, err := verifyPaperRunnerLeaseRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
+	candidateFX, err := verifyFXObservationRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
+	candidateSecurityPrices, err := verifySecurityPriceObservationRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
+	candidateInstrumentListings, err := verifyInstrumentListingRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
+	candidateBenchmark, err := verifyBenchmarkSeriesRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
+	candidateOwnerFX, err := verifyOwnerFXSeriesRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
+	candidateOwnerPrice, err := verifyOwnerPriceSeriesRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
+	candidateWatchlist, err := verifyWatchlistRestoreProof(out)
+	if err != nil {
+		return nil, err
+	}
+	if sourceWatchlist != candidateWatchlist {
+		return nil, errors.New("backup watchlist recovery proof does not match source")
+	}
+	if sourceOrders != candidateOrders {
+		return nil, errors.New("backup order recovery proof does not match source")
+	}
+	if sourceBroker != candidateBroker {
+		return nil, errors.New("backup broker recovery proof does not match source")
+	}
+	if !sameStrategyRegistryProof(sourceStrategy, candidateStrategy) {
+		return nil, errors.New("backup strategy registry recovery proof does not match source")
+	}
+	if sourcePaperPromotion != candidatePaperPromotion {
+		return nil, errors.New("backup paper promotion recovery proof does not match source")
+	}
+	if sourcePaperAccounting != candidatePaperAccounting {
+		return nil, errors.New("backup paper accounting recovery proof does not match source")
+	}
+	if sourcePaperPerformance != candidatePaperPerformance {
+		return nil, errors.New("backup paper performance recovery proof does not match source")
+	}
+	if sourcePaperStrategyPerformance != candidatePaperStrategyPerformance {
+		return nil, errors.New("backup paper strategy performance recovery proof does not match source")
+	}
+	if sourcePaperPerformancePolicy != candidatePaperPerformancePolicy {
+		return nil, errors.New("backup paper performance policy recovery proof does not match source")
+	}
+	if sourceFX != candidateFX {
+		return nil, errors.New("backup FX observation recovery proof does not match source")
+	}
+	if sourceSecurityPrices != candidateSecurityPrices {
+		return nil, errors.New("backup security price observation recovery proof does not match source")
+	}
+	if sourceInstrumentListings != candidateInstrumentListings {
+		return nil, errors.New("backup instrument listing recovery proof does not match source")
+	}
+	if sourceBenchmark != candidateBenchmark {
+		return nil, errors.New("backup benchmark series recovery proof does not match source")
+	}
+	if sourceOwnerFX != candidateOwnerFX {
+		return nil, errors.New("backup owner FX series recovery proof does not match source")
+	}
+	if sourceOwnerPrice != candidateOwnerPrice {
+		return nil, errors.New("backup owner price series recovery proof does not match source")
+	}
+	dbSHA, size, err := hashFile(out)
+	if err != nil {
+		return nil, err
+	}
+	snapshotSHA, _, err := hashFile(golden)
+	if err != nil {
+		return nil, err
+	}
+	verifiedAt := now().UTC()
+	status, eligible, verificationErrors := "verified", true, []string{}
+	if candidatePaperRunnerLease.Active != 0 {
+		status, eligible = "rejected", false
+		verificationErrors = []string{"active_paper_runner_lease_present"}
+	}
+	manifest := &BackupManifest{
+		WatchlistStateSHA256: sourceWatchlist.SHA256, WatchlistRevision: sourceWatchlist.Revision, WatchlistEntryCount: sourceWatchlist.Entries,
+		FormatVersion: backupFormat, SchemaVersion: backupSchema, CreatedAt: createdAt.Format(time.RFC3339Nano),
+		SourceLedgerRevision: revision(sourceRevision), OrderStateSHA256: sourceOrders.SHA256, OrderCount: sourceOrders.Orders,
+		OrderEventCount: sourceOrders.Events, ExecutionAuthoritySHA256: sourceOrders.ExecutionAuthoritySHA256,
+		ExecutionAuthorityEventCount: sourceOrders.ExecutionAuthorityEvents, RiskReservationSHA256: sourceOrders.RiskReservationSHA256,
+		RiskReservationCount: sourceOrders.RiskReservations, BrokerStateSHA256: sourceBroker.SHA256, BrokerSnapshotCount: sourceBroker.Snapshots,
+		BrokerReconciliationCount: sourceBroker.Reconciliations,
+		StrategyRegistrySHA256:    sourceStrategy.SHA256, StrategyEvidenceCount: sourceStrategy.Evidence,
+		StrategySelectionEventCount: sourceStrategy.Events, SelectedStrategyResultSHA256: sourceStrategy.SelectedResultSHA256,
+		PaperPromotionStateSHA256: sourcePaperPromotion.SHA256, PaperPromotionClaimCount: sourcePaperPromotion.Claims, PaperPromotionDecisionCount: sourcePaperPromotion.Decisions,
+		PaperEvaluationEventCount:  sourceStrategy.Evaluations,
+		PaperAccountingStateSHA256: sourcePaperAccounting.SHA256, PaperAccountingSessionCount: sourcePaperAccounting.Sessions,
+		PaperMarketBarObservationCount: sourcePaperAccounting.MarketBars, PaperSignalEventCount: sourcePaperAccounting.Signals,
+		PaperExecutionAuthorizationCount:         sourcePaperAccounting.Authorizations,
+		PaperCapitalizedFillCount:                sourcePaperAccounting.CapitalizedFills,
+		PaperPerformanceStateSHA256:              sourcePaperPerformance.SHA256,
+		PaperPerformanceEventCount:               sourcePaperPerformance.Events,
+		PaperPerformanceMarkCount:                sourcePaperPerformance.Marks,
+		PaperStrategyPerformanceStateSHA256:      sourcePaperStrategyPerformance.SHA256,
+		PaperStrategyPerformanceEventCount:       sourcePaperStrategyPerformance.Events,
+		PaperStrategyPerformanceSampleCount:      sourcePaperStrategyPerformance.Samples,
+		PaperPerformancePolicyStateSHA256:        sourcePaperPerformancePolicy.SHA256,
+		PaperPerformancePolicyEventCount:         sourcePaperPerformancePolicy.Events,
+		PaperPerformancePolicyActionCount:        sourcePaperPerformancePolicy.Actions,
+		PaperPerformancePolicyAutomaticHaltCount: sourcePaperPerformancePolicy.AutomaticHalts,
+		PaperRunnerLeaseStateSHA256:              candidatePaperRunnerLease.SHA256,
+		PaperRunnerLeaseCount:                    candidatePaperRunnerLease.Leases,
+		ActivePaperRunnerLeaseCount:              candidatePaperRunnerLease.Active,
+		FXObservationStateSHA256:                 sourceFX.SHA256, FXObservationCount: sourceFX.Observations,
+		SecurityPriceObservationStateSHA256: sourceSecurityPrices.SHA256, SecurityPriceObservationCount: sourceSecurityPrices.Observations,
+		InstrumentListingStateSHA256: sourceInstrumentListings.SHA256, InstrumentListingEventCount: sourceInstrumentListings.Events,
+		ActiveInstrumentListingCount: sourceInstrumentListings.Active,
+		BenchmarkSeriesStateSHA256:   sourceBenchmark.SHA256, BenchmarkSeriesVersionCount: sourceBenchmark.Versions, BenchmarkSeriesPointCount: sourceBenchmark.Points,
+		OwnerFXSeriesStateSHA256: sourceOwnerFX.SHA256, OwnerFXSeriesVersionCount: sourceOwnerFX.Versions, OwnerFXSeriesPointCount: sourceOwnerFX.Points,
+		OwnerPriceSeriesStateSHA256: sourceOwnerPrice.SHA256, OwnerPriceSeriesVersionCount: sourceOwnerPrice.Versions, OwnerPriceSeriesPointCount: sourceOwnerPrice.Points,
+		DBSHA256: dbSHA, SizeBytes: size, ExpectedSnapshotSHA256: snapshotSHA,
+		Encryption: BackupEncryption{Encrypted: false, Algorithm: "none"},
+		VerificationReceipt: VerificationReceipt{
+			ReceiptID: id("backup_verification"), CandidateID: id("restore_candidate"), VerifiedAt: verifiedAt.Format(time.RFC3339Nano),
+			Status: status, IntegrityCheck: "ok", GoldenSnapshotCheck: "ok", OrderStateCheck: "ok", BrokerStateCheck: "ok", StrategyRegistryCheck: "ok", FXObservationCheck: "ok", SecurityPriceObservationCheck: "ok", InstrumentListingCheck: "ok", PaperPerformanceCheck: "ok", PaperStrategyPerformanceCheck: "ok", PaperPerformancePolicyCheck: "ok", PaperRunnerLeaseCheck: "ok", CandidateDBSHA256: dbSHA,
+			CandidateSnapshotSHA256: snapshotSHA, CandidateOrderStateSHA256: candidateOrders.SHA256,
+			CandidateBrokerStateSHA256: candidateBroker.SHA256, CandidateStrategyRegistrySHA256: candidateStrategy.SHA256,
+			CandidatePaperPromotionStateSHA256:           candidatePaperPromotion.SHA256,
+			CandidatePaperAccountingStateSHA256:          candidatePaperAccounting.SHA256,
+			CandidatePaperPerformanceStateSHA256:         candidatePaperPerformance.SHA256,
+			CandidatePaperStrategyPerformanceStateSHA256: candidatePaperStrategyPerformance.SHA256,
+			CandidatePaperPerformancePolicyStateSHA256:   candidatePaperPerformancePolicy.SHA256,
+			CandidatePaperRunnerLeaseStateSHA256:         candidatePaperRunnerLease.SHA256,
+			CandidateFXObservationStateSHA256:            candidateFX.SHA256, CandidateSecurityPriceObservationStateSHA256: candidateSecurityPrices.SHA256,
+			CandidateInstrumentListingStateSHA256: candidateInstrumentListings.SHA256, EligibleForActivation: eligible, Errors: verificationErrors,
+			BenchmarkSeriesCheck: "ok", CandidateBenchmarkSeriesStateSHA256: candidateBenchmark.SHA256, CandidateBenchmarkSeriesVersionCount: candidateBenchmark.Versions, CandidateBenchmarkSeriesPointCount: candidateBenchmark.Points,
+			OwnerFXSeriesCheck: "ok", CandidateOwnerFXSeriesStateSHA256: candidateOwnerFX.SHA256, CandidateOwnerFXSeriesVersionCount: candidateOwnerFX.Versions, CandidateOwnerFXSeriesPointCount: candidateOwnerFX.Points,
+			OwnerPriceSeriesCheck: "ok", CandidateOwnerPriceSeriesStateSHA256: candidateOwnerPrice.SHA256, CandidateOwnerPriceSeriesVersionCount: candidateOwnerPrice.Versions, CandidateOwnerPriceSeriesPointCount: candidateOwnerPrice.Points,
+			WatchlistCheck: "ok", CandidateWatchlistStateSHA256: candidateWatchlist.SHA256, CandidateWatchlistRevision: candidateWatchlist.Revision, CandidateWatchlistEntryCount: candidateWatchlist.Entries,
+		},
+	}
+	encoded, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	encoded = append(encoded, '\n')
+	manifestFile, err := os.OpenFile(manifestPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	manifestCreated = true
+	if _, err := manifestFile.Write(encoded); err != nil {
+		_ = manifestFile.Close()
+		return nil, err
+	}
+	if err := manifestFile.Close(); err != nil {
+		return nil, err
+	}
+	return manifest, nil
+}
+
+func verifyRestore(path, goldenPath string) error {
+	if _, err := verifyRestoreProof(path, goldenPath); err != nil {
+		return err
+	}
+	if _, err := verifyBrokerRestoreProof(path); err != nil {
+		return err
+	}
+	if _, err := verifyStrategyRestoreProof(path); err != nil {
+		return err
+	}
+	if _, err := verifyPaperPromotionRestoreProof(path); err != nil {
+		return err
+	}
+	if _, err := verifyPaperAccountingRestoreProof(path); err != nil {
+		return err
+	}
+	if _, err := verifyPaperPerformanceRestoreProof(path); err != nil {
+		return err
+	}
+	if _, err := verifyPaperStrategyPerformanceRestoreProof(path); err != nil {
+		return err
+	}
+	if _, err := verifyPaperPerformancePolicyRestoreProof(path); err != nil {
+		return err
+	}
+	runnerLease, err := verifyPaperRunnerLeaseRestoreProof(path)
+	if err != nil {
+		return err
+	}
+	if runnerLease.Active != 0 {
+		return errors.New("restore candidate contains an active paper runner lease")
+	}
+	_, err = verifyFXObservationRestoreProof(path)
+	if err != nil {
+		return err
+	}
+	_, err = verifySecurityPriceObservationRestoreProof(path)
+	if err != nil {
+		return err
+	}
+	_, err = verifyInstrumentListingRestoreProof(path)
+	if err != nil {
+		return err
+	}
+	_, err = verifyBenchmarkSeriesRestoreProof(path)
+	if err != nil {
+		return err
+	}
+	if _, err := verifyOwnerFXSeriesRestoreProof(path); err != nil {
+		return err
+	}
+	if _, err := verifyOwnerPriceSeriesRestoreProof(path); err != nil {
+		return err
+	}
+	_, err = verifyWatchlistRestoreProof(path)
+	return err
+}
+
+func verifyFXObservationRestoreProof(path string) (fxObservationRecoveryProof, error) {
+	db, err := openExistingDB(path)
+	if err != nil {
+		return fxObservationRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := proveFXObservationRecovery(context.Background(), db)
+	if err != nil {
+		return fxObservationRecoveryProof{}, fmt.Errorf("candidate FX observation recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func verifySecurityPriceObservationRestoreProof(path string) (securityPriceObservationRecoveryProof, error) {
+	db, err := openExistingDB(path)
+	if err != nil {
+		return securityPriceObservationRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := proveSecurityPriceObservationRecovery(context.Background(), db)
+	if err != nil {
+		return securityPriceObservationRecoveryProof{}, fmt.Errorf("candidate security price observation recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func verifyInstrumentListingRestoreProof(path string) (instrumentListingRecoveryProof, error) {
+	db, err := openExistingDB(path)
+	if err != nil {
+		return instrumentListingRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := proveInstrumentListingRecovery(context.Background(), db)
+	if err != nil {
+		return instrumentListingRecoveryProof{}, fmt.Errorf("candidate instrument listing recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func verifyStrategyRestoreProof(path string) (strategyRegistryRecoveryProof, error) {
+	db, err := openExistingDB(path)
+	if err != nil {
+		return strategyRegistryRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := proveStrategyRegistryRecovery(context.Background(), db)
+	if err != nil {
+		return strategyRegistryRecoveryProof{}, fmt.Errorf("candidate strategy registry recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func verifyPaperAccountingRestoreProof(path string) (paperAccountingRecoveryProof, error) {
+	db, err := openExistingDB(path)
+	if err != nil {
+		return paperAccountingRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := provePaperAccountingRecovery(context.Background(), db)
+	if err != nil {
+		return paperAccountingRecoveryProof{}, fmt.Errorf("candidate paper accounting recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func verifyPaperPerformanceRestoreProof(path string) (paperPerformanceRecoveryProof, error) {
+	db, err := openExistingDB(path)
+	if err != nil {
+		return paperPerformanceRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := provePaperPerformanceRecovery(context.Background(), db)
+	if err != nil {
+		return paperPerformanceRecoveryProof{}, fmt.Errorf("candidate paper performance recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func verifyPaperStrategyPerformanceRestoreProof(path string) (paperStrategyPerformanceRecoveryProof, error) {
+	db, err := openExistingDB(path)
+	if err != nil {
+		return paperStrategyPerformanceRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := provePaperStrategyPerformanceRecovery(context.Background(), db)
+	if err != nil {
+		return paperStrategyPerformanceRecoveryProof{}, fmt.Errorf("candidate paper strategy performance recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func verifyPaperPerformancePolicyRestoreProof(path string) (paperPerformancePolicyRecoveryProof, error) {
+	db, err := openExistingDB(path)
+	if err != nil {
+		return paperPerformancePolicyRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := provePaperPerformancePolicyRecovery(context.Background(), db)
+	if err != nil {
+		return paperPerformancePolicyRecoveryProof{}, fmt.Errorf("candidate paper performance policy recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func verifyPaperRunnerLeaseRestoreProof(path string) (paperRunnerLeaseRecoveryProof, error) {
+	db, err := openExistingDB(path)
+	if err != nil {
+		return paperRunnerLeaseRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := provePaperRunnerLeaseRecovery(context.Background(), db)
+	if err != nil {
+		return paperRunnerLeaseRecoveryProof{}, fmt.Errorf("candidate paper runner lease recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func verifyPaperPromotionRestoreProof(path string) (paperPromotionRecoveryProof, error) {
+	db, err := openReadOnlyExistingDB(context.Background(), path)
+	if err != nil {
+		return paperPromotionRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := provePaperPromotionRecovery(context.Background(), db)
+	if err != nil {
+		return paperPromotionRecoveryProof{}, fmt.Errorf("candidate paper promotion recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func verifyBrokerRestoreProof(path string) (brokerRecoveryProof, error) {
+	db, err := openExistingDB(path)
+	if err != nil {
+		return brokerRecoveryProof{}, err
+	}
+	defer db.Close()
+	proof, err := proveBrokerRecovery(context.Background(), db)
+	if err != nil {
+		return brokerRecoveryProof{}, fmt.Errorf("candidate broker recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func verifyRestoreProof(path, goldenPath string) (orderRecoveryProof, error) {
+	return verifyRestoreProofPolicy(path, goldenPath, false)
+}
+
+func verifyRestoreProofPolicy(path, goldenPath string, archival bool) (orderRecoveryProof, error) {
+	db, err := openExistingDB(path)
+	if err != nil {
+		return orderRecoveryProof{}, err
+	}
+	defer db.Close()
+	var integrity string
+	if err := db.QueryRow(`PRAGMA integrity_check`).Scan(&integrity); err != nil {
+		return orderRecoveryProof{}, err
+	}
+	if integrity != "ok" {
+		return orderRecoveryProof{}, fmt.Errorf("integrity_check: %s", integrity)
+	}
+	if err := requireOrderRestoreSchema(db); err != nil {
+		return orderRecoveryProof{}, err
+	}
+	if err := proveLedgerReplayState(context.Background(), db, archival); err != nil {
+		return orderRecoveryProof{}, err
+	}
+	if _, _, err := (&Service{}).proveLedgerEvents(context.Background(), db); err != nil {
+		return orderRecoveryProof{}, err
+	}
+	policy := fifoCostBasisPolicy
+	if archival {
+		policy = legacyFIFOCostBasisPolicy
+	}
+	actual, err := snapshotFromPolicy(context.Background(), db, policy, -1)
+	if err != nil {
+		return orderRecoveryProof{}, err
+	}
+	goldenBytes, err := os.ReadFile(goldenPath)
+	if err != nil {
+		return orderRecoveryProof{}, err
+	}
+	var golden PortfolioSnapshot
+	dec := json.NewDecoder(bytes.NewReader(goldenBytes))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&golden); err != nil {
+		return orderRecoveryProof{}, fmt.Errorf("golden snapshot: %w", err)
+	}
+	if archival && golden.CostBasisPolicy == "" {
+		golden.CostBasisPolicy = legacyFIFOCostBasisPolicy
+	}
+	if golden.CostBasisPolicy != policy {
+		return orderRecoveryProof{}, errors.New("golden snapshot replay policy does not match artifact version")
+	}
+	actualJSON, _ := json.Marshal(actual)
+	goldenJSON, _ := json.Marshal(&golden)
+	if !bytes.Equal(actualJSON, goldenJSON) {
+		return orderRecoveryProof{}, errors.New("restored snapshot does not match golden")
+	}
+	proof, err := proveOrderRecovery(context.Background(), db)
+	if err != nil {
+		return orderRecoveryProof{}, fmt.Errorf("candidate order recovery proof: %w", err)
+	}
+	return proof, nil
+}
+
+func requireOrderRestoreSchema(db *sql.DB) error {
+	if err := requireSchema(db); err != nil {
+		return fmt.Errorf("restore schema: %w", err)
+	}
+	if err := requireBenchmarkSeriesSchema(context.Background(), db); err != nil {
+		return fmt.Errorf("restore benchmark schema: %w", err)
+	}
+	if err := requireOwnerFXSeriesSchema(context.Background(), db); err != nil {
+		return fmt.Errorf("restore owner FX schema: %w", err)
+	}
+	if err := requireOwnerPriceSeriesSchema(context.Background(), db); err != nil {
+		return fmt.Errorf("restore owner price schema: %w", err)
+	}
+	for _, table := range []string{"events", "order_idempotency", "order_events", "execution_authority_events", "risk_reservations", "paper_execution_authorizations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "paper_evaluation_events", "paper_accounting_sessions", "paper_market_bar_observations", "paper_signal_events", "paper_performance_events", "paper_strategy_performance_events", "paper_performance_policy_events", "fx_observations", "security_price_observations"} {
+		var strict int
+		if err := db.QueryRow(`SELECT strict FROM pragma_table_list WHERE schema='main' AND type='table' AND name=?`, table).Scan(&strict); err != nil {
+			return fmt.Errorf("restore order table %s: %w", table, err)
+		}
+		if strict != 1 {
+			return fmt.Errorf("restore order table %s is not strict", table)
+		}
+	}
+	var eventsDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='events'`).Scan(&eventsDefinition); err != nil {
+		return fmt.Errorf("restore events definition: %w", err)
+	}
+	normalizedEvents := strings.ToLower(strings.Join(strings.Fields(eventsDefinition), " "))
+	for _, required := range []string{
+		"counter_currency text", "counter_amount text", "'fx_exchange'",
+		"or (type = 'fx_exchange' and corrects_source_event_id is null",
+		"amount <> '0' and amount <> '-0' and amount glob '-*'", "counter_currency <> currency",
+		"counter_amount is not null and counter_amount <> '0' and counter_amount not glob '-*')",
+	} {
+		if !strings.Contains(normalizedEvents, required) {
+			return errors.New("restore events lack the required FX exchange guard")
+		}
+	}
+	for _, unique := range []struct {
+		table   string
+		columns []string
+		origin  string
+	}{
+		{"order_idempotency", []string{"provider", "mode", "account_ref", "client_order_id"}, "pk"},
+		{"order_idempotency", []string{"order_id"}, "u"},
+		{"events", []string{"account_id", "source_event_id"}, "u"},
+		{"events", []string{"account_id", "corrects_source_event_id"}, "u"},
+		{"order_events", []string{"event_id"}, "u"},
+		{"order_events", []string{"provider_execution_ref"}, "u"},
+		{"execution_authority_events", []string{"event_id"}, "u"},
+		{"execution_authority_events", []string{"account_ref", "fencing_token"}, "u"},
+		{"risk_reservations", []string{"reservation_id"}, "u"},
+		{"risk_reservations", []string{"order_id"}, "u"},
+		{"risk_reservations", []string{"risk_event_id"}, "u"},
+		{"risk_reservations", []string{"dispatch_event_id"}, "u"},
+		{"paper_execution_authorizations", []string{"authorization_id"}, "u"},
+		{"paper_execution_authorizations", []string{"order_id"}, "u"},
+		{"paper_execution_authorizations", []string{"risk_event_id"}, "u"},
+		{"paper_execution_authorizations", []string{"dispatch_event_id"}, "u"},
+		{"broker_snapshots", []string{"snapshot_id"}, "u"},
+		{"broker_snapshots", []string{"provider", "environment", "exchange", "account_ref", "fetched_at"}, "u"},
+		{"broker_snapshot_reconciliations", []string{"reconciliation_id"}, "u"},
+		{"broker_snapshot_reconciliations", []string{"snapshot_id", "ledger_account_id", "ledger_revision"}, "u"},
+		{"strategy_research_evidence", []string{"result_sha256"}, "u"},
+		{"strategy_selection_events", []string{"event_id"}, "u"},
+		{"paper_evaluation_events", []string{"evaluation_id"}, "u"},
+		{"paper_accounting_sessions", []string{"session_id"}, "u"},
+		{"paper_accounting_sessions", []string{"account_ref"}, "u"},
+		{"paper_market_bar_observations", []string{"observation_id"}, "u"},
+		{"paper_market_bar_observations", []string{"source", "source_observation_id"}, "u"},
+		{"paper_market_bar_observations", []string{"source", "symbol", "venue", "interval", "timezone", "price_adjustment", "open_at"}, "u"},
+		{"paper_signal_events", []string{"event_id"}, "u"},
+		{"paper_signal_events", []string{"account_ref", "signal_id"}, "u"},
+		{"paper_performance_events", []string{"performance_id"}, "u"},
+		{"paper_performance_events", []string{"policy_version", "account_ref", "paper_accounting_session_id", "as_of"}, "u"},
+		{"paper_strategy_performance_events", []string{"strategy_performance_id"}, "u"},
+		{"paper_strategy_performance_events", []string{"policy_version", "account_ref", "strategy_selection_event_id", "latest_performance_id"}, "u"},
+		{"paper_performance_policy_events", []string{"policy_event_id"}, "u"},
+		{"paper_performance_policy_events", []string{"policy_version", "account_ref", "strategy_selection_event_id", "strategy_performance_id"}, "u"},
+		{"fx_observations", []string{"observation_id"}, "u"},
+		{"fx_observations", []string{"source", "source_observation_id"}, "u"},
+		{"fx_observations", []string{"source", "base_currency", "quote_currency", "observed_at"}, "u"},
+		{"security_price_observations", []string{"observation_id"}, "u"},
+		{"security_price_observations", []string{"source", "source_observation_id"}, "u"},
+		{"security_price_observations", []string{"source", "instrument_id", "symbol", "venue", "currency", "observed_at", "price_adjustment"}, "u"},
+		{"instrument_listing_events", []string{"event_id"}, "u"},
+	} {
+		ok, err := hasUniqueIndex(db, unique.table, unique.columns, unique.origin)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("restore order table %s lacks required unique columns %s", unique.table, strings.Join(unique.columns, ","))
+		}
+	}
+	var fxIndexDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='index' AND name='fx_observations_latest_idx' AND tbl_name='fx_observations'`).Scan(&fxIndexDefinition); err != nil {
+		return fmt.Errorf("restore FX observation latest index: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(fxIndexDefinition), " ")) !=
+		"create index fx_observations_latest_idx on fx_observations(source, base_currency, quote_currency, observed_at desc, sequence desc)" {
+		return errors.New("restore FX observations lack the required latest index")
+	}
+	var securityPriceIndexDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='index' AND name='security_price_observations_latest_idx' AND tbl_name='security_price_observations'`).Scan(&securityPriceIndexDefinition); err != nil {
+		return fmt.Errorf("restore security price observation latest index: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(securityPriceIndexDefinition), " ")) !=
+		"create index security_price_observations_latest_idx on security_price_observations(source, instrument_id, symbol, venue, currency, price_adjustment, observed_at desc, sequence desc)" {
+		return errors.New("restore security price observations lack the required latest index")
+	}
+	var securityPriceTableDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='security_price_observations'`).Scan(&securityPriceTableDefinition); err != nil {
+		return fmt.Errorf("restore security price observation definition: %w", err)
+	}
+	securityPriceMigration, err := migrationFiles.ReadFile("migrations/012_kiwoom_security_price_observations.sql")
+	if err != nil {
+		return fmt.Errorf("restore security price observation definition source: %w", err)
+	}
+	const securityPriceTablePrefix = "CREATE TABLE security_price_observations"
+	tableStart := strings.Index(string(securityPriceMigration), securityPriceTablePrefix)
+	if tableStart < 0 {
+		return errors.New("restore security price observation definition source is invalid")
+	}
+	expectedSecurityPriceTable := strings.SplitN(string(securityPriceMigration)[tableStart:], "\n\nINSERT INTO", 2)[0]
+	expectedSecurityPriceTable = strings.TrimSuffix(strings.TrimSpace(expectedSecurityPriceTable), ";")
+	if strings.ToLower(strings.Join(strings.Fields(securityPriceTableDefinition), " ")) !=
+		strings.ToLower(strings.Join(strings.Fields(expectedSecurityPriceTable), " ")) {
+		return errors.New("restore security price observations lack the required table definition")
+	}
+	listingMigration, err := migrationFiles.ReadFile("migrations/013_instrument_listing_events.sql")
+	if err != nil {
+		return fmt.Errorf("restore instrument listing definition source: %w", err)
+	}
+	listingSQL := string(listingMigration)
+	const listingTablePrefix = "CREATE TABLE instrument_listing_events"
+	listingTableStart := strings.Index(listingSQL, listingTablePrefix)
+	if listingTableStart < 0 {
+		return errors.New("restore instrument listing definition source is invalid")
+	}
+	expectedListingTable := strings.TrimSuffix(strings.TrimSpace(strings.SplitN(listingSQL[listingTableStart:], "\n\nCREATE INDEX", 2)[0]), ";")
+	var listingTableDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='instrument_listing_events'`).Scan(&listingTableDefinition); err != nil {
+		return fmt.Errorf("restore instrument listing definition: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(listingTableDefinition), " ")) != strings.ToLower(strings.Join(strings.Fields(expectedListingTable), " ")) {
+		return errors.New("restore instrument listings lack the required table definition")
+	}
+	var listingIndexDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='index' AND name='instrument_listing_events_current_idx' AND tbl_name='instrument_listing_events'`).Scan(&listingIndexDefinition); err != nil {
+		return fmt.Errorf("restore instrument listing current index: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(listingIndexDefinition), " ")) !=
+		"create index instrument_listing_events_current_idx on instrument_listing_events(venue, symbol, currency, sequence desc)" {
+		return errors.New("restore instrument listings lack the required current index")
+	}
+	stateTriggerStart := strings.Index(listingSQL, "CREATE TRIGGER instrument_listing_events_state_guard")
+	if stateTriggerStart < 0 {
+		return errors.New("restore instrument listing state guard source is invalid")
+	}
+	expectedStateTrigger := strings.TrimSuffix(strings.TrimSpace(listingSQL[stateTriggerStart:]), ";")
+	var stateTriggerDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='trigger' AND name='instrument_listing_events_state_guard' AND tbl_name='instrument_listing_events'`).Scan(&stateTriggerDefinition); err != nil {
+		return fmt.Errorf("restore instrument listing state guard: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(stateTriggerDefinition), " ")) != strings.ToLower(strings.Join(strings.Fields(expectedStateTrigger), " ")) {
+		return errors.New("restore instrument listings lack the required state guard")
+	}
+	paperEvaluationMigration, err := migrationFiles.ReadFile("migrations/014_paper_evaluation_events.sql")
+	if err != nil {
+		return fmt.Errorf("restore paper evaluation definition source: %w", err)
+	}
+	paperEvaluationSQL := string(paperEvaluationMigration)
+	const paperEvaluationTablePrefix = "CREATE TABLE paper_evaluation_events"
+	paperEvaluationTableStart := strings.Index(paperEvaluationSQL, paperEvaluationTablePrefix)
+	if paperEvaluationTableStart < 0 {
+		return errors.New("restore paper evaluation definition source is invalid")
+	}
+	expectedPaperEvaluationTable := strings.TrimSuffix(strings.TrimSpace(strings.SplitN(paperEvaluationSQL[paperEvaluationTableStart:], "\n\nALTER TABLE", 2)[0]), ";")
+	var paperEvaluationTableDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='paper_evaluation_events'`).Scan(&paperEvaluationTableDefinition); err != nil {
+		return fmt.Errorf("restore paper evaluation definition: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(paperEvaluationTableDefinition), " ")) != strings.ToLower(strings.Join(strings.Fields(expectedPaperEvaluationTable), " ")) {
+		return errors.New("restore paper evaluations lack the required table definition")
+	}
+	var paperEvaluationSequenceType string
+	var paperEvaluationSequenceNotNull int
+	var paperEvaluationSequenceDefault sql.NullString
+	if err := db.QueryRow(`SELECT type, "notnull", dflt_value FROM pragma_table_info('strategy_selection_events') WHERE name='paper_evaluation_sequence'`).
+		Scan(&paperEvaluationSequenceType, &paperEvaluationSequenceNotNull, &paperEvaluationSequenceDefault); err != nil {
+		return fmt.Errorf("restore strategy selection paper evaluation sequence: %w", err)
+	}
+	var strategySelectionTableDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='strategy_selection_events'`).Scan(&strategySelectionTableDefinition); err != nil {
+		return fmt.Errorf("restore strategy selection definition: %w", err)
+	}
+	normalizedStrategySelectionTable := strings.ToLower(strings.Join(strings.Fields(strategySelectionTableDefinition), " "))
+	if !strings.EqualFold(paperEvaluationSequenceType, "INTEGER") || paperEvaluationSequenceNotNull != 1 ||
+		!paperEvaluationSequenceDefault.Valid || paperEvaluationSequenceDefault.String != "0" ||
+		!strings.Contains(normalizedStrategySelectionTable, "paper_evaluation_sequence integer not null default 0 check (paper_evaluation_sequence >= 0)") {
+		return errors.New("restore strategy selections lack the required paper evaluation sequence boundary")
+	}
+	var paperEvaluationIndexDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='index' AND name='paper_evaluation_events_current_idx' AND tbl_name='paper_evaluation_events'`).Scan(&paperEvaluationIndexDefinition); err != nil {
+		return fmt.Errorf("restore paper evaluation current index: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(paperEvaluationIndexDefinition), " ")) !=
+		"create index paper_evaluation_events_current_idx on paper_evaluation_events(account_ref, strategy_selection_event_id, sequence desc)" {
+		return errors.New("restore paper evaluations lack the required current index")
+	}
+	paperStateTriggerStart := strings.Index(paperEvaluationSQL, "CREATE TRIGGER paper_evaluation_events_state_guard")
+	if paperStateTriggerStart < 0 {
+		return errors.New("restore paper evaluation state guard source is invalid")
+	}
+	expectedPaperStateTrigger := strings.TrimSuffix(strings.TrimSpace(paperEvaluationSQL[paperStateTriggerStart:]), ";")
+	var paperStateTriggerDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='trigger' AND name='paper_evaluation_events_state_guard' AND tbl_name='paper_evaluation_events'`).Scan(&paperStateTriggerDefinition); err != nil {
+		return fmt.Errorf("restore paper evaluation state guard: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(paperStateTriggerDefinition), " ")) != strings.ToLower(strings.Join(strings.Fields(expectedPaperStateTrigger), " ")) {
+		return errors.New("restore paper evaluations lack the required state guard")
+	}
+	paperAccountingMigration, err := migrationFiles.ReadFile("migrations/015_paper_accounting_sessions.sql")
+	if err != nil {
+		return fmt.Errorf("restore paper accounting definition source: %w", err)
+	}
+	paperAccountingSQL := string(paperAccountingMigration)
+	const paperAccountingTablePrefix = "CREATE TABLE paper_accounting_sessions"
+	paperAccountingTableStart := strings.Index(paperAccountingSQL, paperAccountingTablePrefix)
+	if paperAccountingTableStart < 0 {
+		return errors.New("restore paper accounting definition source is invalid")
+	}
+	expectedPaperAccountingTable := strings.TrimSuffix(strings.TrimSpace(strings.SplitN(paperAccountingSQL[paperAccountingTableStart:], "\n\nCREATE TRIGGER", 2)[0]), ";")
+	var paperAccountingTableDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='paper_accounting_sessions'`).Scan(&paperAccountingTableDefinition); err != nil {
+		return fmt.Errorf("restore paper accounting definition: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(paperAccountingTableDefinition), " ")) != strings.ToLower(strings.Join(strings.Fields(expectedPaperAccountingTable), " ")) {
+		return errors.New("restore paper accounting sessions lack the required table definition")
+	}
+	paperAccountingStateTriggerStart := strings.Index(paperAccountingSQL, "CREATE TRIGGER paper_accounting_sessions_state_guard")
+	if paperAccountingStateTriggerStart < 0 {
+		return errors.New("restore paper accounting state guard source is invalid")
+	}
+	expectedPaperAccountingStateTrigger := strings.TrimSuffix(strings.TrimSpace(paperAccountingSQL[paperAccountingStateTriggerStart:]), ";")
+	var paperAccountingStateTriggerDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='trigger' AND name='paper_accounting_sessions_state_guard' AND tbl_name='paper_accounting_sessions'`).Scan(&paperAccountingStateTriggerDefinition); err != nil {
+		return fmt.Errorf("restore paper accounting state guard: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(paperAccountingStateTriggerDefinition), " ")) != strings.ToLower(strings.Join(strings.Fields(expectedPaperAccountingStateTrigger), " ")) {
+		return errors.New("restore paper accounting sessions lack the required state guard")
+	}
+	paperMarketMigration, err := migrationFiles.ReadFile("migrations/016_paper_market_signals.sql")
+	if err != nil {
+		return fmt.Errorf("restore paper market definition source: %w", err)
+	}
+	paperMarketSQL := string(paperMarketMigration)
+	barTableStart := strings.Index(paperMarketSQL, "CREATE TABLE paper_market_bar_observations")
+	barTriggerStart := strings.Index(paperMarketSQL, "CREATE TRIGGER paper_market_bar_observations_no_update")
+	signalTableStart := strings.Index(paperMarketSQL, "CREATE TABLE paper_signal_events")
+	signalTriggerStart := strings.Index(paperMarketSQL, "CREATE TRIGGER paper_signal_events_no_update")
+	legacyOrderGuardStart := strings.Index(paperMarketSQL, "CREATE TRIGGER order_idempotency_legacy_paper_signal_guard")
+	signalStateTriggerStart := strings.Index(paperMarketSQL, "CREATE TRIGGER paper_signal_events_state_guard")
+	if barTableStart < 0 || barTriggerStart <= barTableStart || signalTableStart <= barTriggerStart ||
+		signalTriggerStart <= signalTableStart || legacyOrderGuardStart <= signalTriggerStart || signalStateTriggerStart <= legacyOrderGuardStart {
+		return errors.New("restore paper market definition source is invalid")
+	}
+	expectedBarTable := strings.TrimSuffix(strings.TrimSpace(paperMarketSQL[barTableStart:barTriggerStart]), ";")
+	expectedSignalTable := strings.TrimSuffix(strings.TrimSpace(paperMarketSQL[signalTableStart:signalTriggerStart]), ";")
+	expectedPaperSignalStateTrigger := strings.TrimSuffix(strings.TrimSpace(paperMarketSQL[signalStateTriggerStart:]), ";")
+	for table, expected := range map[string]string{
+		"paper_market_bar_observations": expectedBarTable,
+		"paper_signal_events":           expectedSignalTable,
+	} {
+		var definition string
+		if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&definition); err != nil {
+			return fmt.Errorf("restore %s definition: %w", table, err)
+		}
+		if strings.ToLower(strings.Join(strings.Fields(definition), " ")) != strings.ToLower(strings.Join(strings.Fields(expected), " ")) {
+			return fmt.Errorf("restore %s lacks the required table definition", table)
+		}
+	}
+	paperAuthorizationMigration, err := migrationFiles.ReadFile("migrations/017_paper_execution_authorizations.sql")
+	if err != nil {
+		return fmt.Errorf("restore paper authorization definition source: %w", err)
+	}
+	paperAuthorizationSQL := string(paperAuthorizationMigration)
+	authorizationTableStart := strings.Index(paperAuthorizationSQL, "CREATE TABLE paper_execution_authorizations")
+	authorizationIndexStart := strings.Index(paperAuthorizationSQL, "CREATE INDEX paper_execution_authorizations_account_idx")
+	paperSignalQuantityGuardStart := strings.Index(paperAuthorizationSQL, "CREATE TRIGGER paper_signal_events_capitalized_quantity_guard")
+	legacyAuthorizationGuardStart := strings.Index(paperAuthorizationSQL, "CREATE TRIGGER order_idempotency_legacy_paper_signal_guard")
+	capitalizedOrderGuardStart := strings.Index(paperAuthorizationSQL, "CREATE TRIGGER order_idempotency_capitalized_paper_guard")
+	dropRiskGuardStart := strings.Index(paperAuthorizationSQL, "DROP TRIGGER order_events_risk_reservation_guard")
+	riskGuardStart := strings.LastIndex(paperAuthorizationSQL, "CREATE TRIGGER order_events_risk_reservation_guard")
+	dispatchGuardStart := strings.LastIndex(paperAuthorizationSQL, "CREATE TRIGGER order_events_dispatch_reservation_guard")
+	nonAuthorityGuardStart := strings.LastIndex(paperAuthorizationSQL, "CREATE TRIGGER order_events_non_authority_reservation_guard")
+	capitalizedFillGuardStart := strings.LastIndex(paperAuthorizationSQL, "CREATE TRIGGER order_events_capitalized_paper_fill_guard")
+	authorizationStateGuardStart := strings.Index(paperAuthorizationSQL, "CREATE TRIGGER paper_execution_authorizations_state_guard")
+	if authorizationTableStart < 0 || authorizationIndexStart <= authorizationTableStart || authorizationStateGuardStart < 0 ||
+		paperSignalQuantityGuardStart < 0 || legacyAuthorizationGuardStart <= paperSignalQuantityGuardStart ||
+		capitalizedOrderGuardStart <= legacyAuthorizationGuardStart || dropRiskGuardStart <= capitalizedOrderGuardStart ||
+		riskGuardStart <= dropRiskGuardStart || dispatchGuardStart <= riskGuardStart || nonAuthorityGuardStart <= dispatchGuardStart ||
+		capitalizedFillGuardStart <= nonAuthorityGuardStart {
+		return errors.New("restore paper authorization definition source is invalid")
+	}
+	expectedAuthorizationTable := strings.TrimSuffix(strings.TrimSpace(paperAuthorizationSQL[authorizationTableStart:authorizationIndexStart]), ";")
+	var authorizationTableDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='paper_execution_authorizations'`).Scan(&authorizationTableDefinition); err != nil {
+		return fmt.Errorf("restore paper authorization definition: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(authorizationTableDefinition), " ")) != strings.ToLower(strings.Join(strings.Fields(expectedAuthorizationTable), " ")) {
+		return errors.New("restore paper execution authorizations lack the required table definition")
+	}
+	extractAuthorizationTrigger := func(start, end int) string {
+		return strings.ToLower(strings.Join(strings.Fields(strings.TrimSuffix(strings.TrimSpace(paperAuthorizationSQL[start:end]), ";")), " "))
+	}
+	expectedAuthorizationStateGuard := extractAuthorizationTrigger(authorizationStateGuardStart, strings.Index(paperAuthorizationSQL[authorizationStateGuardStart:], "\n\nDROP TRIGGER")+authorizationStateGuardStart)
+	expectedPaperSignalQuantityGuard := extractAuthorizationTrigger(paperSignalQuantityGuardStart, legacyAuthorizationGuardStart)
+	expectedLegacyAuthorizationGuard := extractAuthorizationTrigger(legacyAuthorizationGuardStart, capitalizedOrderGuardStart)
+	expectedCapitalizedOrderGuard := extractAuthorizationTrigger(capitalizedOrderGuardStart, dropRiskGuardStart)
+	expectedRiskGuard := extractAuthorizationTrigger(riskGuardStart, dispatchGuardStart)
+	expectedDispatchGuard := extractAuthorizationTrigger(dispatchGuardStart, nonAuthorityGuardStart)
+	expectedNonAuthorityGuard := extractAuthorizationTrigger(nonAuthorityGuardStart, capitalizedFillGuardStart)
+	expectedCapitalizedFillGuard := strings.ToLower(strings.Join(strings.Fields(strings.TrimSuffix(strings.TrimSpace(paperAuthorizationSQL[capitalizedFillGuardStart:]), ";")), " "))
+	performanceMigration, err := migrationFiles.ReadFile("migrations/018_paper_performance_events.sql")
+	if err != nil {
+		return fmt.Errorf("restore paper performance definition source: %w", err)
+	}
+	performanceSQL := string(performanceMigration)
+	performanceTableStart := strings.Index(performanceSQL, "CREATE TABLE paper_performance_events")
+	performanceIndexStart := strings.Index(performanceSQL, "CREATE INDEX paper_performance_events_account_idx")
+	performanceUpdateTriggerStart := strings.Index(performanceSQL, "CREATE TRIGGER paper_performance_events_no_update")
+	performanceStateTriggerStart := strings.Index(performanceSQL, "CREATE TRIGGER paper_performance_events_state_guard")
+	if performanceTableStart < 0 || performanceIndexStart <= performanceTableStart ||
+		performanceUpdateTriggerStart <= performanceIndexStart || performanceStateTriggerStart <= performanceUpdateTriggerStart {
+		return errors.New("restore paper performance definition source is invalid")
+	}
+	expectedPerformanceTable := strings.TrimSuffix(strings.TrimSpace(performanceSQL[performanceTableStart:performanceIndexStart]), ";")
+	var performanceTableDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='paper_performance_events'`).Scan(&performanceTableDefinition); err != nil {
+		return fmt.Errorf("restore paper performance definition: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(performanceTableDefinition), " ")) != strings.ToLower(strings.Join(strings.Fields(expectedPerformanceTable), " ")) {
+		return errors.New("restore paper performance lacks the required table definition")
+	}
+	var performanceIndexDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='index' AND name='paper_performance_events_account_idx' AND tbl_name='paper_performance_events'`).Scan(&performanceIndexDefinition); err != nil {
+		return fmt.Errorf("restore paper performance account index: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(performanceIndexDefinition), " ")) !=
+		"create index paper_performance_events_account_idx on paper_performance_events(account_ref, sequence desc)" {
+		return errors.New("restore paper performance lacks the required account index")
+	}
+	expectedPerformanceStateTrigger := strings.ToLower(strings.Join(strings.Fields(strings.TrimSuffix(
+		strings.TrimSpace(performanceSQL[performanceStateTriggerStart:]), ";")), " "))
+	strategyPerformanceMigration, err := migrationFiles.ReadFile("migrations/019_paper_strategy_performance_events.sql")
+	if err != nil {
+		return fmt.Errorf("restore paper strategy performance definition source: %w", err)
+	}
+	strategyPerformanceSQL := string(strategyPerformanceMigration)
+	strategyPerformanceTableStart := strings.Index(strategyPerformanceSQL, "CREATE TABLE paper_strategy_performance_events")
+	strategyPerformanceIndexStart := strings.Index(strategyPerformanceSQL, "CREATE INDEX paper_strategy_performance_events_window_idx")
+	strategyPerformanceUpdateTriggerStart := strings.Index(strategyPerformanceSQL, "CREATE TRIGGER paper_strategy_performance_events_no_update")
+	strategyPerformanceStateTriggerStart := strings.Index(strategyPerformanceSQL, "CREATE TRIGGER paper_strategy_performance_events_state_guard")
+	if strategyPerformanceTableStart < 0 || strategyPerformanceIndexStart <= strategyPerformanceTableStart ||
+		strategyPerformanceUpdateTriggerStart <= strategyPerformanceIndexStart ||
+		strategyPerformanceStateTriggerStart <= strategyPerformanceUpdateTriggerStart {
+		return errors.New("restore paper strategy performance definition source is invalid")
+	}
+	expectedStrategyPerformanceTable := strings.TrimSuffix(strings.TrimSpace(
+		strategyPerformanceSQL[strategyPerformanceTableStart:strategyPerformanceIndexStart]), ";")
+	var strategyPerformanceTableDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='paper_strategy_performance_events'`).Scan(&strategyPerformanceTableDefinition); err != nil {
+		return fmt.Errorf("restore paper strategy performance definition: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(strategyPerformanceTableDefinition), " ")) !=
+		strings.ToLower(strings.Join(strings.Fields(expectedStrategyPerformanceTable), " ")) {
+		return errors.New("restore paper strategy performance lacks the required table definition")
+	}
+	var strategyPerformanceIndexDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='index' AND name='paper_strategy_performance_events_window_idx' AND tbl_name='paper_strategy_performance_events'`).Scan(&strategyPerformanceIndexDefinition); err != nil {
+		return fmt.Errorf("restore paper strategy performance window index: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(strategyPerformanceIndexDefinition), " ")) !=
+		"create index paper_strategy_performance_events_window_idx on paper_strategy_performance_events(account_ref, strategy_selection_event_id, sequence desc)" {
+		return errors.New("restore paper strategy performance lacks the required window index")
+	}
+	policyMigrationForTable, err := migrationFiles.ReadFile("migrations/020_paper_performance_policy_events.sql")
+	if err != nil {
+		return fmt.Errorf("restore paper performance policy definition source: %w", err)
+	}
+	policySQLForTable := string(policyMigrationForTable)
+	policyTableStart := strings.Index(policySQLForTable, "CREATE TABLE paper_performance_policy_events")
+	policyIndexStart := strings.Index(policySQLForTable, "CREATE INDEX execution_authority_latest_idx")
+	if policyTableStart < 0 || policyIndexStart <= policyTableStart {
+		return errors.New("restore paper performance policy definition source is invalid")
+	}
+	expectedPolicyTable := strings.TrimSuffix(strings.TrimSpace(policySQLForTable[policyTableStart:policyIndexStart]), ";")
+	var policyTableDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='paper_performance_policy_events'`).Scan(&policyTableDefinition); err != nil {
+		return fmt.Errorf("restore paper performance policy definition: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(policyTableDefinition), " ")) !=
+		strings.ToLower(strings.Join(strings.Fields(expectedPolicyTable), " ")) {
+		return errors.New("restore paper performance policy lacks the required table definition")
+	}
+	var policyIndexDefinition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='index' AND name='paper_performance_policy_events_account_selection_idx' AND tbl_name='paper_performance_policy_events'`).Scan(&policyIndexDefinition); err != nil {
+		return fmt.Errorf("restore paper performance policy index: %w", err)
+	}
+	if strings.ToLower(strings.Join(strings.Fields(policyIndexDefinition), " ")) !=
+		"create index paper_performance_policy_events_account_selection_idx on paper_performance_policy_events(account_ref, strategy_selection_event_id, sequence desc)" {
+		return errors.New("restore paper performance policy lacks the required account selection index")
+	}
+	expectedStrategyPerformanceStateTrigger := strings.ToLower(strings.Join(strings.Fields(strings.TrimSuffix(
+		strings.TrimSpace(strategyPerformanceSQL[strategyPerformanceStateTriggerStart:]), ";")), " "))
+
+	for _, table := range []string{"events", "order_events", "execution_authority_events", "risk_reservations", "paper_execution_authorizations", "broker_snapshots", "broker_snapshot_reconciliations", "strategy_research_evidence", "strategy_selection_events", "paper_evaluation_events", "paper_accounting_sessions", "paper_market_bar_observations", "paper_signal_events", "paper_performance_events", "paper_strategy_performance_events", "paper_performance_policy_events", "fx_observations", "security_price_observations", "instrument_listing_events"} {
+		var sequenceType string
+		var sequencePK, primaryKeyColumns, primaryKeyIndexes int
+		if err := db.QueryRow(`SELECT type, pk FROM pragma_table_info(?) WHERE name='sequence'`, table).Scan(&sequenceType, &sequencePK); err != nil {
+			return fmt.Errorf("restore %s sequence: %w", table, err)
+		}
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE pk>0`, table).Scan(&primaryKeyColumns); err != nil {
+			return fmt.Errorf("restore %s primary key: %w", table, err)
+		}
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_index_list(?) WHERE origin='pk'`, table).Scan(&primaryKeyIndexes); err != nil {
+			return fmt.Errorf("restore %s primary-key index: %w", table, err)
+		}
+		if !strings.EqualFold(sequenceType, "INTEGER") || sequencePK != 1 || primaryKeyColumns != 1 || primaryKeyIndexes != 0 {
+			return fmt.Errorf("restore %s sequence is not the integer primary key", table)
+		}
+	}
+	var foreignKeys, matchingForeignKeys int
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(("table"='order_idempotency' AND "from"='order_id' AND "to"='order_id') OR ("table"='risk_reservations' AND "from"='authority_reservation_id' AND "to"='reservation_id') OR ("table"='paper_execution_authorizations' AND "from"='paper_authorization_id' AND "to"='authorization_id')), 0) FROM pragma_foreign_key_list(?)`, "order_events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore order foreign key: %w", err)
+	}
+	if foreignKeys != 3 || matchingForeignKeys != 3 {
+		return errors.New("restore order events lack required order or authority foreign keys")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(("table"='order_idempotency' AND "from"='order_id' AND "to"='order_id') OR ("table"='execution_authority_events' AND "from"='authority_event_id' AND "to"='event_id')), 0) FROM pragma_foreign_key_list(?)`, "risk_reservations").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore risk reservation foreign keys: %w", err)
+	}
+	if foreignKeys != 2 || matchingForeignKeys != 2 {
+		return errors.New("restore risk reservations lack required order or authority foreign keys")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(
+		("table"='order_idempotency' AND "from"='order_id' AND "to"='order_id') OR
+		("table"='paper_accounting_sessions' AND "from"='paper_accounting_session_id' AND "to"='session_id') OR
+		("table"='execution_authority_events' AND "from"='authority_event_id' AND "to"='event_id')), 0)
+		FROM pragma_foreign_key_list(?)`, "paper_execution_authorizations").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore paper authorization foreign keys: %w", err)
+	}
+	if foreignKeys != 3 || matchingForeignKeys != 3 {
+		return errors.New("restore paper authorizations lack required order, session, or authority foreign keys")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM("table"='broker_snapshots' AND "from"='snapshot_id' AND "to"='snapshot_id'), 0) FROM pragma_foreign_key_list(?)`, "broker_snapshot_reconciliations").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore broker reconciliation foreign key: %w", err)
+	}
+	if foreignKeys != 1 || matchingForeignKeys != 1 {
+		return errors.New("restore broker reconciliations lack the required snapshot foreign key")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(("table"='strategy_research_evidence' AND "from"='candidate_result_sha256' AND "to"='result_sha256') OR ("table"='strategy_selection_events' AND "from"='source_event_id' AND "to"='event_id') OR ("table"='paper_performance_policy_events' AND "from"='paper_performance_policy_event_id' AND "to"='policy_event_id') OR ("table"='paper_promotion_decisions' AND "from"='paper_promotion_attempt_id' AND "to"='attempt_id')), 0) FROM pragma_foreign_key_list(?)`, "strategy_selection_events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore strategy selection foreign keys: %w", err)
+	}
+	if foreignKeys != 4 || matchingForeignKeys != 4 {
+		return errors.New("restore strategy selection events lack required evidence, source, policy, or promotion foreign keys")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM("table"='paper_performance_policy_events' AND "from"='paper_performance_policy_event_id' AND "to"='policy_event_id'), 0) FROM pragma_foreign_key_list(?)`, "execution_authority_events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore execution authority policy foreign key: %w", err)
+	}
+	if foreignKeys != 1 || matchingForeignKeys != 1 {
+		return errors.New("restore execution authority lacks the required policy foreign key")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(("table"='strategy_research_evidence' AND "from"='strategy_result_sha256' AND "to"='result_sha256') OR ("table"='strategy_selection_events' AND "from"='strategy_selection_event_id' AND "to"='event_id')), 0) FROM pragma_foreign_key_list(?)`, "paper_evaluation_events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore paper evaluation foreign keys: %w", err)
+	}
+	if foreignKeys != 2 || matchingForeignKeys != 2 {
+		return errors.New("restore paper evaluations lack required strategy foreign keys")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(("table"='strategy_research_evidence' AND "from"='strategy_result_sha256' AND "to"='result_sha256') OR ("table"='strategy_selection_events' AND "from"='strategy_selection_event_id' AND "to"='event_id')), 0) FROM pragma_foreign_key_list(?)`, "paper_accounting_sessions").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore paper accounting foreign keys: %w", err)
+	}
+	if foreignKeys != 2 || matchingForeignKeys != 2 {
+		return errors.New("restore paper accounting sessions lack required strategy foreign keys")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(
+		("table"='paper_accounting_sessions' AND "from"='paper_accounting_session_id' AND "to"='session_id') OR
+		("table"='strategy_research_evidence' AND "from"='strategy_result_sha256' AND "to"='result_sha256') OR
+		("table"='strategy_selection_events' AND "from"='strategy_selection_event_id' AND "to"='event_id') OR
+		("table"='paper_market_bar_observations' AND "from"='signal_bar_observation_id' AND "to"='observation_id')), 0)
+		FROM pragma_foreign_key_list(?)`, "paper_signal_events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore paper signal foreign keys: %w", err)
+	}
+	if foreignKeys != 4 || matchingForeignKeys != 4 {
+		return errors.New("restore paper signals lack required session, strategy, or bar foreign keys")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(
+		("table"='paper_accounting_sessions' AND "from"='paper_accounting_session_id' AND "to"='session_id') OR
+		("table"='strategy_selection_events' AND "from"='strategy_selection_event_id' AND "to"='event_id')), 0)
+		FROM pragma_foreign_key_list(?)`, "paper_performance_events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore paper performance foreign keys: %w", err)
+	}
+	if foreignKeys != 2 || matchingForeignKeys != 2 {
+		return errors.New("restore paper performance lacks required session or selection foreign keys")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(
+		("table"='paper_accounting_sessions' AND "from"='paper_accounting_session_id' AND "to"='session_id') OR
+		("table"='strategy_selection_events' AND "from"='strategy_selection_event_id' AND "to"='event_id') OR
+		("table"='strategy_research_evidence' AND "from"='selected_strategy_result_ref' AND "to"='result_sha256') OR
+		("table"='paper_performance_events' AND "from"='baseline_performance_id' AND "to"='performance_id') OR
+		("table"='paper_performance_events' AND "from"='latest_performance_id' AND "to"='performance_id')), 0)
+		FROM pragma_foreign_key_list(?)`, "paper_strategy_performance_events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore paper strategy performance foreign keys: %w", err)
+	}
+	if foreignKeys != 5 || matchingForeignKeys != 5 {
+		return errors.New("restore paper strategy performance lacks required source foreign keys")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(
+		("table"='paper_accounting_sessions' AND "from"='paper_accounting_session_id' AND "to"='session_id') OR
+		("table"='strategy_selection_events' AND "from"='strategy_selection_event_id' AND "to"='event_id') OR
+		("table"='strategy_research_evidence' AND "from"='selected_strategy_result_ref' AND "to"='result_sha256') OR
+		("table"='paper_strategy_performance_events' AND "from"='strategy_performance_id' AND "to"='strategy_performance_id') OR
+		("table"='paper_performance_events' AND "from"='baseline_performance_id' AND "to"='performance_id') OR
+		("table"='paper_performance_events' AND "from"='latest_performance_id' AND "to"='performance_id') OR
+		("table"='strategy_selection_events' AND "from"='rollback_selection_event_id' AND "to"='event_id')), 0)
+		FROM pragma_foreign_key_list(?)`, "paper_performance_policy_events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore paper performance policy foreign keys: %w", err)
+	}
+	if foreignKeys != 7 || matchingForeignKeys != 7 {
+		return errors.New("restore paper performance policy lacks required source or rollback foreign keys")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(("table"='events' AND "from"='account_id' AND "to"='account_id') OR ("table"='events' AND "from"='corrects_source_event_id' AND "to"='source_event_id')), 0) FROM pragma_foreign_key_list(?)`, "events").Scan(&foreignKeys, &matchingForeignKeys); err != nil {
+		return fmt.Errorf("restore cash void foreign key: %w", err)
+	}
+	if foreignKeys != 2 || matchingForeignKeys != 2 {
+		return errors.New("restore events lack the required cash-void foreign key")
+	}
+	foreignKeyRows, err := db.Query(`PRAGMA foreign_key_check`)
+	if err != nil {
+		return err
+	}
+	if foreignKeyRows.Next() {
+		foreignKeyRows.Close()
+		return errors.New("restore candidate has broken foreign keys")
+	}
+	if err := foreignKeyRows.Err(); err != nil {
+		foreignKeyRows.Close()
+		return err
+	}
+	if err := foreignKeyRows.Close(); err != nil {
+		return err
+	}
+	required := map[string]struct {
+		table     string
+		operation string
+	}{
+		"order_idempotency_no_update":                 {"order_idempotency", "update"},
+		"order_idempotency_no_delete":                 {"order_idempotency", "delete"},
+		"order_events_no_update":                      {"order_events", "update"},
+		"order_events_no_delete":                      {"order_events", "delete"},
+		"execution_authority_events_no_update":        {"execution_authority_events", "update"},
+		"execution_authority_events_no_delete":        {"execution_authority_events", "delete"},
+		"risk_reservations_no_update":                 {"risk_reservations", "update"},
+		"risk_reservations_no_delete":                 {"risk_reservations", "delete"},
+		"paper_execution_authorizations_no_update":    {"paper_execution_authorizations", "update"},
+		"paper_execution_authorizations_no_delete":    {"paper_execution_authorizations", "delete"},
+		"broker_snapshots_no_update":                  {"broker_snapshots", "update"},
+		"broker_snapshots_no_delete":                  {"broker_snapshots", "delete"},
+		"broker_snapshot_reconciliations_no_update":   {"broker_snapshot_reconciliations", "update"},
+		"broker_snapshot_reconciliations_no_delete":   {"broker_snapshot_reconciliations", "delete"},
+		"events_no_update":                            {"events", "update"},
+		"events_no_delete":                            {"events", "delete"},
+		"strategy_research_evidence_no_update":        {"strategy_research_evidence", "update"},
+		"strategy_research_evidence_no_delete":        {"strategy_research_evidence", "delete"},
+		"strategy_selection_events_no_update":         {"strategy_selection_events", "update"},
+		"strategy_selection_events_no_delete":         {"strategy_selection_events", "delete"},
+		"paper_evaluation_events_no_update":           {"paper_evaluation_events", "update"},
+		"paper_evaluation_events_no_delete":           {"paper_evaluation_events", "delete"},
+		"paper_accounting_sessions_no_update":         {"paper_accounting_sessions", "update"},
+		"paper_accounting_sessions_no_delete":         {"paper_accounting_sessions", "delete"},
+		"paper_market_bar_observations_no_update":     {"paper_market_bar_observations", "update"},
+		"paper_market_bar_observations_no_delete":     {"paper_market_bar_observations", "delete"},
+		"paper_signal_events_no_update":               {"paper_signal_events", "update"},
+		"paper_signal_events_no_delete":               {"paper_signal_events", "delete"},
+		"paper_performance_events_no_update":          {"paper_performance_events", "update"},
+		"paper_performance_events_no_delete":          {"paper_performance_events", "delete"},
+		"paper_strategy_performance_events_no_update": {"paper_strategy_performance_events", "update"},
+		"paper_strategy_performance_events_no_delete": {"paper_strategy_performance_events", "delete"},
+		"paper_performance_policy_events_no_update":   {"paper_performance_policy_events", "update"},
+		"paper_performance_policy_events_no_delete":   {"paper_performance_policy_events", "delete"},
+		"fx_observations_no_update":                   {"fx_observations", "update"},
+		"fx_observations_no_delete":                   {"fx_observations", "delete"},
+		"security_price_observations_no_update":       {"security_price_observations", "update"},
+		"security_price_observations_no_delete":       {"security_price_observations", "delete"},
+		"instrument_listing_events_no_update":         {"instrument_listing_events", "update"},
+		"instrument_listing_events_no_delete":         {"instrument_listing_events", "delete"},
+	}
+	rows, err := db.Query(`SELECT name, tbl_name, sql FROM sqlite_master WHERE type='trigger'`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name, table, definition string
+		if err := rows.Scan(&name, &table, &definition); err != nil {
+			return err
+		}
+		expected, ok := required[name]
+		normalized := strings.ToLower(strings.Join(strings.Fields(definition), " "))
+		expectedSQL := fmt.Sprintf("create trigger %s before %s on %s begin select raise(abort, '%s is insert-only'); end",
+			name, expected.operation, expected.table, expected.table)
+		if ok && expected.table == table && normalized == expectedSQL {
+			delete(required, name)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if len(required) != 0 {
+		return errors.New("restore candidate is missing insert-only state triggers")
+	}
+	policyMigration, err := migrationFiles.ReadFile("migrations/020_paper_performance_policy_events.sql")
+	if err != nil {
+		return fmt.Errorf("restore paper performance policy definition source: %w", err)
+	}
+	policyTriggerSQL := map[string]string{}
+	for _, name := range []string{"strategy_selection_events_state_guard", "execution_authority_events_state_guard", "paper_performance_policy_events_state_guard"} {
+		definition, err := migrationTriggerDefinition(string(policyMigration), name)
+		if err != nil {
+			return fmt.Errorf("restore paper performance policy trigger %s: %w", name, err)
+		}
+		policyTriggerSQL[name] = definition
+	}
+	promotionMigration, err := migrationFiles.ReadFile("migrations/027_paper_promotion.sql")
+	if err != nil {
+		return err
+	}
+	policyTriggerSQL["strategy_selection_events_state_guard"], err = migrationTriggerDefinition(string(promotionMigration), "strategy_selection_events_state_guard")
+	if err != nil {
+		return err
+	}
+	guardSQL := map[string]struct {
+		table string
+		sql   string
+	}{
+		"order_events_risk_reservation_guard":            {"order_events", expectedRiskGuard},
+		"order_events_dispatch_reservation_guard":        {"order_events", expectedDispatchGuard},
+		"order_events_non_authority_reservation_guard":   {"order_events", expectedNonAuthorityGuard},
+		"order_events_capitalized_paper_fill_guard":      {"order_events", expectedCapitalizedFillGuard},
+		"strategy_selection_events_state_guard":          {"strategy_selection_events", policyTriggerSQL["strategy_selection_events_state_guard"]},
+		"execution_authority_events_state_guard":         {"execution_authority_events", policyTriggerSQL["execution_authority_events_state_guard"]},
+		"paper_accounting_sessions_state_guard":          {"paper_accounting_sessions", strings.ToLower(strings.Join(strings.Fields(expectedPaperAccountingStateTrigger), " "))},
+		"order_idempotency_legacy_paper_signal_guard":    {"order_idempotency", expectedLegacyAuthorizationGuard},
+		"order_idempotency_capitalized_paper_guard":      {"order_idempotency", expectedCapitalizedOrderGuard},
+		"paper_execution_authorizations_state_guard":     {"paper_execution_authorizations", expectedAuthorizationStateGuard},
+		"paper_signal_events_capitalized_quantity_guard": {"paper_signal_events", expectedPaperSignalQuantityGuard},
+		"paper_signal_events_state_guard":                {"paper_signal_events", strings.ToLower(strings.Join(strings.Fields(expectedPaperSignalStateTrigger), " "))},
+		"paper_performance_events_state_guard":           {"paper_performance_events", expectedPerformanceStateTrigger},
+		"paper_strategy_performance_events_state_guard":  {"paper_strategy_performance_events", expectedStrategyPerformanceStateTrigger},
+		"paper_performance_policy_events_state_guard":    {"paper_performance_policy_events", policyTriggerSQL["paper_performance_policy_events_state_guard"]},
+		"events_cash_void_guard":                         {"events", "create trigger events_cash_void_guard before insert on events when new.type = 'cash_void' begin select case when not exists ( select 1 from events target where target.account_id = new.account_id and target.source_event_id = new.corrects_source_event_id and target.type in ('deposit', 'withdrawal', 'dividend', 'fee', 'tax') and target.currency = new.currency and rtrim(target.occurred_at, 'z') <= rtrim(new.occurred_at, 'z') and new.amount = case when target.amount glob '-*' then substr(target.amount, 2) else '-' || target.amount end ) then raise(abort, 'cash void must exactly reverse an eligible event') end; end"},
+	}
+	for name, expected := range guardSQL {
+		var definition string
+		if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='trigger' AND name=? AND tbl_name=?`, name, expected.table).Scan(&definition); err != nil {
+			return fmt.Errorf("restore authority guard %s: %w", name, err)
+		}
+		normalized := strings.ToLower(strings.Join(strings.Fields(definition), " "))
+		if normalized != expected.sql {
+			return fmt.Errorf("restore authority guard %s does not match the required definition", name)
+		}
+	}
+	return nil
+}
+
+func migrationTriggerDefinition(script, name string) (string, error) {
+	prefix := "CREATE TRIGGER " + name
+	start := strings.Index(script, prefix)
+	if start < 0 {
+		return "", errors.New("trigger is missing")
+	}
+	rest := script[start:]
+	if next := strings.Index(rest[len(prefix):], "\nCREATE TRIGGER "); next >= 0 {
+		rest = rest[:len(prefix)+next]
+	}
+	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSuffix(strings.TrimSpace(rest), ";")), " ")), nil
+}
+
+func hasUniqueIndex(db *sql.DB, table string, expected []string, origin string) (bool, error) {
+	rows, err := db.Query(`SELECT name FROM pragma_index_list(?) WHERE "unique"=1 AND partial=0 AND origin=?`, table, origin)
+	if err != nil {
+		return false, err
+	}
+	var indexes []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return false, err
+		}
+		indexes = append(indexes, name)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return false, err
+	}
+	if err := rows.Close(); err != nil {
+		return false, err
+	}
+	for _, index := range indexes {
+		columnRows, err := db.Query(`SELECT name FROM pragma_index_info(?) ORDER BY seqno`, index)
+		if err != nil {
+			return false, err
+		}
+		var columns []string
+		for columnRows.Next() {
+			var column sql.NullString
+			if err := columnRows.Scan(&column); err != nil {
+				columnRows.Close()
+				return false, err
+			}
+			if column.Valid {
+				columns = append(columns, column.String)
+			}
+		}
+		if err := columnRows.Err(); err != nil {
+			columnRows.Close()
+			return false, err
+		}
+		if err := columnRows.Close(); err != nil {
+			return false, err
+		}
+		if len(columns) == len(expected) {
+			matches := true
+			for i := range columns {
+				matches = matches && columns[i] == expected[i]
+			}
+			if matches {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func verifyLegacyV11SourceManifest(ctx context.Context, db *sql.DB, manifest BackupManifest) error {
+	orders, err := proveOrderRecovery(ctx, db)
+	if err != nil {
+		return fmt.Errorf("v11 source order recovery proof: %w", err)
+	}
+	broker, err := proveBrokerRecovery(ctx, db)
+	if err != nil {
+		return fmt.Errorf("v11 source broker recovery proof: %w", err)
+	}
+	strategy, err := proveStrategyRegistryRecovery(ctx, db)
+	if err != nil {
+		return fmt.Errorf("v11 source strategy recovery proof: %w", err)
+	}
+	paper, err := provePaperAccountingRecovery(ctx, db)
+	if err != nil {
+		return fmt.Errorf("v11 source paper accounting recovery proof: %w", err)
+	}
+	fx, err := proveFXObservationRecovery(ctx, db)
+	if err != nil {
+		return fmt.Errorf("v11 source FX recovery proof: %w", err)
+	}
+	prices, err := proveSecurityPriceObservationRecovery(ctx, db)
+	if err != nil {
+		return fmt.Errorf("v11 source security price recovery proof: %w", err)
+	}
+	listings, err := proveInstrumentListingRecovery(ctx, db)
+	if err != nil {
+		return fmt.Errorf("v11 source listing recovery proof: %w", err)
+	}
+	receipt := manifest.VerificationReceipt
+	if manifest.OrderStateSHA256 != orders.SHA256 || receipt.CandidateOrderStateSHA256 != orders.SHA256 ||
+		manifest.OrderCount != orders.Orders || manifest.OrderEventCount != orders.Events ||
+		manifest.ExecutionAuthoritySHA256 != orders.ExecutionAuthoritySHA256 || manifest.ExecutionAuthorityEventCount != orders.ExecutionAuthorityEvents ||
+		manifest.RiskReservationSHA256 != orders.RiskReservationSHA256 || manifest.RiskReservationCount != orders.RiskReservations ||
+		manifest.BrokerStateSHA256 != broker.SHA256 || receipt.CandidateBrokerStateSHA256 != broker.SHA256 ||
+		manifest.BrokerSnapshotCount != broker.Snapshots || manifest.BrokerReconciliationCount != broker.Reconciliations ||
+		manifest.StrategyRegistrySHA256 != strategy.SHA256 || receipt.CandidateStrategyRegistrySHA256 != strategy.SHA256 ||
+		manifest.StrategyEvidenceCount != strategy.Evidence || manifest.StrategySelectionEventCount != strategy.Events ||
+		manifest.PaperEvaluationEventCount != strategy.Evaluations || manifest.SelectedStrategyResultSHA256 != strategy.SelectedResultSHA256 ||
+		manifest.PaperAccountingStateSHA256 != paper.SHA256 || receipt.CandidatePaperAccountingStateSHA256 != paper.SHA256 ||
+		manifest.PaperAccountingSessionCount != paper.Sessions || manifest.PaperMarketBarObservationCount != paper.MarketBars ||
+		manifest.PaperSignalEventCount != paper.Signals || manifest.PaperExecutionAuthorizationCount != paper.Authorizations ||
+		manifest.PaperCapitalizedFillCount != paper.CapitalizedFills ||
+		manifest.FXObservationStateSHA256 != fx.SHA256 || receipt.CandidateFXObservationStateSHA256 != fx.SHA256 || manifest.FXObservationCount != fx.Observations ||
+		manifest.SecurityPriceObservationStateSHA256 != prices.SHA256 || receipt.CandidateSecurityPriceObservationStateSHA256 != prices.SHA256 || manifest.SecurityPriceObservationCount != prices.Observations ||
+		manifest.InstrumentListingStateSHA256 != listings.SHA256 || receipt.CandidateInstrumentListingStateSHA256 != listings.SHA256 ||
+		manifest.InstrumentListingEventCount != listings.Events || manifest.ActiveInstrumentListingCount != listings.Active {
+		return errors.New("v11 source recovery proof mismatch")
+	}
+	return nil
+}
+
+func verifyLegacyV12SourceManifest(ctx context.Context, db *sql.DB, manifest BackupManifest) error {
+	if err := verifyLegacyV11SourceManifest(ctx, db, manifest); err != nil {
+		return fmt.Errorf("v12 source prerequisite proof: %w", err)
+	}
+	performance, err := provePaperPerformanceRecovery(ctx, db)
+	if err != nil {
+		return fmt.Errorf("v12 source paper performance recovery proof: %w", err)
+	}
+	receipt := manifest.VerificationReceipt
+	if manifest.PaperPerformanceStateSHA256 != performance.SHA256 ||
+		receipt.CandidatePaperPerformanceStateSHA256 != performance.SHA256 ||
+		manifest.PaperPerformanceEventCount != performance.Events || manifest.PaperPerformanceMarkCount != performance.Marks {
+		return errors.New("v12 source paper performance recovery proof mismatch")
+	}
+	return nil
+}
+
+func verifyLegacyV13SourceManifest(ctx context.Context, db *sql.DB, manifest BackupManifest) error {
+	if err := verifyLegacyV12SourceManifest(ctx, db, manifest); err != nil {
+		return fmt.Errorf("v13 source prerequisite proof: %w", err)
+	}
+	strategy, err := provePaperStrategyPerformanceRecovery(ctx, db)
+	if err != nil {
+		return fmt.Errorf("v13 source paper strategy performance recovery proof: %w", err)
+	}
+	receipt := manifest.VerificationReceipt
+	if manifest.PaperStrategyPerformanceStateSHA256 != strategy.SHA256 ||
+		receipt.CandidatePaperStrategyPerformanceStateSHA256 != strategy.SHA256 ||
+		manifest.PaperStrategyPerformanceEventCount != strategy.Events ||
+		manifest.PaperStrategyPerformanceSampleCount != strategy.Samples {
+		return errors.New("v13 source paper strategy performance recovery proof mismatch")
+	}
+	return nil
+}
+
+func verifyLegacyV14SourceManifest(ctx context.Context, db *sql.DB, manifest BackupManifest) error {
+	if err := verifyLegacyV13SourceManifest(ctx, db, manifest); err != nil {
+		return fmt.Errorf("v14 source prerequisite proof: %w", err)
+	}
+	policy, err := provePaperPerformancePolicyRecovery(ctx, db)
+	if err != nil {
+		return fmt.Errorf("v14 source paper performance policy recovery proof: %w", err)
+	}
+	receipt := manifest.VerificationReceipt
+	if manifest.PaperPerformancePolicyStateSHA256 != policy.SHA256 ||
+		receipt.CandidatePaperPerformancePolicyStateSHA256 != policy.SHA256 ||
+		manifest.PaperPerformancePolicyEventCount != policy.Events ||
+		manifest.PaperPerformancePolicyActionCount != policy.Actions ||
+		manifest.PaperPerformancePolicyAutomaticHaltCount != policy.AutomaticHalts {
+		return errors.New("v14 source paper performance policy recovery proof mismatch")
+	}
+	return nil
+}
+
+func paperPromotionManifestMatches(manifest BackupManifest, proof paperPromotionRecoveryProof) bool {
+	return manifest.PaperPromotionStateSHA256 == proof.SHA256 && manifest.PaperPromotionClaimCount == proof.Claims &&
+		manifest.PaperPromotionDecisionCount == proof.Decisions && manifest.VerificationReceipt.CandidatePaperPromotionStateSHA256 == proof.SHA256
+}
+
+func verifyManifest(path, goldenPath, manifestPath string) (resultErr error) {
+	manifestBytes, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return err
+	}
+	var manifest BackupManifest
+	dec := json.NewDecoder(bytes.NewReader(manifestBytes))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&manifest); err != nil {
+		return fmt.Errorf("backup manifest: %w", err)
+	}
+	currentV21Manifest := manifest.FormatVersion == backupFormat && manifest.SchemaVersion == backupSchema
+	legacyV20Manifest := manifest.FormatVersion == "omni-folio-backup.v20" && manifest.SchemaVersion == "omni-folio.sqlite.v26"
+	hasWatchlistManifest := currentV21Manifest || legacyV20Manifest
+	legacyV19Manifest := manifest.FormatVersion == "omni-folio-backup.v19" && manifest.SchemaVersion == "omni-folio.sqlite.v25"
+	hasOwnerPriceManifest := hasWatchlistManifest || legacyV19Manifest
+	legacyV18Manifest := manifest.FormatVersion == "omni-folio-backup.v18" && manifest.SchemaVersion == "omni-folio.sqlite.v24"
+	hasOwnerFXManifest := hasOwnerPriceManifest || legacyV18Manifest
+	legacyV17Manifest := manifest.FormatVersion == "omni-folio-backup.v17" && manifest.SchemaVersion == "omni-folio.sqlite.v23"
+	legacyV16Manifest := manifest.FormatVersion == "omni-folio-backup.v16" && manifest.SchemaVersion == "omni-folio.sqlite.v22"
+	hasBenchmarkManifest := hasOwnerFXManifest || legacyV17Manifest
+	// Backup format is independent of ledger replay authority: v16 and later remain nonarchival.
+	nonArchivalManifest := hasBenchmarkManifest || legacyV16Manifest
+	legacyV15Manifest := manifest.FormatVersion == "omni-folio-backup.v15" && manifest.SchemaVersion == "omni-folio.sqlite.v21"
+	currentManifest := nonArchivalManifest || legacyV15Manifest
+	legacyV14Manifest := manifest.FormatVersion == legacyPaperRunnerFormat && manifest.SchemaVersion == legacyPaperRunnerSchema
+	legacyV13Manifest := manifest.FormatVersion == legacyPaperPerformancePolicyFormat && manifest.SchemaVersion == legacyPaperPerformancePolicySchema
+	legacyV12Manifest := manifest.FormatVersion == legacyStrategyPerformanceFormat && manifest.SchemaVersion == legacyStrategyPerformanceSchema
+	legacyV11Manifest := manifest.FormatVersion == legacyPaperPerformanceBackupFormat && manifest.SchemaVersion == legacyPaperPerformanceBackupSchema
+	legacyV5Manifest := manifest.FormatVersion == legacyBackupFormat &&
+		(manifest.SchemaVersion == "omni-folio.sqlite.v8" || manifest.SchemaVersion == "omni-folio.sqlite.v9")
+	legacyV6Manifest := manifest.FormatVersion == legacyFXBackupFormat && manifest.SchemaVersion == "omni-folio.sqlite.v10"
+	legacyV7Manifest := manifest.FormatVersion == legacyPriceBackupFormat &&
+		(manifest.SchemaVersion == "omni-folio.sqlite.v11" || manifest.SchemaVersion == "omni-folio.sqlite.v12")
+	legacyV8Manifest := manifest.FormatVersion == legacyListingBackupFormat && manifest.SchemaVersion == "omni-folio.sqlite.v13"
+	legacyV9Manifest := manifest.FormatVersion == legacyPaperAccountingBackupFormat && manifest.SchemaVersion == legacyPaperAccountingBackupSchema
+	legacyV10Manifest := manifest.FormatVersion == legacyPaperFillBackupFormat && manifest.SchemaVersion == legacyPaperFillBackupSchema
+	legacyManifest := legacyV5Manifest || legacyV6Manifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest
+	if (!currentManifest && !legacyManifest) || manifest.Encryption.Encrypted || manifest.Encryption.Algorithm != "none" {
+		return errors.New("unsupported backup manifest version or encryption")
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(manifestBytes, &fields); err != nil {
+		return fmt.Errorf("backup manifest fields: %w", err)
+	}
+	var receiptFields map[string]json.RawMessage
+	if err := json.Unmarshal(fields["verification_receipt"], &receiptFields); err != nil {
+		return fmt.Errorf("backup verification receipt fields: %w", err)
+	}
+	if err := requireBenchmarkManifestFields(fields, receiptFields, hasBenchmarkManifest); err != nil {
+		return err
+	}
+	if err := requireOwnerFXManifestFields(fields, receiptFields, hasOwnerFXManifest); err != nil {
+		return err
+	}
+	if err := requireOwnerPriceManifestFields(fields, receiptFields, hasOwnerPriceManifest); err != nil {
+		return err
+	}
+	if err := requireWatchlistManifestFields(fields, receiptFields, hasWatchlistManifest); err != nil {
+		return err
+	}
+	for _, group := range []struct {
+		fields map[string]json.RawMessage
+		keys   []string
+	}{
+		{fields, []string{"paper_promotion_state_sha256", "paper_promotion_claim_count", "paper_promotion_decision_count"}},
+		{receiptFields, []string{"candidate_paper_promotion_state_sha256"}},
+	} {
+		for _, key := range group.keys {
+			value, present := group.fields[key]
+			if currentV21Manifest && (!present || bytes.Equal(bytes.TrimSpace(value), []byte("null"))) {
+				return errors.New("backup omits paper promotion proof")
+			}
+			if !currentV21Manifest && present {
+				return errors.New("legacy backup cannot claim paper promotion proof")
+			}
+		}
+	}
+	if currentManifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
+		if fields["paper_evaluation_event_count"] == nil || fields["paper_accounting_state_sha256"] == nil ||
+			fields["paper_accounting_session_count"] == nil || fields["paper_market_bar_observation_count"] == nil ||
+			fields["paper_signal_event_count"] == nil || fields["paper_execution_authorization_count"] == nil ||
+			fields["paper_capitalized_fill_count"] == nil || receiptFields["candidate_paper_accounting_state_sha256"] == nil {
+			return errors.New("current backup manifest omits paper accounting proof")
+		}
+	}
+	if currentManifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
+		if fields["paper_performance_state_sha256"] == nil || fields["paper_performance_event_count"] == nil ||
+			fields["paper_performance_mark_count"] == nil || receiptFields["candidate_paper_performance_state_sha256"] == nil ||
+			receiptFields["paper_performance_check"] == nil {
+			return errors.New("current backup manifest omits paper performance proof")
+		}
+	}
+	if currentManifest || legacyV13Manifest || legacyV14Manifest {
+		if fields["paper_strategy_performance_state_sha256"] == nil || fields["paper_strategy_performance_event_count"] == nil ||
+			fields["paper_strategy_performance_sample_count"] == nil || receiptFields["candidate_paper_strategy_performance_state_sha256"] == nil ||
+			receiptFields["paper_strategy_performance_check"] == nil {
+			return errors.New("current backup manifest omits paper strategy performance proof")
+		}
+	}
+	if currentManifest || legacyV14Manifest {
+		if fields["paper_performance_policy_state_sha256"] == nil || fields["paper_performance_policy_event_count"] == nil ||
+			fields["paper_performance_policy_action_count"] == nil || fields["paper_performance_policy_automatic_halt_count"] == nil ||
+			receiptFields["candidate_paper_performance_policy_state_sha256"] == nil || receiptFields["paper_performance_policy_check"] == nil {
+			return errors.New("current backup manifest omits paper performance policy proof")
+		}
+	}
+	if currentManifest {
+		if fields["paper_runner_lease_state_sha256"] == nil || fields["paper_runner_lease_count"] == nil ||
+			fields["active_paper_runner_lease_count"] == nil || receiptFields["candidate_paper_runner_lease_state_sha256"] == nil ||
+			receiptFields["paper_runner_lease_check"] == nil {
+			return errors.New("current backup manifest omits paper runner lease proof")
+		}
+	}
+	if legacyV14Manifest && (fields["paper_runner_lease_state_sha256"] != nil || fields["paper_runner_lease_count"] != nil ||
+		fields["active_paper_runner_lease_count"] != nil || receiptFields["candidate_paper_runner_lease_state_sha256"] != nil ||
+		receiptFields["paper_runner_lease_check"] != nil) {
+		return errors.New("v14 backup manifest contains v15 paper runner lease fields")
+	}
+	if legacyV13Manifest && (fields["paper_performance_policy_state_sha256"] != nil || fields["paper_performance_policy_event_count"] != nil ||
+		fields["paper_performance_policy_action_count"] != nil || fields["paper_performance_policy_automatic_halt_count"] != nil ||
+		receiptFields["candidate_paper_performance_policy_state_sha256"] != nil || receiptFields["paper_performance_policy_check"] != nil) {
+		return errors.New("v13 backup manifest contains v14 paper performance policy fields")
+	}
+	if legacyV12Manifest && (fields["paper_strategy_performance_state_sha256"] != nil ||
+		fields["paper_strategy_performance_event_count"] != nil || fields["paper_strategy_performance_sample_count"] != nil ||
+		receiptFields["candidate_paper_strategy_performance_state_sha256"] != nil ||
+		receiptFields["paper_strategy_performance_check"] != nil) {
+		return errors.New("v12 backup manifest contains v13 paper strategy performance fields")
+	}
+	if legacyV11Manifest && (fields["paper_performance_state_sha256"] != nil || fields["paper_performance_event_count"] != nil ||
+		fields["paper_performance_mark_count"] != nil || receiptFields["candidate_paper_performance_state_sha256"] != nil ||
+		receiptFields["paper_performance_check"] != nil) {
+		return errors.New("v11 backup manifest contains v12 paper performance fields")
+	}
+	if legacyV10Manifest {
+		if fields["paper_evaluation_event_count"] == nil || fields["paper_accounting_state_sha256"] == nil ||
+			fields["paper_accounting_session_count"] == nil || fields["fx_observation_state_sha256"] == nil ||
+			fields["fx_observation_count"] == nil || fields["security_price_observation_state_sha256"] == nil ||
+			fields["security_price_observation_count"] == nil || fields["instrument_listing_state_sha256"] == nil ||
+			fields["instrument_listing_event_count"] == nil || fields["active_instrument_listing_count"] == nil ||
+			receiptFields["candidate_paper_accounting_state_sha256"] == nil {
+			return errors.New("v10 backup manifest omits paper accounting proof")
+		}
+		if fields["paper_market_bar_observation_count"] != nil || fields["paper_signal_event_count"] != nil ||
+			fields["paper_execution_authorization_count"] != nil || fields["paper_capitalized_fill_count"] != nil {
+			return errors.New("v10 backup manifest contains v11 paper fields")
+		}
+	}
+	if legacyManifest && !legacyV10Manifest && !legacyV11Manifest && !legacyV12Manifest && !legacyV13Manifest && !legacyV14Manifest {
+		if fields["paper_accounting_state_sha256"] != nil || fields["paper_accounting_session_count"] != nil ||
+			receiptFields["candidate_paper_accounting_state_sha256"] != nil {
+			return errors.New("legacy backup manifest contains paper accounting fields")
+		}
+		if fields["paper_market_bar_observation_count"] != nil || fields["paper_signal_event_count"] != nil ||
+			fields["paper_execution_authorization_count"] != nil || fields["paper_capitalized_fill_count"] != nil {
+			return errors.New("legacy backup manifest contains v11 paper fields")
+		}
+		if !legacyV9Manifest && fields["paper_evaluation_event_count"] != nil {
+			return errors.New("legacy backup manifest contains current paper evaluation fields")
+		}
+		if legacyV9Manifest && fields["paper_evaluation_event_count"] == nil {
+			return errors.New("v9 backup manifest omits required paper evaluation fields")
+		}
+		if !(legacyV8Manifest || legacyV9Manifest) && (fields["instrument_listing_state_sha256"] != nil || fields["instrument_listing_event_count"] != nil ||
+			fields["active_instrument_listing_count"] != nil || receiptFields["instrument_listing_check"] != nil ||
+			receiptFields["candidate_instrument_listing_state_sha256"] != nil) {
+			return errors.New("legacy backup manifest contains current instrument listing fields")
+		}
+		if (legacyV8Manifest || legacyV9Manifest) && (fields["instrument_listing_state_sha256"] == nil || fields["instrument_listing_event_count"] == nil ||
+			fields["active_instrument_listing_count"] == nil || receiptFields["instrument_listing_check"] == nil ||
+			receiptFields["candidate_instrument_listing_state_sha256"] == nil) {
+			return errors.New("legacy backup manifest omits required instrument listing fields")
+		}
+		if (legacyV5Manifest || legacyV6Manifest) && (fields["security_price_observation_state_sha256"] != nil || fields["security_price_observation_count"] != nil) {
+			return errors.New("legacy backup manifest contains current security price observation fields")
+		}
+		if (legacyV5Manifest || legacyV6Manifest) && (receiptFields["security_price_observation_check"] != nil || receiptFields["candidate_security_price_observation_state_sha256"] != nil) {
+			return errors.New("legacy backup receipt contains current security price observation fields")
+		}
+		if legacyV5Manifest && (fields["fx_observation_state_sha256"] != nil || fields["fx_observation_count"] != nil ||
+			receiptFields["fx_observation_check"] != nil || receiptFields["candidate_fx_observation_state_sha256"] != nil) {
+			return errors.New("v5 backup manifest contains v6 FX observation fields")
+		}
+		if legacyV6Manifest && (fields["fx_observation_state_sha256"] == nil || fields["fx_observation_count"] == nil ||
+			receiptFields["fx_observation_check"] == nil || receiptFields["candidate_fx_observation_state_sha256"] == nil) {
+			return errors.New("v6 backup manifest omits required FX observation fields")
+		}
+	}
+	receipt := manifest.VerificationReceipt
+	if receipt.Status != "verified" || receipt.IntegrityCheck != "ok" || receipt.GoldenSnapshotCheck != "ok" || receipt.OrderStateCheck != "ok" || receipt.BrokerStateCheck != "ok" || receipt.StrategyRegistryCheck != "ok" ||
+		((currentManifest || legacyV6Manifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest) && receipt.FXObservationCheck != "ok") ||
+		((currentManifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest) && receipt.SecurityPriceObservationCheck != "ok") ||
+		((currentManifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest) && receipt.InstrumentListingCheck != "ok") ||
+		((currentManifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest) && receipt.PaperPerformanceCheck != "ok") ||
+		((currentManifest || legacyV13Manifest || legacyV14Manifest) && receipt.PaperStrategyPerformanceCheck != "ok") ||
+		((currentManifest || legacyV14Manifest) && receipt.PaperPerformancePolicyCheck != "ok") ||
+		(currentManifest && receipt.PaperRunnerLeaseCheck != "ok") || !receipt.EligibleForActivation || len(receipt.Errors) != 0 {
+		return errors.New("backup manifest is not eligible for activation")
+	}
+	dbSHA, size, err := hashFile(path)
+	if err != nil {
+		return err
+	}
+	snapshotSHA, _, err := hashFile(goldenPath)
+	if err != nil {
+		return err
+	}
+	if manifest.DBSHA256 != dbSHA || receipt.CandidateDBSHA256 != dbSHA || manifest.SizeBytes != size {
+		return errors.New("backup database hash or size mismatch")
+	}
+	if manifest.ExpectedSnapshotSHA256 != snapshotSHA || receipt.CandidateSnapshotSHA256 != snapshotSHA {
+		return errors.New("backup snapshot hash mismatch")
+	}
+	sourceDB, err := openExistingDB(path)
+	if err != nil {
+		return err
+	}
+	var firstSchema, sourceSchema, schemaCount int
+	if err := sourceDB.QueryRow(`SELECT COALESCE(MIN(version), 0), COALESCE(MAX(version), 0), COUNT(*) FROM schema_migrations`).Scan(&firstSchema, &sourceSchema, &schemaCount); err != nil {
+		_ = sourceDB.Close()
+		return err
+	}
+	declaredSchema := fmt.Sprintf("omni-folio.sqlite.v%d", sourceSchema)
+	if firstSchema != 1 || schemaCount != sourceSchema || manifest.SchemaVersion != declaredSchema {
+		_ = sourceDB.Close()
+		return errors.New("backup manifest schema does not match candidate")
+	}
+	if legacyV10Manifest {
+		sourceOrders, err := proveOrderRecovery(context.Background(), sourceDB)
+		if err != nil {
+			_ = sourceDB.Close()
+			return fmt.Errorf("v10 source order recovery proof: %w", err)
+		}
+		sourcePaper, err := proveLegacyPaperAccountingRecovery(context.Background(), sourceDB)
+		if err != nil {
+			_ = sourceDB.Close()
+			return fmt.Errorf("v10 source paper accounting recovery proof: %w", err)
+		}
+		if manifest.OrderStateSHA256 != sourceOrders.SHA256 || manifest.OrderCount != sourceOrders.Orders ||
+			manifest.OrderEventCount != sourceOrders.Events || manifest.PaperAccountingStateSHA256 != sourcePaper.SHA256 ||
+			manifest.PaperAccountingSessionCount != sourcePaper.Sessions || receipt.CandidatePaperAccountingStateSHA256 != sourcePaper.SHA256 {
+			_ = sourceDB.Close()
+			return errors.New("v10 source recovery proof mismatch")
+		}
+	}
+	if legacyV11Manifest {
+		if err := verifyLegacyV11SourceManifest(context.Background(), sourceDB, manifest); err != nil {
+			_ = sourceDB.Close()
+			return err
+		}
+	}
+	if legacyV12Manifest {
+		if err := verifyLegacyV12SourceManifest(context.Background(), sourceDB, manifest); err != nil {
+			_ = sourceDB.Close()
+			return err
+		}
+	}
+	if legacyV13Manifest {
+		if err := verifyLegacyV13SourceManifest(context.Background(), sourceDB, manifest); err != nil {
+			_ = sourceDB.Close()
+			return err
+		}
+	}
+	if legacyV14Manifest {
+		if err := verifyLegacyV14SourceManifest(context.Background(), sourceDB, manifest); err != nil {
+			_ = sourceDB.Close()
+			return err
+		}
+	}
+	if nonArchivalManifest {
+		policy, err := provePaperPerformancePolicyRecovery(context.Background(), sourceDB)
+		if err != nil {
+			_ = sourceDB.Close()
+			return fmt.Errorf("source paper performance policy recovery proof: %w", err)
+		}
+		if manifest.PaperPerformancePolicyStateSHA256 != policy.SHA256 || receipt.CandidatePaperPerformancePolicyStateSHA256 != policy.SHA256 ||
+			manifest.PaperPerformancePolicyEventCount != policy.Events || manifest.PaperPerformancePolicyActionCount != policy.Actions ||
+			manifest.PaperPerformancePolicyAutomaticHaltCount != policy.AutomaticHalts {
+			_ = sourceDB.Close()
+			return errors.New("source paper performance policy recovery proof mismatch")
+		}
+		runnerLease, err := provePaperRunnerLeaseRecoveryAtSchema(context.Background(), sourceDB, sourceSchema)
+		if err != nil {
+			_ = sourceDB.Close()
+			return fmt.Errorf("source paper runner lease recovery proof: %w", err)
+		}
+		if manifest.PaperRunnerLeaseStateSHA256 != runnerLease.SHA256 ||
+			receipt.CandidatePaperRunnerLeaseStateSHA256 != runnerLease.SHA256 ||
+			manifest.PaperRunnerLeaseCount != runnerLease.Leases ||
+			manifest.ActivePaperRunnerLeaseCount != runnerLease.Active {
+			_ = sourceDB.Close()
+			return errors.New("source paper runner lease recovery proof mismatch")
+		}
+	}
+	if hasBenchmarkManifest {
+		proof, err := proveBenchmarkSeriesRecovery(context.Background(), sourceDB)
+		if err != nil {
+			_ = sourceDB.Close()
+			return err
+		}
+		if !benchmarkManifestMatches(manifest, proof) {
+			_ = sourceDB.Close()
+			return errors.New("source benchmark series proof mismatch")
+		}
+	}
+	if hasOwnerFXManifest {
+		proof, err := proveOwnerFXSeriesRecovery(context.Background(), sourceDB)
+		if err != nil {
+			_ = sourceDB.Close()
+			return err
+		}
+		if !ownerFXManifestMatches(manifest, proof) {
+			_ = sourceDB.Close()
+			return errors.New("source owner FX series proof mismatch")
+		}
+	} else {
+		var present int
+		if err := sourceDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name='owner_fx_series_versions'`).Scan(&present); err != nil || present != 0 {
+			_ = sourceDB.Close()
+			return errors.New("legacy backup cannot contain an owner FX journal")
+		}
+	}
+	if hasOwnerPriceManifest {
+		proof, err := proveOwnerPriceSeriesRecovery(context.Background(), sourceDB)
+		if err != nil {
+			_ = sourceDB.Close()
+			return err
+		}
+		if !ownerPriceManifestMatches(manifest, proof) {
+			_ = sourceDB.Close()
+			return errors.New("source owner price series proof mismatch")
+		}
+	} else {
+		var present int
+		if err := sourceDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name='owner_price_series_versions'`).Scan(&present); err != nil || present != 0 {
+			_ = sourceDB.Close()
+			return errors.New("legacy backup cannot contain an owner price journal")
+		}
+	}
+	if hasWatchlistManifest {
+		proof, err := proveWatchlistRecovery(context.Background(), sourceDB)
+		if err != nil || !watchlistManifestMatches(manifest, proof) {
+			_ = sourceDB.Close()
+			return errors.New("source watchlist recovery proof mismatch")
+		}
+	} else {
+		var present int
+		if err := sourceDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name='watchlist_state'`).Scan(&present); err != nil || present != 0 {
+			_ = sourceDB.Close()
+			return errors.New("legacy backup cannot contain a watchlist state")
+		}
+	}
+	if currentV21Manifest {
+		proof, err := provePaperPromotionRecovery(context.Background(), sourceDB)
+		if err != nil || !paperPromotionManifestMatches(manifest, proof) {
+			_ = sourceDB.Close()
+			return errors.New("source paper promotion recovery proof mismatch")
+		}
+	} else {
+		var present int
+		if err := sourceDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name IN ('paper_promotion_claims','paper_promotion_decisions')`).Scan(&present); err != nil || present != 0 {
+			_ = sourceDB.Close()
+			return errors.New("legacy backup cannot contain paper promotion journals")
+		}
+	}
+	if err := sourceDB.Close(); err != nil {
+		return err
+	}
+
+	verificationPath := path
+	temporaryDir := ""
+	defer func() {
+		if temporaryDir == "" {
+			return
+		}
+		if err := os.RemoveAll(temporaryDir); err != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("remove migrated restore candidate: %w", err))
+		}
+	}()
+	if manifest.SchemaVersion != backupSchema {
+		temporaryDir, err = os.MkdirTemp("", "omni-folio-restore-legacy.*")
+		if err != nil {
+			return err
+		}
+		verificationPath = filepath.Join(temporaryDir, "candidate.db")
+		if err := copyFile(path, verificationPath); err != nil {
+			return err
+		}
+		candidateDB, err := openExistingDB(verificationPath)
+		if err != nil {
+			return err
+		}
+		if err := migrate(candidateDB); err != nil {
+			_ = candidateDB.Close()
+			return fmt.Errorf("migrate restored legacy candidate: %w", err)
+		}
+		if err := candidateDB.Close(); err != nil {
+			return err
+		}
+	}
+
+	orders, err := verifyRestoreProofPolicy(verificationPath, goldenPath, !nonArchivalManifest)
+	if err != nil {
+		return err
+	}
+	if manifest.OrderStateSHA256 != orders.SHA256 || receipt.CandidateOrderStateSHA256 != orders.SHA256 ||
+		manifest.OrderCount != orders.Orders || manifest.OrderEventCount != orders.Events ||
+		manifest.ExecutionAuthoritySHA256 != orders.ExecutionAuthoritySHA256 || manifest.ExecutionAuthorityEventCount != orders.ExecutionAuthorityEvents ||
+		manifest.RiskReservationSHA256 != orders.RiskReservationSHA256 || manifest.RiskReservationCount != orders.RiskReservations {
+		return errors.New("backup order recovery proof mismatch")
+	}
+	broker, err := verifyBrokerRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if manifest.BrokerStateSHA256 != broker.SHA256 || receipt.CandidateBrokerStateSHA256 != broker.SHA256 ||
+		manifest.BrokerSnapshotCount != broker.Snapshots || manifest.BrokerReconciliationCount != broker.Reconciliations {
+		return errors.New("backup broker recovery proof mismatch")
+	}
+	strategy, err := verifyStrategyRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if manifest.StrategyRegistrySHA256 != strategy.SHA256 || receipt.CandidateStrategyRegistrySHA256 != strategy.SHA256 ||
+		manifest.StrategyEvidenceCount != strategy.Evidence || manifest.StrategySelectionEventCount != strategy.Events ||
+		manifest.SelectedStrategyResultSHA256 != strategy.SelectedResultSHA256 {
+		return errors.New("backup strategy registry recovery proof mismatch")
+	}
+	paperPromotion, err := verifyPaperPromotionRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if currentV21Manifest {
+		if !paperPromotionManifestMatches(manifest, paperPromotion) {
+			return errors.New("backup paper promotion recovery proof mismatch")
+		}
+	} else if paperPromotion.Claims != 0 || paperPromotion.Decisions != 0 || paperPromotion.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
+		return errors.New("legacy backup unexpectedly contains paper promotion history")
+	}
+	if currentManifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
+		if manifest.PaperEvaluationEventCount != strategy.Evaluations {
+			return errors.New("backup paper evaluation recovery proof mismatch")
+		}
+	} else if strategy.Evaluations != 0 {
+		return errors.New("legacy backup unexpectedly contains paper evaluations")
+	}
+	paperAccounting, err := verifyPaperAccountingRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if currentManifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
+		if manifest.PaperAccountingStateSHA256 != paperAccounting.SHA256 ||
+			receipt.CandidatePaperAccountingStateSHA256 != paperAccounting.SHA256 ||
+			manifest.PaperAccountingSessionCount != paperAccounting.Sessions ||
+			manifest.PaperMarketBarObservationCount != paperAccounting.MarketBars ||
+			manifest.PaperSignalEventCount != paperAccounting.Signals ||
+			manifest.PaperExecutionAuthorizationCount != paperAccounting.Authorizations ||
+			manifest.PaperCapitalizedFillCount != paperAccounting.CapitalizedFills {
+			return errors.New("backup paper accounting recovery proof mismatch")
+		}
+	} else if legacyV10Manifest {
+		if manifest.PaperAccountingSessionCount != paperAccounting.Sessions || paperAccounting.MarketBars != 0 || paperAccounting.Signals != 0 ||
+			paperAccounting.Authorizations != 0 || paperAccounting.CapitalizedFills != 0 {
+			return errors.New("v10 backup paper accounting migration proof mismatch")
+		}
+	} else if paperAccounting.Sessions != 0 || paperAccounting.MarketBars != 0 || paperAccounting.Signals != 0 ||
+		paperAccounting.Authorizations != 0 || paperAccounting.CapitalizedFills != 0 {
+		return errors.New("legacy backup unexpectedly contains paper accounting sessions")
+	}
+	paperPerformance, err := verifyPaperPerformanceRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if currentManifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
+		if manifest.PaperPerformanceStateSHA256 != paperPerformance.SHA256 ||
+			receipt.CandidatePaperPerformanceStateSHA256 != paperPerformance.SHA256 ||
+			manifest.PaperPerformanceEventCount != paperPerformance.Events ||
+			manifest.PaperPerformanceMarkCount != paperPerformance.Marks {
+			return errors.New("backup paper performance recovery proof mismatch")
+		}
+	} else if paperPerformance.Events != 0 || paperPerformance.Marks != 0 ||
+		paperPerformance.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
+		return errors.New("legacy backup unexpectedly contains paper performance")
+	}
+	paperStrategyPerformance, err := verifyPaperStrategyPerformanceRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if currentManifest || legacyV13Manifest || legacyV14Manifest {
+		if manifest.PaperStrategyPerformanceStateSHA256 != paperStrategyPerformance.SHA256 ||
+			receipt.CandidatePaperStrategyPerformanceStateSHA256 != paperStrategyPerformance.SHA256 ||
+			manifest.PaperStrategyPerformanceEventCount != paperStrategyPerformance.Events ||
+			manifest.PaperStrategyPerformanceSampleCount != paperStrategyPerformance.Samples {
+			return errors.New("backup paper strategy performance recovery proof mismatch")
+		}
+	} else if paperStrategyPerformance.Events != 0 || paperStrategyPerformance.Samples != 0 ||
+		paperStrategyPerformance.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
+		return errors.New("legacy backup unexpectedly contains paper strategy performance")
+	}
+	paperPerformancePolicy, err := verifyPaperPerformancePolicyRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if currentManifest || legacyV14Manifest {
+		if manifest.PaperPerformancePolicyStateSHA256 != paperPerformancePolicy.SHA256 ||
+			receipt.CandidatePaperPerformancePolicyStateSHA256 != paperPerformancePolicy.SHA256 ||
+			manifest.PaperPerformancePolicyEventCount != paperPerformancePolicy.Events ||
+			manifest.PaperPerformancePolicyActionCount != paperPerformancePolicy.Actions ||
+			manifest.PaperPerformancePolicyAutomaticHaltCount != paperPerformancePolicy.AutomaticHalts {
+			return errors.New("backup paper performance policy recovery proof mismatch")
+		}
+	} else if paperPerformancePolicy.Events != 0 || paperPerformancePolicy.Actions != 0 || paperPerformancePolicy.AutomaticHalts != 0 ||
+		paperPerformancePolicy.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
+		return errors.New("legacy backup unexpectedly contains paper performance policy")
+	}
+	paperRunnerLease, err := verifyPaperRunnerLeaseRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if currentManifest {
+		if manifest.PaperRunnerLeaseStateSHA256 != paperRunnerLease.SHA256 ||
+			receipt.CandidatePaperRunnerLeaseStateSHA256 != paperRunnerLease.SHA256 ||
+			manifest.PaperRunnerLeaseCount != paperRunnerLease.Leases ||
+			manifest.ActivePaperRunnerLeaseCount != paperRunnerLease.Active || paperRunnerLease.Active != 0 {
+			return errors.New("backup paper runner lease recovery proof mismatch")
+		}
+	} else if paperRunnerLease.Leases != 1 || paperRunnerLease.Active != 0 || len(paperRunnerLease.SHA256) != sha256.Size*2 {
+		return errors.New("legacy backup paper runner lease migration proof mismatch")
+	}
+	fx, err := verifyFXObservationRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if currentManifest || legacyV6Manifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
+		if manifest.FXObservationStateSHA256 != fx.SHA256 || receipt.CandidateFXObservationStateSHA256 != fx.SHA256 ||
+			manifest.FXObservationCount != fx.Observations {
+			return errors.New("backup FX observation recovery proof mismatch")
+		}
+	} else if fx.Observations != 0 || fx.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
+		return errors.New("legacy backup unexpectedly contains FX observations")
+	}
+	securityPrices, err := verifySecurityPriceObservationRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if currentManifest || legacyV7Manifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
+		if manifest.SecurityPriceObservationStateSHA256 != securityPrices.SHA256 ||
+			receipt.CandidateSecurityPriceObservationStateSHA256 != securityPrices.SHA256 ||
+			manifest.SecurityPriceObservationCount != securityPrices.Observations {
+			return errors.New("backup security price observation recovery proof mismatch")
+		}
+	} else if securityPrices.Observations != 0 || securityPrices.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
+		return errors.New("legacy backup unexpectedly contains security price observations")
+	}
+	instrumentListings, err := verifyInstrumentListingRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if currentManifest || legacyV8Manifest || legacyV9Manifest || legacyV10Manifest || legacyV11Manifest || legacyV12Manifest || legacyV13Manifest || legacyV14Manifest {
+		if manifest.InstrumentListingStateSHA256 != instrumentListings.SHA256 ||
+			receipt.CandidateInstrumentListingStateSHA256 != instrumentListings.SHA256 ||
+			manifest.InstrumentListingEventCount != instrumentListings.Events ||
+			manifest.ActiveInstrumentListingCount != instrumentListings.Active {
+			return errors.New("backup instrument listing recovery proof mismatch")
+		}
+	} else if instrumentListings.Events != 0 || instrumentListings.Active != 0 ||
+		instrumentListings.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
+		return errors.New("legacy backup unexpectedly contains instrument listings")
+	}
+	benchmark, err := verifyBenchmarkSeriesRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if hasBenchmarkManifest {
+		if !benchmarkManifestMatches(manifest, benchmark) {
+			return errors.New("backup benchmark series proof mismatch")
+		}
+	} else if benchmark.Versions != 0 || benchmark.Points != 0 || benchmark.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
+		return errors.New("legacy backup unexpectedly contains benchmark series")
+	}
+	ownerFX, err := verifyOwnerFXSeriesRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if hasOwnerFXManifest {
+		if !ownerFXManifestMatches(manifest, ownerFX) {
+			return errors.New("backup owner FX series proof mismatch")
+		}
+	} else if ownerFX.Versions != 0 || ownerFX.Points != 0 || ownerFX.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
+		return errors.New("legacy backup unexpectedly contains owner FX series")
+	}
+	ownerPrice, err := verifyOwnerPriceSeriesRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if hasOwnerPriceManifest {
+		if !ownerPriceManifestMatches(manifest, ownerPrice) {
+			return errors.New("backup owner price series proof mismatch")
+		}
+	} else if ownerPrice.Versions != 0 || ownerPrice.Points != 0 || ownerPrice.SHA256 != hex.EncodeToString(sha256.New().Sum(nil)) {
+		return errors.New("legacy backup unexpectedly contains owner price series")
+	}
+	watchlist, err := verifyWatchlistRestoreProof(verificationPath)
+	if err != nil {
+		return err
+	}
+	if hasWatchlistManifest {
+		if !watchlistManifestMatches(manifest, watchlist) {
+			return errors.New("backup watchlist recovery proof mismatch")
+		}
+	} else if watchlist.Revision != 0 || watchlist.Entries != 0 {
+		return errors.New("legacy backup unexpectedly contains a watchlist")
+	}
+	db, err := openExistingDB(verificationPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	var candidateRevision int64
+	if err := db.QueryRow(`SELECT revision FROM ledger_meta WHERE singleton=1`).Scan(&candidateRevision); err != nil {
+		return err
+	}
+	if manifest.SourceLedgerRevision != revision(candidateRevision) {
+		return errors.New("backup ledger revision mismatch")
+	}
+	return nil
+}
+
+func copyFile(source, target string) (resultErr error) {
+	in, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer func() { resultErr = errors.Join(resultErr, in.Close()) }()
+	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	defer func() { resultErr = errors.Join(resultErr, out.Close()) }()
+	_, err = io.Copy(out, in)
+	return err
+}
+
+func hashFile(path string) (string, int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", 0, err
+	}
+	defer f.Close()
+	hash := sha256.New()
+	size, err := io.Copy(hash, f)
+	if err != nil {
+		return "", 0, err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), size, nil
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+func writeError(w http.ResponseWriter, err *appError) { writeJSON(w, err.status, err.body) }
+
+func internalError(err error) *appError {
+	log.Printf("internal error: %v", err)
+	return &appError{http.StatusInternalServerError, APIError{Code: "internal_error", Message: "internal server error"}}
+}
+
+func readinessError(err error) *appError {
+	log.Printf("readiness check failed: %v", err)
+	return &appError{http.StatusServiceUnavailable, APIError{Code: "not_ready", Message: "service is not ready"}}
+}
+
+func boolInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
+}
+
+func nullable(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
+}

@@ -1,0 +1,351 @@
+{
+  "schema_version": "portfolio-xirr-cases.v1",
+  "reference": "Python Decimal precision80, direct (1+r)^years NPV bisection; numerical reference generation only, no Go/DB/runtime checks run locally",
+  "sources": [
+    "https://support.microsoft.com/en-us/excel/functions/xirr-function",
+    "https://help.portfolio-performance.info/en/concepts/performance/money-weighted/"
+  ],
+  "cases": [
+    {
+      "name": "excel_official",
+      "flows": [
+        {
+          "date": "2008-01-01",
+          "amount": "-10000"
+        },
+        {
+          "date": "2008-03-01",
+          "amount": "2750"
+        },
+        {
+          "date": "2008-10-30",
+          "amount": "4250"
+        },
+        {
+          "date": "2009-02-15",
+          "amount": "3250"
+        },
+        {
+          "date": "2009-04-01",
+          "amount": "2750"
+        }
+      ],
+      "status": "calculated",
+      "expected_rate": "0.373362533519"
+    },
+    {
+      "name": "portfolio_performance_three_year",
+      "flows": [
+        {
+          "date": "2021-01-01",
+          "amount": "-1000"
+        },
+        {
+          "date": "2022-01-01",
+          "amount": "-500"
+        },
+        {
+          "date": "2023-01-01",
+          "amount": "-1000"
+        },
+        {
+          "date": "2024-01-01",
+          "amount": "3036"
+        }
+      ],
+      "status": "calculated",
+      "expected_rate": "0.1"
+    },
+    {
+      "name": "one_year_gain",
+      "flows": [
+        {
+          "date": "2025-01-01",
+          "amount": "-100"
+        },
+        {
+          "date": "2026-01-01",
+          "amount": "110"
+        }
+      ],
+      "status": "calculated",
+      "expected_rate": "0.1"
+    },
+    {
+      "name": "one_year_loss",
+      "flows": [
+        {
+          "date": "2025-01-01",
+          "amount": "-100"
+        },
+        {
+          "date": "2026-01-01",
+          "amount": "90"
+        }
+      ],
+      "status": "calculated",
+      "expected_rate": "-0.1"
+    },
+    {
+      "name": "actual_zero",
+      "flows": [
+        {
+          "date": "2025-01-01",
+          "amount": "-100"
+        },
+        {
+          "date": "2026-01-01",
+          "amount": "100"
+        }
+      ],
+      "status": "calculated",
+      "expected_rate": "0"
+    },
+    {
+      "name": "leap_year_actual_365",
+      "flows": [
+        {
+          "date": "2024-01-01",
+          "amount": "-100"
+        },
+        {
+          "date": "2025-01-01",
+          "amount": "110"
+        }
+      ],
+      "status": "calculated",
+      "expected_rate": "0.099713585934"
+    },
+    {
+      "name": "midyear_contribution",
+      "flows": [
+        {
+          "date": "2025-01-01",
+          "amount": "-100"
+        },
+        {
+          "date": "2025-07-01",
+          "amount": "-200"
+        },
+        {
+          "date": "2026-01-01",
+          "amount": "330"
+        }
+      ],
+      "status": "calculated",
+      "expected_rate": "0.152065006481"
+    },
+    {
+      "name": "withdraw_then_redeposit",
+      "flows": [
+        {
+          "date": "2025-01-01",
+          "amount": "-1000"
+        },
+        {
+          "date": "2025-06-01",
+          "amount": "100"
+        },
+        {
+          "date": "2025-09-01",
+          "amount": "-100"
+        },
+        {
+          "date": "2026-01-01",
+          "amount": "1200"
+        }
+      ],
+      "status": "candidate",
+      "expected_rate": "0.205125131176"
+    },
+    {
+      "name": "two_roots_10_and_20",
+      "flows": [
+        {
+          "date": "2021-01-01",
+          "amount": "-100"
+        },
+        {
+          "date": "2022-01-01",
+          "amount": "230"
+        },
+        {
+          "date": "2023-01-01",
+          "amount": "-132"
+        }
+      ],
+      "status": "candidate",
+      "expected_rate": "0.1"
+    },
+    {
+      "name": "same_day_netting_and_unsorted",
+      "flows": [
+        {
+          "date": "2026-01-01",
+          "amount": "110"
+        },
+        {
+          "date": "2025-01-01",
+          "amount": "-150"
+        },
+        {
+          "date": "2025-01-01",
+          "amount": "50"
+        }
+      ],
+      "status": "calculated",
+      "expected_rate": "0.1"
+    },
+    {
+      "name": "large_exact_cash",
+      "flows": [
+        {
+          "date": "2025-01-01",
+          "amount": "-100000000000000000000000000000000000000"
+        },
+        {
+          "date": "2026-01-01",
+          "amount": "110000000000000000000000000000000000000"
+        }
+      ],
+      "status": "calculated",
+      "expected_rate": "0.1"
+    },
+    {
+      "name": "same_day_only",
+      "flows": [
+        {
+          "date": "2025-01-01",
+          "amount": "-100"
+        },
+        {
+          "date": "2025-01-01",
+          "amount": "110"
+        }
+      ],
+      "status": "unavailable",
+      "expected_rate": null
+    },
+    {
+      "name": "total_loss_has_no_finite_root",
+      "flows": [
+        {
+          "date": "2025-01-01",
+          "amount": "-100"
+        },
+        {
+          "date": "2026-01-01",
+          "amount": "0"
+        }
+      ],
+      "status": "unavailable",
+      "expected_rate": null
+    },
+    {
+      "name": "no_investor_payment",
+      "flows": [
+        {
+          "date": "2025-01-01",
+          "amount": "100"
+        },
+        {
+          "date": "2026-01-01",
+          "amount": "110"
+        }
+      ],
+      "status": "unavailable",
+      "expected_rate": null
+    },
+    {
+      "name": "additional_deposit_is_not_profit",
+      "flows": [
+        {
+          "date": "2025-01-01",
+          "amount": "-100"
+        },
+        {
+          "date": "2025-07-01",
+          "amount": "-100"
+        },
+        {
+          "date": "2026-01-01",
+          "amount": "200"
+        }
+      ],
+      "status": "calculated",
+      "expected_rate": "0"
+    },
+    {
+      "name": "near_tangent_without_any_root",
+      "flows": [
+        {
+          "date": "2021-01-01",
+          "amount": "-100"
+        },
+        {
+          "date": "2022-01-01",
+          "amount": "200"
+        },
+        {
+          "date": "2023-01-01",
+          "amount": "-100.000000000001"
+        }
+      ],
+      "status": "unavailable",
+      "expected_rate": null,
+      "note": "No real root: multiplying XNPV by (1+r)^2 gives -100*r^2-0.000000000001."
+    },
+    {
+      "name": "published_rounding_near_total_loss",
+      "flows": [
+        {
+          "date": "2025-01-01",
+          "amount": "-100"
+        },
+        {
+          "date": "2026-01-01",
+          "amount": "0.00000000006"
+        }
+      ],
+      "status": "unavailable",
+      "expected_rate": null,
+      "note": "Exact root -0.9999999999994 cannot satisfy published12dp residual policy."
+    },
+    {
+      "name": "tangent_root_cannot_be_bracket_certified",
+      "flows": [
+        {
+          "date": "2021-01-01",
+          "amount": "-100"
+        },
+        {
+          "date": "2022-01-01",
+          "amount": "200"
+        },
+        {
+          "date": "2023-01-01",
+          "amount": "-100"
+        }
+      ],
+      "status": "unavailable",
+      "expected_rate": null,
+      "note": "Root0 exists but local sign bracket cannot certify it; unavailable is not no-root."
+    },
+    {
+      "name": "one_day_large_annual_rate",
+      "flows": [
+        {
+          "date": "2025-01-01",
+          "amount": "-100"
+        },
+        {
+          "date": "2025-01-02",
+          "amount": "300"
+        }
+      ],
+      "status": "calculated",
+      "expected_rate": "1410126170338158616048224728371571380367482072097134683678107761525088518577095663713418622408085910027579856094121983229714153961689762543490699072942506404339112922628405842",
+      "note": "Exact integer annual growth3^365-1; compare numerical relative tolerance."
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+  "scope": "whole_portfolio_since_inception",
+  "valuation": {
+    "scope": "whole_portfolio",
+    "policy_version": "current_base_portfolio_valuation_v1",
+    "max_observation_age_seconds": 86400,
+    "base_currency": "KRW",
+    "valuation_as_of": "2026-01-01T00:00:00Z",
+    "ledger_revision": "rev_0000000004",
+    "ledger_as_of": "2026-01-01T00:00:00Z",
+    "ledger_recorded_at": "2026-01-01T00:00:00Z",
+    "status": "complete",
+    "sample": false,
+    "cash_value": {
+      "currency": "KRW",
+      "amount": "231"
+    },
+    "holdings_value": {
+      "currency": "KRW",
+      "amount": "0"
+    },
+    "total_value": {
+      "currency": "KRW",
+      "amount": "231"
+    },
+    "issues": []
+  },
+  "status": "calculated",
+  "sample": false,
+  "period_start": "2025-01-01T00:00:00Z",
+  "period_end": "2026-01-01T00:00:00Z",
+  "external_event_count": 2,
+  "boundary_count": 2,
+  "cumulative_rate": "0.21",
+  "net_contributions": {
+    "currency": "KRW",
+    "amount": "200"
+  },
+  "issues": []
+}

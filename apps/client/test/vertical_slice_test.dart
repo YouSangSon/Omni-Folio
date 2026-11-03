@@ -1,0 +1,3714 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:ui' show SemanticsAction;
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:file_selector_platform_interface/file_selector_platform_interface.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:omni_folio_client/api.dart';
+import 'package:omni_folio_client/app.dart';
+import 'package:omni_folio_client/models.dart';
+import 'package:omni_folio_client/paper_monitor.dart';
+import 'package:omni_folio_client/paper_promotion_report.dart';
+import 'package:omni_folio_client/research_report.dart';
+import 'package:omni_folio_client/public_research.dart';
+
+Json fixture(String name) {
+  final body = File('../../contracts/fixtures/$name').readAsStringSync();
+  return jsonDecode(body) as Json;
+}
+
+class FakeApi implements OmniApi {
+  @override
+  Future<WatchlistReport> watchlist() async => WatchlistReport.fromJson({
+    'policy_version': 'watchlist_stored_prices_24h.v1',
+    'max_observation_age_seconds': 86400,
+    'observed_at': '2026-01-01T00:00:00Z',
+    'watchlist': {'revision': 0, 'updated_at': null, 'entries': <Json>[]},
+    'quotes': <Json>[],
+  });
+  @override
+  Future<WatchlistState> updateWatchlist(WatchlistChange change) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<PortfolioTwrCheckpoints> portfolioTwrCheckpoints() =>
+      throw UnsupportedError('Not used by this fixture.');
+
+  @override
+  Future<OwnerDataPreview> previewOwnerData(String input) async =>
+      throw UnimplementedError();
+  @override
+  Future<OwnerDataReceipt> applyOwnerData(OwnerDataPreview review) async =>
+      throw UnimplementedError();
+
+  PortfolioBenchmarks? benchmarksValue;
+  Completer<PortfolioBenchmarks>? benchmarksCompleter;
+  int benchmarksCalls = 0;
+  bool failBenchmarks = false;
+  @override
+  Future<PortfolioBenchmarks> portfolioBenchmarks() async {
+    benchmarksCalls++;
+    if (failBenchmarks) throw const ApiException('private-benchmark-sentinel');
+    return benchmarksCompleter?.future ?? benchmarksValue!;
+  }
+
+  PortfolioTwr? twrValue;
+  Completer<PortfolioTwr>? twrCompleter;
+  int twrCalls = 0;
+  bool failTwr = false;
+  @override
+  Future<PortfolioTwr> portfolioTwr() async {
+    twrCalls++;
+    if (failTwr) throw const ApiException('private-twr-sentinel');
+    return twrCompleter?.future ?? twrValue!;
+  }
+
+  PortfolioXirr? xirrValue;
+  Completer<PortfolioXirr>? xirrCompleter;
+  int xirrCalls = 0;
+  bool failXirr = false;
+
+  @override
+  Future<PortfolioXirr> portfolioXirr() async {
+    xirrCalls += 1;
+    if (failXirr) throw const ApiException('private-xirr-sentinel');
+    return xirrCompleter?.future ?? xirrValue!;
+  }
+
+  FakeApi({
+    required this.statusValue,
+    required this.snapshotValue,
+    required this.previewValue,
+    required this.receiptValue,
+    required this.candlesValue,
+    required this.orderLogValue,
+    required this.activityValue,
+    this.currentValuationValue,
+    this.reconciliationValue,
+    this.fail = false,
+    this.failSnapshot = false,
+    this.failReconciliation = false,
+    this.failLocalOrders = false,
+    this.failActivities = false,
+    this.failCurrentValuation = false,
+    this.applyFailures = 0,
+    this.failureMessage = '서버를 다시 확인하세요.',
+  });
+
+  final ServiceStatus statusValue;
+  final PortfolioSnapshot snapshotValue;
+  final ImportPreview previewValue;
+  final ApplyReceipt receiptValue;
+  MarketCandles candlesValue;
+  LocalOrderLog orderLogValue;
+  LedgerActivityPage activityValue;
+  CurrentPortfolioValuation? currentValuationValue;
+  Completer<CurrentPortfolioValuation>? currentValuationCompleter;
+  int currentValuationCalls = 0;
+  BrokerReconciliation? reconciliationValue;
+  Completer<BrokerReconciliation?>? reconciliationCompleter;
+  int reconciliationCalls = 0;
+  Completer<LocalOrderLog>? localOrdersCompleter;
+  int localOrderCalls = 0;
+  Completer<LedgerActivityPage>? activityCompleter;
+  int activityCalls = 0;
+  Completer<MarketCandles>? candlesCompleter;
+  int candleCalls = 0;
+  Completer<ApplyReceipt>? applyCompleter;
+  final List<String> applyKeys = [];
+  final List<String> previewInputs = [];
+  bool fail;
+  bool failSnapshot;
+  bool failReconciliation;
+  bool failLocalOrders;
+  bool failActivities;
+  bool failCurrentValuation;
+  int applyFailures;
+  String failureMessage;
+
+  @override
+  Future<ApplyReceipt> apply(String previewId, String idempotencyKey) async {
+    applyKeys.add(idempotencyKey);
+    if (applyFailures > 0) {
+      applyFailures -= 1;
+      throw ApiException(failureMessage);
+    }
+    if (fail) throw ApiException(failureMessage);
+    return applyCompleter?.future ?? receiptValue;
+  }
+
+  @override
+  Future<ImportPreview> preview(String csv) async {
+    previewInputs.add(csv);
+    if (fail) throw ApiException(failureMessage);
+    return previewValue;
+  }
+
+  @override
+  Future<PortfolioSnapshot> snapshot() async {
+    if (fail || failSnapshot) {
+      throw ApiException(failureMessage);
+    }
+    return snapshotValue;
+  }
+
+  @override
+  Future<CurrentPortfolioValuation> currentPortfolioValuation() async {
+    currentValuationCalls += 1;
+    if (fail || failCurrentValuation) {
+      throw const ApiException('private-current-valuation-error');
+    }
+    return currentValuationCompleter?.future ?? currentValuationValue!;
+  }
+
+  @override
+  Future<InstrumentLedger> instrumentLedger(
+    String instrumentId,
+    String currency,
+  ) => throw UnsupportedError('Not used by this fixture.');
+
+  @override
+  Future<HoldingValuation> holdingValuation() =>
+      throw UnsupportedError('Not used by this fixture.');
+
+  @override
+  Future<MarketCandles> candles(String symbol) async {
+    candleCalls += 1;
+    if (fail) throw ApiException(failureMessage);
+    return candlesCompleter?.future ?? candlesValue;
+  }
+
+  @override
+  Future<BrokerReconciliation?> latestBrokerReconciliation() async {
+    reconciliationCalls += 1;
+    if (fail || failReconciliation) {
+      throw ApiException(failureMessage);
+    }
+    return reconciliationCompleter?.future ?? reconciliationValue;
+  }
+
+  @override
+  Future<LocalOrderLog> localOrders() async {
+    localOrderCalls += 1;
+    if (fail || failLocalOrders) {
+      throw const ApiException('kiwoom_account_secret');
+    }
+    return localOrdersCompleter?.future ?? orderLogValue;
+  }
+
+  @override
+  Future<PaperMonitor> paperMonitor() =>
+      throw UnsupportedError('Loaded only from the monitor detail page.');
+
+  @override
+  Future<PaperPromotionReport> paperPromotionReport() =>
+      throw UnsupportedError('Loaded only from the paper comparison page.');
+
+  @override
+  Future<ResearchReport> researchReport() =>
+      throw UnsupportedError('Loaded only from the research report page.');
+
+  @override
+  Future<PublicResearch> publicResearch(PublicResearchIdentity identity) =>
+      throw UnsupportedError('Loaded only from the public research page.');
+
+  @override
+  Future<LedgerActivityPage> ledgerActivities({String? cursor}) async {
+    activityCalls += 1;
+    if (fail || failActivities) {
+      throw const ApiException('account-main event-secret receipt-secret');
+    }
+    return activityCompleter?.future ?? activityValue;
+  }
+
+  @override
+  Future<ServiceStatus> status() async {
+    if (fail) throw ApiException(failureMessage);
+    return statusValue;
+  }
+}
+
+FakeApi goldenApi({
+  bool neverVerified = false,
+  ImportPreview? preview,
+  PortfolioSnapshot? snapshot,
+}) {
+  final previewValue =
+      preview ?? ImportPreview.fromJson(fixture('golden-preview.json'));
+  final snapshotValue =
+      snapshot ?? PortfolioSnapshot.fromJson(fixture('golden-snapshot.json'));
+  final receipt = ApplyReceipt.fromJson(fixture('golden-apply.json'));
+  return FakeApi(
+    statusValue: ServiceStatus.fromJson({
+      'live_enabled': false,
+      'mode': 'local_import_only',
+      'trust_state': neverVerified ? 'never_verified' : 'verified',
+      'ledger_revision': 'rev_0000000003',
+      'last_verified_at': neverVerified ? null : '2026-08-23T03:05:00Z',
+      'issues': const [],
+    }),
+    snapshotValue: snapshotValue,
+    currentValuationValue: currentPortfolioValuation(),
+    previewValue: previewValue,
+    receiptValue: receipt,
+    candlesValue: marketCandles(),
+    orderLogValue: LocalOrderLog.fromJson(localOrderLogJson(orders: const [])),
+    activityValue: LedgerActivityPage.fromJson(ledgerActivitiesJson()),
+  );
+}
+
+CurrentPortfolioValuation currentPortfolioValuation({
+  String status = 'stale_sample',
+  bool sample = true,
+  String ledgerRevision = 'rev_0000000003',
+  Object? cashValue = const {'currency': 'KRW', 'amount': '95530'},
+  Object? holdingsValue = const {'currency': 'KRW', 'amount': '61650'},
+  Object? totalValue = const {'currency': 'KRW', 'amount': '157180'},
+  List<Json>? issues,
+}) => CurrentPortfolioValuation.fromJson({
+  'scope': 'whole_portfolio',
+  'policy_version': 'current_base_portfolio_valuation_v1',
+  'max_observation_age_seconds': 86400,
+  'base_currency': 'KRW',
+  'valuation_as_of': '2026-01-11T14:00:00Z',
+  'ledger_revision': ledgerRevision,
+  'ledger_as_of': '2026-01-10T10:00:00Z',
+  'ledger_recorded_at': '2026-01-10T15:01:00Z',
+  'status': status,
+  'sample': sample,
+  'cash_value': cashValue,
+  'holdings_value': holdingsValue,
+  'total_value': totalValue,
+  'issues':
+      issues ??
+      const [
+        {
+          'code': 'sample_data',
+          'message': 'portfolio valuation uses stored local sample data',
+        },
+      ],
+});
+
+MarketCandles marketCandles({
+  String? instrumentId,
+  String? currency,
+  String barTimeBasis = 'unspecified',
+  String state = 'stale',
+  bool sample = true,
+  String priceAdjustment = 'unspecified',
+  String source = 'local_fixture',
+  String? sourceAsOf = '2026-08-22T20:00:00Z',
+  bool includeIssues = true,
+  List<Json>? bars,
+}) => MarketCandles.fromJson({
+  'instrument_id': instrumentId,
+  'currency': currency,
+  'bar_time_basis': barTimeBasis,
+  'symbol': 'AAPL',
+  'venue': 'XNAS',
+  'timezone': 'America/New_York',
+  'interval': '1d',
+  'price_adjustment': priceAdjustment,
+  'source': source,
+  'sample': sample,
+  'state': state,
+  'source_as_of': sourceAsOf,
+  'fetched_at': '2026-08-24T03:00:00Z',
+  'issues': !includeIssues
+      ? const []
+      : state == 'partial'
+      ? [
+          {'code': 'missing_session', 'message': '일부 세션이 없습니다.'},
+        ]
+      : source == 'local_fixture'
+      ? [
+          {
+            'code': 'sample_data',
+            'message': 'market data is a local sample and not live',
+          },
+        ]
+      : const [],
+  'bars': state == 'empty'
+      ? const []
+      : bars ??
+            [
+              {
+                'at': '2026-08-21T20:00:00Z',
+                'open': '100',
+                'high': '110',
+                'low': '90',
+                'close': '105',
+                'volume': '1200',
+              },
+              {
+                'at': '2026-08-22T20:00:00Z',
+                'open': '105',
+                'high': '112',
+                'low': '100',
+                'close': '101',
+                'volume': '900',
+              },
+            ],
+});
+
+Json brokerReconciliationJson() => {
+  'provider': 'kiwoom',
+  'environment': 'mock',
+  'exchange': 'KRX',
+  'freshness': 'unverified',
+  'fetched_at': '2026-01-10T15:00:59Z',
+  'recorded_at': '2026-01-10T15:01:00Z',
+  'ledger_revision': 'rev_0000000002',
+  'all_positions_match': false,
+  'position_differences': const [
+    {
+      'symbol': '000660',
+      'broker_quantity': '2',
+      'ledger_quantity': '0',
+      'difference': '2',
+      'match': false,
+    },
+    {
+      'symbol': '005930',
+      'broker_quantity': '10',
+      'ledger_quantity': '7',
+      'difference': '3',
+      'match': false,
+    },
+  ],
+};
+
+Json localOrderLogJson({List<Json>? orders}) => {
+  'source': 'local_order_log',
+  'broker_freshness': 'unverified',
+  'orders':
+      orders ??
+      const [
+        {
+          'mode': 'synthetic',
+          'symbol': '005930',
+          'side': 'BUY',
+          'order_type': 'LIMIT',
+          'quantity': '2',
+          'limit_price': '70000',
+          'filled_quantity': '0',
+          'currency': 'KRW',
+          'status': 'SUBMIT_UNKNOWN',
+          'pending_action': 'SUBMIT',
+          'last_recorded_at': '2026-01-10T15:01:00Z',
+        },
+      ],
+};
+
+Json ledgerActivitiesJson({List<Json>? events, String? nextCursor}) => {
+  'source': 'local_ledger',
+  'broker_freshness': 'unverified',
+  'ledger_revision': 'rev_0000000004',
+  'recorded_at': '2026-01-10T15:01:00Z',
+  'events':
+      events ??
+      const [
+        {
+          'type': 'FX_EXCHANGE',
+          'occurred_at': '2026-01-03T00:00:00Z',
+          'recorded_at': '2026-01-10T15:01:00Z',
+          'symbol': null,
+          'quantity': null,
+          'price': null,
+          'fee': null,
+          'currency': 'USD',
+          'amount': '-100',
+          'counter_currency': 'KRW',
+          'counter_amount': '137000',
+          'is_correction': false,
+        },
+        {
+          'type': 'BUY',
+          'occurred_at': '2026-01-02T00:00:00Z',
+          'recorded_at': '2026-01-10T15:01:00Z',
+          'symbol': 'AAPL',
+          'quantity': '2',
+          'price': '10',
+          'fee': '0',
+          'currency': 'USD',
+          'amount': '-20',
+          'counter_currency': null,
+          'counter_amount': null,
+          'is_correction': false,
+        },
+      ],
+  'next_cursor': nextCursor,
+};
+
+Future<void> pumpUi(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
+}
+
+void main() {
+  testWidgets('Korean typography resolves and font/icon assets are available', (
+    tester,
+  ) async {
+    expect(
+      (await rootBundle.load('assets/fonts/NotoSansKR.ttf')).lengthInBytes,
+      greaterThan(0),
+    );
+    expect(
+      (await rootBundle.load(
+        'packages/cupertino_icons/assets/CupertinoIcons.ttf',
+      )).lengthInBytes,
+      greaterThan(0),
+    );
+    expect(
+      await rootBundle.loadString('assets/fonts/OFL.txt'),
+      contains('SIL OPEN FONT LICENSE Version 1.1'),
+    );
+    await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+    await pumpUi(tester);
+    for (final label in ['현금 잔액', 'USD 778', '홈', '연결']) {
+      final paragraphs = find.descendant(
+        of: find.text(label),
+        matching: find.byType(RichText),
+      );
+      expect(paragraphs, findsWidgets);
+      for (final paragraph in tester.widgetList<RichText>(paragraphs)) {
+        expect(paragraph.text.style?.fontFamily, 'NotoSansKR', reason: label);
+      }
+    }
+  });
+
+  test('golden preview and snapshot parse canonical decimal strings', () {
+    final preview = ImportPreview.fromJson(fixture('golden-preview.json'));
+    final snapshot = PortfolioSnapshot.fromJson(
+      fixture('golden-snapshot.json'),
+    );
+
+    expect(preview.canApply, isTrue);
+    expect(preview.schemaVersion, 'omni-folio.csv.v1');
+    expect(preview.previewFingerprint, hasLength(64));
+    expect(preview.unresolvedRows, 0);
+    expect(snapshot.cash.single.amount, '778');
+    expect(snapshot.holdings.single.costBasis, '300.6');
+    expect(
+      snapshot.costBasisPolicy,
+      'fifo_utc_nanosecond_exact_else_half_even_residual_8_v2',
+    );
+    expect(
+      () => PortfolioSnapshot.fromJson({
+        ...fixture('golden-snapshot.json'),
+        'cost_basis_policy': 'fifo_exact_else_half_even_residual_8_v1',
+      }),
+      throwsFormatException,
+    );
+    expect(snapshot.eventCount, 3);
+    expect(snapshot.receiptCount, 1);
+
+    expect(
+      () => Money.fromJson({'currency': 'USD', 'amount': 778}),
+      throwsFormatException,
+    );
+    expect(
+      () => ImportPreview.fromJson({
+        ...fixture('golden-preview.json'),
+        'rows': [
+          {'row_number': 2, 'status': 'new'},
+          'not-an-object',
+        ],
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => ServiceStatus.fromJson({
+        'live_enabled': false,
+        'mode': 'local_import_only',
+        'trust_state': 'verified',
+        'ledger_revision': 'rev_0000000003',
+        'last_verified_at': false,
+        'issues': const [],
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => ServiceStatus.fromJson({
+        'live_enabled': true,
+        'mode': 'live',
+        'trust_state': 'verified',
+        'ledger_revision': 'rev_0000000003',
+        'last_verified_at': null,
+        'issues': const [],
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => ServiceStatus.fromJson({
+        'live_enabled': false,
+        'mode': 'local_import_only',
+        'trust_state': 'verified',
+        'ledger_revision': 'rev_0000000003',
+        'last_verified_at': null,
+        'issues': const [],
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => PortfolioSnapshot.fromJson({
+        ...fixture('golden-snapshot.json'),
+        'valuation_status': 'live',
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => PortfolioSnapshot.fromJson({
+        ...fixture('golden-snapshot.json'),
+        'cost_basis_policy': 'unversioned',
+      }),
+      throwsFormatException,
+    );
+    final missingProvenance = Json.from(fixture('golden-snapshot.json'))
+      ..remove('provenance');
+    for (final provenance in [
+      null,
+      {
+        'event_ids': ['event_1'],
+        'receipt_ids': null,
+      },
+      {
+        'event_ids': [''],
+        'receipt_ids': [],
+      },
+      {
+        'event_ids': ['event_1', 2],
+        'receipt_ids': [],
+      },
+      {'event_ids': [], 'receipt_ids': [], 'raw_id': 'must-not-accept'},
+    ]) {
+      expect(
+        () => PortfolioSnapshot.fromJson({
+          ...fixture('golden-snapshot.json'),
+          'provenance': provenance,
+        }),
+        throwsFormatException,
+      );
+    }
+    expect(
+      () => PortfolioSnapshot.fromJson(missingProvenance),
+      throwsFormatException,
+    );
+    expect(marketCandles().bars.last.close, '101');
+    expect(
+      () => marketCandles(priceAdjustment: 'split_adjusted'),
+      throwsFormatException,
+    );
+    expect(
+      () => marketCandles(priceAdjustment: 'provider_adjusted'),
+      throwsFormatException,
+    );
+    expect(() => marketCandles(state: 'success'), throwsFormatException);
+    expect(() => marketCandles(sourceAsOf: null), throwsFormatException);
+    expect(() => marketCandles(includeIssues: false), throwsFormatException);
+    final providerCandles = MarketCandles.fromJson({
+      'symbol': 'AAPL',
+      'venue': 'XNAS',
+      'timezone': 'America/New_York',
+      'interval': '1d',
+      'price_adjustment': 'provider_adjusted',
+      'source': 'provider_neutral_fixture',
+      'sample': false,
+      'state': 'success',
+      'source_as_of': null,
+      'fetched_at': '2026-08-24T03:00:00Z',
+      'issues': const [],
+      'bars': [
+        {
+          'at': '2026-08-22T20:00:00Z',
+          'open': '100',
+          'high': '110',
+          'low': '90',
+          'close': '105',
+          'volume': '1',
+        },
+      ],
+    });
+    expect(providerCandles.source, 'provider_neutral_fixture');
+    expect(providerCandles.priceAdjustment, 'provider_adjusted');
+    expect(
+      () => MarketCandles.fromJson({
+        'symbol': 'AAPL',
+        'venue': 'XNAS',
+        'timezone': 'America/New_York',
+        'interval': '1d',
+        'price_adjustment': 'unspecified',
+        'source': 'local_fixture',
+        'sample': false,
+        'state': 'stale',
+        'source_as_of': '2026-08-22T20:00:00Z',
+        'fetched_at': '2026-08-24T03:00:00Z',
+        'issues': const [
+          {
+            'code': 'sample_data',
+            'message': 'market data is a local sample and not live',
+          },
+        ],
+        'bars': [
+          {
+            'at': '2026-08-22T20:00:00Z',
+            'open': '100',
+            'high': '110',
+            'low': '90',
+            'close': '105',
+            'volume': '1',
+          },
+        ],
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => MarketCandles.fromJson({
+        'symbol': 'AAPL',
+        'venue': 'XNAS',
+        'timezone': 'America/New_York',
+        'interval': '1d',
+        'price_adjustment': 'provider_adjusted',
+        'source': 'provider_neutral_fixture',
+        'sample': false,
+        'state': 'success',
+        'source_as_of': null,
+        'fetched_at': '2026-08-24T03:00:00Z',
+        'issues': const [],
+        'bars': List.generate(
+          501,
+          (index) => {
+            'at': DateTime.utc(
+              2024,
+              1,
+              1,
+            ).add(Duration(days: index)).toIso8601String(),
+            'open': '100',
+            'high': '110',
+            'low': '90',
+            'close': '105',
+            'volume': '1',
+          },
+          growable: false,
+        ),
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => MarketCandles.fromJson({
+        'symbol': 'AAPL',
+        'venue': 'XNAS',
+        'timezone': 'America/New_York',
+        'interval': '1d',
+        'price_adjustment': 'unspecified',
+        'source': 'local_fixture',
+        'sample': true,
+        'state': 'stale',
+        'source_as_of': '2026-08-22T20:00:00Z',
+        'fetched_at': '2026-08-24T03:00:00Z',
+        'issues': const [
+          {
+            'code': 'sample_data',
+            'message': 'market data is a local sample and not live',
+          },
+        ],
+        'bars': [
+          {
+            'at': '2026-08-22T20:00:00Z',
+            'open': '100',
+            'high': '110',
+            'low': '90',
+            'close': '105',
+            'volume': '1',
+          },
+          {
+            'at': '2026-08-21T20:00:00Z',
+            'open': '100',
+            'high': '110',
+            'low': '90',
+            'close': '105',
+            'volume': '1',
+          },
+        ],
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => MarketBar.fromJson({
+        'at': '2026-08-22T20:00:00Z',
+        'open': '100',
+        'high': '99',
+        'low': '90',
+        'close': '105',
+        'volume': '-1',
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => MarketBar.fromJson({
+        'at': '2026-08-22T20:00:00Z',
+        'open': '1',
+        'high': '9007199254740992',
+        'low': '1',
+        'close': '9007199254740993',
+        'volume': '1',
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => MarketBar.fromJson({
+        'at': '2026-08-22T20:00:00Z',
+        'open': '1${List.filled(400, '0').join()}',
+        'high': '1${List.filled(400, '0').join()}',
+        'low': '1',
+        'close': '1',
+        'volume': '1',
+      }),
+      throwsFormatException,
+    );
+  });
+
+  test('cash void preview requires a closed correction target', () {
+    expect(
+      () => ImportPreview.fromJson({
+        ...fixture('golden-preview.json'),
+        'rows': [
+          {
+            'row_number': 2,
+            'status': 'new',
+            'transaction': {
+              'event_id': 'event-cash-void-001',
+              'source_event_id': 'cash-void-001',
+              'account_id': 'account-main',
+              'type': 'CASH_VOID',
+              'occurred_at': '2026-01-03T00:00:00Z',
+              'currency': 'USD',
+              'amount': '5',
+              'corrects_source_event_id': 'fee-001',
+            },
+          },
+        ],
+      }),
+      throwsFormatException,
+    );
+  });
+
+  test('POST network failures use the stable connection message', () async {
+    final api = RestOmniApi(
+      client: MockClient((_) async => throw StateError('socket detail')),
+    );
+
+    await expectLater(
+      api.preview('header\nrow'),
+      throwsA(
+        isA<ApiException>().having(
+          (error) => error.message,
+          'message',
+          apiConnectionError,
+        ),
+      ),
+    );
+    await expectLater(
+      api.apply('preview', 'key'),
+      throwsA(
+        isA<ApiException>().having(
+          (error) => error.message,
+          'message',
+          apiConnectionError,
+        ),
+      ),
+    );
+    await expectLater(
+      api.candles('AAPL'),
+      throwsA(
+        isA<ApiException>().having(
+          (error) => error.message,
+          'message',
+          apiConnectionError,
+        ),
+      ),
+    );
+    expect(defaultApiUrl, 'http://127.0.0.1:8080');
+  });
+
+  test('market source metadata is nullable but never partial or inferred', () {
+    expect(
+      goldenApi().snapshotValue.holdings.single.instrumentId,
+      'instrument_aapl',
+    );
+    expect(marketCandles().instrumentId, isNull);
+    expect(marketCandles().currency, isNull);
+    for (final fields in [
+      <String?>['instrument_aapl', null],
+      <String?>[null, 'USD'],
+      <String?>['', 'USD'],
+      <String?>['bad id', 'USD'],
+      <String?>['instrument_aapl', 'usd'],
+    ]) {
+      expect(
+        () => marketCandles(instrumentId: fields[0], currency: fields[1]),
+        throwsFormatException,
+      );
+    }
+    expect(
+      () => marketCandles(barTimeBasis: 'session_close'),
+      throwsFormatException,
+    );
+  });
+
+  test('candles use the fixed daily interval and strict parser', () async {
+    late Uri request;
+    final api = RestOmniApi(
+      client: MockClient((value) async {
+        request = value.url;
+        return http.Response(
+          jsonEncode({
+            'symbol': 'AAPL & TEST',
+            'venue': 'XNAS',
+            'timezone': 'America/New_York',
+            'interval': '1d',
+            'price_adjustment': 'unspecified',
+            'source': 'local_fixture',
+            'sample': true,
+            'state': 'stale',
+            'source_as_of': '2026-08-22T20:00:00Z',
+            'fetched_at': '2026-08-24T03:00:00Z',
+            'issues': const [
+              {
+                'code': 'sample_data',
+                'message': 'market data is a local sample and not live',
+              },
+            ],
+            'bars': [
+              {
+                'at': '2026-08-22T20:00:00Z',
+                'open': '100',
+                'high': '110',
+                'low': '90',
+                'close': '105',
+                'volume': '1',
+              },
+            ],
+          }),
+          200,
+        );
+      }),
+    );
+    final candles = await api.candles('AAPL & TEST');
+    expect(request.path, '/v1/market-data/candles');
+    expect(request.queryParameters, {
+      'symbol': 'AAPL & TEST',
+      'interval': '1d',
+    });
+    expect(candles.fetchedAt, '2026-08-24T03:00:00Z');
+  });
+
+  test('candles reject a response for another symbol', () async {
+    final api = RestOmniApi(
+      client: MockClient(
+        (_) async => http.Response(
+          jsonEncode({
+            'symbol': 'MSFT',
+            'venue': 'XNAS',
+            'timezone': 'America/New_York',
+            'interval': '1d',
+            'price_adjustment': 'provider_adjusted',
+            'source': 'provider_neutral_fixture',
+            'sample': false,
+            'state': 'success',
+            'source_as_of': null,
+            'fetched_at': '2026-08-24T03:00:00Z',
+            'issues': const [],
+            'bars': [
+              {
+                'at': '2026-08-22T20:00:00Z',
+                'open': '100',
+                'high': '110',
+                'low': '90',
+                'close': '105',
+                'volume': '1',
+              },
+            ],
+          }),
+          200,
+        ),
+      ),
+    );
+    await expectLater(api.candles('AAPL'), throwsFormatException);
+  });
+
+  test('broker reconciliation parser rejects unsafe or inconsistent data', () {
+    final parsed = BrokerReconciliation.fromJson(brokerReconciliationJson());
+    expect(parsed.positionDifferences.last.difference, '3');
+    expect(parsed.allPositionsMatch, isFalse);
+    expect(
+      () => BrokerReconciliation.fromJson({
+        ...brokerReconciliationJson(),
+        'account_ref': 'kiwoom_account_secret',
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => BrokerReconciliation.fromJson({
+        ...brokerReconciliationJson(),
+        'position_differences': [
+          {
+            ...((brokerReconciliationJson()['position_differences'] as List)
+                    .first
+                as Json),
+            'broker_quantity': 2,
+          },
+        ],
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => BrokerReconciliation.fromJson({
+        ...brokerReconciliationJson(),
+        'all_positions_match': true,
+      }),
+      throwsFormatException,
+    );
+  });
+
+  test(
+    'local order lifecycle parser rejects identifiers and invalid state',
+    () {
+      final parsed = LocalOrderLog.fromJson(localOrderLogJson());
+      expect(parsed.orders.single.status, 'SUBMIT_UNKNOWN');
+      expect(parsed.orders.single.pendingAction, 'SUBMIT');
+      final resolved = LocalOrderLog.fromJson(
+        localOrderLogJson(
+          orders: [
+            {
+              ...(localOrderLogJson()['orders'] as List).single as Json,
+              'status': 'FILLED',
+              'filled_quantity': '2',
+              'pending_action': 'none',
+            },
+          ],
+        ),
+      );
+      expect(resolved.orders.single.pendingAction, 'none');
+      expect(
+        () => LocalOrderLog.fromJson({
+          ...localOrderLogJson(),
+          'account_ref': 'kiwoom_account_secret',
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => LocalOrderLog.fromJson({
+          ...localOrderLogJson(),
+          'orders': [
+            {
+              ...(localOrderLogJson()['orders'] as List).single as Json,
+              'status': 'SUCCEEDED',
+            },
+          ],
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => LocalOrderLog.fromJson({
+          ...localOrderLogJson(),
+          'orders': [
+            {
+              ...(localOrderLogJson()['orders'] as List).single as Json,
+              'pending_action': 'RETRY',
+            },
+          ],
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => LocalOrderLog.fromJson({
+          ...localOrderLogJson(),
+          'orders': [
+            {
+              ...(localOrderLogJson()['orders'] as List).single as Json,
+              'status': 'FILLED',
+              'filled_quantity': '2',
+              'pending_action': 'SUBMIT',
+            },
+          ],
+        }),
+        throwsFormatException,
+      );
+    },
+  );
+
+  test('local orders use the fixed read-only path', () async {
+    late http.Request request;
+    final api = RestOmniApi(
+      client: MockClient((value) async {
+        request = value;
+        return http.Response(jsonEncode(localOrderLogJson()), 200);
+      }),
+    );
+    final result = await api.localOrders();
+    expect(request.method, 'GET');
+    expect(request.url.path, '/v1/orders');
+    expect(request.url.query, isEmpty);
+    expect(result.orders.single.filledQuantity, '0');
+  });
+
+  test('ledger activities parse a closed exact-money contract', () {
+    final page = LedgerActivityPage.fromJson(ledgerActivitiesJson());
+    expect(page.source, 'local_ledger');
+    expect(page.events.first.type, 'FX_EXCHANGE');
+    expect(page.events.first.counterCurrency, 'KRW');
+    expect(page.events.first.counterAmount, '137000');
+
+    final invalid = <Json>[
+      {...ledgerActivitiesJson(), 'account_id': 'account-main'},
+      {
+        ...ledgerActivitiesJson(),
+        'events': [
+          {
+            ...(ledgerActivitiesJson()['events'] as List).first as Json,
+            'event_id': 'event-secret',
+          },
+        ],
+      },
+      {...ledgerActivitiesJson(), 'recorded_at': '2026-01-10T15:01:00.120Z'},
+      {
+        ...ledgerActivitiesJson(),
+        'recorded_at': '2026-01-10T15:01:00.1234567891Z',
+      },
+      {
+        ...ledgerActivitiesJson(),
+        'events': List<Json>.generate(
+          101,
+          (_) => {...(ledgerActivitiesJson()['events'] as List).first as Json},
+        ),
+      },
+      {
+        ...ledgerActivitiesJson(),
+        'events': [...(ledgerActivitiesJson()['events'] as List).reversed],
+      },
+      {
+        ...ledgerActivitiesJson(),
+        'events': [
+          {
+            ...(ledgerActivitiesJson()['events'] as List).first as Json,
+            'occurred_at': '2026-02-30T00:00:00Z',
+          },
+        ],
+      },
+      {
+        ...ledgerActivitiesJson(),
+        'events': [
+          {
+            ...(ledgerActivitiesJson()['events'] as List).last as Json,
+            'counter_currency': 'USD',
+          },
+        ],
+      },
+      {
+        ...ledgerActivitiesJson(),
+        'events': [
+          {
+            ...(ledgerActivitiesJson()['events'] as List).first as Json,
+            'counter_currency': 'USD',
+          },
+        ],
+      },
+      {
+        ...ledgerActivitiesJson(),
+        'events': [
+          {
+            ...(ledgerActivitiesJson()['events'] as List).first as Json,
+            'amount': '-20.0',
+          },
+        ],
+      },
+      {
+        ...ledgerActivitiesJson(),
+        'events': [
+          {
+            ...(ledgerActivitiesJson()['events'] as List).first as Json,
+            'is_correction': true,
+          },
+        ],
+      },
+    ];
+    for (final value in invalid) {
+      expect(() => LedgerActivityPage.fromJson(value), throwsFormatException);
+    }
+  });
+
+  test('ledger activities use the fixed read-only path', () async {
+    late http.Request request;
+    final api = RestOmniApi(
+      client: MockClient((value) async {
+        request = value;
+        return http.Response(jsonEncode(ledgerActivitiesJson()), 200);
+      }),
+    );
+    final result = await api.ledgerActivities();
+    expect(request.method, 'GET');
+    expect(request.url.path, '/v1/ledger/activities');
+    expect(request.url.query, isEmpty);
+    expect(result.events.first.counterAmount, '137000');
+  });
+
+  test(
+    'latest broker reconciliation uses the fixed path and maps 404 to empty',
+    () async {
+      late Uri request;
+      final api = RestOmniApi(
+        client: MockClient((value) async {
+          request = value.url;
+          return http.Response(jsonEncode(brokerReconciliationJson()), 200);
+        }),
+      );
+      final result = await api.latestBrokerReconciliation();
+      expect(request.path, '/v1/broker-reconciliation/latest');
+      expect(request.query, isEmpty);
+      expect(result!.ledgerRevision, 'rev_0000000002');
+
+      final empty = RestOmniApi(
+        client: MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'code': 'broker_reconciliation_not_found',
+              'message': 'broker reconciliation was not found',
+            }),
+            404,
+          ),
+        ),
+      );
+      expect(await empty.latestBrokerReconciliation(), isNull);
+    },
+  );
+
+  testWidgets('recent ledger activities stay readable at 200 percent text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final semantics = tester.ensureSemantics();
+    try {
+      await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+      await pumpUi(tester);
+      await tester.tap(find.text('내역'));
+      await pumpUi(tester);
+      await tester.fling(find.byType(ListView), const Offset(0, -2000), 3000);
+      await tester.pumpAndSettle();
+
+      expect(find.text('로컬 원장 기록 · 현재 증권사 상태 아님'), findsOneWidget);
+      expect(find.text('매수 · AAPL'), findsOneWidget);
+      expect(find.text('수량 2 · USD -20'), findsOneWidget);
+      expect(find.text('환전 · USD 100 매도 → KRW 137000 매수'), findsOneWidget);
+      expect(find.text('환율이나 현재 시세를 뜻하지 않습니다.'), findsOneWidget);
+      expect(
+        find.semantics.byLabel(
+          RegExp(r'매수, AAPL, 수량 2, USD -20, 가격 10, 수수료 0'),
+        ),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(
+        find.text('환전 · USD 100 매도 → KRW 137000 매수').first,
+      );
+      await tester.pump();
+      expect(
+        find.semantics.byLabel(
+          RegExp(r'환전, USD 100 매도, KRW 137000 매수, 현재 환율 아님'),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('ledger activity error is redacted and retryable', (
+    tester,
+  ) async {
+    final api = goldenApi()..failActivities = true;
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('내역'));
+    await pumpUi(tester);
+
+    await tester.scrollUntilVisible(
+      find.text('거래 내역을 불러오지 못했습니다. 다시 시도하세요.'),
+      200,
+      scrollable: find
+          .descendant(
+            of: find.byType(ListView).first,
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await pumpUi(tester);
+    expect(find.textContaining('account-main'), findsNothing);
+    expect(find.text('거래 내역을 불러오지 못했습니다. 다시 시도하세요.'), findsOneWidget);
+    api.failActivities = false;
+    await tester.ensureVisible(find.text('최근 거래 다시 불러오기'));
+    await pumpUi(tester);
+    await tester.tap(find.text('최근 거래 다시 불러오기'));
+    await pumpUi(tester);
+    expect(find.text('매수 · AAPL'), findsOneWidget);
+  });
+
+  testWidgets('ledger activity refresh retains the last known-good page', (
+    tester,
+  ) async {
+    final api = goldenApi();
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('내역'));
+    await pumpUi(tester);
+    await tester.drag(find.byType(ListView), const Offset(0, -700));
+    await tester.pump();
+    expect(find.text('매수 · AAPL'), findsOneWidget);
+
+    api.failActivities = true;
+    await tester.tap(find.text('최근 거래 다시 불러오기'));
+    await pumpUi(tester);
+
+    expect(find.text('매수 · AAPL'), findsOneWidget);
+    expect(find.text('새로고침에 실패해 마지막 정상 거래 내역을 유지합니다.'), findsOneWidget);
+    expect(find.textContaining('event-secret'), findsNothing);
+  });
+
+  testWidgets('live-disabled trust banner remains explicit', (tester) async {
+    final api = goldenApi(neverVerified: true);
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+
+    expect(find.textContaining('아직 확인되지 않음'), findsOneWidget);
+    expect(find.textContaining('증권사 잔고 대조 기록 없음'), findsOneWidget);
+    await tester.tap(find.text('연결'));
+    await pumpUi(tester);
+    expect(find.textContaining('실전 주문 꺼짐'), findsOneWidget);
+    expect(find.textContaining('로컬 거래 내역 가져오기'), findsOneWidget);
+    expect(find.text('아직 증권사 대조 기록이 없습니다'), findsOneWidget);
+  });
+
+  testWidgets('first-run empty snapshot links to import at 200 percent text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final semantics = tester.ensureSemantics();
+    try {
+      final api = goldenApi(
+        neverVerified: true,
+        snapshot: PortfolioSnapshot.fromJson({
+          ...fixture('golden-snapshot.json'),
+          'ledger_revision': 'rev_0000000000',
+          'cash': const [],
+          'holdings': const [],
+          'realized_pnl': const [],
+          'provenance': {'event_ids': const [], 'receipt_ids': const []},
+        }),
+      );
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+
+      final import = find.widgetWithText(ElevatedButton, '거래 내역 가져오기');
+      expect(
+        tester
+            .widget<RichText>(
+              find.descendant(of: import, matching: find.byType(RichText)),
+            )
+            .text
+            .style
+            ?.fontFamily,
+        'NotoSansKR',
+      );
+      expect(import, findsOneWidget);
+      expect(tester.getSize(import).height, greaterThanOrEqualTo(48));
+      expect(find.semantics.byLabel('거래 내역 가져오기'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.ensureVisible(import);
+      await tester.pump();
+      await tester.tap(import);
+      await pumpUi(tester);
+
+      expect(find.byType(TextField), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('verified empty snapshot remains a verified portfolio', (
+    tester,
+  ) async {
+    final api = goldenApi(
+      snapshot: PortfolioSnapshot.fromJson({
+        ...fixture('golden-snapshot.json'),
+        'cash': const [],
+        'holdings': const [],
+        'realized_pnl': const [],
+        'provenance': {'event_ids': const [], 'receipt_ids': const []},
+      }),
+    );
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+
+    expect(find.textContaining('로컬 기록 확인 완료'), findsOneWidget);
+    expect(find.text('거래 내역 가져오기'), findsNothing);
+  });
+
+  testWidgets('unverified snapshot keeps any retained financial data visible', (
+    tester,
+  ) async {
+    PortfolioSnapshot snapshot({
+      List<Json> cash = const [],
+      List<Json> holdings = const [],
+      List<Json> realizedPnl = const [],
+    }) => PortfolioSnapshot.fromJson({
+      ...fixture('golden-snapshot.json'),
+      'cash': cash,
+      'holdings': holdings,
+      'realized_pnl': realizedPnl,
+      'provenance': {'event_ids': const [], 'receipt_ids': const []},
+    });
+
+    final cases = <(String, PortfolioSnapshot)>[
+      (
+        'cash',
+        snapshot(
+          cash: const [
+            {'currency': 'USD', 'amount': '1'},
+          ],
+        ),
+      ),
+      (
+        'holding',
+        snapshot(
+          holdings: const [
+            {
+              'instrument_id': 'instrument_aapl',
+              'symbol': 'AAPL',
+              'quantity': '1',
+              'cost_basis': '1',
+              'currency': 'USD',
+            },
+          ],
+        ),
+      ),
+      (
+        'realized PnL',
+        snapshot(
+          realizedPnl: const [
+            {'currency': 'USD', 'amount': '1'},
+          ],
+        ),
+      ),
+    ];
+
+    for (final (name, value) in cases) {
+      await tester.pumpWidget(
+        OmniFolioApp(
+          key: ValueKey(name),
+          api: goldenApi(neverVerified: true, snapshot: value),
+        ),
+      );
+      await pumpUi(tester);
+
+      expect(find.textContaining('아직 확인되지 않음'), findsOneWidget);
+      expect(
+        find.text('거래 내역 가져오기'),
+        findsNothing,
+        reason: '$name must not be hidden behind the first-run CTA',
+      );
+    }
+  });
+
+  testWidgets(
+    'overview stored reconciliation stays usable at 200 percent text',
+    (tester) async {
+      tester.view.physicalSize = const Size(375, 812);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final semantics = tester.ensureSemantics();
+      try {
+        final api = goldenApi()
+          ..reconciliationValue = BrokerReconciliation.fromJson(
+            brokerReconciliationJson(),
+          );
+        await tester.pumpWidget(OmniFolioApp(api: api));
+        await pumpUi(tester);
+        expect(api.reconciliationCalls, 1);
+
+        final storedSummary = find.textContaining('마지막 저장 기록 · 현재 상태 아님');
+        await tester.dragUntilVisible(
+          storedSummary,
+          find.byType(ListView),
+          const Offset(0, -300),
+        );
+        await tester.pumpAndSettle();
+        expect(storedSummary, findsOneWidget);
+        expect(find.textContaining('2개 중 2개 불일치'), findsOneWidget);
+        expect(
+          find.semantics.byLabel(
+            RegExp(r'증권사 잔고 대조.*2개 중 2개 불일치', dotAll: true),
+          ),
+          findsOneWidget,
+        );
+
+        final details = find.text('연결에서 자세히 보기');
+        await tester.ensureVisible(details);
+        await tester.pump();
+        await tester.tap(details);
+        await pumpUi(tester);
+        expect(api.reconciliationCalls, 1);
+
+        await tester.drag(find.byType(ListView), const Offset(0, -900));
+        await tester.pumpAndSettle();
+        expect(find.text('증권사 10 · 원장 7 · 차이 3'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets(
+    'overview local order risk summary stays usable at 200 percent text',
+    (tester) async {
+      tester.view.physicalSize = const Size(375, 812);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final semantics = tester.ensureSemantics();
+      try {
+        final api = goldenApi()
+          ..orderLogValue = LocalOrderLog.fromJson(
+            localOrderLogJson(
+              orders: const [
+                {
+                  'mode': 'synthetic',
+                  'symbol': '005930',
+                  'side': 'BUY',
+                  'order_type': 'LIMIT',
+                  'quantity': '2',
+                  'limit_price': '70000',
+                  'filled_quantity': '1',
+                  'currency': 'KRW',
+                  'status': 'SUBMIT_UNKNOWN',
+                  'pending_action': 'SUBMIT',
+                  'last_recorded_at': '2026-01-10T15:01:00Z',
+                },
+                {
+                  'mode': 'synthetic',
+                  'symbol': '005930',
+                  'side': 'SELL',
+                  'order_type': 'LIMIT',
+                  'quantity': '1',
+                  'limit_price': '71000',
+                  'filled_quantity': '0',
+                  'currency': 'KRW',
+                  'status': 'FILLED',
+                  'pending_action': 'CANCEL',
+                  'last_recorded_at': '2026-01-10T15:02:00Z',
+                },
+              ],
+            ),
+          );
+
+        await tester.pumpWidget(OmniFolioApp(api: api));
+        await pumpUi(tester);
+
+        expect(api.localOrderCalls, 1);
+        expect(find.text('로컬 주문 기록 · 현재 브로커 상태 아님'), findsOneWidget);
+        expect(find.text('확인 필요한 주문 2건'), findsOneWidget);
+        expect(find.text('접수 미확정 1건 · 취소 미확정 1건'), findsOneWidget);
+        expect(find.textContaining('재주문·추가 조작 금지'), findsOneWidget);
+        expect(find.textContaining('마지막 로컬 기록'), findsOneWidget);
+        expect(
+          find.semantics.byLabel(
+            RegExp(r'로컬 주문 기록.*현재 브로커 상태 아님.*확인 필요한 주문 2건', dotAll: true),
+          ),
+          findsOneWidget,
+        );
+
+        final details = find.text('주문 기록 자세히 보기');
+        await tester.ensureVisible(details);
+        await tester.pump();
+        await tester.tap(details);
+        await pumpUi(tester);
+        expect(api.localOrderCalls, 1);
+        await tester.drag(find.byType(ListView), const Offset(0, -1200));
+        await tester.pumpAndSettle();
+        expect(find.text('브로커 결과 미확정 · 재주문 금지'), findsOneWidget);
+        expect(find.text('체결됨 · 취소 결과 확인 중'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets(
+    'overview hides an empty local history instead of claiming safety',
+    (tester) async {
+      await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+      await pumpUi(tester);
+
+      expect(find.text('로컬 기록에는 미확정 주문이 없습니다'), findsNothing);
+      expect(find.text('로컬 주문 기록 · 현재 브로커 상태 아님'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'slow local orders do not block the portfolio or duplicate refreshes',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final pending = Completer<LocalOrderLog>();
+      final api = goldenApi()..localOrdersCompleter = pending;
+
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+
+      expect(find.byType(ListView), findsOneWidget);
+      expect(find.textContaining('데이터 상태: 로컬 기록 확인 완료'), findsOneWidget);
+      await tester.dragUntilVisible(
+        find.text('USD 778'),
+        find.byType(ListView),
+        const Offset(0, -240),
+      );
+      expect(find.text('USD 778'), findsOneWidget);
+      expect(api.localOrderCalls, 1);
+
+      await tester.tap(find.byTooltip('데이터 새로고침'));
+      await pumpUi(tester);
+      expect(api.localOrderCalls, 1);
+
+      pending.complete(LocalOrderLog.fromJson(localOrderLogJson()));
+      await pumpUi(tester);
+      expect(api.localOrderCalls, 1);
+      await tester.dragUntilVisible(
+        find.textContaining('확인 필요한 주문 1건'),
+        find.byType(ListView),
+        const Offset(0, 240),
+      );
+      expect(find.textContaining('확인 필요한 주문 1건'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'slow reconciliation does not block the portfolio at 200 percent text',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final pending = Completer<BrokerReconciliation?>();
+      final api = goldenApi()..reconciliationCompleter = pending;
+
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+
+      expect(find.byType(ListView), findsOneWidget);
+      expect(find.textContaining('데이터 상태: 로컬 기록 확인 완료'), findsOneWidget);
+      expect(find.textContaining('증권사 잔고 대조 확인 중'), findsOneWidget);
+      await tester.dragUntilVisible(
+        find.text('USD 778'),
+        find.byType(ListView),
+        const Offset(0, -240),
+      );
+      expect(find.text('USD 778'), findsOneWidget);
+      expect(api.reconciliationCalls, 1);
+      final refresh = find.byTooltip('데이터 새로고침');
+      expect(
+        tester
+            .widget<IconButton>(
+              find.ancestor(of: refresh, matching: find.byType(IconButton)),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      await tester.tap(refresh);
+      await pumpUi(tester);
+      expect(api.reconciliationCalls, 1);
+
+      pending.complete(
+        BrokerReconciliation.fromJson(brokerReconciliationJson()),
+      );
+      await pumpUi(tester);
+      expect(api.reconciliationCalls, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('pending reconciliation may complete after app disposal', (
+    tester,
+  ) async {
+    final pending = Completer<BrokerReconciliation?>();
+    final api = goldenApi()..reconciliationCompleter = pending;
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    pending.complete(null);
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('overview distinguishes no positions from a successful match', (
+    tester,
+  ) async {
+    final api = goldenApi()
+      ..reconciliationValue = BrokerReconciliation.fromJson({
+        ...brokerReconciliationJson(),
+        'all_positions_match': true,
+        'position_differences': const [],
+      });
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.drag(find.byType(ListView), const Offset(0, -900));
+    await tester.pumpAndSettle();
+
+    expect(find.text('대조할 보유 종목 없음'), findsOneWidget);
+    expect(find.textContaining('0개 모두 일치'), findsNothing);
+  });
+
+  testWidgets(
+    'connections show sanitized stored reconciliation with text semantics',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        final api = goldenApi()
+          ..reconciliationValue = BrokerReconciliation.fromJson(
+            brokerReconciliationJson(),
+          );
+        await tester.pumpWidget(OmniFolioApp(api: api));
+        await pumpUi(tester);
+        await tester.tap(find.text('연결'));
+        await pumpUi(tester);
+
+        await tester.scrollUntilVisible(find.text('증권사 10 · 원장 7 · 차이 3'), 120);
+        await pumpUi(tester);
+        expect(find.textContaining('마지막 저장 스냅샷 · 현재 상태 아님'), findsOneWidget);
+        expect(find.textContaining('불일치 · 2/2종목'), findsOneWidget);
+        expect(find.text('증권사 10 · 원장 7 · 차이 3'), findsOneWidget);
+        expect(
+          find.semantics.byLabel('005930 불일치, 증권사 수량 10, 원장 수량 7, 차이 3'),
+          findsOneWidget,
+        );
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets('reconciliation error offers a retry', (tester) async {
+    final api = goldenApi()
+      ..failReconciliation = true
+      ..reconciliationValue = BrokerReconciliation.fromJson(
+        brokerReconciliationJson(),
+      );
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    expect(find.textContaining('증권사 잔고 대조 확인 실패'), findsOneWidget);
+    await tester.tap(find.text('연결'));
+    await pumpUi(tester);
+
+    expect(find.text('대조 결과를 불러오지 못했습니다'), findsOneWidget);
+    api.failReconciliation = false;
+    await tester.scrollUntilVisible(find.text('대조 결과 다시 불러오기'), 120);
+    await pumpUi(tester);
+    await tester.tap(find.text('대조 결과 다시 불러오기'));
+    await pumpUi(tester);
+    await tester.scrollUntilVisible(find.textContaining('불일치 · 2/2종목'), 120);
+    await pumpUi(tester);
+    expect(find.textContaining('불일치 · 2/2종목'), findsOneWidget);
+  });
+
+  testWidgets('reconciliation refresh failure retains the stored result', (
+    tester,
+  ) async {
+    final api = goldenApi()
+      ..reconciliationValue = BrokerReconciliation.fromJson(
+        brokerReconciliationJson(),
+      );
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('연결'));
+    await pumpUi(tester);
+
+    final pending = Completer<BrokerReconciliation?>();
+    api.reconciliationCompleter = pending;
+    final refresh = find.text('저장된 대조 다시 불러오기');
+    await tester.ensureVisible(refresh);
+    await tester.pump();
+    await tester.tap(refresh);
+    await tester.pump();
+
+    expect(find.text('증권사 10 · 원장 7 · 차이 3'), findsOneWidget);
+    expect(find.textContaining('저장된 대조를 다시 불러오는 중'), findsOneWidget);
+
+    pending.completeError(const ApiException('서버를 다시 확인하세요.'));
+    await pumpUi(tester);
+
+    expect(find.text('증권사 10 · 원장 7 · 차이 3'), findsOneWidget);
+    expect(find.textContaining('마지막 정상 대조 기록은 유지됩니다'), findsOneWidget);
+
+    await tester.tap(find.text('홈'));
+    await pumpUi(tester);
+    await tester.drag(find.byType(ListView), const Offset(0, -900));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('2개 중 2개 불일치'), findsOneWidget);
+    expect(find.textContaining('마지막 정상 대조 기록을 유지합니다'), findsOneWidget);
+  });
+
+  testWidgets(
+    'submit unknown forbids resubmit at 200 percent text with semantics',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final semantics = tester.ensureSemantics();
+      try {
+        final api = goldenApi()
+          ..orderLogValue = LocalOrderLog.fromJson(localOrderLogJson());
+        await tester.pumpWidget(OmniFolioApp(api: api));
+        await pumpUi(tester);
+        await tester.tap(find.text('연결'));
+        await pumpUi(tester);
+        await tester.scrollUntilVisible(
+          find.textContaining('같은 주문을 다시 보내면 안 됩니다'),
+          200,
+        );
+        await tester.drag(find.byType(ListView), const Offset(0, -500));
+        await tester.pumpAndSettle();
+
+        expect(find.text('브로커 결과 미확정 · 재주문 금지'), findsOneWidget);
+        expect(find.textContaining('같은 주문을 다시 보내면 안 됩니다'), findsOneWidget);
+        expect(find.textContaining('현재 브로커 상태가 아닙니다'), findsOneWidget);
+        expect(find.textContaining('주문 보내기'), findsNothing);
+        expect(find.textContaining('주문 취소'), findsNothing);
+        expect(
+          find.semantics.byLabel(
+            '합성 테스트 주문, 005930 매수 지정가, 주문 수량 2, 체결 수량 0, KRW 70000, 브로커 결과 미확정, 재주문 금지',
+          ),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets(
+    'filled order with pending cancel warns against additional action',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        final api = goldenApi()
+          ..orderLogValue = LocalOrderLog.fromJson(
+            localOrderLogJson(
+              orders: const [
+                {
+                  'mode': 'synthetic',
+                  'symbol': '005930',
+                  'side': 'BUY',
+                  'order_type': 'LIMIT',
+                  'quantity': '10',
+                  'limit_price': '70000',
+                  'filled_quantity': '10',
+                  'currency': 'KRW',
+                  'status': 'FILLED',
+                  'pending_action': 'CANCEL',
+                  'last_recorded_at': '2026-01-10T15:02:00Z',
+                },
+              ],
+            ),
+          );
+        await tester.pumpWidget(OmniFolioApp(api: api));
+        await pumpUi(tester);
+        await tester.tap(find.text('연결'));
+        await pumpUi(tester);
+        await tester.scrollUntilVisible(
+          find.textContaining('취소 결과를 아직 확인하지 못했습니다'),
+          200,
+        );
+        await pumpUi(tester);
+
+        expect(find.text('체결됨 · 취소 결과 확인 중'), findsOneWidget);
+        expect(find.textContaining('추가 조작 금지'), findsOneWidget);
+        expect(find.textContaining('주문 취소'), findsNothing);
+        expect(
+          find.semantics.byLabel(
+            '합성 테스트 주문, 005930 매수 지정가, 주문 수량 10, 체결 수량 10, KRW 70000, 체결됨, 취소 결과 확인 중, 추가 조작 금지',
+          ),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets('local order refresh failure retains sanitized stored result', (
+    tester,
+  ) async {
+    final api = goldenApi()
+      ..orderLogValue = LocalOrderLog.fromJson(localOrderLogJson());
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('연결'));
+    await pumpUi(tester);
+
+    api.failLocalOrders = true;
+    final refresh = find.text('로컬 주문 기록 다시 불러오기');
+    await tester.scrollUntilVisible(refresh, 200);
+    await tester.pump();
+    await tester.tap(refresh);
+    await pumpUi(tester);
+
+    expect(find.text('브로커 결과 미확정 · 재주문 금지'), findsOneWidget);
+    expect(find.textContaining('마지막 정상 주문 기록은 유지됩니다'), findsOneWidget);
+    expect(find.textContaining('kiwoom_account_secret'), findsNothing);
+  });
+
+  testWidgets(
+    'empty local order refresh failure remains visible and retryable',
+    (tester) async {
+      final api = goldenApi();
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+      await tester.tap(find.text('연결'));
+      await pumpUi(tester);
+
+      api.failLocalOrders = true;
+      final refresh = find.text('로컬 주문 기록 다시 불러오기');
+      await tester.scrollUntilVisible(refresh, 200);
+      await tester.pump();
+      await tester.tap(refresh);
+      await pumpUi(tester);
+
+      expect(find.textContaining('마지막 정상 주문 기록은 유지됩니다'), findsOneWidget);
+      expect(find.text('로컬 주문 기록 다시 불러오기'), findsOneWidget);
+      expect(find.textContaining('kiwoom_account_secret'), findsNothing);
+    },
+  );
+
+  testWidgets('missing snapshot links directly to transaction import', (
+    tester,
+  ) async {
+    final api = goldenApi()..failSnapshot = true;
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+
+    await tester.tap(find.text('거래 내역 가져오기'));
+    await pumpUi(tester);
+
+    expect(find.text('거래 내역 가져오기'), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
+  });
+
+  testWidgets('missing snapshot still surfaces unresolved local orders', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final api = goldenApi()
+      ..failSnapshot = true
+      ..orderLogValue = LocalOrderLog.fromJson(
+        localOrderLogJson(
+          orders: const [
+            {
+              'mode': 'paper',
+              'symbol': '005930',
+              'side': 'BUY',
+              'order_type': 'LIMIT',
+              'quantity': '1',
+              'limit_price': '71000',
+              'filled_quantity': '0',
+              'currency': 'KRW',
+              'status': 'SUBMIT_UNKNOWN',
+              'pending_action': 'SUBMIT',
+              'last_recorded_at': '2026-01-10T15:01:00Z',
+            },
+          ],
+        ),
+      );
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+
+    expect(find.text('아직 스냅샷이 없습니다'), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -700));
+    await tester.pumpAndSettle();
+    expect(find.text('확인 필요한 주문 1건'), findsOneWidget);
+    expect(find.textContaining('재주문·추가 조작 금지'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('error offers retry and recovers', (tester) async {
+    final api = goldenApi()..fail = true;
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    expect(find.text('스냅샷을 불러오지 못했습니다'), findsOneWidget);
+
+    api.fail = false;
+    await tester.tap(find.text('다시 시도'));
+    await pumpUi(tester);
+    expect(find.textContaining('데이터 상태: 로컬 기록 확인 완료'), findsOneWidget);
+  });
+
+  testWidgets('overview never renders upstream error details', (tester) async {
+    const secret = 'kiwoom_account_1234 provider_trace_5678';
+    final api = goldenApi()
+      ..failureMessage = secret
+      ..fail = true;
+
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+
+    expect(find.textContaining(secret), findsNothing);
+    expect(find.textContaining('데이터를 불러오지 못했습니다.'), findsOneWidget);
+  });
+
+  testWidgets('refresh failure keeps the last known snapshot visible', (
+    tester,
+  ) async {
+    final api = goldenApi();
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.dragUntilVisible(
+      find.text('USD 778'),
+      find.byType(ListView),
+      const Offset(0, -240),
+    );
+    expect(find.text('USD 778'), findsOneWidget);
+
+    api.fail = true;
+    await tester.tap(find.byTooltip('데이터 새로고침'));
+    await pumpUi(tester);
+
+    expect(find.text('USD 778'), findsOneWidget);
+    await tester.dragUntilVisible(
+      find.textContaining('일부 데이터 확인 필요'),
+      find.byType(ListView),
+      const Offset(0, 240),
+    );
+    expect(find.textContaining('일부 데이터 확인 필요'), findsOneWidget);
+    expect(find.textContaining('마지막 정상 스냅샷은 유지됩니다'), findsOneWidget);
+  });
+
+  testWidgets('trust status and controls expose accessible semantics', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    addTearDown(
+      tester.binding.platformDispatcher.clearPlatformBrightnessTestValue,
+    );
+    try {
+      await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+      await pumpUi(tester);
+
+      expect(
+        find.semantics.byLabel(
+          RegExp(r'데이터 상태: 로컬 기록 확인 완료.*마지막 확인', dotAll: true),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getSemantics(find.text('현금 잔액')),
+        matchesSemantics(label: '현금 잔액', isHeader: true),
+      );
+      await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+      await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
+      await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+      await expectLater(tester, meetsGuideline(textContrastGuideline));
+
+      tester.binding.platformDispatcher.platformBrightnessTestValue =
+          Brightness.dark;
+      await tester.pumpAndSettle();
+      expect(
+        Theme.of(tester.element(find.byType(Scaffold))).brightness,
+        Brightness.dark,
+      );
+      await expectLater(tester, meetsGuideline(textContrastGuideline));
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('reduced motion reaches the final navigation state immediately', (
+    tester,
+  ) async {
+    tester.binding.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(
+          disableAnimations: true,
+          reduceMotion: true,
+        );
+    addTearDown(
+      tester.binding.platformDispatcher.clearAccessibilityFeaturesTestValue,
+    );
+
+    await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+    expect(find.byIcon(Icons.hourglass_empty), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    await pumpUi(tester);
+    expect(
+      MediaQuery.disableAnimationsOf(tester.element(find.byType(Scaffold))),
+      isTrue,
+    );
+    expect(
+      tester
+          .widget<NavigationBar>(find.byType(NavigationBar))
+          .animationDuration,
+      Duration.zero,
+    );
+
+    await tester.tap(find.text('내역'));
+    await tester.pump();
+
+    expect(find.text('거래 내역 가져오기'), findsOneWidget);
+  });
+
+  testWidgets('error state remains usable on a small screen at 200% text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 480);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    await tester.pumpWidget(OmniFolioApp(api: goldenApi()..fail = true));
+    await pumpUi(tester);
+
+    expect(find.text('스냅샷을 불러오지 못했습니다'), findsOneWidget);
+    expect(find.text('다시 시도'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('CSV file selection waits for explicit preview and apply', (
+    tester,
+  ) async {
+    final previous = FileSelectorPlatform.instance;
+    final picker = _CsvPicker()..result = _CsvFile('header\n한국어');
+    FileSelectorPlatform.instance = picker;
+    addTearDown(() => FileSelectorPlatform.instance = previous);
+    final api = goldenApi();
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('내역'));
+    await pumpUi(tester);
+    await tester.tap(find.text('CSV 파일 선택'));
+    await pumpUi(tester);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      'header\n한국어',
+    );
+    expect(api.previewInputs, isEmpty);
+    expect(api.applyKeys, isEmpty);
+    expect(picker.types!.single.extensions, ['csv']);
+    expect(picker.types!.single.uniformTypeIdentifiers, [
+      'public.comma-separated-values-text',
+    ]);
+    await tester.tap(find.text('미리보기 만들기'));
+    await pumpUi(tester);
+    expect(api.previewInputs, ['header\n한국어']);
+    final apply = find.text('원자적으로 적용');
+    await tester.ensureVisible(apply);
+    await pumpUi(tester);
+    await tester.tap(apply);
+    await pumpUi(tester);
+    expect(find.text('적용 확인'), findsOneWidget);
+    expect(api.applyKeys, ['import-${api.previewValue.previewId}']);
+  });
+
+  testWidgets('CSV cancellation, same content and failure preserve results', (
+    tester,
+  ) async {
+    final previous = FileSelectorPlatform.instance;
+    final picker = _CsvPicker();
+    FileSelectorPlatform.instance = picker;
+    addTearDown(() => FileSelectorPlatform.instance = previous);
+    final api = goldenApi();
+    await _openCsvImport(tester, api);
+    await tester.enterText(find.byType(TextField), 'header\nrow');
+    await tester.tap(find.text('미리보기 만들기'));
+    await pumpUi(tester);
+    await tester.ensureVisible(find.text('원자적으로 적용'));
+    await pumpUi(tester);
+    await tester.tap(find.text('원자적으로 적용'));
+    await pumpUi(tester);
+    await tester.ensureVisible(find.byType(TextField));
+    await pumpUi(tester);
+    final field = tester.widget<TextField>(find.byType(TextField));
+    const selection = TextSelection(baseOffset: 2, extentOffset: 5);
+    field.controller!.selection = selection;
+    final outerScroll = find
+        .descendant(
+          of: find.byType(ListView).first,
+          matching: find.byType(Scrollable),
+        )
+        .first;
+
+    Future<void> select({String? error}) async {
+      await tester.scrollUntilVisible(
+        find.text('CSV 파일 선택'),
+        -200,
+        scrollable: outerScroll,
+      );
+      await pumpUi(tester);
+      await tester.tap(find.text('CSV 파일 선택'));
+      await pumpUi(tester);
+      if (error != null) {
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('import-error')),
+          200,
+          scrollable: outerScroll,
+        );
+        await pumpUi(tester);
+        expect(find.textContaining(error), findsOneWidget);
+      }
+    }
+
+    Future<void> retained() async {
+      expect(field.controller!.text, 'header\nrow');
+      expect(field.controller!.selection, selection);
+      await tester.scrollUntilVisible(
+        find.text('원자적으로 적용'),
+        200,
+        scrollable: outerScroll,
+      );
+      await pumpUi(tester);
+      expect(find.text('원자적으로 적용'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('적용 확인'),
+        200,
+        scrollable: outerScroll,
+      );
+      await pumpUi(tester);
+      expect(find.textContaining('receipt_golden_001'), findsOneWidget);
+      expect(api.previewInputs, hasLength(1));
+      expect(api.applyKeys, hasLength(1));
+    }
+
+    await select();
+    await retained();
+    picker.error = Exception('private/path/account-secret.csv');
+    await select(error: '기존 입력과 결과는 유지됩니다.');
+    expect(find.textContaining('private/path'), findsNothing);
+    await retained();
+    picker.error = null;
+    picker.result = _CsvFile.bytes(Uint8List.fromList([0xc3, 0x28]));
+    await select(error: 'UTF-8로 저장한');
+    await retained();
+    picker.result = _CsvFile.bytes(Uint8List((1 << 20) + 1));
+    await select(error: '1MiB 이하로 선택하세요.');
+    await retained();
+    picker.result = _CsvFile('header\nrow');
+    await select(error: '1MiB 이하로 선택하세요.');
+    await retained();
+    picker.result = _CsvFile('header\nchanged');
+    await select(error: '이전 미리보기는 무효');
+    expect(field.controller!.text, 'header\nchanged');
+    expect(find.text('적용 확인'), findsNothing);
+    expect(find.text('원자적으로 적용'), findsNothing);
+    expect(find.textContaining('이전 미리보기는 무효'), findsOneWidget);
+    expect(api.previewInputs, hasLength(1));
+  });
+
+  testWidgets(
+    'CSV pending selection guards same-frame actions and survives resize',
+    (tester) async {
+      tester.view.physicalSize = const Size(899, 1100);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final previous = FileSelectorPlatform.instance;
+      final pending = Completer<XFile?>();
+      final picker = _CsvPicker()..pending = pending;
+      FileSelectorPlatform.instance = picker;
+      addTearDown(() => FileSelectorPlatform.instance = previous);
+      final api = goldenApi();
+      await _openCsvImport(tester, api);
+      await tester.enterText(find.byType(TextField), 'header\nrow');
+      await tester.tap(find.text('미리보기 만들기'));
+      await pumpUi(tester);
+      final pick = tester
+          .widget<OutlinedButton>(
+            find.widgetWithText(OutlinedButton, 'CSV 파일 선택'),
+          )
+          .onPressed!;
+      final preview = tester
+          .widget<ElevatedButton>(
+            find.widgetWithText(ElevatedButton, '미리보기 만들기'),
+          )
+          .onPressed!;
+      final apply = tester
+          .widget<ElevatedButton>(
+            find.widgetWithText(ElevatedButton, '원자적으로 적용'),
+          )
+          .onPressed!;
+      pick();
+      pick();
+      preview();
+      apply();
+      await tester.pump();
+      expect(picker.calls, 1);
+      expect(api.previewInputs, hasLength(1));
+      expect(api.applyKeys, isEmpty);
+      expect(tester.widget<TextField>(find.byType(TextField)).readOnly, isTrue);
+      tester.view.physicalSize = const Size(900, 1100);
+      await pumpUi(tester);
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.widgetWithText(OutlinedButton, 'CSV 파일 선택'),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<ElevatedButton>(
+              find.widgetWithText(ElevatedButton, '원자적으로 적용'),
+            )
+            .onPressed,
+        isNull,
+      );
+      pending.complete(_CsvFile('header\nchanged'));
+      await pumpUi(tester);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).readOnly,
+        isFalse,
+      );
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'header\nchanged',
+      );
+      expect(find.text('원자적으로 적용'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('CSV pending read can finish after leaving the import page', (
+    tester,
+  ) async {
+    final previous = FileSelectorPlatform.instance;
+    final read = Completer<Uint8List>();
+    final picker = _CsvPicker()
+      ..result = (_CsvFile('header')..pendingRead = read);
+    FileSelectorPlatform.instance = picker;
+    addTearDown(() => FileSelectorPlatform.instance = previous);
+    final api = goldenApi();
+    await _openCsvImport(tester, api);
+    await tester.tap(find.text('CSV 파일 선택'));
+    await tester.pump();
+    expect(tester.widget<TextField>(find.byType(TextField)).readOnly, isTrue);
+    await tester.tap(find.text('홈'));
+    await pumpUi(tester);
+    read.complete(Uint8List.fromList(utf8.encode('header\nlate')));
+    await pumpUi(tester);
+    expect(api.previewInputs, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final brightness in Brightness.values) {
+    testWidgets('CSV selection fits 320px at 200 percent in $brightness', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(320, 900);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      tester.platformDispatcher.platformBrightnessTestValue = brightness;
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      final semantics = tester.ensureSemantics();
+      await _openCsvImport(tester, goldenApi());
+      final button = find.widgetWithText(OutlinedButton, 'CSV 파일 선택');
+      await tester.ensureVisible(button);
+      await pumpUi(tester);
+      expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
+      expect(
+        tester.getSemantics(button),
+        matchesSemantics(
+          label: 'CSV 파일 선택',
+          isButton: true,
+          hasEnabledState: true,
+          isEnabled: true,
+          isFocusable: true,
+          hasTapAction: true,
+          hasFocusAction: true,
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      semantics.dispose();
+    });
+  }
+
+  testWidgets(
+    'CSV file selection is reachable from the text field by keyboard',
+    (tester) async {
+      final previous = FileSelectorPlatform.instance;
+      final picker = _CsvPicker();
+      FileSelectorPlatform.instance = picker;
+      addTearDown(() => FileSelectorPlatform.instance = previous);
+      await _openCsvImport(tester, goldenApi());
+      await tester.tap(find.byType(TextField));
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await pumpUi(tester);
+      expect(picker.calls, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('applicable preview displays atomic apply receipt', (
+    tester,
+  ) async {
+    final api = goldenApi();
+    api.applyFailures = 1;
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('내역'));
+    await pumpUi(tester);
+    await tester.enterText(find.byType(TextField), 'header\nrow');
+    await tester.tap(find.text('미리보기 만들기'));
+    await pumpUi(tester);
+    expect(find.text('적용 가능: 이 미리보기만 원장에 원자적으로 반영됩니다.'), findsOneWidget);
+
+    final apply = find.text('원자적으로 적용');
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pump();
+    await tester.tap(apply);
+    await pumpUi(tester);
+    expect(find.textContaining('중복 반영되지 않습니다'), findsOneWidget);
+    await tester.ensureVisible(apply);
+    await tester.pump();
+    await tester.tap(apply);
+    await pumpUi(tester);
+    expect(find.text('적용 확인'), findsOneWidget);
+    expect(find.textContaining('receipt_golden_001'), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -1000));
+    await tester.pump();
+    expect(find.text('최근 거래'), findsOneWidget);
+    expect(api.applyKeys, hasLength(2));
+    expect(api.applyKeys, everyElement('import-${api.previewValue.previewId}'));
+  });
+
+  for (final initialWidth in [899.0, 900.0]) {
+    testWidgets('responsive import state survives from $initialWidth px', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(initialWidth, 1100);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final otherWidth = initialWidth == 899 ? 900.0 : 899.0;
+      Future<void> resize(double width) async {
+        tester.view.physicalSize = Size(width, 1100);
+        await pumpUi(tester);
+        expect(
+          find.byType(NavigationRail),
+          width >= 900 ? findsOneWidget : findsNothing,
+        );
+        expect(
+          find.byType(NavigationBar),
+          width < 900 ? findsOneWidget : findsNothing,
+        );
+        expect(tester.takeException(), isNull);
+      }
+
+      final api = goldenApi()..applyFailures = 1;
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+      await tester.tap(find.text('내역'));
+      await pumpUi(tester);
+      await tester.enterText(find.byType(TextField), 'header\nrow');
+      final field = tester.widget<EditableText>(find.byType(EditableText));
+      const selection = TextSelection(baseOffset: 2, extentOffset: 6);
+      field.controller.selection = selection;
+      await resize(otherWidth);
+      final resized = tester.widget<EditableText>(find.byType(EditableText));
+      expect(resized.controller.text, 'header\nrow');
+      expect(resized.controller.selection, selection);
+      expect(resized.focusNode.hasFocus, isTrue);
+      expect(api.activityCalls, 1);
+
+      await tester.tap(find.text('미리보기 만들기'));
+      await pumpUi(tester);
+      await resize(initialWidth);
+      expect(find.text('적용 가능: 이 미리보기만 원장에 원자적으로 반영됩니다.'), findsOneWidget);
+      final apply = find.widgetWithText(ElevatedButton, '원자적으로 적용');
+      await tester.ensureVisible(apply);
+      await tester.tap(apply);
+      await pumpUi(tester);
+      await resize(otherWidth);
+      expect(find.textContaining('거래 내역의 반영 여부를 확인하지 못했습니다.'), findsOneWidget);
+
+      final pendingApply = Completer<ApplyReceipt>();
+      api.applyCompleter = pendingApply;
+      await tester.ensureVisible(apply);
+      await tester.tap(apply);
+      await tester.pump();
+      await resize(initialWidth);
+      expect(tester.widget<ElevatedButton>(apply).onPressed, isNull);
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.widgetWithText(OutlinedButton, 'CSV 파일 선택'),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).readOnly,
+        isFalse,
+      );
+      expect(api.applyKeys, hasLength(2));
+
+      pendingApply.complete(api.receiptValue);
+      await pumpUi(tester);
+      await resize(otherWidth);
+      await tester.ensureVisible(find.text('적용 확인'));
+      expect(find.textContaining('receipt_golden_001'), findsOneWidget);
+      expect(
+        api.applyKeys,
+        everyElement('import-${api.previewValue.previewId}'),
+      );
+      expect(api.activityCalls, 2);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('apply queues activity refresh while initial load is running', (
+    tester,
+  ) async {
+    final initialActivities = Completer<LedgerActivityPage>();
+    final api = goldenApi()..activityCompleter = initialActivities;
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('내역'));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), 'header\nrow');
+    await tester.tap(find.text('미리보기 만들기'));
+    await pumpUi(tester);
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pump();
+    await tester.tap(find.text('원자적으로 적용'));
+    await tester.pump();
+
+    initialActivities.complete(
+      LedgerActivityPage.fromJson(ledgerActivitiesJson(events: const [])),
+    );
+    await pumpUi(tester);
+
+    expect(api.activityCalls, 2);
+  });
+
+  testWidgets('leaving activity during apply does not update disposed state', (
+    tester,
+  ) async {
+    final pendingApply = Completer<ApplyReceipt>();
+    final api = goldenApi()..applyCompleter = pendingApply;
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('내역'));
+    await pumpUi(tester);
+    await tester.enterText(find.byType(TextField), 'header\nrow');
+    await tester.tap(find.text('미리보기 만들기'));
+    await pumpUi(tester);
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pump();
+    await tester.tap(find.text('원자적으로 적용'));
+    await tester.pump();
+    await tester.tap(find.text('홈'));
+    await pumpUi(tester);
+
+    pendingApply.complete(api.receiptValue);
+    await pumpUi(tester);
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'cash void preview preserves the original disclosure at 200 percent text',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final semantics = tester.ensureSemantics();
+
+      final preview = ImportPreview.fromJson({
+        ...fixture('golden-preview.json'),
+        'mapping_version': 'canonical-transaction.v4',
+        'rows': [
+          {
+            'row_number': 2,
+            'status': 'new',
+            'transaction': {
+              'event_id': 'event-cash-void-001',
+              'source_event_id': 'cash-void-001',
+              'account_id': 'account-main',
+              'type': 'CASH_VOID',
+              'occurred_at': '2026-01-03T00:00:00Z',
+              'currency': 'USD',
+              'amount': '5',
+              'corrects_source_event_id': 'fee-001',
+            },
+            'correction_target': {
+              'source_event_id': 'fee-001',
+              'type': 'FEE',
+              'currency': 'USD',
+              'amount': '-5',
+            },
+          },
+        ],
+        'totals': {
+          'total_rows': 1,
+          'new_rows': 1,
+          'duplicate_rows': 0,
+          'error_rows': 0,
+          'unresolved_rows': 0,
+        },
+      });
+      await tester.pumpWidget(OmniFolioApp(api: goldenApi(preview: preview)));
+      await pumpUi(tester);
+      await tester.tap(find.text('내역'));
+      await pumpUi(tester);
+      await tester.enterText(find.byType(TextField), 'header\nrow');
+      await tester.ensureVisible(find.text('미리보기 만들기'));
+      await tester.pump();
+      await tester.drag(find.byType(ListView), const Offset(0, 160));
+      await tester.pump();
+      await tester.tap(find.text('미리보기 만들기'));
+      await pumpUi(tester);
+
+      expect(find.text('원본 기록은 보존되고 반대 금액으로 상쇄됩니다.'), findsOneWidget);
+      expect(find.text('원본 FEE · USD -5 · source fee-001'), findsOneWidget);
+      expect(find.text('정정 CASH_VOID · USD 5'), findsOneWidget);
+      await tester.ensureVisible(find.text('원본 기록은 보존되고 반대 금액으로 상쇄됩니다.'));
+      await tester.pump();
+      expect(
+        find.semantics.byLabel(
+          '정정 행 2, 원본 FEE, USD -5, source fee-001, 반전 USD 5',
+        ),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+      semantics.dispose();
+    },
+  );
+
+  test('FX preview requires valid opposite cash legs', () {
+    Map<String, dynamic> previewWith(Map<String, dynamic> transaction) => {
+      ...fixture('golden-preview.json'),
+      'mapping_version': 'canonical-transaction.v4',
+      'rows': [
+        {'row_number': 2, 'status': 'new', 'transaction': transaction},
+      ],
+      'totals': {
+        'total_rows': 1,
+        'new_rows': 1,
+        'duplicate_rows': 0,
+        'error_rows': 0,
+        'unresolved_rows': 0,
+      },
+    };
+    final validTransaction = <String, dynamic>{
+      'event_id': 'event-fx-001',
+      'source_event_id': 'fx-001',
+      'account_id': 'account-main',
+      'type': 'FX_EXCHANGE',
+      'occurred_at': '2026-01-03T00:00:00Z',
+      'currency': 'USD',
+      'amount': '-100',
+      'counter_currency': 'KRW',
+      'counter_amount': '137000',
+    };
+    final complete = ImportPreview.fromJson(previewWith(validTransaction));
+    expect(complete.rows.single.counterCurrency, 'KRW');
+    expect(complete.rows.single.counterAmount, '137000');
+
+    final invalidChanges = <Map<String, dynamic>>[
+      {'counter_amount': null},
+      {'amount': null},
+      {'amount': '100'},
+      {'counter_amount': '0'},
+      {'counter_amount': '-137000'},
+      {'counter_currency': 'USD'},
+      {'type': 'DEPOSIT'},
+    ];
+    for (final changes in invalidChanges) {
+      final invalid = {...validTransaction, ...changes};
+      invalid.removeWhere((_, value) => value == null);
+      expect(
+        () => ImportPreview.fromJson(previewWith(invalid)),
+        throwsFormatException,
+        reason: 'accepted invalid FX fields: $changes',
+      );
+    }
+  });
+
+  testWidgets('FX preview discloses both cash legs at 200 percent text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final semantics = tester.ensureSemantics();
+    final preview = ImportPreview.fromJson({
+      ...fixture('golden-preview.json'),
+      'mapping_version': 'canonical-transaction.v4',
+      'rows': [
+        {
+          'row_number': 2,
+          'status': 'new',
+          'transaction': {
+            'event_id': 'event-fx-001',
+            'source_event_id': 'fx-001',
+            'account_id': 'account-main',
+            'type': 'FX_EXCHANGE',
+            'occurred_at': '2026-01-03T00:00:00Z',
+            'currency': 'USD',
+            'amount': '-100',
+            'counter_currency': 'KRW',
+            'counter_amount': '137000',
+          },
+        },
+      ],
+      'totals': {
+        'total_rows': 1,
+        'new_rows': 1,
+        'duplicate_rows': 0,
+        'error_rows': 0,
+        'unresolved_rows': 0,
+      },
+    });
+    await tester.pumpWidget(OmniFolioApp(api: goldenApi(preview: preview)));
+    await pumpUi(tester);
+    await tester.tap(find.text('내역'));
+    await pumpUi(tester);
+    await tester.enterText(find.byType(TextField), 'header\nrow');
+    await tester.ensureVisible(find.text('미리보기 만들기'));
+    await tester.pump();
+    await tester.drag(find.byType(ListView), const Offset(0, 160));
+    await tester.pump();
+    await tester.tap(find.text('미리보기 만들기'));
+    await pumpUi(tester);
+
+    expect(find.text('환전 · USD 100 매도 → KRW 137000 매수'), findsOneWidget);
+    expect(find.text('환율을 계산하거나 현재 시세를 뜻하지 않습니다.'), findsOneWidget);
+    await tester.ensureVisible(find.text('환전 · USD 100 매도 → KRW 137000 매수'));
+    await tester.pump();
+    expect(
+      find.semantics.byLabel('환전 행 2, USD 100 매도, KRW 137000 매수'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+    semantics.dispose();
+  });
+
+  testWidgets('editing CSV invalidates an existing preview', (tester) async {
+    final api = goldenApi();
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('내역'));
+    await pumpUi(tester);
+    await tester.enterText(find.byType(TextField), 'header\nrow');
+    await tester.tap(find.text('미리보기 만들기'));
+    await pumpUi(tester);
+    expect(find.text('원자적으로 적용'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'header\nchanged-row');
+    await tester.pump();
+    expect(find.text('원자적으로 적용'), findsNothing);
+    expect(find.textContaining('이전 미리보기는 무효'), findsOneWidget);
+  });
+
+  testWidgets('preview failure describes only retained state', (tester) async {
+    tester.view.physicalSize = const Size(800, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = goldenApi();
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('내역'));
+    await pumpUi(tester);
+    await tester.enterText(find.byType(TextField), 'header\nrow');
+    final preview = find.text('미리보기 만들기');
+    final retained = find.textContaining('이전 미리보기는 유지됩니다.');
+
+    api.fail = true;
+    await tester.tap(preview);
+    await pumpUi(tester);
+    expect(find.textContaining('미리보기를 완료하지 못했습니다.'), findsOneWidget);
+    expect(retained, findsNothing);
+    expect(find.text('원자적으로 적용'), findsNothing);
+
+    api.fail = false;
+    await tester.tap(preview);
+    await pumpUi(tester);
+    api.fail = true;
+    await tester.tap(preview);
+    await pumpUi(tester);
+    expect(retained, findsOneWidget);
+    expect(find.text('원자적으로 적용'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'header\nchanged-row');
+    await tester.tap(preview);
+    await pumpUi(tester);
+    expect(find.textContaining('미리보기를 완료하지 못했습니다.'), findsOneWidget);
+    expect(retained, findsNothing);
+    expect(find.text('원자적으로 적용'), findsNothing);
+    expect(api.applyKeys, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('import operations never render upstream error details', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    const secret = 'account-main provider-request-42';
+    final api = goldenApi()..failureMessage = secret;
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('내역'));
+    await pumpUi(tester);
+    await tester.enterText(find.byType(TextField), 'header\nrow');
+
+    api.fail = true;
+    await tester.tap(find.text('미리보기 만들기'));
+    await pumpUi(tester);
+    await tester.ensureVisible(find.byKey(const Key('import-error')));
+    await pumpUi(tester);
+    expect(find.textContaining(secret), findsNothing);
+    expect(find.textContaining('미리보기를 완료하지 못했습니다.'), findsOneWidget);
+    expect(
+      tester.getSemantics(find.byKey(const Key('import-error'))),
+      matchesSemantics(isLiveRegion: true),
+    );
+
+    api.fail = false;
+    await tester.ensureVisible(find.text('미리보기 만들기'));
+    await pumpUi(tester);
+    await tester.tap(find.text('미리보기 만들기'));
+    await pumpUi(tester);
+    api.applyFailures = 1;
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pump();
+    await tester.tap(find.text('원자적으로 적용'));
+    await pumpUi(tester);
+    expect(find.textContaining(secret), findsNothing);
+    expect(find.textContaining('거래 내역의 반영 여부를 확인하지 못했습니다.'), findsOneWidget);
+    semantics.dispose();
+  });
+
+  testWidgets(
+    'holding opens stale sample chart with semantics and exact table',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+      await pumpUi(tester);
+      await tester.tap(find.text('보유'));
+      await pumpUi(tester);
+      await tester.tap(find.text('AAPL'));
+      await pumpUi(tester);
+
+      expect(find.text('샘플 데이터 · 실시간 아님'), findsOneWidget);
+      expect(find.textContaining('가격 기준 조정 여부 확인 안 됨'), findsOneWidget);
+      await tester.dragUntilVisible(
+        find.text('시세 차트'),
+        find.byKey(const Key('asset-detail-scroll')),
+        const Offset(0, -200),
+      );
+      expect(find.text('시세 차트'), findsOneWidget);
+      expect(find.textContaining('오래된 시세입니다'), findsOneWidget);
+      expect(
+        find.semantics.byLabel(RegExp(r'AAPL 1d 캔들 차트.*정확한 OHLCV 표 보기')),
+        findsOneWidget,
+      );
+      await tester.fling(
+        find.byType(ListView).last,
+        const Offset(0, -900),
+        2000,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('정확한 OHLCV 표 보기'));
+      await tester.pump();
+      expect(find.byKey(const Key('ohlcv-table-rows')), findsOneWidget);
+      await tester.drag(
+        find.byKey(const Key('asset-detail-scroll')),
+        const Offset(0, -300),
+      );
+      await tester.pump();
+      expect(find.text('2026-08-22T20:00:00Z'), findsOneWidget);
+      expect(find.text('101'), findsOneWidget);
+      expect(
+        tester.getSemantics(find.byKey(const Key('ohlcv-header-at'))),
+        matchesSemantics(label: '시각', isHeader: true),
+      );
+      expect(
+        find.semantics.byLabel('행 2026-08-22T20:00:00Z, 종가 101'),
+        findsOneWidget,
+      );
+      semantics.dispose();
+      await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+    },
+  );
+
+  testWidgets('chart range selection updates chart and exact table together', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(375, 900);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final semantics = tester.ensureSemantics();
+    final api = goldenApi()
+      ..candlesValue = marketCandles(
+        bars: const [
+          {
+            'at': '2025-08-21T20:00:00Z',
+            'open': '95',
+            'high': '101',
+            'low': '94',
+            'close': '100',
+            'volume': '800',
+          },
+          {
+            'at': '2026-05-23T20:00:00Z',
+            'open': '100',
+            'high': '103',
+            'low': '98',
+            'close': '102',
+            'volume': '900',
+          },
+          {
+            'at': '2026-05-24T20:00:00Z',
+            'open': '102',
+            'high': '106',
+            'low': '101',
+            'close': '104',
+            'volume': '1000',
+          },
+          {
+            'at': '2026-07-23T20:00:00Z',
+            'open': '104',
+            'high': '108',
+            'low': '103',
+            'close': '107',
+            'volume': '1100',
+          },
+          {
+            'at': '2026-08-01T20:00:00Z',
+            'open': '107',
+            'high': '110',
+            'low': '105',
+            'close': '108',
+            'volume': '1200',
+          },
+          {
+            'at': '2026-08-22T20:00:00Z',
+            'open': '108',
+            'high': '112',
+            'low': '106',
+            'close': '111',
+            'volume': '1300',
+          },
+        ],
+      );
+
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('보유'));
+    await pumpUi(tester);
+    await tester.tap(find.text('AAPL'));
+    await pumpUi(tester);
+    await tester.fling(
+      find.byKey(const Key('asset-detail-scroll')),
+      const Offset(0, -1200),
+      2000,
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('chart-range-30d')), findsOneWidget);
+    expect(
+      find.semantics.byLabel(RegExp(r'AAPL 1d 캔들 차트.*6개 봉')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const Key('chart-range-365d')));
+    await tester.pump();
+    expect(
+      find.semantics.byLabel(RegExp(r'AAPL 1d 캔들 차트.*5개 봉')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const Key('chart-range-90d')));
+    await tester.pump();
+    expect(
+      find.semantics.byLabel(RegExp(r'AAPL 1d 캔들 차트.*4개 봉')),
+      findsOneWidget,
+    );
+    await tester.dragUntilVisible(
+      find.byKey(const Key('chart-range-30d')),
+      find.byKey(const Key('asset-detail-scroll')),
+      const Offset(0, -200),
+    );
+    await tester.tap(find.byKey(const Key('chart-range-30d')));
+    await tester.pump();
+
+    expect(
+      find.semantics.byLabel(
+        RegExp(
+          r'AAPL 1d 캔들 차트.*3개 봉.*2026-07-23T20:00:00Z부터 2026-08-22T20:00:00Z까지',
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('최근 30일 · 2026-07-23'), findsOneWidget);
+    expect(
+      tester.getSemantics(find.byKey(const Key('chart-range-30d'))),
+      matchesSemantics(
+        label: '최근 30일',
+        isButton: true,
+        hasSelectedState: true,
+        isSelected: true,
+        hasTapAction: true,
+      ),
+    );
+    await tester.dragUntilVisible(
+      find.text('정확한 OHLCV 표 보기'),
+      find.byKey(const Key('asset-detail-scroll')),
+      const Offset(0, -200),
+    );
+    await tester.tap(find.text('정확한 OHLCV 표 보기'));
+    await tester.pump();
+    expect(find.text('2026-05-24T20:00:00Z'), findsNothing);
+    expect(find.text('2026-07-23T20:00:00Z'), findsOneWidget);
+    expect(api.candleCalls, 1);
+    expect(tester.takeException(), isNull);
+    await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+    semantics.dispose();
+  });
+
+  testWidgets('finite chart range preserves a valid empty refresh state', (
+    tester,
+  ) async {
+    final api = goldenApi();
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('보유'));
+    await pumpUi(tester);
+    await tester.tap(find.text('AAPL'));
+    await pumpUi(tester);
+    await tester.fling(
+      find.byKey(const Key('asset-detail-scroll')),
+      const Offset(0, -900),
+      2000,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('chart-range-30d')));
+    await tester.pump();
+
+    api.candlesValue = marketCandles(
+      state: 'empty',
+      sample: false,
+      priceAdjustment: 'provider_adjusted',
+      source: 'kiwoom',
+      sourceAsOf: null,
+      includeIssues: false,
+    );
+    await tester.tap(find.byTooltip('차트 새로고침'));
+    await pumpUi(tester);
+
+    expect(find.text('표시할 봉이 없습니다'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'asset detail handles empty partial and retained refresh failure',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      final api = goldenApi();
+      api.candlesValue = marketCandles(
+        state: 'partial',
+        sample: false,
+        priceAdjustment: 'provider_adjusted',
+        source: 'kiwoom',
+      );
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+      await tester.tap(find.text('보유'));
+      await pumpUi(tester);
+      await tester.tap(find.text('AAPL'));
+      await pumpUi(tester);
+      expect(find.textContaining('일부 시세입니다'), findsOneWidget);
+      expect(find.textContaining('missing_session'), findsOneWidget);
+
+      api.fail = true;
+      await tester.tap(find.byTooltip('차트 새로고침'));
+      await pumpUi(tester);
+      expect(find.textContaining('마지막 정상 시세는 유지됩니다'), findsOneWidget);
+      expect(
+        find.semantics.byLabel(RegExp(r'새로고침 실패:.*마지막 정상 시세는 유지됩니다.')),
+        findsOneWidget,
+      );
+      expect(
+        tester.getSemantics(find.byKey(const Key('market-refresh-error'))),
+        matchesSemantics(isLiveRegion: true),
+      );
+      semantics.dispose();
+      await tester.drag(find.byType(ListView).last, const Offset(0, -500));
+      await tester.pump();
+      await tester.dragUntilVisible(
+        find.text('시세 차트'),
+        find.byKey(const Key('asset-detail-scroll')),
+        const Offset(0, -200),
+      );
+      expect(find.text('시세 차트'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'asset detail rejects other identity and retains source metadata',
+    (tester) async {
+      final api = goldenApi();
+      api.candlesValue = marketCandles(
+        instrumentId: 'another',
+        currency: 'USD',
+      );
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+      await tester.tap(find.text('보유'));
+      await pumpUi(tester);
+      await tester.tap(find.text('AAPL'));
+      await pumpUi(tester);
+      expect(find.text('시세를 불러오지 못했습니다'), findsOneWidget);
+      expect(find.text('시세 차트'), findsNothing);
+      api.candlesValue = marketCandles(
+        instrumentId: 'instrument_aapl',
+        currency: 'USD',
+      );
+      await tester.tap(find.text('다시 시도'));
+      await pumpUi(tester);
+      expect(find.textContaining('가격 통화 USD'), findsOneWidget);
+      expect(find.textContaining('원장 종목과 일치'), findsOneWidget);
+      expect(find.textContaining('봉 시각 의미 확인 안 됨'), findsOneWidget);
+      for (final bad in [
+        marketCandles(instrumentId: 'another', currency: 'USD'),
+        marketCandles(instrumentId: 'instrument_aapl', currency: 'KRW'),
+      ]) {
+        api.candlesValue = bad;
+        await tester.tap(find.byTooltip('차트 새로고침'));
+        await pumpUi(tester);
+        expect(find.textContaining('마지막 정상 시세는 유지됩니다'), findsOneWidget);
+        expect(find.textContaining('가격 통화 USD'), findsOneWidget);
+        expect(find.textContaining('2026-08-24T03:00:00Z'), findsOneWidget);
+      }
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('asset detail discloses legacy unknown basis', (tester) async {
+    await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+    await pumpUi(tester);
+    await tester.tap(find.text('보유'));
+    await pumpUi(tester);
+    await tester.tap(find.text('AAPL'));
+    await pumpUi(tester);
+    expect(find.textContaining('가격 통화 확인 안 됨'), findsOneWidget);
+    expect(find.textContaining('원장 종목과의 연결 확인 안 됨'), findsOneWidget);
+    expect(find.textContaining('평균단가·매매 기록을 겹쳐 표시할 수 없습니다'), findsOneWidget);
+  });
+
+  testWidgets('asset detail error offers retry', (tester) async {
+    final api = goldenApi();
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('보유'));
+    await pumpUi(tester);
+    await tester.tap(find.text('AAPL'));
+    await pumpUi(tester);
+    await tester.dragUntilVisible(
+      find.text('시세 차트'),
+      find.byKey(const Key('asset-detail-scroll')),
+      const Offset(0, -200),
+    );
+    expect(find.text('시세 차트'), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    api.fail = true;
+    await tester.tap(find.text('AAPL'));
+    await pumpUi(tester);
+    expect(find.text('시세를 불러오지 못했습니다'), findsOneWidget);
+    api.fail = false;
+    await tester.tap(find.text('다시 시도'));
+    await pumpUi(tester);
+    await tester.dragUntilVisible(
+      find.text('시세 차트'),
+      find.byKey(const Key('asset-detail-scroll')),
+      const Offset(0, -200),
+    );
+    expect(find.text('시세 차트'), findsOneWidget);
+  });
+
+  testWidgets('asset detail never renders upstream error details', (
+    tester,
+  ) async {
+    const secret = 'kiwoom_account_1234 raw_provider_message';
+    final pending = Completer<MarketCandles>();
+    final api = goldenApi()
+      ..failureMessage = secret
+      ..candlesCompleter = pending;
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('보유'));
+    await pumpUi(tester);
+    await tester.tap(find.text('AAPL'));
+    await tester.pump();
+
+    pending.completeError(ApiException(secret));
+    await pumpUi(tester);
+
+    expect(find.textContaining(secret), findsNothing);
+    expect(find.textContaining('시세를 불러오지 못했습니다.'), findsOneWidget);
+  });
+
+  testWidgets(
+    'asset detail keeps a visible loading state until candles arrive',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      final api = goldenApi()..candlesCompleter = Completer<MarketCandles>();
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+      await tester.tap(find.text('보유'));
+      await pumpUi(tester);
+      await tester.tap(find.text('AAPL'));
+      await pumpUi(tester);
+      expect(find.semantics.byLabel('데이터를 불러오는 중'), findsOneWidget);
+
+      api.candlesCompleter!.complete(api.candlesValue);
+      await pumpUi(tester);
+      await tester.dragUntilVisible(
+        find.text('시세 차트'),
+        find.byKey(const Key('asset-detail-scroll')),
+        const Offset(0, -200),
+      );
+      expect(find.text('시세 차트'), findsOneWidget);
+      semantics.dispose();
+    },
+  );
+
+  testWidgets('asset detail success table works at 200 percent text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 480);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final api = goldenApi()
+      ..candlesValue = marketCandles(
+        state: 'success',
+        sample: false,
+        priceAdjustment: 'provider_adjusted',
+        source: 'kiwoom',
+      );
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.tap(find.text('보유'));
+    await pumpUi(tester);
+    await tester.tap(find.text('AAPL'));
+    await pumpUi(tester);
+    expect(find.textContaining('원천 kiwoom'), findsOneWidget);
+    expect(find.textContaining('가격 기준 공급자 조정 가격'), findsOneWidget);
+    await tester.dragUntilVisible(
+      find.text('정확한 OHLCV 표 보기'),
+      find.byKey(const Key('asset-detail-scroll')),
+      const Offset(0, -200),
+    );
+    await tester.pump();
+    await tester.tap(find.text('정확한 OHLCV 표 보기'));
+    await tester.pump();
+    expect(find.text('OHLCV 표'), findsOneWidget);
+    expect(find.text('2026-08-22T20:00:00Z'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('desktop uses a rail and keeps portfolio content readable', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+    await pumpUi(tester);
+
+    expect(find.byType(NavigationRail), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(
+      tester.getSize(find.byKey(const Key('portfolio-content-frame'))).width,
+      lessThanOrEqualTo(1040),
+    );
+  });
+
+  testWidgets('overview leads with useful portfolio data', (tester) async {
+    await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+    await pumpUi(tester);
+
+    expect(find.text('내 투자 기록'), findsOneWidget);
+    expect(find.text('USD 778'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('내 투자 기록')).dy,
+      lessThan(tester.getTopLeft(find.textContaining('데이터 상태:')).dy),
+    );
+    await tester.dragUntilVisible(
+      find.text('AAPL'),
+      find.byType(ListView),
+      const Offset(0, -300),
+    );
+  });
+
+  testWidgets(
+    'overview shows a sample-labeled whole portfolio value at 200 percent text',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 700);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final semantics = tester.ensureSemantics();
+      try {
+        await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+        await pumpUi(tester);
+
+        await tester.dragUntilVisible(
+          find.text('총 자산'),
+          find.byType(ListView),
+          const Offset(0, -240),
+        );
+        await tester.pump();
+
+        expect(find.text('총 자산'), findsOneWidget);
+        expect(find.text('KRW 157,180'), findsOneWidget);
+        expect(find.textContaining('실시간·증권사 값 아님'), findsOneWidget);
+        expect(
+          find.semantics.byLabel(
+            RegExp(
+              r'총 자산 KRW 157,180.*현금 KRW 95,530.*보유 자산 KRW 61,650.*로컬 샘플.*실시간.*증권사 값 아님.*평가 시각',
+            ),
+          ),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  test(
+    'current valuation is optional, retains known-good on error, and replaces it with unavailable',
+    () async {
+      final api = goldenApi();
+      final controller = PortfolioController(api);
+      addTearDown(controller.dispose);
+
+      await controller.refresh();
+      final knownGood = controller.currentValuation;
+      expect(knownGood?.totalValue?.amount, '157180');
+      expect(api.currentValuationCalls, 1);
+
+      api.failCurrentValuation = true;
+      await controller.refreshCurrentValuation();
+      expect(controller.currentValuation, same(knownGood));
+      expect(controller.currentValuationFailed, isTrue);
+
+      api
+        ..failCurrentValuation = false
+        ..currentValuationValue = currentPortfolioValuation(
+          status: 'unavailable',
+          sample: false,
+          cashValue: null,
+          holdingsValue: null,
+          totalValue: null,
+          issues: const [
+            {
+              'code': 'missing_security_price',
+              'message': 'an eligible security price is unavailable',
+              'field': 'AAPL',
+            },
+          ],
+        );
+      await controller.refreshCurrentValuation();
+      expect(controller.currentValuation?.status, 'unavailable');
+      expect(controller.currentValuation?.totalValue, isNull);
+      expect(controller.currentValuationFailed, isFalse);
+    },
+  );
+
+  test(
+    'slow current valuation does not block snapshot and is single-flight',
+    () async {
+      final pending = Completer<CurrentPortfolioValuation>();
+      final api = goldenApi()..currentValuationCompleter = pending;
+      final controller = PortfolioController(api);
+      addTearDown(controller.dispose);
+
+      final refresh = controller.refresh();
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.snapshot?.ledgerRevision, 'rev_0000000003');
+      expect(controller.currentValuationBusy, isTrue);
+      await controller.refreshCurrentValuation();
+      expect(api.currentValuationCalls, 1);
+
+      pending.complete(currentPortfolioValuation());
+      await refresh;
+      expect(controller.currentValuation?.totalValue?.amount, '157180');
+      expect(controller.currentValuationBusy, isFalse);
+    },
+  );
+
+  testWidgets('overview qualifies an empty valuation from an older revision', (
+    tester,
+  ) async {
+    final api = goldenApi()
+      ..currentValuationValue = currentPortfolioValuation(
+        ledgerRevision: 'rev_0000000002',
+        status: 'empty',
+        sample: false,
+        cashValue: null,
+        holdingsValue: null,
+        totalValue: null,
+        issues: const [],
+      );
+
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+    await tester.dragUntilVisible(
+      find.text('원장 갱신 전 저장 평가'),
+      find.byType(ListView),
+      const Offset(0, -240),
+    );
+
+    expect(find.text('원장 갱신 전 저장 평가'), findsOneWidget);
+    expect(find.textContaining('이 평가 시점의 원장'), findsOneWidget);
+    expect(find.textContaining('현재 원장에 평가할'), findsNothing);
+  });
+
+  testWidgets('failed valuation announces each sentence once', (tester) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      await tester.pumpWidget(
+        OmniFolioApp(api: goldenApi()..failCurrentValuation = true),
+      );
+      await pumpUi(tester);
+      final title = find.text('전체 평가를 불러오지 못했습니다');
+      await tester.dragUntilVisible(
+        title,
+        find.byType(ListView),
+        const Offset(0, -200),
+      );
+      final label = tester.getSemantics(title).getSemanticsData().label;
+      expect('전체 평가를 불러오지 못했습니다'.allMatches(label).length, 1);
+      expect('새로고침하면 다시 계산합니다'.allMatches(label).length, 1);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('unavailable valuation announces each sentence once', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      final api = goldenApi()
+        ..currentValuationValue = currentPortfolioValuation(
+          status: 'unavailable',
+          sample: false,
+          cashValue: null,
+          holdingsValue: null,
+          totalValue: null,
+          issues: const [
+            {
+              'code': 'missing_direct_fx',
+              'message': 'missing FX',
+              'field': 'USD',
+            },
+          ],
+        );
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+      final title = find.text('전체 평가를 계산할 수 없음');
+      await tester.dragUntilVisible(
+        title,
+        find.byType(ListView),
+        const Offset(0, -200),
+      );
+      final label = tester.getSemantics(title).getSemanticsData().label;
+      expect('전체 평가를 계산할 수 없음'.allMatches(label).length, 1);
+      expect('부분 합계는 표시하지 않습니다'.allMatches(label).length, 1);
+      expect('평가 시각'.allMatches(label).length, 1);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('first-run action stays compact on desktop', (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = goldenApi(
+      neverVerified: true,
+      snapshot: PortfolioSnapshot.fromJson({
+        ...fixture('golden-snapshot.json'),
+        'ledger_revision': 'rev_0000000000',
+        'cash': const [],
+        'holdings': const [],
+        'realized_pnl': const [],
+        'provenance': {'event_ids': const [], 'receipt_ids': const []},
+      }),
+    );
+
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+
+    expect(
+      tester.getSize(find.byKey(const Key('empty-primary-action'))).width,
+      lessThanOrEqualTo(320),
+    );
+  });
+
+  testWidgets(
+    'realized gain shows a signed Korean status with positive color',
+    (tester) async {
+      await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+      await pumpUi(tester);
+
+      final gain = find.text('실현 이익 USD +78.6');
+      expect(gain, findsOneWidget);
+      expect(tester.widget<Text>(gain).style!.color, const Color(0xFF047857));
+    },
+  );
+
+  testWidgets(
+    'realized loss shows a signed Korean status with negative color',
+    (tester) async {
+      final api = goldenApi(
+        snapshot: PortfolioSnapshot.fromJson({
+          ...fixture('golden-snapshot.json'),
+          'realized_pnl': [
+            {'currency': 'USD', 'amount': '-12.5'},
+          ],
+        }),
+      );
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+
+      final loss = find.text('실현 손실 USD -12.5');
+      expect(loss, findsOneWidget);
+      expect(tester.widget<Text>(loss).style!.color, const Color(0xFFB91C1C));
+    },
+  );
+
+  testWidgets(
+    'mixed-currency realized PnL keeps each signed status and color',
+    (tester) async {
+      final api = goldenApi(
+        snapshot: PortfolioSnapshot.fromJson({
+          ...fixture('golden-snapshot.json'),
+          'realized_pnl': [
+            {'currency': 'USD', 'amount': '10'},
+            {'currency': 'KRW', 'amount': '-200'},
+          ],
+        }),
+      );
+      await tester.pumpWidget(OmniFolioApp(api: api));
+      await pumpUi(tester);
+
+      final gain = find.text('실현 이익 USD +10');
+      final loss = find.text('실현 손실 KRW -200');
+      expect(gain, findsOneWidget);
+      expect(loss, findsOneWidget);
+      expect(tester.widget<Text>(gain).style!.color, const Color(0xFF047857));
+      expect(tester.widget<Text>(loss).style!.color, const Color(0xFFB91C1C));
+    },
+  );
+
+  testWidgets(
+    'snapshot provenance counts precede realized PnL without raw IDs',
+    (tester) async {
+      await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+      await pumpUi(tester);
+
+      final provenance = find.text('최근 원장 기록 · 이벤트 3건 · 가져오기 1건');
+      final pnl = find.text('실현 이익 USD +78.6');
+      expect(provenance, findsOneWidget);
+      expect(
+        tester.getTopLeft(provenance).dy,
+        lessThan(tester.getTopLeft(pnl).dy),
+      );
+      expect(find.textContaining('event_cash_001'), findsNothing);
+      expect(find.textContaining('receipt_golden_001'), findsNothing);
+      expect(find.textContaining('백업 정보'), findsNothing);
+    },
+  );
+
+  testWidgets('holdings list stays lazy and overview preview is bounded', (
+    tester,
+  ) async {
+    final holdings = List<Json>.generate(
+      6,
+      (index) => {
+        'instrument_id': 'instrument_$index',
+        'symbol': 'T$index',
+        'quantity': '1',
+        'cost_basis': '1',
+        'currency': 'USD',
+      },
+    );
+    final api = goldenApi(
+      snapshot: PortfolioSnapshot.fromJson({
+        ...fixture('golden-snapshot.json'),
+        'holdings': holdings,
+      }),
+    );
+    await tester.pumpWidget(OmniFolioApp(api: api));
+    await pumpUi(tester);
+
+    await tester.dragUntilVisible(
+      find.text('보유 탭에서 전체 6종목 보기'),
+      find.byType(ListView),
+      const Offset(0, -300),
+    );
+    expect(find.text('T3'), findsNothing);
+
+    await tester.tap(find.text('보유'));
+    await pumpUi(tester);
+    final list = tester.widget<ListView>(find.byType(ListView));
+    expect(list.childrenDelegate, isA<SliverChildBuilderDelegate>());
+  });
+
+  testWidgets('holding row exposes one combined actionable semantics label', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      await tester.pumpWidget(OmniFolioApp(api: goldenApi()));
+      await pumpUi(tester);
+      await tester.tap(find.text('보유'));
+      await pumpUi(tester);
+
+      final combined = find.semantics.byLabel('AAPL, 수량 6, 원가 USD 300.6');
+      expect(combined, findsOneWidget);
+      expect(
+        combined.evaluate().single.getSemanticsData().hasAction(
+          SemanticsAction.tap,
+        ),
+        isTrue,
+      );
+      expect(find.semantics.byLabel('AAPL'), findsNothing);
+      expect(find.semantics.byLabel('수량 6'), findsNothing);
+      expect(find.semantics.byLabel('USD 300.6'), findsNothing);
+    } finally {
+      semantics.dispose();
+    }
+  });
+}
+
+class _CsvPicker extends FileSelectorPlatform {
+  XFile? result;
+  Object? error;
+  Completer<XFile?>? pending;
+  int calls = 0;
+  List<XTypeGroup>? types;
+  @override
+  Future<XFile?> openFile({
+    List<XTypeGroup>? acceptedTypeGroups,
+    String? initialDirectory,
+    String? confirmButtonText,
+  }) async {
+    calls += 1;
+    types = acceptedTypeGroups;
+    if (error != null) throw error!;
+    return pending?.future ?? result;
+  }
+}
+
+class _CsvFile extends XFile {
+  _CsvFile(String text) : this.bytes(Uint8List.fromList(utf8.encode(text)));
+  _CsvFile.bytes(this.bytes) : super('unused');
+  final Uint8List bytes;
+  Completer<Uint8List>? pendingRead;
+  @override
+  Future<int> length() async => bytes.length;
+  @override
+  Stream<Uint8List> openRead([int? start, int? end]) async* {
+    yield await (pendingRead?.future ?? Future.value(bytes));
+  }
+}
+
+Future<void> _openCsvImport(WidgetTester tester, FakeApi api) async {
+  await tester.pumpWidget(OmniFolioApp(api: api));
+  await pumpUi(tester);
+  await tester.tap(find.text('내역'));
+  await pumpUi(tester);
+}

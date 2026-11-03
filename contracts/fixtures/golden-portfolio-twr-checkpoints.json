@@ -1,0 +1,357 @@
+{
+  "reports": {
+    "compound": {
+      "policy_version": "twr_cash_flow_checkpoints.v1",
+      "report": {
+        "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+        "scope": "whole_portfolio_since_inception",
+        "valuation": {
+          "scope": "whole_portfolio",
+          "policy_version": "current_base_portfolio_valuation_v1",
+          "max_observation_age_seconds": 86400,
+          "base_currency": "KRW",
+          "valuation_as_of": "2026-01-01T00:00:00Z",
+          "ledger_revision": "rev_0000000004",
+          "ledger_as_of": "2026-01-01T00:00:00Z",
+          "ledger_recorded_at": "2026-01-01T00:00:00Z",
+          "status": "complete",
+          "sample": false,
+          "cash_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "holdings_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "total_value": {
+            "currency": "KRW",
+            "amount": "231"
+          },
+          "issues": []
+        },
+        "status": "calculated",
+        "sample": false,
+        "period_start": "2025-01-01T00:00:00Z",
+        "period_end": "2026-01-01T00:00:00Z",
+        "external_event_count": 2,
+        "boundary_count": 2,
+        "cumulative_rate": "0.21",
+        "net_contributions": {
+          "currency": "KRW",
+          "amount": "200"
+        },
+        "issues": []
+      },
+      "points": [
+        {
+          "at": "2025-01-01T00:00:00Z",
+          "kind": "external_flow",
+          "cumulative_rate": "0"
+        },
+        {
+          "at": "2025-07-01T00:00:00Z",
+          "kind": "external_flow",
+          "cumulative_rate": "0.1"
+        },
+        {
+          "at": "2026-01-01T00:00:00Z",
+          "kind": "valuation",
+          "cumulative_rate": "0.21"
+        }
+      ]
+    },
+    "empty": {
+      "policy_version": "twr_cash_flow_checkpoints.v1",
+      "report": {
+        "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+        "scope": "whole_portfolio_since_inception",
+        "valuation": {
+          "scope": "whole_portfolio",
+          "policy_version": "current_base_portfolio_valuation_v1",
+          "max_observation_age_seconds": 86400,
+          "base_currency": "KRW",
+          "valuation_as_of": "2026-01-01T00:00:00Z",
+          "ledger_revision": "rev_0000000000",
+          "ledger_as_of": "1970-01-01T00:00:00Z",
+          "ledger_recorded_at": "1970-01-01T00:00:00Z",
+          "status": "empty",
+          "sample": false,
+          "cash_value": null,
+          "holdings_value": null,
+          "total_value": null,
+          "issues": []
+        },
+        "status": "empty",
+        "sample": false,
+        "period_start": null,
+        "period_end": "2026-01-01T00:00:00Z",
+        "external_event_count": 0,
+        "boundary_count": 0,
+        "cumulative_rate": null,
+        "net_contributions": null,
+        "issues": []
+      },
+      "points": []
+    },
+    "valuation_unavailable": {
+      "policy_version": "twr_cash_flow_checkpoints.v1",
+      "report": {
+        "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+        "scope": "whole_portfolio_since_inception",
+        "valuation": {
+          "scope": "whole_portfolio",
+          "policy_version": "current_base_portfolio_valuation_v1",
+          "max_observation_age_seconds": 86400,
+          "base_currency": "KRW",
+          "valuation_as_of": "2026-01-01T00:00:00Z",
+          "ledger_revision": "rev_0000000001",
+          "ledger_as_of": "2025-01-01T00:00:00Z",
+          "ledger_recorded_at": "2026-01-01T00:00:00Z",
+          "status": "unavailable",
+          "sample": false,
+          "cash_value": null,
+          "holdings_value": null,
+          "total_value": null,
+          "issues": [
+            {
+              "code": "missing_direct_fx",
+              "message": "an eligible direct FX observation is unavailable",
+              "field": "USD"
+            }
+          ]
+        },
+        "status": "unavailable",
+        "sample": false,
+        "period_start": null,
+        "period_end": "2026-01-01T00:00:00Z",
+        "external_event_count": null,
+        "boundary_count": null,
+        "cumulative_rate": null,
+        "net_contributions": null,
+        "issues": [
+          {
+            "code": "valuation_unavailable",
+            "message": "a required input does not meet the declared TWR policy"
+          }
+        ]
+      },
+      "points": []
+    },
+    "historical_fx_unavailable": {
+      "policy_version": "twr_cash_flow_checkpoints.v1",
+      "report": {
+        "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+        "scope": "whole_portfolio_since_inception",
+        "valuation": {
+          "scope": "whole_portfolio",
+          "policy_version": "current_base_portfolio_valuation_v1",
+          "max_observation_age_seconds": 86400,
+          "base_currency": "KRW",
+          "valuation_as_of": "2026-01-01T00:00:00Z",
+          "ledger_revision": "rev_0000000001",
+          "ledger_as_of": "2025-01-01T00:00:00Z",
+          "ledger_recorded_at": "2026-01-01T00:00:00Z",
+          "status": "stale_sample",
+          "sample": true,
+          "cash_value": {
+            "currency": "KRW",
+            "amount": "110000"
+          },
+          "holdings_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "total_value": {
+            "currency": "KRW",
+            "amount": "110000"
+          },
+          "issues": [
+            {
+              "code": "sample_data",
+              "message": "portfolio valuation uses stored local sample prices or FX data"
+            }
+          ]
+        },
+        "status": "unavailable",
+        "sample": true,
+        "period_start": "2025-01-01T00:00:00Z",
+        "period_end": "2026-01-01T00:00:00Z",
+        "external_event_count": 1,
+        "boundary_count": 1,
+        "cumulative_rate": null,
+        "net_contributions": null,
+        "issues": [
+          {
+            "code": "missing_historical_fx",
+            "message": "a required input does not meet the declared TWR policy"
+          },
+          {
+            "code": "sample_data",
+            "message": "return inputs include stored local sample observations"
+          }
+        ]
+      },
+      "points": []
+    },
+    "zero_return": {
+      "policy_version": "twr_cash_flow_checkpoints.v1",
+      "report": {
+        "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+        "scope": "whole_portfolio_since_inception",
+        "valuation": {
+          "scope": "whole_portfolio",
+          "policy_version": "current_base_portfolio_valuation_v1",
+          "max_observation_age_seconds": 86400,
+          "base_currency": "KRW",
+          "valuation_as_of": "2026-01-01T00:00:00Z",
+          "ledger_revision": "rev_0000000001",
+          "ledger_as_of": "2025-01-01T00:00:00Z",
+          "ledger_recorded_at": "2026-01-01T00:00:00Z",
+          "status": "complete",
+          "sample": false,
+          "cash_value": {
+            "currency": "KRW",
+            "amount": "100"
+          },
+          "holdings_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "total_value": {
+            "currency": "KRW",
+            "amount": "100"
+          },
+          "issues": []
+        },
+        "status": "calculated",
+        "sample": false,
+        "period_start": "2025-01-01T00:00:00Z",
+        "period_end": "2026-01-01T00:00:00Z",
+        "external_event_count": 1,
+        "boundary_count": 1,
+        "cumulative_rate": "0",
+        "net_contributions": {
+          "currency": "KRW",
+          "amount": "100"
+        },
+        "issues": []
+      },
+      "points": [
+        {
+          "at": "2025-01-01T00:00:00Z",
+          "kind": "external_flow",
+          "cumulative_rate": "0"
+        },
+        {
+          "at": "2026-01-01T00:00:00Z",
+          "kind": "valuation",
+          "cumulative_rate": "0"
+        }
+      ]
+    },
+    "total_loss": {
+      "policy_version": "twr_cash_flow_checkpoints.v1",
+      "report": {
+        "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+        "scope": "whole_portfolio_since_inception",
+        "valuation": {
+          "scope": "whole_portfolio",
+          "policy_version": "current_base_portfolio_valuation_v1",
+          "max_observation_age_seconds": 86400,
+          "base_currency": "KRW",
+          "valuation_as_of": "2026-01-01T00:00:00Z",
+          "ledger_revision": "rev_0000000002",
+          "ledger_as_of": "2026-01-01T00:00:00Z",
+          "ledger_recorded_at": "2026-01-01T00:00:00Z",
+          "status": "complete",
+          "sample": false,
+          "cash_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "holdings_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "total_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "issues": []
+        },
+        "status": "calculated",
+        "sample": false,
+        "period_start": "2025-01-01T00:00:00Z",
+        "period_end": "2026-01-01T00:00:00Z",
+        "external_event_count": 1,
+        "boundary_count": 1,
+        "cumulative_rate": "-1",
+        "net_contributions": {
+          "currency": "KRW",
+          "amount": "100"
+        },
+        "issues": []
+      },
+      "points": [
+        {
+          "at": "2025-01-01T00:00:00Z",
+          "kind": "external_flow",
+          "cumulative_rate": "0"
+        },
+        {
+          "at": "2026-01-01T00:00:00Z",
+          "kind": "valuation",
+          "cumulative_rate": "-1"
+        }
+      ]
+    },
+    "full_withdrawal": {
+      "policy_version": "twr_cash_flow_checkpoints.v1",
+      "report": {
+        "policy_version": "restated_external_first_exact_timestamp_twr_v1",
+        "scope": "whole_portfolio_since_inception",
+        "valuation": {
+          "scope": "whole_portfolio",
+          "policy_version": "current_base_portfolio_valuation_v1",
+          "max_observation_age_seconds": 86400,
+          "base_currency": "KRW",
+          "valuation_as_of": "2026-01-01T00:00:00Z",
+          "ledger_revision": "rev_0000000002",
+          "ledger_as_of": "2025-07-01T00:00:00Z",
+          "ledger_recorded_at": "2026-01-01T00:00:00Z",
+          "status": "complete",
+          "sample": false,
+          "cash_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "holdings_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "total_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "issues": []
+        },
+        "status": "unavailable",
+        "sample": false,
+        "period_start": "2025-01-01T00:00:00Z",
+        "period_end": "2026-01-01T00:00:00Z",
+        "external_event_count": 2,
+        "boundary_count": 2,
+        "cumulative_rate": null,
+        "net_contributions": null,
+        "issues": [
+          {
+            "code": "capital_path_unavailable",
+            "message": "a required input does not meet the declared TWR policy"
+          }
+        ]
+      },
+      "points": []
+    }
+  }
+}

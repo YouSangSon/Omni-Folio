@@ -1,0 +1,94 @@
+{
+  "reports": {
+    "empty": {
+      "policy_version": "watchlist_stored_prices_24h.v1",
+      "max_observation_age_seconds": 86400,
+      "observed_at": "2026-01-02T00:00:00Z",
+      "watchlist": {
+        "revision": 0,
+        "updated_at": null,
+        "entries": []
+      },
+      "quotes": []
+    },
+    "mixed": {
+      "policy_version": "watchlist_stored_prices_24h.v1",
+      "max_observation_age_seconds": 86400,
+      "observed_at": "2026-01-02T00:00:00Z",
+      "watchlist": {
+        "revision": 1,
+        "updated_at": "2026-01-02T00:00:00Z",
+        "entries": [
+          {
+            "venue": "XKRX",
+            "symbol": "005930",
+            "currency": "KRW"
+          },
+          {
+            "venue": "XNAS",
+            "symbol": "AAPL",
+            "currency": "USD"
+          },
+          {
+            "venue": "XNAS",
+            "symbol": "MSFT",
+            "currency": "USD"
+          },
+          {
+            "venue": "XNYS",
+            "symbol": "BRK.B",
+            "currency": "USD"
+          }
+        ]
+      },
+      "quotes": [
+        {
+          "venue": "XKRX",
+          "symbol": "005930",
+          "currency": "KRW",
+          "status": "stale",
+          "price": {
+            "source": "local_fixture",
+            "source_version": null,
+            "price": "70000",
+            "price_adjustment": "unspecified",
+            "observed_at": "2026-01-01T23:00:00Z",
+            "fetched_at": "2026-01-01T23:00:00Z",
+            "recorded_at": "2026-01-02T00:00:00Z",
+            "sample": true
+          }
+        },
+        {
+          "venue": "XNAS",
+          "symbol": "AAPL",
+          "currency": "USD",
+          "status": "unknown",
+          "price": {
+            "source": "owner_declared",
+            "source_version": "price-v1",
+            "price": "150.25",
+            "price_adjustment": "unadjusted",
+            "observed_at": "2026-01-01T23:00:00Z",
+            "fetched_at": "2026-01-01T23:00:00Z",
+            "recorded_at": "2026-01-02T00:00:00Z",
+            "sample": true
+          }
+        },
+        {
+          "venue": "XNAS",
+          "symbol": "MSFT",
+          "currency": "USD",
+          "status": "missing",
+          "price": null
+        },
+        {
+          "venue": "XNYS",
+          "symbol": "BRK.B",
+          "currency": "USD",
+          "status": "ambiguous",
+          "price": null
+        }
+      ]
+    }
+  }
+}

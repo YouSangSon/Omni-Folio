@@ -1,0 +1,71 @@
+{
+  "schema_version": "paper-history-profile.v1",
+  "go": "go1.26.7",
+  "os": "darwin",
+  "arch": "arm64",
+  "logical_cpus": 10,
+  "gomaxprocs": 10,
+  "sqlite": "3.46.1",
+  "bands": [
+    {
+      "prior_renewals": 0,
+      "final_renewals": 100,
+      "renewal": {
+        "samples": 100,
+        "p50_ns": 7456250,
+        "p95_ns": 9071708,
+        "p99_ns": 16487584,
+        "max_ns": 30777875
+      },
+      "recovery": {
+        "samples": 100,
+        "p50_ns": 5564917,
+        "p95_ns": 6329625,
+        "p99_ns": 6786750,
+        "max_ns": 7173500
+      }
+    },
+    {
+      "prior_renewals": 300,
+      "final_renewals": 400,
+      "renewal": {
+        "samples": 100,
+        "p50_ns": 10802083,
+        "p95_ns": 12287750,
+        "p99_ns": 23412375,
+        "max_ns": 27619000
+      },
+      "recovery": {
+        "samples": 100,
+        "p50_ns": 9179625,
+        "p95_ns": 10375250,
+        "p99_ns": 10728834,
+        "max_ns": 11325083
+      }
+    },
+    {
+      "prior_renewals": 900,
+      "final_renewals": 1000,
+      "renewal": {
+        "samples": 100,
+        "p50_ns": 17066667,
+        "p95_ns": 19993416,
+        "p99_ns": 21658709,
+        "max_ns": 39582959
+      },
+      "recovery": {
+        "samples": 100,
+        "p50_ns": 16420958,
+        "p95_ns": 17768833,
+        "p99_ns": 18596417,
+        "max_ns": 18866250
+      }
+    }
+  ],
+  "measured_on": "2026-09-05",
+  "production_base_commit": "fd59eff5ee062115c7f77906d064d177bba465e5",
+  "change": "transaction-local complete runner proof, then indexed execution head; shared current-schema and owned-lease guards",
+  "command": "OMNI_PAPER_PROFILE=1 GOFLAGS='-run=TestPaperHistoryProfile|TestPaperLatencySummary -count=1 -v' make test FLUTTER=true",
+  "comparison_baseline": "paper-history-20260905.json",
+  "method": "Same 100-sample growing-history bands and fixture; real SQLite transactions, injected logical lease clock, monotonic duration; CPU profiling disabled; not an isolated host or real-time soak"
+}

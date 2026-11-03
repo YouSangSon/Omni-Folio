@@ -1,0 +1,12 @@
+{
+  "schema_version": "owner-fx-series.v1",
+  "source_version": "example-v1",
+  "base_currency": "USD",
+  "quote_currency": "KRW",
+  "sample": true,
+  "fetched_at": "2026-01-01T00:00:00Z",
+  "points": [
+    {"observed_at": "2025-01-01T00:00:00Z", "rate": "1000"},
+    {"observed_at": "2026-01-01T00:00:00Z", "rate": "900"}
+  ]
+}

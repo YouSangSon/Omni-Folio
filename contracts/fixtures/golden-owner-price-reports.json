@@ -1,0 +1,487 @@
+{
+  "note": "Synthetic protocol reference, not real market data or provider accuracy evidence. Independent Fraction reference: native holding USD200/PnL100, currentKRW180000, TWR and 365-day XIRR0.8, native index0.1/KRW-0.01/difference81pp.",
+  "reports": {
+    "holding": {
+      "scope": "holdings_only",
+      "policy_version": "native_holding_valuation_v2",
+      "max_observation_age_seconds": 86400,
+      "valuation_as_of": "2026-01-01T00:00:00Z",
+      "ledger_revision": "rev_0000000002",
+      "ledger_as_of": "2025-01-02T00:00:00Z",
+      "ledger_recorded_at": "2026-01-01T00:00:00Z",
+      "status": "complete",
+      "sample": false,
+      "totals": [
+        {
+          "currency": "USD",
+          "cost_basis": "100",
+          "market_value": "200",
+          "unrealized_pnl": "100"
+        }
+      ],
+      "lines": [
+        {
+          "symbol": "AAPL",
+          "quantity": "1",
+          "cost_basis": "100",
+          "currency": "USD",
+          "status": "valued",
+          "price": {
+            "source": "owner_declared",
+            "source_version": "price-v1",
+            "venue": "XNAS",
+            "currency": "USD",
+            "price": "200",
+            "price_adjustment": "unadjusted",
+            "observed_at": "2026-01-01T00:00:00Z",
+            "fetched_at": "2026-01-01T00:00:00Z",
+            "recorded_at": "2026-01-01T00:00:00Z",
+            "sample": false,
+            "state": "unknown"
+          },
+          "market_value": "200",
+          "unrealized_pnl": "100",
+          "issue": null
+        }
+      ],
+      "issues": [
+        {
+          "code": "owner_declared_price",
+          "message": "selected security prices were declared by the owner, not verified by a market provider"
+        }
+      ]
+    },
+    "current": {
+      "scope": "whole_portfolio",
+      "policy_version": "current_base_portfolio_valuation_v3",
+      "max_observation_age_seconds": 86400,
+      "base_currency": "KRW",
+      "valuation_as_of": "2026-01-01T00:00:00Z",
+      "ledger_revision": "rev_0000000002",
+      "ledger_as_of": "2025-01-02T00:00:00Z",
+      "ledger_recorded_at": "2026-01-01T00:00:00Z",
+      "status": "complete",
+      "sample": false,
+      "cash_value": {
+        "currency": "KRW",
+        "amount": "0"
+      },
+      "holdings_value": {
+        "currency": "KRW",
+        "amount": "180000"
+      },
+      "total_value": {
+        "currency": "KRW",
+        "amount": "180000"
+      },
+      "issues": [
+        {
+          "code": "owner_declared_fx",
+          "message": "selected FX inputs were declared by the owner, not verified by a market provider"
+        },
+        {
+          "code": "owner_declared_price",
+          "message": "selected security prices were declared by the owner, not verified by a market provider"
+        }
+      ]
+    },
+    "twr": {
+      "policy_version": "restated_external_first_exact_timestamp_twr_v3",
+      "scope": "whole_portfolio_since_inception",
+      "valuation": {
+        "scope": "whole_portfolio",
+        "policy_version": "current_base_portfolio_valuation_v3",
+        "max_observation_age_seconds": 86400,
+        "base_currency": "KRW",
+        "valuation_as_of": "2026-01-01T00:00:00Z",
+        "ledger_revision": "rev_0000000002",
+        "ledger_as_of": "2025-01-02T00:00:00Z",
+        "ledger_recorded_at": "2026-01-01T00:00:00Z",
+        "status": "complete",
+        "sample": false,
+        "cash_value": {
+          "currency": "KRW",
+          "amount": "0"
+        },
+        "holdings_value": {
+          "currency": "KRW",
+          "amount": "180000"
+        },
+        "total_value": {
+          "currency": "KRW",
+          "amount": "180000"
+        },
+        "issues": [
+          {
+            "code": "owner_declared_fx",
+            "message": "selected FX inputs were declared by the owner, not verified by a market provider"
+          },
+          {
+            "code": "owner_declared_price",
+            "message": "selected security prices were declared by the owner, not verified by a market provider"
+          }
+        ]
+      },
+      "status": "calculated",
+      "sample": false,
+      "period_start": "2025-01-01T00:00:00Z",
+      "period_end": "2026-01-01T00:00:00Z",
+      "external_event_count": 1,
+      "boundary_count": 1,
+      "cumulative_rate": "0.8",
+      "net_contributions": {
+        "currency": "KRW",
+        "amount": "100000"
+      },
+      "issues": [
+        {
+          "code": "owner_declared_fx",
+          "message": "selected FX inputs were declared by the owner, not verified by a market provider"
+        },
+        {
+          "code": "owner_declared_price",
+          "message": "selected security prices were declared by the owner, not verified by a market provider"
+        }
+      ]
+    },
+    "xirr": {
+      "policy_version": "restated_external_cash_utc_date_actual_365_v3",
+      "solver_policy": "single_change_bracket_else_log_newton_0_1_v1",
+      "scope": "whole_portfolio_since_inception",
+      "valuation": {
+        "scope": "whole_portfolio",
+        "policy_version": "current_base_portfolio_valuation_v3",
+        "max_observation_age_seconds": 86400,
+        "base_currency": "KRW",
+        "valuation_as_of": "2026-01-01T00:00:00Z",
+        "ledger_revision": "rev_0000000002",
+        "ledger_as_of": "2025-01-02T00:00:00Z",
+        "ledger_recorded_at": "2026-01-01T00:00:00Z",
+        "status": "complete",
+        "sample": false,
+        "cash_value": {
+          "currency": "KRW",
+          "amount": "0"
+        },
+        "holdings_value": {
+          "currency": "KRW",
+          "amount": "180000"
+        },
+        "total_value": {
+          "currency": "KRW",
+          "amount": "180000"
+        },
+        "issues": [
+          {
+            "code": "owner_declared_fx",
+            "message": "selected FX inputs were declared by the owner, not verified by a market provider"
+          },
+          {
+            "code": "owner_declared_price",
+            "message": "selected security prices were declared by the owner, not verified by a market provider"
+          }
+        ]
+      },
+      "status": "calculated",
+      "sample": false,
+      "period_start": "2025-01-01",
+      "period_end": "2026-01-01",
+      "external_event_count": 1,
+      "sign_changes": 1,
+      "uniqueness": "unique",
+      "annual_rate": "0.8",
+      "candidate_rate": null,
+      "net_contributions": {
+        "currency": "KRW",
+        "amount": "100000"
+      },
+      "issues": [
+        {
+          "code": "owner_declared_fx",
+          "message": "selected FX inputs were declared by the owner, not verified by a market provider"
+        },
+        {
+          "code": "owner_declared_price",
+          "message": "selected security prices were declared by the owner, not verified by a market provider"
+        }
+      ]
+    },
+    "benchmarks": {
+      "policy_version": "retrospective_latest_index_24h_native_and_krw_v3",
+      "max_observation_age_seconds": 86400,
+      "portfolio": {
+        "policy_version": "restated_external_first_exact_timestamp_twr_v3",
+        "scope": "whole_portfolio_since_inception",
+        "valuation": {
+          "scope": "whole_portfolio",
+          "policy_version": "current_base_portfolio_valuation_v3",
+          "max_observation_age_seconds": 86400,
+          "base_currency": "KRW",
+          "valuation_as_of": "2026-01-01T00:00:00Z",
+          "ledger_revision": "rev_0000000002",
+          "ledger_as_of": "2025-01-02T00:00:00Z",
+          "ledger_recorded_at": "2026-01-01T00:00:00Z",
+          "status": "complete",
+          "sample": false,
+          "cash_value": {
+            "currency": "KRW",
+            "amount": "0"
+          },
+          "holdings_value": {
+            "currency": "KRW",
+            "amount": "180000"
+          },
+          "total_value": {
+            "currency": "KRW",
+            "amount": "180000"
+          },
+          "issues": [
+            {
+              "code": "owner_declared_fx",
+              "message": "selected FX inputs were declared by the owner, not verified by a market provider"
+            },
+            {
+              "code": "owner_declared_price",
+              "message": "selected security prices were declared by the owner, not verified by a market provider"
+            }
+          ]
+        },
+        "status": "calculated",
+        "sample": false,
+        "period_start": "2025-01-01T00:00:00Z",
+        "period_end": "2026-01-01T00:00:00Z",
+        "external_event_count": 1,
+        "boundary_count": 1,
+        "cumulative_rate": "0.8",
+        "net_contributions": {
+          "currency": "KRW",
+          "amount": "100000"
+        },
+        "issues": [
+          {
+            "code": "owner_declared_fx",
+            "message": "selected FX inputs were declared by the owner, not verified by a market provider"
+          },
+          {
+            "code": "owner_declared_price",
+            "message": "selected security prices were declared by the owner, not verified by a market provider"
+          }
+        ]
+      },
+      "benchmarks": [
+        {
+          "series": {
+            "storage_check": "verified",
+            "authority": "owner_declared",
+            "benchmark_id": "test_reference",
+            "label": "Synthetic test reference",
+            "currency": "USD",
+            "return_basis": "gross_total_return",
+            "source_reference": "https://example.invalid/test-methodology",
+            "source_version": "test-v1",
+            "sample": false,
+            "data_sha256": "6739fb22a8507375ef63863b71824ba7c47151e28c303f6b41405be915996836",
+            "point_count": 2,
+            "first_observed_at": "2025-01-01T00:00:00Z",
+            "last_observed_at": "2026-01-01T00:00:00Z",
+            "fetched_at": "2026-01-01T00:00:00Z",
+            "recorded_at": "2026-01-01T00:00:00Z"
+          },
+          "sample": false,
+          "start": {
+            "observed_at": "2025-01-01T00:00:00Z",
+            "level": "100"
+          },
+          "end": {
+            "observed_at": "2026-01-01T00:00:00Z",
+            "level": "110"
+          },
+          "start_fx": {
+            "observed_at": "2025-01-01T00:00:00Z",
+            "rate": "1000",
+            "source": "owner_declared",
+            "source_version": "manual-v1",
+            "sample": false
+          },
+          "end_fx": {
+            "observed_at": "2026-01-01T00:00:00Z",
+            "rate": "900",
+            "source": "owner_declared",
+            "source_version": "manual-v1",
+            "sample": false
+          },
+          "native": {
+            "status": "calculated",
+            "rate": "0.1",
+            "issue": null
+          },
+          "krw": {
+            "status": "calculated",
+            "rate": "-0.01",
+            "issue": null
+          },
+          "difference_percentage_points": "81"
+        }
+      ],
+      "issues": []
+    },
+    "sample_holding": {
+      "scope": "holdings_only",
+      "policy_version": "native_holding_valuation_v2",
+      "max_observation_age_seconds": 86400,
+      "valuation_as_of": "2026-01-01T00:00:00Z",
+      "ledger_revision": "rev_0000000002",
+      "ledger_as_of": "2025-01-02T00:00:00Z",
+      "ledger_recorded_at": "2026-01-01T00:00:00Z",
+      "status": "stale_sample",
+      "sample": true,
+      "totals": [
+        {
+          "currency": "USD",
+          "cost_basis": "100",
+          "market_value": "200",
+          "unrealized_pnl": "100"
+        }
+      ],
+      "lines": [
+        {
+          "symbol": "AAPL",
+          "quantity": "1",
+          "cost_basis": "100",
+          "currency": "USD",
+          "status": "valued",
+          "price": {
+            "source": "owner_declared",
+            "source_version": "price-v1",
+            "venue": "XNAS",
+            "currency": "USD",
+            "price": "200",
+            "price_adjustment": "unadjusted",
+            "observed_at": "2026-01-01T00:00:00Z",
+            "fetched_at": "2026-01-01T00:00:00Z",
+            "recorded_at": "2026-01-01T00:00:00Z",
+            "sample": true,
+            "state": "unknown"
+          },
+          "market_value": "200",
+          "unrealized_pnl": "100",
+          "issue": null
+        }
+      ],
+      "issues": [
+        {
+          "code": "owner_declared_price",
+          "message": "selected security prices were declared by the owner, not verified by a market provider"
+        },
+        {
+          "code": "sample_data",
+          "message": "holding valuation uses local sample security prices"
+        }
+      ]
+    },
+    "stale_holding": {
+      "scope": "holdings_only",
+      "policy_version": "native_holding_valuation_v2",
+      "max_observation_age_seconds": 86400,
+      "valuation_as_of": "2026-01-01T00:00:00Z",
+      "ledger_revision": "rev_0000000002",
+      "ledger_as_of": "2025-01-02T00:00:00Z",
+      "ledger_recorded_at": "2026-01-01T00:00:00Z",
+      "status": "unavailable",
+      "sample": false,
+      "totals": null,
+      "lines": [
+        {
+          "symbol": "AAPL",
+          "quantity": "1",
+          "cost_basis": "100",
+          "currency": "USD",
+          "status": "stale",
+          "price": {
+            "source": "owner_declared",
+            "source_version": "price-v1",
+            "venue": "XNAS",
+            "currency": "USD",
+            "price": "200",
+            "price_adjustment": "unadjusted",
+            "observed_at": "2025-12-30T23:59:59.999999999Z",
+            "fetched_at": "2026-01-01T00:00:00Z",
+            "recorded_at": "2026-01-01T00:00:00Z",
+            "sample": false,
+            "state": "stale"
+          },
+          "market_value": null,
+          "unrealized_pnl": null,
+          "issue": {
+            "code": "stale_security_price",
+            "message": "the security price observation exceeds the policy age",
+            "field": "AAPL"
+          }
+        }
+      ],
+      "issues": [
+        {
+          "code": "stale_security_price",
+          "message": "the security price observation exceeds the policy age",
+          "field": "AAPL"
+        },
+        {
+          "code": "owner_declared_price",
+          "message": "selected security prices were declared by the owner, not verified by a market provider"
+        }
+      ]
+    },
+    "split_holding": {
+      "scope": "holdings_only",
+      "policy_version": "native_holding_valuation_v2",
+      "max_observation_age_seconds": 86400,
+      "valuation_as_of": "2026-01-01T00:00:00Z",
+      "ledger_revision": "rev_0000000003",
+      "ledger_as_of": "2025-12-31T23:00:00Z",
+      "ledger_recorded_at": "2026-01-01T00:00:00Z",
+      "status": "unavailable",
+      "sample": false,
+      "totals": null,
+      "lines": [
+        {
+          "symbol": "AAPL",
+          "quantity": "2",
+          "cost_basis": "100",
+          "currency": "USD",
+          "status": "split_basis",
+          "price": {
+            "source": "owner_declared",
+            "source_version": "price-v1",
+            "venue": "XNAS",
+            "currency": "USD",
+            "price": "50",
+            "price_adjustment": "unadjusted",
+            "observed_at": "2025-12-31T23:00:00Z",
+            "fetched_at": "2026-01-01T00:00:00Z",
+            "recorded_at": "2026-01-01T00:00:00Z",
+            "sample": false,
+            "state": "unknown"
+          },
+          "market_value": null,
+          "unrealized_pnl": null,
+          "issue": {
+            "code": "split_price_unavailable",
+            "message": "an owner price strictly after the latest stock split is required",
+            "field": "AAPL"
+          }
+        }
+      ],
+      "issues": [
+        {
+          "code": "split_price_unavailable",
+          "message": "an owner price strictly after the latest stock split is required",
+          "field": "AAPL"
+        },
+        {
+          "code": "owner_declared_price",
+          "message": "selected security prices were declared by the owner, not verified by a market provider"
+        }
+      ]
+    }
+  }
+}
