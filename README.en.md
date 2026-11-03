@@ -569,6 +569,18 @@ The receipt contains only provider, mode, times, ledger revision, counts, and qu
 
 `complete` means all required reads and pages succeeded. It does not establish a provider-wide atomic snapshot, cash/trade reconciliation, current account safety, or successful real authentication. Public freshness remains `unverified`. The command grants no execution authority and does not change ledger events or verification time. [Input, recovery, and verification contract](gates/g4z-kiwoom-mock-sync.md)
 
+### Save Kiwoom mock candles for research
+
+Use the same Keychain entry to read mock daily or minute candles into a new private JSON file. The output directory must belong to the current user and disallow writes by other users.
+
+```sh
+mkdir -p -m 700 data/candles
+(cd services/core && go run . kiwoom-mock-candles \
+  -symbol 005930 -interval 1d -out ../../data/candles/005930-1d.json)
+```
+
+All three arguments are required. The file preserves the exact request, raw provider times, and UTC fetch clocks; the receipt returns the row count and file SHA256. Existing output is never overwritten. A completed file may remain after a publication error. Inspect it and choose a different path for a new observation. This is not a paper input with verified bar completion, adjustment units, or current prices. [Intervals, bounds, and recovery contract](gates/g4aa-kiwoom-mock-candle-capture.md)
+
 ## Main commands
 
 ```text

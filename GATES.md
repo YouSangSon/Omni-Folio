@@ -99,6 +99,7 @@ G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4U owner-declared instrument listing ownership and Kiwoom enforcement
 ├─ G4V/K2B3 provider-bound credential-free LIMIT dispatch capability port
 ├─ G4Z explicit Keychain-backed mock/KRX snapshot sync to the existing reconciliation view
+├─ G4AA explicit mock candle capture with request/raw-time/fetch provenance for research
 ├─ K2B Kiwoom mock-order broker transport and lookup recovery
 └─ then Toss Securities read-only as the second adapter
    |
@@ -108,6 +109,8 @@ G6 PostgreSQL and Kubernetes promotion
 ```
 
 ## Root completion evidence
+
+- G4AA는 명시적 CLI로 mock 봉의 요청·원본 시간·조회 시간을 새 연구 JSON에 보존한다. 독립 리뷰·집중/race·전체 Core/research/contracts와 실제 test-main TLS·production 조기 거절을 로컬 검증했다. closed-bar/paper/live 권한과 실제 인증 관찰은 별도다. [계약과 검증 범위](gates/g4aa-kiwoom-mock-candle-capture.md).
 
 - G3AM은 별도 Mimir가 저장 공시·뉴스·분석을 제한된 공개 파일로 내보내고 기존 Go GET과 Flutter 읽기 화면에 연결한다. 관심종목 시장은 거래소에서 가져오며 보유·연결 화면은 시장을 직접 고른다. 출처·사용 근거와 연구 의견의 한계를 보존하고 원장·주문 상태를 쓰지 않는다. [계약과 로컬 검증 범위](gates/g3am-mimir-public-research.md).
 - G4Z는 기존 Keychain 항목을 사용하는 명시적 모의 계좌 읽기를 기존 Go client·snapshot journal·대조 GET으로 연결한다. 단일 모의 계좌 바인딩과 저장 시점 재검증을 유지하며 실제 Keychain·외부 제공자 인증 관찰은 미수행이다. [계약과 로컬 검증](gates/g4z-kiwoom-mock-sync.md).

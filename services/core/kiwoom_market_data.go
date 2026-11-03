@@ -99,18 +99,63 @@ func (c *KiwoomClient) LatestTrade(ctx context.Context, symbol string) (*KiwoomL
 }
 
 func (c *KiwoomClient) Candles(ctx context.Context, symbol, interval string) (*MarketDataSeries, error) {
+	batch, err := c.readCandleBatch(ctx, symbol, interval)
+	if err != nil {
+		return nil, err
+	}
+	bars := make([]MarketDataBar, len(batch.bars))
+	for i, bar := range batch.bars {
+		bars[i] = MarketDataBar{At: bar.at, Open: bar.Open, High: bar.High, Low: bar.Low, Close: bar.Close, Volume: bar.Volume}
+	}
+	return &MarketDataSeries{
+		Symbol: symbol, Venue: "XKRX", Timezone: "Asia/Seoul", Interval: interval,
+		PriceAdjustment: marketDataAdjustmentProviderAdjusted, Bars: bars,
+	}, nil
+}
+
+type kiwoomCandleRequestBody struct {
+	StockCode  string `json:"stk_cd"`
+	BaseDate   string `json:"base_dt"`
+	Adjustment string `json:"upd_stkpc_tp"`
+	TickScope  string `json:"tic_scope,omitempty"`
+}
+
+type kiwoomCandleRequestEvidence struct {
+	APIID string                  `json:"api_id"`
+	Body  kiwoomCandleRequestBody `json:"body"`
+}
+
+type kiwoomCapturedCandle struct {
+	ProviderTime string `json:"provider_time"`
+	Open         string `json:"open"`
+	High         string `json:"high"`
+	Low          string `json:"low"`
+	Close        string `json:"close"`
+	Volume       string `json:"volume"`
+	at           string
+}
+
+type kiwoomCandleBatch struct {
+	request        kiwoomCandleRequestEvidence
+	fetchStartedAt time.Time
+	fetchedAt      time.Time
+	bars           []kiwoomCapturedCandle
+}
+
+func (c *KiwoomClient) readCandleBatch(ctx context.Context, symbol, interval string) (*kiwoomCandleBatch, error) {
 	if c == nil {
 		return nil, &KiwoomError{Kind: "invalid_config"}
 	}
 	if !kiwoomStockPattern.MatchString(symbol) {
 		return nil, &KiwoomError{Kind: "invalid_symbol"}
 	}
-	apiID, requestBody, minute := kiwoomCandleRequest(symbol, interval, c.now().In(kiwoomMarketLocation).Format("20060102"))
+	startedAt := c.now().UTC()
+	apiID, requestBody, minute := kiwoomCandleRequest(symbol, interval, startedAt.In(kiwoomMarketLocation).Format("20060102"))
 	if apiID == "" {
 		return nil, &KiwoomError{Kind: "unsupported_interval"}
 	}
 
-	bars := make([]MarketDataBar, 0, maxMarketDataRows)
+	bars := make([]kiwoomCapturedCandle, 0, maxMarketDataRows)
 	seen := make(map[string]MarketDataBar)
 	var previousProviderTime time.Time
 	err := c.readPages(ctx, apiID, requestBody, func(body []byte) (bool, error) {
@@ -141,6 +186,11 @@ func (c *KiwoomClient) Candles(ctx context.Context, symbol, interval string) (*M
 				return false, &KiwoomError{Kind: "invalid_candle_order", APIID: apiID}
 			}
 			previousProviderTime = at
+			rawTime := row.Date
+			if minute {
+				rawTime = row.ExecutedAt
+			}
+			captured := kiwoomCapturedCandle{ProviderTime: rawTime, Open: bar.Open, High: bar.High, Low: bar.Low, Close: bar.Close, Volume: bar.Volume, at: bar.At}
 			if existing, duplicate := seen[bar.At]; duplicate {
 				if existing != bar {
 					return false, &KiwoomError{Kind: "conflicting_candle", APIID: apiID}
@@ -148,7 +198,7 @@ func (c *KiwoomClient) Candles(ctx context.Context, symbol, interval string) (*M
 				continue
 			}
 			seen[bar.At] = bar
-			bars = append(bars, bar)
+			bars = append(bars, captured)
 		}
 		return stopAfterPage, nil
 	})
@@ -158,26 +208,24 @@ func (c *KiwoomClient) Candles(ctx context.Context, symbol, interval string) (*M
 	if len(bars) == 0 {
 		return nil, errMarketDataNotFound
 	}
-	sort.Slice(bars, func(i, j int) bool { return bars[i].At < bars[j].At })
+	sort.Slice(bars, func(i, j int) bool { return bars[i].at < bars[j].at })
 	if len(bars) > maxMarketDataRows {
 		bars = bars[len(bars)-maxMarketDataRows:]
 	}
-	return &MarketDataSeries{
-		Symbol: symbol, Venue: "XKRX", Timezone: "Asia/Seoul", Interval: interval,
-		PriceAdjustment: marketDataAdjustmentProviderAdjusted, Bars: bars,
+	return &kiwoomCandleBatch{
+		request:        kiwoomCandleRequestEvidence{APIID: apiID, Body: requestBody},
+		fetchStartedAt: startedAt, fetchedAt: c.now().UTC(), bars: bars,
 	}, nil
 }
 
-func kiwoomCandleRequest(symbol, interval, baseDate string) (string, map[string]string, bool) {
+func kiwoomCandleRequest(symbol, interval, baseDate string) (string, kiwoomCandleRequestBody, bool) {
 	switch interval {
 	case "1d":
-		return "ka10081", map[string]string{"stk_cd": symbol, "base_dt": baseDate, "upd_stkpc_tp": "1"}, false
+		return "ka10081", kiwoomCandleRequestBody{StockCode: symbol, BaseDate: baseDate, Adjustment: "1"}, false
 	case "1m", "3m", "5m", "10m", "15m", "30m", "45m", "60m":
-		return "ka10080", map[string]string{
-			"stk_cd": symbol, "tic_scope": interval[:len(interval)-1], "base_dt": baseDate, "upd_stkpc_tp": "1",
-		}, true
+		return "ka10080", kiwoomCandleRequestBody{StockCode: symbol, BaseDate: baseDate, Adjustment: "1", TickScope: interval[:len(interval)-1]}, true
 	default:
-		return "", nil, false
+		return "", kiwoomCandleRequestBody{}, false
 	}
 }
 

@@ -569,6 +569,18 @@ stdout에는 제공자·모드·시각·원장 revision·건수·수량 일치 �
 
 `complete`는 필요한 읽기와 페이지가 모두 성공했다는 뜻입니다. 제공자 전체의 동일 시점 snapshot, 현금·체결 대조, 현재 안전성 또는 실인증 검증을 뜻하지 않습니다. 공개 freshness는 계속 `unverified`이며 원장 보정·검증 시각 갱신·실행 권한·주문 제출은 추가하지 않습니다. [입력·복구 계약과 검증 범위](gates/g4z-kiwoom-mock-sync.md)
 
+### 키움 모의 봉을 연구 파일로 저장
+
+위와 같은 Keychain 항목으로 mock 일봉·분봉을 조회해 새 private JSON에 저장합니다. 출력 폴더는 현재 사용자 소유이며 다른 사용자에게 쓰기가 허용되지 않아야 합니다.
+
+```sh
+mkdir -p -m 700 data/candles
+(cd services/core && go run . kiwoom-mock-candles \
+  -symbol 005930 -interval 1d -out ../../data/candles/005930-1d.json)
+```
+
+세 인자가 모두 필요합니다. 파일은 실제 요청·원본 제공자 시각·UTC 조회 시각을 보존하며, 영수증은 행 수와 파일 SHA256을 반환합니다. 기존 출력은 덮어쓰지 않습니다. 발행 뒤 오류에서도 완성 파일이 남을 수 있으므로 기존 파일을 확인하고 새 관찰에는 다른 경로를 사용하세요. 봉 완료·가격 조정 단위·현재 시세를 검증한 paper 입력은 아닙니다. [지원 interval·한도·복구 계약](gates/g4aa-kiwoom-mock-candle-capture.md)
+
 ## 주요 명령
 
 ```text

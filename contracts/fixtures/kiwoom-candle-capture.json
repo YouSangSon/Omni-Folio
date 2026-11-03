@@ -1,0 +1,43 @@
+{
+  "schema_version": "kiwoom-candle-capture.v1",
+  "scope": "research_observation",
+  "provider": "kiwoom",
+  "environment": "mock",
+  "venue": "XKRX",
+  "currency": "KRW",
+  "symbol": "005930",
+  "interval": "1d",
+  "request": {
+    "api_id": "ka10081",
+    "body": {
+      "stk_cd": "005930",
+      "base_dt": "20300101",
+      "upd_stkpc_tp": "1"
+    }
+  },
+  "fetch_started_at": "2030-01-01T00:00:00Z",
+  "fetched_at": "2030-01-01T00:00:00Z",
+  "time_evidence": {
+    "provider_field": "dt",
+    "provider_format": "YYYYMMDD",
+    "provider_timezone": "not_provided",
+    "bar_boundaries": "not_provided",
+    "publication_time": "not_provided",
+    "bar_completion": "unverified"
+  },
+  "bounds": {
+    "bars_limit": 500,
+    "pages_limit": 32,
+    "selection": "latest_up_to_limit_after_overlap_validation"
+  },
+  "bars": [
+    {
+      "provider_time": "20260824",
+      "open": "1200",
+      "high": "1300",
+      "low": "1150",
+      "close": "1250",
+      "volume": "1000"
+    }
+  ]
+}

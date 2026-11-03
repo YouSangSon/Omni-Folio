@@ -1,0 +1,305 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omni-folio.local/contracts/kiwoom-candle-capture.v1.schema.json",
+  "title": "Kiwoom mock candle research observation v1",
+  "description": "Create-only research JSON, at most 1 MiB including its final newline. Exact request and UTC fetch clocks are local provenance. fetched_at must not precede fetch_started_at. Raw provider time is not proof of bar boundaries, timezone, publication, completion or adjustment comparability. No instrument, ledger or paper authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scope",
+    "provider",
+    "environment",
+    "venue",
+    "currency",
+    "symbol",
+    "interval",
+    "request",
+    "fetch_started_at",
+    "fetched_at",
+    "time_evidence",
+    "bounds",
+    "bars"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "kiwoom-candle-capture.v1"
+    },
+    "scope": {
+      "const": "research_observation"
+    },
+    "provider": {
+      "const": "kiwoom"
+    },
+    "environment": {
+      "const": "mock"
+    },
+    "venue": {
+      "const": "XKRX"
+    },
+    "currency": {
+      "const": "KRW"
+    },
+    "symbol": {
+      "type": "string",
+      "pattern": "^[0-9]{6}$"
+    },
+    "interval": {
+      "enum": [
+        "1d",
+        "1m",
+        "3m",
+        "5m",
+        "10m",
+        "15m",
+        "30m",
+        "45m",
+        "60m"
+      ]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api_id",
+        "body"
+      ],
+      "properties": {
+        "api_id": {
+          "enum": [
+            "ka10080",
+            "ka10081"
+          ]
+        },
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "stk_cd",
+            "base_dt",
+            "upd_stkpc_tp"
+          ],
+          "properties": {
+            "stk_cd": {
+              "type": "string",
+              "pattern": "^[0-9]{6}$"
+            },
+            "base_dt": {
+              "type": "string",
+              "pattern": "^[0-9]{8}$"
+            },
+            "upd_stkpc_tp": {
+              "const": "1"
+            },
+            "tic_scope": {
+              "enum": [
+                "1",
+                "3",
+                "5",
+                "10",
+                "15",
+                "30",
+                "45",
+                "60"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "fetch_started_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    },
+    "fetched_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    },
+    "time_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider_field",
+        "provider_format",
+        "provider_timezone",
+        "bar_boundaries",
+        "publication_time",
+        "bar_completion"
+      ],
+      "properties": {
+        "provider_field": {
+          "enum": [
+            "dt",
+            "cntr_tm"
+          ]
+        },
+        "provider_format": {
+          "enum": [
+            "YYYYMMDD",
+            "YYYYMMDDHHmmss"
+          ]
+        },
+        "provider_timezone": {
+          "const": "not_provided"
+        },
+        "bar_boundaries": {
+          "const": "not_provided"
+        },
+        "publication_time": {
+          "const": "not_provided"
+        },
+        "bar_completion": {
+          "const": "unverified"
+        }
+      }
+    },
+    "bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bars_limit",
+        "pages_limit",
+        "selection"
+      ],
+      "properties": {
+        "bars_limit": {
+          "const": 500
+        },
+        "pages_limit": {
+          "const": 32
+        },
+        "selection": {
+          "const": "latest_up_to_limit_after_overlap_validation"
+        }
+      }
+    },
+    "bars": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "provider_time",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume"
+        ],
+        "properties": {
+          "provider_time": {
+            "type": "string",
+            "pattern": "^(?:[0-9]{8}|[0-9]{14})$"
+          },
+          "open": {
+            "type": "string",
+            "pattern": "^(?:0\\.[0-9]*[1-9]|[1-9][0-9]*(?:\\.[0-9]*[1-9])?)$"
+          },
+          "high": {
+            "type": "string",
+            "pattern": "^(?:0\\.[0-9]*[1-9]|[1-9][0-9]*(?:\\.[0-9]*[1-9])?)$"
+          },
+          "low": {
+            "type": "string",
+            "pattern": "^(?:0\\.[0-9]*[1-9]|[1-9][0-9]*(?:\\.[0-9]*[1-9])?)$"
+          },
+          "close": {
+            "type": "string",
+            "pattern": "^(?:0\\.[0-9]*[1-9]|[1-9][0-9]*(?:\\.[0-9]*[1-9])?)$"
+          },
+          "volume": {
+            "type": "string",
+            "pattern": "^(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$"
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "interval": {
+            "const": "1d"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "request": {
+            "properties": {
+              "api_id": {
+                "const": "ka10081"
+              },
+              "body": {
+                "not": {
+                  "required": [
+                    "tic_scope"
+                  ]
+                }
+              }
+            }
+          },
+          "time_evidence": {
+            "properties": {
+              "provider_field": {
+                "const": "dt"
+              },
+              "provider_format": {
+                "const": "YYYYMMDD"
+              }
+            }
+          },
+          "bars": {
+            "items": {
+              "properties": {
+                "provider_time": {
+                  "pattern": "^[0-9]{8}$"
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "request": {
+            "properties": {
+              "api_id": {
+                "const": "ka10080"
+              },
+              "body": {
+                "required": [
+                  "tic_scope"
+                ]
+              }
+            }
+          },
+          "time_evidence": {
+            "properties": {
+              "provider_field": {
+                "const": "cntr_tm"
+              },
+              "provider_format": {
+                "const": "YYYYMMDDHHmmss"
+              }
+            }
+          },
+          "bars": {
+            "items": {
+              "properties": {
+                "provider_time": {
+                  "pattern": "^[0-9]{14}$"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
