@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'models.dart';
+import 'public_research.dart';
+import 'public_research_page.dart';
 import 'watchlist.dart';
 
 class WatchlistPage extends StatefulWidget {
@@ -120,6 +122,17 @@ class _WatchlistPageState extends State<WatchlistPage> {
                   quote: report?.quotes[index - 1],
                   canEdit: controller.canEdit,
                   onRemove: () => _confirmRemove(entry),
+                  onResearch: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => PublicResearchPage(
+                        api: controller.api,
+                        identity: PublicResearchIdentity.fromVenue(
+                          entry.venue,
+                          entry.symbol,
+                        ),
+                      ),
+                    ),
+                  ),
                 );
               }
               return Column(
@@ -283,12 +296,14 @@ class _WatchlistRow extends StatelessWidget {
     required this.quote,
     required this.canEdit,
     required this.onRemove,
+    required this.onResearch,
   });
 
   final WatchlistEntry entry;
   final WatchlistQuote? quote;
   final bool canEdit;
   final VoidCallback onRemove;
+  final VoidCallback onResearch;
 
   @override
   Widget build(BuildContext context) {
@@ -326,6 +341,11 @@ class _WatchlistRow extends StatelessWidget {
               if (quote.status == 'unknown')
                 const Text('현재 시세 여부는 확인되지 않았습니다.'),
             ],
+            OutlinedButton.icon(
+              onPressed: onResearch,
+              icon: const Icon(Icons.article_outlined),
+              label: const Text('공시·뉴스·분석'),
+            ),
             Align(
               alignment: AlignmentDirectional.centerEnd,
               child: IconButton(

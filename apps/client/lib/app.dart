@@ -14,6 +14,7 @@ import 'owner_data_import_page.dart';
 import 'paper_monitor_page.dart';
 import 'paper_promotion_report_page.dart';
 import 'portfolio_xirr_page.dart';
+import 'public_research_page.dart';
 import 'research_report_page.dart';
 import 'watchlist.dart';
 import 'watchlist_page.dart';
@@ -1134,6 +1135,15 @@ class _AssetDetailPageState extends State<AssetDetailPage> {
             ),
           ),
           icon: const Icon(Icons.receipt_long_outlined),
+        ),
+        IconButton(
+          tooltip: '공시·뉴스·분석 보기',
+          onPressed: () => selectPublicResearch(
+            context,
+            widget.api,
+            symbol: widget.holding.symbol,
+          ),
+          icon: const Icon(Icons.article_outlined),
         ),
         IconButton(
           tooltip: '차트 새로고침',
@@ -2803,6 +2813,15 @@ class DataPage extends StatelessWidget {
         _buildReconciliation(context),
         const SizedBox(height: 12),
         _buildLocalOrders(context),
+        const SizedBox(height: 12),
+        _SectionCard(
+          title: '공시·뉴스·분석',
+          child: OutlinedButton.icon(
+            onPressed: () => selectPublicResearch(context, api),
+            icon: const Icon(Icons.article_outlined),
+            label: const Text('시장·종목 선택해 읽기'),
+          ),
+        ),
         const SizedBox(height: 12),
         _SectionCard(
           title: '백테스트 보고서',

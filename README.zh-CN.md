@@ -419,6 +419,10 @@ curl -fsS http://127.0.0.1:8080/v1/orders
 
 空日志返回 `orders=[]`；hash、metadata、状态转换重放或记录时间只要有一项损坏，就以通用化的 500 响应执行 fail-closed。刷新失败时保留最后的正常界面，但不将其标为当前券商状态。
 
+### Mimir 公告、新闻与分析
+
+在独立的 Mimir checkout 中运行 `python -m mimir.export_research --data-root /local/mimir/data --config-dir /local/mimir/config --since 2026-11-01 --until 2026-11-03 --out /local/research/mimir.json`，只导出已存资料，再用 `make run-core RESEARCH_FEED=/local/research/mimir.json` 连接。合成输入必须添加 `--sample`。从**连接 → 选择市场和证券**、自选列表或持仓详情打开 native 阅读页。持仓详情必须明确选择市场。来源记录并非使用权批准，Mimir 分析也不是订单信号。刷新失败保留上次正常观测，正常空响应会清空旧内容。[限制、错误与验证](gates/g3am-mimir-public-research.md)。
+
 ### 研究与自动改进
 
 注册后，可在应用的 **연결（连接）→ 백테스트 보고서 보기**（查看回测报告）中查询最后注册的结果。`GET /v1/research/report` 按注册顺序选择一项，也包含晋级失败的结果。该结果与当前选择的策略无关。没有数据时显示空状态；最新数据损坏或不属于支持格式时，不会用旧数据替代。手动刷新失败时，保留界面上已有的结果和观测时间。

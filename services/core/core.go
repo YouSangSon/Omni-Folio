@@ -65,6 +65,7 @@ type Service struct {
 	id                func(string) string
 	ttl               time.Duration
 	marketData        MarketDataPort
+	researchFeed      string
 	executionOwner    string
 	paperRunnerOwner  string
 	activityCursorKey [32]byte
@@ -1032,6 +1033,7 @@ func (s *Service) routes() http.Handler {
 	mux.HandleFunc("GET /v1/paper/monitor", s.handlePaperMonitor)
 	mux.HandleFunc("GET /v1/paper/promotion-report", s.handlePaperPromotionReport)
 	mux.HandleFunc("GET /v1/research/report", s.handleResearchReport)
+	mux.HandleFunc("GET /v1/research/feed", s.handlePublicResearch)
 	mux.HandleFunc("GET /v1/ledger/activities", s.handleLedgerActivities)
 	mux.HandleFunc("POST /v1/imports/preview", s.handlePreview)
 	mux.HandleFunc("POST /v1/imports/apply", s.handleApply)

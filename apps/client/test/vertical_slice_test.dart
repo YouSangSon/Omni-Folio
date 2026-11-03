@@ -15,6 +15,7 @@ import 'package:omni_folio_client/models.dart';
 import 'package:omni_folio_client/paper_monitor.dart';
 import 'package:omni_folio_client/paper_promotion_report.dart';
 import 'package:omni_folio_client/research_report.dart';
+import 'package:omni_folio_client/public_research.dart';
 
 Json fixture(String name) {
   final body = File('../../contracts/fixtures/$name').readAsStringSync();
@@ -211,6 +212,10 @@ class FakeApi implements OmniApi {
   @override
   Future<ResearchReport> researchReport() =>
       throw UnsupportedError('Loaded only from the research report page.');
+
+  @override
+  Future<PublicResearch> publicResearch(PublicResearchIdentity identity) =>
+      throw UnsupportedError('Loaded only from the public research page.');
 
   @override
   Future<LedgerActivityPage> ledgerActivities({String? cursor}) async {

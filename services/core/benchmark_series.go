@@ -71,6 +71,10 @@ type benchmarkSeriesRecoveryProof struct {
 
 // This small closed-object reader is shared by the envelope and its point rows.
 func benchmarkObject(raw []byte, keys ...string) (map[string]json.RawMessage, error) {
+	return closedJSONObject(raw, nil, keys...)
+}
+
+func closedJSONObject(raw []byte, nullable map[string]bool, keys ...string) (map[string]json.RawMessage, error) {
 	d := json.NewDecoder(bytes.NewReader(raw))
 	if token, err := d.Token(); err != nil || token != json.Delim('{') {
 		return nil, errBenchmarkSeriesInput
@@ -87,7 +91,7 @@ func benchmarkObject(raw []byte, keys ...string) (map[string]json.RawMessage, er
 			return nil, errBenchmarkSeriesInput
 		}
 		var value json.RawMessage
-		if d.Decode(&value) != nil || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		if d.Decode(&value) != nil || (!nullable[key] && bytes.Equal(bytes.TrimSpace(value), []byte("null"))) {
 			return nil, errBenchmarkSeriesInput
 		}
 		fields[key] = value

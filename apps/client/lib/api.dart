@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'models.dart';
 import 'paper_monitor.dart';
 import 'paper_promotion_report.dart';
+import 'public_research.dart';
 import 'research_report.dart';
 
 abstract interface class OmniApi {
@@ -30,6 +31,7 @@ abstract interface class OmniApi {
   Future<PaperMonitor> paperMonitor();
   Future<PaperPromotionReport> paperPromotionReport();
   Future<ResearchReport> researchReport();
+  Future<PublicResearch> publicResearch(PublicResearchIdentity identity);
   Future<LedgerActivityPage> ledgerActivities({String? cursor});
   Future<ImportPreview> preview(String csv);
   Future<ApplyReceipt> apply(String previewId, String idempotencyKey);
@@ -360,6 +362,37 @@ class RestOmniApi implements OmniApi {
   @override
   Future<ResearchReport> researchReport() async =>
       ResearchReport.fromJson(await _get('/v1/research/report'));
+
+  @override
+  Future<PublicResearch> publicResearch(PublicResearchIdentity identity) async {
+    final abort = Completer<void>();
+    try {
+      final response = await _client
+          .send(
+            http.AbortableRequest(
+              'GET',
+              _uri('/v1/research/feed').replace(
+                queryParameters: {
+                  'market': identity.market,
+                  'symbol': identity.symbol,
+                },
+              ),
+              abortTrigger: abort.future,
+            ),
+          )
+          .timeout(const Duration(seconds: 15));
+      final json = await _boundedObject(
+        response,
+        6 * 1024 * 1024 + 4096,
+      ).timeout(const Duration(seconds: 15));
+      return PublicResearch.fromJson(json, identity);
+    } catch (error) {
+      if (error is ApiException || error is FormatException) rethrow;
+      throw const ApiException(apiConnectionError);
+    } finally {
+      if (!abort.isCompleted) abort.complete();
+    }
+  }
 
   @override
   Future<LedgerActivityPage> ledgerActivities({String? cursor}) async {

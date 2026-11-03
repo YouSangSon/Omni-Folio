@@ -419,6 +419,10 @@ curl -fsS http://127.0.0.1:8080/v1/orders
 
 空のログは `orders=[]` です。hash・metadata・transition replay・記録時刻のどれか1つでも破損していれば、詳細を伏せた500で fail-closed します。更新に失敗した場合は最後の正常な画面を保持しますが、現在の broker 状態とは表示しません。
 
+### Mimirの開示・ニュース・分析
+
+別のMimir checkoutで `python -m mimir.export_research --data-root /local/mimir/data --config-dir /local/mimir/config --since 2026-11-01 --until 2026-11-03 --out /local/research/mimir.json` を実行して保存済み資料だけを出力し、`make run-core RESEARCH_FEED=/local/research/mimir.json` で接続します。合成入力には `--sample` を付けます。**接続 → 市場・銘柄を選択**、ウォッチリスト、保有詳細からnative閲覧画面を開きます。保有詳細では市場の明示選択が必要です。出所の記録は利用権の承認ではなく、Mimir分析は注文シグナルではありません。更新エラー時は最後の正常観測を保持し、正常な空応答は表示をクリアします。[上限・エラー・検証](gates/g3am-mimir-public-research.md)。
+
 ### 研究と自動改善
 
 登録後、アプリの **연결（接続）→ 백테스트 보고서 보기**（バックテスト報告書を見る）から最後に登録した結果を参照します。`GET /v1/research/report` は登録順に1件を選び、昇格に失敗した結果も含みます。現在選択されている戦略とは独立しています。データがなければ空の状態を表示し、最新データが破損しているか対応形式外なら、以前のデータで代替しません。手動更新に失敗した場合は、画面の既存の結果と観測時刻を保持します。

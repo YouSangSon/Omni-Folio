@@ -108,6 +108,7 @@ func runContext(ctx context.Context, args []string) error {
 		addr := fs.String("addr", "127.0.0.1:8080", "listen address")
 		allowOrigin := fs.String("allow-origin", "", "exact browser origin allowed for local development")
 		marketFixture := fs.String("market-fixture", "", "optional local market-data CSV fixture path")
+		researchFeed := fs.String("research-feed", "", "optional local Mimir public research file")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -123,6 +124,7 @@ func runContext(ctx context.Context, args []string) error {
 			return err
 		}
 		svc := newService(db, time.Now, randomID)
+		svc.researchFeed = *researchFeed
 		if *marketFixture != "" {
 			marketData, err := loadMarketDataFixture(*marketFixture)
 			if err != nil {
