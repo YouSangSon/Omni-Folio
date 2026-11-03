@@ -581,6 +581,18 @@ mkdir -p -m 700 data/candles
 
 세 인자가 모두 필요합니다. 파일은 실제 요청·원본 제공자 시각·UTC 조회 시각을 보존하며, 영수증은 행 수와 파일 SHA256을 반환합니다. 기존 출력은 덮어쓰지 않습니다. 발행 뒤 오류에서도 완성 파일이 남을 수 있으므로 기존 파일을 확인하고 새 관찰에는 다른 경로를 사용하세요. 봉 완료·가격 조정 단위·현재 시세를 검증한 paper 입력은 아닙니다. [지원 interval·한도·복구 계약](gates/g4aa-kiwoom-mock-candle-capture.md)
 
+### 저장한 일봉으로 비용 차감 연구 실행
+
+위 일봉 capture를 기존 SMA 후보 탐색·walk-forward·최종 holdout 계산에 사용합니다. v2 설정만 지원하며 행 수가 train·validation·holdout 합계와 정확히 같아야 합니다. 아래 설정은 120행이 필요하므로 공개 1행 capture 예제로는 실행되지 않습니다.
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research python3 -B -m omni_research.capture_cli \
+  --capture data/candles/005930-1d.json \
+  --config contracts/fixtures/strategy-improvement-paper-config.json
+```
+
+결과는 stdout으로만 나옵니다. 원본 파일은 별도로 보관하세요. 셸로 저장할 때는 다른 경로를 고르세요. 셸 리디렉션의 덮어쓰기 방지·원자적 저장은 이 명령이 보장하지 않습니다. 보고서는 원본 bytes의 SHA256, 요청·원본 날짜·조회 clock과 불확실성을 보존합니다. 날짜는 행 라벨이며 봉 공개 시각으로 변환하지 않습니다. 수치 기준을 모두 통과해도 전략 등록·`paper-improve`·paper proposal은 이 형식을 거절합니다. [계약·검증·남은 연결](gates/g3an-captured-candle-research.md)
+
 ## 주요 명령
 
 ```text

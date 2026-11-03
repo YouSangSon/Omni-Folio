@@ -63,6 +63,52 @@ class ExperimentConfig:
     paper_compatible: bool = False
 
 
+@dataclass(frozen=True)
+class Span:
+    start: int
+    stop: int
+
+
+@dataclass(frozen=True)
+class Candidate:
+    parameters: Parameters
+    metrics: dict[str, str]
+
+
+@dataclass(frozen=True)
+class ValidationFold:
+    name: str
+    train: Span
+    validation: Span
+    selected: Candidate
+    validation_metrics: dict[str, str]
+
+
+@dataclass(frozen=True)
+class IndexedTrade:
+    signal: int
+    eligible: int
+    fill: int
+    side: str
+    quantity: str
+    price: str
+
+
+@dataclass(frozen=True)
+class Evaluation:
+    candidates: list[Candidate]
+    folds: list[ValidationFold]
+    selected: Candidate
+    validation_metrics: dict[str, str]
+    holdout: Span
+    holdout_metrics: dict[str, str]
+    holdout_trades: list[IndexedTrade]
+    baseline_metrics: dict[str, str]
+    walk_forward_ok: bool
+    holdout_ok: bool
+    baseline_ok: bool
+
+
 def integer(value: Any, field: str, *, minimum: int = 0) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
         raise ValueError(f"{field} must be an integer of at least {minimum}")
@@ -178,13 +224,13 @@ def sma_crossover(closes: list[Decimal] | list[Fraction], end: int, parameters: 
     return "none"
 
 
-def simulate_fold(
+def _simulate_indexed_fold(
     bars: list[Bar],
     config: ExperimentConfig,
     parameters: Parameters | None,
     *,
     warmup: list[Bar] | None = None,
-) -> tuple[dict[str, str], list[dict[str, str]]]:
+) -> tuple[dict[str, str], list[IndexedTrade]]:
     warmup = warmup or []
     series = [*warmup, *bars]
     evaluation_start = len(warmup)
@@ -201,7 +247,7 @@ def simulate_fold(
     position = number(0)
     fees = taxes = slippage_cost = turnover = number(0)
     orders: list[Order] = []
-    trade_trace: list[dict[str, str]] = []
+    trade_trace: list[IndexedTrade] = []
     equity_marks = [cash]
     closes = [number(bar.close) for bar in series]
     liquidation_signal_index = len(series) - config.delay_bars - 1
@@ -256,14 +302,9 @@ def simulate_fold(
             else:
                 cash += notional - fee - tax
                 position -= quantity
-            trade_trace.append({
-                "signal_at": series[order.signal_index].at,
-                "eligible_at": series[order.eligible_index].at,
-                "fill_at": bar.at,
-                "side": order.side,
-                "quantity": render(quantity),
-                "price": render(price),
-            })
+            trade_trace.append(IndexedTrade(
+                order.signal_index, order.eligible_index, index, order.side, render(quantity), render(price),
+            ))
         equity_marks.append(cash + position * number(bar.close))
         pending = any(order.remaining != ZERO for order in orders)
         if index == liquidation_signal_index:
@@ -306,6 +347,28 @@ def simulate_fold(
     }, trade_trace
 
 
+def simulate_fold(
+    bars: list[Bar],
+    config: ExperimentConfig,
+    parameters: Parameters | None,
+    *,
+    warmup: list[Bar] | None = None,
+) -> tuple[dict[str, str], list[dict[str, str]]]:
+    metrics, trades = _simulate_indexed_fold(bars, config, parameters, warmup=warmup)
+    series = [*(warmup or []), *bars]
+    return metrics, [
+        {
+            "signal_at": series[trade.signal].at,
+            "eligible_at": series[trade.eligible].at,
+            "fill_at": series[trade.fill].at,
+            "side": trade.side,
+            "quantity": trade.quantity,
+            "price": trade.price,
+        }
+        for trade in trades
+    ]
+
+
 def fold_description(name: str, bars: list[Bar]) -> dict[str, str | int]:
     return {"name": name, "first_bar_at": bars[0].at, "last_bar_at": bars[-1].at, "bar_count": len(bars)}
 
@@ -335,10 +398,7 @@ def aggregate_validation(folds: list[dict[str, str]], *, paper_compatible: bool 
     }
 
 
-def run_experiment(bars_path: Path, raw_config: dict[str, Any]) -> dict[str, Any]:
-    config = parse_config(raw_config)
-    raw_bars = bars_path.read_bytes()
-    bars = parse_bars(raw_bars)
+def _evaluate(bars: list[Bar], config: ExperimentConfig) -> Evaluation:
     number = Fraction if config.paper_compatible else Decimal
     if config.paper_compatible and any(bar.close >= Decimal("1000000000000") or -bar.close.as_tuple().exponent > 8 for bar in bars):
         raise ValueError("paper SMA closes must be below 1e12 with at most 8 decimal places")
@@ -348,66 +408,57 @@ def run_experiment(bars_path: Path, raw_config: dict[str, Any]) -> dict[str, Any
     pre_holdout = bars[:validation_end]
     holdout = bars[validation_end:]
 
-    def evaluate_candidates(training: list[Bar]) -> list[dict[str, Any]]:
+    def evaluate_candidates(training: list[Bar]) -> list[Candidate]:
         evaluated = []
         for parameters in config.candidates:
-            metrics, _ = simulate_fold(training, config, parameters)
-            evaluated.append({
-                "parameters": {"fast_window": parameters.fast_window, "slow_window": parameters.slow_window},
-                "metrics": metrics,
-            })
+            metrics, _ = _simulate_indexed_fold(training, config, parameters)
+            evaluated.append(Candidate(parameters, metrics))
         return evaluated
 
-    def select(evaluated: list[dict[str, Any]]) -> dict[str, Any]:
+    def select(evaluated: list[Candidate]) -> Candidate:
         return min(
             evaluated,
             key=lambda item: (
-                -number(item["metrics"]["after_cost_return"]),
-                number(item["metrics"]["max_drawdown"]),
-                item["parameters"]["fast_window"],
-                item["parameters"]["slow_window"],
+                -number(item.metrics["after_cost_return"]),
+                number(item.metrics["max_drawdown"]),
+                item.parameters.fast_window,
+                item.parameters.slow_window,
             ),
         )
 
-    walk_forward_folds: list[dict[str, Any]] = []
+    walk_forward_folds: list[ValidationFold] = []
     for index, offset in enumerate(range(0, config.validation_bars, config.minimum_fold_bars), start=1):
         train_end = config.train_bars + offset
         fold_train = bars[:train_end]
         fold_validation = bars[train_end : train_end + config.minimum_fold_bars]
         selected = select(evaluate_candidates(fold_train))
-        selected_parameters = Parameters(**selected["parameters"])
-        validation_metrics, _ = simulate_fold(
+        validation_metrics, _ = _simulate_indexed_fold(
             fold_validation,
             config,
-            selected_parameters,
+            selected.parameters,
             warmup=fold_train,
         )
-        walk_forward_folds.append({
-            "name": f"walk_forward_{index}",
-            "train": fold_description(f"walk_forward_{index}_train", fold_train),
-            "validation": fold_description(f"walk_forward_{index}_validation", fold_validation),
-            "selected_parameters": selected["parameters"],
-            "train_metrics": selected["metrics"],
-            "validation_metrics": validation_metrics,
-        })
+        walk_forward_folds.append(ValidationFold(
+            f"walk_forward_{index}", Span(0, train_end), Span(train_end, train_end + config.minimum_fold_bars),
+            selected, validation_metrics,
+        ))
 
     candidates = evaluate_candidates(pre_holdout)
     challenger = select(candidates)
-    challenger_parameters = Parameters(**challenger["parameters"])
-    holdout_metrics, holdout_trades = simulate_fold(
+    holdout_metrics, holdout_trades = _simulate_indexed_fold(
         holdout,
         config,
-        challenger_parameters,
+        challenger.parameters,
         warmup=pre_holdout,
     )
-    baseline_metrics, _ = simulate_fold(holdout, config, None, warmup=pre_holdout)
-    walk_forward_metrics = aggregate_validation([item["validation_metrics"] for item in walk_forward_folds], paper_compatible=config.paper_compatible)
+    baseline_metrics, _ = _simulate_indexed_fold(holdout, config, None, warmup=pre_holdout)
+    walk_forward_metrics = aggregate_validation([item.validation_metrics for item in walk_forward_folds], paper_compatible=config.paper_compatible)
     walk_forward_ok = (
         Decimal(walk_forward_metrics["after_cost_return"]) >= config.minimum_validation_return
         and Decimal(walk_forward_metrics["trade_count"]) >= config.minimum_validation_trades
         and all(
-            Decimal(item["validation_metrics"]["after_cost_return"]) >= config.minimum_validation_return
-            and Decimal(item["validation_metrics"]["trade_count"]) >= config.minimum_validation_trades
+            Decimal(item.validation_metrics["after_cost_return"]) >= config.minimum_validation_return
+            and Decimal(item.validation_metrics["trade_count"]) >= config.minimum_validation_trades
             for item in walk_forward_folds
         )
     )
@@ -417,11 +468,55 @@ def run_experiment(bars_path: Path, raw_config: dict[str, Any]) -> dict[str, Any
         and Decimal(holdout_metrics["trade_count"]) >= config.minimum_holdout_trades
     )
     baseline_ok = Decimal(holdout_metrics["after_cost_return"]) > Decimal(baseline_metrics["after_cost_return"])
+    return Evaluation(
+        candidates=candidates,
+        folds=walk_forward_folds,
+        selected=challenger,
+        validation_metrics=walk_forward_metrics,
+        holdout=Span(validation_end, len(bars)),
+        holdout_metrics=holdout_metrics,
+        holdout_trades=holdout_trades,
+        baseline_metrics=baseline_metrics,
+        walk_forward_ok=walk_forward_ok,
+        holdout_ok=holdout_ok,
+        baseline_ok=baseline_ok,
+    )
+
+
+def run_experiment(bars_path: Path, raw_config: dict[str, Any]) -> dict[str, Any]:
+    config = parse_config(raw_config)
+    raw_bars = bars_path.read_bytes()
+    bars = parse_bars(raw_bars)
+    evaluated = _evaluate(bars, config)
+    walk_forward_folds = [
+        {
+            "name": fold.name,
+            "train": fold_description(f"{fold.name}_train", bars[fold.train.start:fold.train.stop]),
+            "validation": fold_description(f"{fold.name}_validation", bars[fold.validation.start:fold.validation.stop]),
+            "selected_parameters": {"fast_window": fold.selected.parameters.fast_window, "slow_window": fold.selected.parameters.slow_window},
+            "train_metrics": fold.selected.metrics,
+            "validation_metrics": fold.validation_metrics,
+        }
+        for fold in evaluated.folds
+    ]
+    challenger_parameters = {"fast_window": evaluated.selected.parameters.fast_window, "slow_window": evaluated.selected.parameters.slow_window}
+    holdout_trades = [
+        {
+            "signal_at": bars[trade.signal].at,
+            "eligible_at": bars[trade.eligible].at,
+            "fill_at": bars[trade.fill].at,
+            "side": trade.side,
+            "quantity": trade.quantity,
+            "price": trade.price,
+        }
+        for trade in evaluated.holdout_trades
+    ]
+    walk_forward_ok, holdout_ok, baseline_ok = evaluated.walk_forward_ok, evaluated.holdout_ok, evaluated.baseline_ok
     target = "paper_candidate" if walk_forward_ok and holdout_ok and baseline_ok else "no_promotion"
     input_sha256 = hashlib.sha256(raw_bars).hexdigest()
     selected_parameters = {
         "quantity": decimal_string(config.quantity),
-        **challenger["parameters"],
+        **challenger_parameters,
     }
     body = {
         "schema_version": "strategy-improvement-result.v2" if config.paper_compatible else "strategy-improvement-result.v1",
@@ -444,27 +539,27 @@ def run_experiment(bars_path: Path, raw_config: dict[str, Any]) -> dict[str, Any
             "method": "expanding_walk_forward_then_final_holdout",
             "minimum_fold_bars": config.minimum_fold_bars,
             "folds": walk_forward_folds,
-            "final_holdout": fold_description("final_holdout", holdout),
+            "final_holdout": fold_description("final_holdout", bars[evaluated.holdout.start:evaluated.holdout.stop]),
             "selection_metric": "highest training after_cost_return, then lowest training max_drawdown, then windows ascending",
             "final_holdout_evaluated_after_selection": True,
         },
         "candidates": [
-            {"parameters": item["parameters"], "pre_holdout_metrics": item["metrics"]}
-            for item in candidates
+            {"parameters": {"fast_window": item.parameters.fast_window, "slow_window": item.parameters.slow_window}, "pre_holdout_metrics": item.metrics}
+            for item in evaluated.candidates
         ],
         "challenger": {
-            "parameters": challenger["parameters"],
-            "pre_holdout_metrics": challenger["metrics"],
-            "walk_forward_metrics": walk_forward_metrics,
+            "parameters": challenger_parameters,
+            "pre_holdout_metrics": evaluated.selected.metrics,
+            "walk_forward_metrics": evaluated.validation_metrics,
             "walk_forward_folds": walk_forward_folds,
-            "final_holdout_metrics": holdout_metrics,
+            "final_holdout_metrics": evaluated.holdout_metrics,
             "final_holdout_trades": holdout_trades,
         },
         "promotion": {
             "target": target,
             "baseline": {
                 "name": "buy_and_hold",
-                "final_holdout_metrics": baseline_metrics,
+                "final_holdout_metrics": evaluated.baseline_metrics,
                 "challenger_exceeds_baseline": baseline_ok,
             },
             "walk_forward_gate_passed": walk_forward_ok,

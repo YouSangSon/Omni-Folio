@@ -581,6 +581,18 @@ mkdir -p -m 700 data/candles
 
 三个参数都必须提供。文件保留实际请求、提供方原始时间和 UTC 获取时间，回执返回行数及文件 SHA256。已有输出不会被覆盖。发布后发生错误时，完整文件仍可能保留；请先检查已有文件，再为新观测使用其他路径。这不是已验证 K 线完成、价格调整单位或当前价格的 paper 输入。[支持的 interval、限制与恢复契约](gates/g4aa-kiwoom-mock-candle-capture.md)
 
+### 使用已保存的日线运行扣除成本的研究
+
+将上述日线 capture 用于现有 SMA 参数搜索、walk-forward 和最终 holdout 计算。仅支持 v2 配置，行数必须与 train、validation、holdout 的总数完全一致。以下配置需要120行，公开的单行 capture 示例不足以运行。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research python3 -B -m omni_research.capture_cli \
+  --capture data/candles/005930-1d.json \
+  --config contracts/fixtures/strategy-improvement-paper-config.json
+```
+
+报告仅输出到 stdout。请另行保留原始 capture，使用 shell 重定向保存时请选择其他路径。命令不保证 shell 重定向的防覆盖或原子发布。报告保留原始 bytes 的 SHA256、请求、原始日期、获取 clock 及不确定性。日期仍为行标签，不会转换为发布时刻。即使所有数值门槛通过，策略注册、`paper-improve` 和 paper proposal 也会拒绝此格式。[契约、验证与后续连接](gates/g3an-captured-candle-research.md)
+
 ## 主要命令
 
 ```text

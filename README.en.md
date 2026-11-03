@@ -581,6 +581,18 @@ mkdir -p -m 700 data/candles
 
 All three arguments are required. The file preserves the exact request, raw provider times, and UTC fetch clocks; the receipt returns the row count and file SHA256. Existing output is never overwritten. A completed file may remain after a publication error. Inspect it and choose a different path for a new observation. This is not a paper input with verified bar completion, adjustment units, or current prices. [Intervals, bounds, and recovery contract](gates/g4aa-kiwoom-mock-candle-capture.md)
 
+### Run cost-aware research on saved daily candles
+
+Use the daily capture above with the existing SMA grid, walk-forward, and final holdout calculation. Only v2 config is supported, and its train, validation, and holdout counts must exactly match the capture rows. The config below requires 120 rows; the public one-row capture example is insufficient.
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research python3 -B -m omni_research.capture_cli \
+  --capture data/candles/005930-1d.json \
+  --config contracts/fixtures/strategy-improvement-paper-config.json
+```
+
+The report goes only to stdout. Keep the original capture separately and choose a different path for shell redirection. The command provides no overwrite protection or atomic publication for shell redirection. The report retains the original byte SHA256, request, raw dates, fetch clocks, and uncertainty. Dates remain row labels rather than invented publication instants. Strategy registration, `paper-improve`, and paper proposal admission reject this format even when all numerical thresholds pass. [Contract, verification, and remaining work](gates/g3an-captured-candle-research.md)
+
 ## Main commands
 
 ```text
