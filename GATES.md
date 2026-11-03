@@ -70,7 +70,8 @@ G3 research vertical slice
 │  └─ G3.8F3 latest pending current-selection policy recovery
 ├─ G3.8G offline proposals and local paper workflow subgates
 ├─ G3.8H stored paper policy status API and Flutter view
-└─ G3.9 stored research report API and Flutter view
+├─ G3.9 stored research report API and Flutter view
+└─ G3AN captured daily observations in shared offline research, structurally barred from paper authority
    |
 G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4A Kiwoom K0 read contract
@@ -109,6 +110,8 @@ G6 PostgreSQL and Kubernetes promotion
 ```
 
 ## Root completion evidence
+
+- G3AN은 G4AA 일봉 capture를 기존 비용 차감 후보·walk-forward·holdout 계산으로 연결한다. 원본 bytes hash·요청·날짜·나노초 조회 clock과 불확실성을 보존하며 별도 보고서 형식으로 운영 등록을 차단한다. 독립 리뷰·집중/race·최종 Core/research/contracts, native CLI QA 3개와 소유 자원 정리를 로컬 통과했다. 원격 CI·main 반영과 운영 연결은 별도다. [계약과 현재 검증 범위](gates/g3an-captured-candle-research.md).
 
 - G4AA는 명시적 CLI로 mock 봉의 요청·원본 시간·조회 시간을 새 연구 JSON에 보존한다. 독립 리뷰·집중/race·전체 Core/research/contracts와 실제 test-main TLS·production 조기 거절을 로컬 검증했다. closed-bar/paper/live 권한과 실제 인증 관찰은 별도다. [계약과 검증 범위](gates/g4aa-kiwoom-mock-candle-capture.md).
 

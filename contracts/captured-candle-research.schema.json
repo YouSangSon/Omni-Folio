@@ -1,0 +1,485 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omni-folio.local/contracts/captured-candle-research.v1.schema.json",
+  "title": "Offline captured daily candle research v1",
+  "description": "Compact UTF-8 JSON plus newline is capped at 1 MiB. Row references preserve raw provider labels, not availability instants. Capture SHA hashes original bytes; report SHA hashes the canonical body excluding report_sha256. Native coherence, arithmetic and hashes require runtime verification.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scope",
+    "source",
+    "config",
+    "config_sha256",
+    "analysis",
+    "limitations",
+    "report_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "captured-candle-research.v1"
+    },
+    "scope": {
+      "const": "offline_capture_research_only"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256",
+        "capture"
+      ],
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "capture": {
+          "allOf": [
+            {
+              "$ref": "kiwoom-candle-capture.schema.json"
+            },
+            {
+              "properties": {
+                "interval": {
+                  "const": "1d"
+                },
+                "request": {
+                  "properties": {
+                    "api_id": {
+                      "const": "ka10081"
+                    },
+                    "body": {
+                      "not": {
+                        "required": [
+                          "tic_scope"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "time_evidence": {
+                  "properties": {
+                    "provider_field": {
+                      "const": "dt"
+                    },
+                    "provider_format": {
+                      "const": "YYYYMMDD"
+                    }
+                  }
+                },
+                "bars": {
+                  "items": {
+                    "properties": {
+                      "provider_time": {
+                        "pattern": "^[0-9]{8}$"
+                      },
+                      "open": {
+                        "maxLength": 64
+                      },
+                      "high": {
+                        "maxLength": 64
+                      },
+                      "low": {
+                        "maxLength": 64
+                      },
+                      "close": {
+                        "maxLength": 64
+                      },
+                      "volume": {
+                        "maxLength": 64
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "config": {
+      "$ref": "strategy-improvement-config-v2.schema.json"
+    },
+    "config_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "analysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "arithmetic",
+        "evaluation_policy",
+        "pre_holdout",
+        "candidates",
+        "folds",
+        "selected_parameters",
+        "selected_pre_holdout_metrics",
+        "validation_metrics",
+        "final_holdout",
+        "buy_and_hold_metrics",
+        "threshold_comparisons"
+      ],
+      "properties": {
+        "arithmetic": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "version"
+          ],
+          "properties": {
+            "name": {
+              "const": "omni-folio-paper-reference"
+            },
+            "version": {
+              "const": "1.0.0"
+            }
+          }
+        },
+        "evaluation_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "method",
+            "minimum_fold_bars",
+            "selection_metric",
+            "final_holdout_evaluated_after_selection"
+          ],
+          "properties": {
+            "version": {
+              "const": "sma-paper-fill-walk-forward.v1"
+            },
+            "method": {
+              "const": "expanding_walk_forward_then_final_holdout"
+            },
+            "minimum_fold_bars": {
+              "type": "integer",
+              "minimum": 30
+            },
+            "selection_metric": {
+              "const": "highest training after_cost_return, then lowest training max_drawdown, then windows ascending"
+            },
+            "final_holdout_evaluated_after_selection": {
+              "const": true
+            }
+          }
+        },
+        "pre_holdout": {
+          "$ref": "#/$defs/range"
+        },
+        "candidates": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "parameters",
+              "pre_holdout_metrics"
+            ],
+            "properties": {
+              "parameters": {
+                "$ref": "#/$defs/parameters"
+              },
+              "pre_holdout_metrics": {
+                "$ref": "#/$defs/metrics"
+              }
+            }
+          }
+        },
+        "folds": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 14,
+          "items": {
+            "$ref": "#/$defs/fold"
+          }
+        },
+        "selected_parameters": {
+          "$ref": "#/$defs/parameters"
+        },
+        "selected_pre_holdout_metrics": {
+          "$ref": "#/$defs/metrics"
+        },
+        "validation_metrics": {
+          "$ref": "#/$defs/metrics"
+        },
+        "final_holdout": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "range",
+            "metrics",
+            "trades"
+          ],
+          "properties": {
+            "range": {
+              "$ref": "#/$defs/range"
+            },
+            "metrics": {
+              "$ref": "#/$defs/metrics"
+            },
+            "trades": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/trade"
+              }
+            }
+          }
+        },
+        "buy_and_hold_metrics": {
+          "$ref": "#/$defs/metrics"
+        },
+        "threshold_comparisons": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "walk_forward_thresholds_met",
+            "final_holdout_thresholds_met",
+            "challenger_exceeds_buy_and_hold"
+          ],
+          "properties": {
+            "walk_forward_thresholds_met": {
+              "type": "boolean"
+            },
+            "final_holdout_thresholds_met": {
+              "type": "boolean"
+            },
+            "challenger_exceeds_buy_and_hold": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "limitations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "execution_delay",
+        "capital_and_liquidation",
+        "source_time",
+        "adjustment",
+        "authority"
+      ],
+      "properties": {
+        "execution_delay": {
+          "const": "delay_bars counts observation rows, not proved source availability or elapsed time"
+        },
+        "capital_and_liquidation": {
+          "const": "each fold resets hypothetical capital and requires terminal liquidation"
+        },
+        "source_time": {
+          "const": "provider timezone, bar boundaries and publication time are not provided; completion is unverified"
+        },
+        "adjustment": {
+          "const": "adjustment request 1 does not prove applied adjustments or comparable price units"
+        },
+        "authority": {
+          "const": "offline research only; no strategy registration, paper proposal, investment advice or execution authority"
+        }
+      }
+    },
+    "report_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "$defs": {
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "row",
+        "provider_time"
+      ],
+      "properties": {
+        "row": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 499
+        },
+        "provider_time": {
+          "type": "string",
+          "pattern": "^[0-9]{8}$"
+        }
+      }
+    },
+    "range": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "first",
+        "last",
+        "bar_count"
+      ],
+      "properties": {
+        "first": {
+          "$ref": "#/$defs/row"
+        },
+        "last": {
+          "$ref": "#/$defs/row"
+        },
+        "bar_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        }
+      }
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fast_window",
+        "slow_window"
+      ],
+      "properties": {
+        "fast_window": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365
+        },
+        "slow_window": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "after_cost_return",
+        "max_drawdown",
+        "trade_count",
+        "trade_count_definition",
+        "fill_count",
+        "turnover",
+        "fees",
+        "taxes",
+        "slippage_cost",
+        "partial_fill_count"
+      ],
+      "properties": {
+        "after_cost_return": {
+          "type": "string",
+          "pattern": "^(?:0|-?[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$|^-0\\.[0-9]*[1-9]$"
+        },
+        "max_drawdown": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$"
+        },
+        "trade_count": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]*)$"
+        },
+        "trade_count_definition": {
+          "enum": [
+            "completed_long_only_round_trips",
+            "sum_of_completed_long_only_round_trips_across_walk_forward_folds"
+          ]
+        },
+        "fill_count": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]*)$"
+        },
+        "turnover": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$"
+        },
+        "fees": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$"
+        },
+        "taxes": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$"
+        },
+        "slippage_cost": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$"
+        },
+        "partial_fill_count": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]*)$"
+        }
+      }
+    },
+    "fold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "train",
+        "validation",
+        "selected_parameters",
+        "train_metrics",
+        "validation_metrics"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^walk_forward_[1-9][0-9]*$"
+        },
+        "train": {
+          "$ref": "#/$defs/range"
+        },
+        "validation": {
+          "$ref": "#/$defs/range"
+        },
+        "selected_parameters": {
+          "$ref": "#/$defs/parameters"
+        },
+        "train_metrics": {
+          "$ref": "#/$defs/metrics"
+        },
+        "validation_metrics": {
+          "$ref": "#/$defs/metrics"
+        }
+      }
+    },
+    "trade": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "signal",
+        "eligible",
+        "fill",
+        "side",
+        "quantity",
+        "price"
+      ],
+      "properties": {
+        "signal": {
+          "$ref": "#/$defs/row"
+        },
+        "eligible": {
+          "$ref": "#/$defs/row"
+        },
+        "fill": {
+          "$ref": "#/$defs/row"
+        },
+        "side": {
+          "enum": [
+            "BUY",
+            "SELL"
+          ]
+        },
+        "quantity": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "price": {
+          "type": "string",
+          "pattern": "^(?:0\\.[0-9]*[1-9]|[1-9][0-9]*(?:\\.[0-9]*[1-9])?)$"
+        }
+      }
+    }
+  }
+}

@@ -581,6 +581,18 @@ mkdir -p -m 700 data/candles
 
 3つの引数がすべて必要です。実際のリクエスト、提供者の元の時刻、UTC 取得時刻を保存し、レシートは行数とファイルの SHA256 を返します。既存の出力は上書きしません。公開後のエラーでも完成したファイルが残る場合があります。既存ファイルを確認し、新しい観測には別のパスを使ってください。足の完成、価格調整の単位、現在価格を検証した paper 入力ではありません。[対応 interval・上限・復旧契約](gates/g4aa-kiwoom-mock-candle-capture.md)
 
+### 保存した日足でコスト控除後の研究を実行
+
+上記の日足 capture を既存の SMA 候補探索・walk-forward・最終 holdout 計算に使います。v2 設定のみを受け付け、行数は train・validation・holdout の合計と完全に一致する必要があります。以下の設定には120行が必要なため、公開の1行 capture 例では実行できません。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/research python3 -B -m omni_research.capture_cli \
+  --capture data/candles/005930-1d.json \
+  --config contracts/fixtures/strategy-improvement-paper-config.json
+```
+
+結果は stdout のみに出力します。元の capture を別途保管し、シェルで保存する場合は別のパスを選んでください。シェルのリダイレクトに対する上書き防止・原子的な保存は保証しません。レポートは元の bytes の SHA256、リクエスト、元の日付、取得 clock と不確実性を保持します。日付は行ラベルであり、公開時刻には変換しません。数値基準をすべて満たしても、戦略登録・`paper-improve`・paper proposal はこの形式を拒否します。[契約・検証・残る接続](gates/g3an-captured-candle-research.md)
+
 ## 主なコマンド
 
 ```text
