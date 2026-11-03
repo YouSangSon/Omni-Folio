@@ -569,6 +569,18 @@ stdout は提供者・モード・時刻・台帳 revision・件数・数量一�
 
 `complete` は必要な読み取りと全ページの成功を表します。提供者全体の同一時点 snapshot、現金・約定の照合、口座の現在の安全性、実認証の成功は保証しません。公開 freshness は引き続き `unverified` です。台帳補正・検証時刻更新・実行権限・注文送信は追加しません。[入力・復旧契約と検証範囲](gates/g4z-kiwoom-mock-sync.md)
 
+### キウムの模擬ローソク足を研究ファイルに保存
+
+同じ Keychain 項目で模擬の日足・分足を取得し、新しい private JSON に保存します。出力ディレクトリは現在のユーザーが所有し、他のユーザーによる書き込みを許可しない必要があります。
+
+```sh
+mkdir -p -m 700 data/candles
+(cd services/core && go run . kiwoom-mock-candles \
+  -symbol 005930 -interval 1d -out ../../data/candles/005930-1d.json)
+```
+
+3つの引数がすべて必要です。実際のリクエスト、提供者の元の時刻、UTC 取得時刻を保存し、レシートは行数とファイルの SHA256 を返します。既存の出力は上書きしません。公開後のエラーでも完成したファイルが残る場合があります。既存ファイルを確認し、新しい観測には別のパスを使ってください。足の完成、価格調整の単位、現在価格を検証した paper 入力ではありません。[対応 interval・上限・復旧契約](gates/g4aa-kiwoom-mock-candle-capture.md)
+
 ## 主なコマンド
 
 ```text

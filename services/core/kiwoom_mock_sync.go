@@ -259,7 +259,10 @@ func (t *kiwoomMockTransport) RoundTrip(request *http.Request) (*http.Response, 
 			(request.URL.Path == kiwoomAccountPath && (request.Header.Get("api-id") == "ka00001" || request.Header.Get("api-id") == "kt00018" || request.Header.Get("api-id") == "ka10075"))) {
 		return nil, &KiwoomError{Kind: "invalid_request"}
 	}
-	p := t.pacer
+	return t.pacer.roundTrip(request, t.base)
+}
+
+func (p *kiwoomMockPacer) roundTrip(request *http.Request, base http.RoundTripper) (*http.Response, error) {
 	select {
 	case <-request.Context().Done():
 		return nil, request.Context().Err()
@@ -274,7 +277,7 @@ func (t *kiwoomMockTransport) RoundTrip(request *http.Request) (*http.Response, 
 	if err := request.Context().Err(); err != nil {
 		return nil, err
 	}
-	response, err := t.base.RoundTrip(request)
+	response, err := base.RoundTrip(request)
 	p.next = p.now().Add(time.Second)
 	return response, err
 }

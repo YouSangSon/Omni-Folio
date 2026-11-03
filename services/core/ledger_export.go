@@ -2,18 +2,14 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/csv"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"syscall"
 	"time"
 )
 
@@ -83,10 +79,6 @@ func runLedgerExportCommand(ctx context.Context, args []string, output io.Writer
 }
 
 func ledgerExportTarget(dbPath, out string) (string, string, error) {
-	out, err := filepath.Abs(out)
-	if err != nil {
-		return "", "", err
-	}
 	database, err := filepath.EvalSymlinks(dbPath)
 	if err != nil {
 		return "", "", err
@@ -95,32 +87,10 @@ func ledgerExportTarget(dbPath, out string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	parent, err := filepath.EvalSymlinks(filepath.Dir(out))
+	parent, target, err := privateFileTarget(out)
 	if err != nil {
 		return "", "", err
 	}
-	parent, err = filepath.Abs(parent)
-	if err != nil {
-		return "", "", err
-	}
-	for path := parent; ; path = filepath.Dir(path) {
-		info, err := os.Stat(path)
-		if err != nil {
-			return "", "", err
-		}
-		stat, ok := info.Sys().(*syscall.Stat_t)
-		if !info.IsDir() || !ok || (stat.Uid != uint32(os.Getuid()) && stat.Uid != 0) || (path == parent && stat.Uid != uint32(os.Getuid())) {
-			return "", "", errors.New("ledger export requires a trusted owned directory path")
-		}
-		rootSticky := path != parent && stat.Uid == 0 && info.Mode()&os.ModeSticky != 0
-		if info.Mode().Perm()&0022 != 0 && !rootSticky {
-			return "", "", errors.New("ledger export directory path permits shared writes")
-		}
-		if path == filepath.Dir(path) {
-			break
-		}
-	}
-	target := filepath.Join(parent, filepath.Base(out))
 	input, err := filepath.Abs(dbPath)
 	if err != nil {
 		return "", "", err
@@ -136,61 +106,18 @@ func ledgerExportTarget(dbPath, out string) (string, string, error) {
 			}
 		}
 	}
-	if _, err := os.Lstat(target); !errors.Is(err, os.ErrNotExist) {
-		return "", "", errors.New("ledger export requires an unused output path")
-	}
 	return parent, target, nil
 }
 
-func publishLedgerExport(ctx context.Context, dbPath, out string, events []LedgerActivity) (digest string, resultErr error) {
+func publishLedgerExport(ctx context.Context, dbPath, out string, events []LedgerActivity) (string, error) {
 	parent, target, err := ledgerExportTarget(dbPath, out)
 	if err != nil {
 		return "", err
 	}
-	f, err := os.CreateTemp(parent, ".omni-ledger-export-*")
-	if err != nil {
-		return "", err
-	}
-	temporary := f.Name()
-	defer func() {
-		if f != nil {
-			resultErr = errors.Join(resultErr, f.Close())
-		}
-		if temporary != "" {
-			resultErr = errors.Join(resultErr, os.Remove(temporary))
-		}
-	}()
-	hash := sha256.New()
-	limited := &ledgerExportLimitWriter{writer: io.MultiWriter(f, hash), remaining: maxLedgerExportBytes}
-	if err := writeLedgerExportCSV(ctx, limited, events); err != nil {
-		return "", err
-	}
-	if err := f.Sync(); err != nil {
-		return "", err
-	}
-	err = f.Close()
-	f = nil
-	if err != nil {
-		return "", err
-	}
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-	if err := os.Link(temporary, target); err != nil {
-		return "", err
-	}
-	if err := os.Remove(temporary); err != nil {
-		return "", err
-	}
-	temporary = ""
-	dir, err := os.Open(parent)
-	if err != nil {
-		return "", err
-	}
-	if err := errors.Join(dir.Sync(), dir.Close()); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
+	return publishPrivateFile(ctx, parent, target, ".omni-ledger-export-*", func(output io.Writer) error {
+		limited := &ledgerExportLimitWriter{writer: output, remaining: maxLedgerExportBytes}
+		return writeLedgerExportCSV(ctx, limited, events)
+	})
 }
 
 func writeLedgerExportCSV(ctx context.Context, output io.Writer, events []LedgerActivity) error {

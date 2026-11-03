@@ -569,6 +569,18 @@ stdout 仅包含提供方、模式、时间、账本 revision、数量和持仓�
 
 `complete` 表示所需读取及分页全部成功，不代表提供方全局同一时点 snapshot、现金与成交对账、账户当前安全性或真实认证成功。公开 freshness 仍为 `unverified`，不会新增账本修正、验证时间更新、执行权限或订单提交。[输入、恢复契约与验证范围](gates/g4z-kiwoom-mock-sync.md)
 
+### 将 Kiwoom 模拟 K 线保存为研究文件
+
+使用同一 Keychain 项读取模拟日线或分钟线，保存到新的 private JSON 文件。输出目录必须归当前用户所有，并禁止其他用户写入。
+
+```sh
+mkdir -p -m 700 data/candles
+(cd services/core && go run . kiwoom-mock-candles \
+  -symbol 005930 -interval 1d -out ../../data/candles/005930-1d.json)
+```
+
+三个参数都必须提供。文件保留实际请求、提供方原始时间和 UTC 获取时间，回执返回行数及文件 SHA256。已有输出不会被覆盖。发布后发生错误时，完整文件仍可能保留；请先检查已有文件，再为新观测使用其他路径。这不是已验证 K 线完成、价格调整单位或当前价格的 paper 输入。[支持的 interval、限制与恢复契约](gates/g4aa-kiwoom-mock-candle-capture.md)
+
 ## 主要命令
 
 ```text
