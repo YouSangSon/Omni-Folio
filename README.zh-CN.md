@@ -9,7 +9,7 @@
 以韩语 README 为基准，同步更新四种语言的结构、命令与支持范围。链接中的详细设计和验证文档以韩语或英语提供。README 的翻译不代表应用支持对应的显示语言。
 
 > [!IMPORTANT]
-> 当前实盘交易和券商连接均未启用。本仓库的回测与策略结果不保证收益，也不构成投资建议。
+> 当前实盘交易未启用。Kiwoom 模拟账户可通过下述显式命令读取，但尚未进行真实凭据认证观察。本仓库的回测与策略结果不保证收益，也不构成投资建议。
 
 <a id="status"></a>
 
@@ -531,6 +531,21 @@ G3.8F2 增加 `omni-core paper-run-loop -db <path> -account <kiwoom_account_...>
 这些证据来自本地事后 fixture 结果。虽然已增加 daemon 进程本身，但没有增加公共 API/UI、基于券商数据的估值、凭据/实盘执行、部署、告警、CronJob 打包、shadow/live 晋级，也不构成盈利能力声明。
 
 <a id="commands"></a>
+
+### 读取 Kiwoom 模拟账户
+
+请由用户在 macOS 钥匙串访问中准备通用密码。固定 service 为 `com.omni-folio.kiwoom.mock.readonly.v1`，account 为 `credentials`。密码内容为仅包含 `schema_version`、`app_key`、`secret_key`、`alias_key_base64`、`account_number` 五个字段的 JSON。版本为 `kiwoom-mock-read.v1`，alias key 为32字节的规范标准 Base64，账号为10位数字。app key 和 secret key 各不超过1,024字节，不能全为空白或包含控制字符。JSON 总大小不超过8 KiB。不要将秘密放入 shell 参数、环境变量或仓库文件。
+
+```sh
+(cd services/core && go run . kiwoom-mock-sync \
+  -db ../../data/omni-folio.db -ledger-account account-main)
+```
+
+两个参数均为必填，DB 必须已存在并完成 migration。只有 Go 读取固定 Keychain 项目并获取 mock/KRX 的账户、估值和未成交订单页。首次成功会在既有 journal 中将 `account-main` 绑定至一个模拟账户。更改账户或 alias key、已有多个账户或 production KRX 历史时均拒绝。保存前在同一写事务内再次验证恢复状态和绑定，并对账当时的账本 revision 与数量。刷新应用已有连接页面即可查看保存的对账。
+
+stdout 仅包含提供方、模式、时间、账本 revision、数量和持仓数量是否一致。输出失败可能发生在持久提交之后，请先查看既有 `GET /v1/broker-reconciliation/latest`，再重新获取。提供方失败会保留上次正常 snapshot。OAuth、401 刷新及分页在同一进程内至少间隔1秒，多个进程不共享限速。整个命令限制为2分钟，每次调用限制为10秒。
+
+`complete` 表示所需读取及分页全部成功，不代表提供方全局同一时点 snapshot、现金与成交对账、账户当前安全性或真实认证成功。公开 freshness 仍为 `unverified`，不会新增账本修正、验证时间更新、执行权限或订单提交。[输入、恢复契约与验证范围](gates/g4z-kiwoom-mock-sync.md)
 
 ## 主要命令
 

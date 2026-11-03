@@ -9,7 +9,7 @@
 한국어 README를 기준으로 네 언어의 구성·명령·지원 범위를 함께 갱신합니다. 연결된 상세 설계와 검증 문서는 한국어 또는 영어로 제공됩니다. README 번역은 앱의 표시 언어 지원을 뜻하지 않습니다.
 
 > [!IMPORTANT]
-> 현재 실거래와 브로커 연결은 비활성입니다. 이 저장소의 백테스트·전략 결과는 수익을 보장하지 않으며 투자 조언이 아닙니다.
+> 현재 실거래는 비활성입니다. 키움 모의 계좌 읽기는 아래 명령으로 명시적으로 실행하며 실제 인증 관찰은 아직 수행하지 않았습니다. 이 저장소의 백테스트·전략 결과는 수익을 보장하지 않으며 투자 조언이 아닙니다.
 
 <a id="status"></a>
 
@@ -531,6 +531,21 @@ G3.8F2는 `omni-core paper-run-loop -db <path> -account <kiwoom_account_...>`를
 이 증거는 local ex-post fixture 결과입니다. daemon process 자체는 추가됐지만 public API/UI, broker-backed 평가, credential/live 실행, deployment, alerting, CronJob packaging, shadow/live promotion과 수익성 주장은 추가하지 않습니다.
 
 <a id="commands"></a>
+
+### 키움 모의 계좌 읽기
+
+macOS 키체인 접근에서 사용자가 일반 암호 항목을 준비합니다. 서비스는 `com.omni-folio.kiwoom.mock.readonly.v1`, 계정은 `credentials`로 고정합니다. 암호에는 `schema_version`, `app_key`, `secret_key`, `alias_key_base64`, `account_number` 다섯 필드만 가진 JSON을 저장합니다. 버전은 `kiwoom-mock-read.v1`, alias key는 32바이트의 표준 Base64, 계좌번호는 숫자 10자리입니다. 앱 키와 비밀 키는 각각 1,024바이트 이하의 공백뿐이지 않은 문자열이며 제어문자를 허용하지 않습니다. JSON 전체는 8 KiB 이하입니다. 비밀을 shell 인자·환경변수·저장소 파일에 넣지 마세요.
+
+```sh
+(cd services/core && go run . kiwoom-mock-sync \
+  -db ../../data/omni-folio.db -ledger-account account-main)
+```
+
+두 인자가 모두 필요하며 DB는 이미 migration을 마친 파일이어야 합니다. Go만 고정된 키체인 항목을 읽고 키움 mock/KRX의 계좌·평가·미체결 페이지를 조회합니다. 첫 성공이 기존 journal에 `account-main`의 모의 계좌 바인딩을 남기며, 이후 계좌나 alias key를 바꾸면 거절합니다. 기존 KRX 기록이 여러 계좌 또는 production을 포함해도 거절합니다. 저장 직전에 같은 쓰기 transaction에서 복구 상태와 바인딩을 다시 확인하고 그 시점 원장 revision과 수량을 대조합니다. 앱의 기존 연결 화면을 새로고침하면 저장된 대조를 볼 수 있습니다.
+
+stdout에는 제공자·모드·시각·원장 revision·건수·수량 일치 여부만 나옵니다. 출력 실패 뒤에도 저장은 완료됐을 수 있으므로 기존 `GET /v1/broker-reconciliation/latest`에서 확인한 뒤 새 조회로 재시도하세요. 제공자 실패는 이전 정상 snapshot을 보존합니다. 요청 간격은 OAuth·401 갱신·페이지 조회를 포함해 프로세스 안에서 최소 1초이며 다른 프로세스와 공유하지 않습니다. 전체 실행은 2분, 개별 호출은 10초로 제한합니다. 여러 프로세스를 동시에 실행하면 제공자 전체 호출 한도를 보장하지 못합니다.
+
+`complete`는 필요한 읽기와 페이지가 모두 성공했다는 뜻입니다. 제공자 전체의 동일 시점 snapshot, 현금·체결 대조, 현재 안전성 또는 실인증 검증을 뜻하지 않습니다. 공개 freshness는 계속 `unverified`이며 원장 보정·검증 시각 갱신·실행 권한·주문 제출은 추가하지 않습니다. [입력·복구 계약과 검증 범위](gates/g4z-kiwoom-mock-sync.md)
 
 ## 주요 명령
 

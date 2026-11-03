@@ -9,7 +9,7 @@
 韓国語 README を基準に、4言語の構成・コマンド・対応範囲をまとめて更新します。リンク先の詳細設計・検証ドキュメントは韓国語または英語で提供しています。README の翻訳は、アプリの表示言語への対応を意味しません。
 
 > [!IMPORTANT]
-> 現在、実取引とブローカー接続は無効です。このリポジトリのバックテスト・戦略の結果は利益を保証するものではなく、投資助言でもありません。
+> 現在、実取引は無効です。Kiwoom 模擬口座の読み取りは下記の明示的なコマンドで実行できますが、実際の認証を伴う観察は未実施です。このリポジトリのバックテスト・戦略の結果は利益を保証するものではなく、投資助言でもありません。
 
 <a id="status"></a>
 
@@ -531,6 +531,21 @@ G3.8F2 は `omni-core paper-run-loop -db <path> -account <kiwoom_account_...>` �
 これらの根拠はローカルの事後的な fixture 結果です。daemon process 自体は追加されましたが、公開 API/UI、broker に基づく評価、認証情報/live 実行、デプロイ、alerting、CronJob packaging、shadow/live 昇格、収益性の主張は追加していません。
 
 <a id="commands"></a>
+
+### Kiwoom 模擬口座の読み取り
+
+macOS のキーチェーンアクセスで、ユーザー自身が一般パスワードを準備します。サービスは `com.omni-folio.kiwoom.mock.readonly.v1`、アカウントは `credentials` に固定します。パスワードには `schema_version`、`app_key`、`secret_key`、`alias_key_base64`、`account_number` の5項目だけを持つ JSON を保存します。バージョンは `kiwoom-mock-read.v1`、alias key は32バイトの標準 Base64、口座番号は数字10桁です。app key と secret key は空白だけではない1,024バイト以下の文字列とし、制御文字を含めません。JSON 全体は8 KiB以下です。秘密情報を shell 引数・環境変数・リポジトリ内のファイルに入れないでください。
+
+```sh
+(cd services/core && go run . kiwoom-mock-sync \
+  -db ../../data/omni-folio.db -ledger-account account-main)
+```
+
+両方の引数と、migration 済みの既存 DB が必要です。Go だけが固定の Keychain 項目を読み、mock/KRX の口座・評価・未約定ページを取得します。最初の成功で既存 journal の `account-main` を1つの模擬口座に結び付けます。口座や alias key の変更、複数口座または production の既存 KRX 記録は拒否します。保存直前の同じ書き込み transaction で復旧状態と結び付きを再確認し、その時点の台帳 revision と数量を照合します。アプリの既存接続画面を更新すると保存された照合を参照できます。
+
+stdout は提供者・モード・時刻・台帳 revision・件数・数量一致のみです。出力失敗後も保存済みの場合があるため、既存の `GET /v1/broker-reconciliation/latest` で確認してから新しく取得し直してください。提供者の失敗では直前の正常 snapshot を保持します。OAuth・401 更新・ページ取得は同じプロセス内で最低1秒間隔です。別プロセスとは制限を共有しません。全体は2分、各呼び出しは10秒に制限します。
+
+`complete` は必要な読み取りと全ページの成功を表します。提供者全体の同一時点 snapshot、現金・約定の照合、口座の現在の安全性、実認証の成功は保証しません。公開 freshness は引き続き `unverified` です。台帳補正・検証時刻更新・実行権限・注文送信は追加しません。[入力・復旧契約と検証範囲](gates/g4z-kiwoom-mock-sync.md)
 
 ## 主なコマンド
 
