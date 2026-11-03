@@ -419,6 +419,10 @@ curl -fsS http://127.0.0.1:8080/v1/orders
 
 An empty log returns `orders=[]`. Any corruption in hashes, metadata, transition replay, or recorded timestamps causes a generic 500 and fails closed. Failed refreshes retain the last valid screen without presenting it as the current broker state.
 
+### Mimir filings, news and analysis
+
+In the separate Mimir checkout, run `python -m mimir.export_research --data-root /local/mimir/data --config-dir /local/mimir/config --since 2026-11-01 --until 2026-11-03 --out /local/research/mimir.json` to export stored material only. Connect it with `make run-core RESEARCH_FEED=/local/research/mimir.json`. Synthetic inputs require `--sample`. Open the native reader from **Connections → choose market/symbol**, the watchlist or holding detail. Holdings require an explicit market choice. Source evidence is not legal approval; Mimir analysis is not an order signal. Refresh errors retain the last successful observation, while a valid empty response clears it. [Limits, errors and verification](gates/g3am-mimir-public-research.md).
+
 ### Research and automated improvement
 
 After registration, view the last registered result in the app through **연결 (Connections) → 백테스트 보고서 보기** (view backtest report). `GET /v1/research/report` chooses one result by registration order, including results that failed promotion. This is independent of the currently selected strategy. With no data, it displays an empty state; if the latest data is corrupted or uses an unsupported format, it does not substitute older data. A failed manual refresh retains the screen's existing result and observation time.

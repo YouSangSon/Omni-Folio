@@ -109,6 +109,7 @@ G6 PostgreSQL and Kubernetes promotion
 
 ## Root completion evidence
 
+- G3AM은 별도 Mimir가 저장 공시·뉴스·분석을 제한된 공개 파일로 내보내고 기존 Go GET과 Flutter 읽기 화면에 연결한다. 관심종목 시장은 거래소에서 가져오며 보유·연결 화면은 시장을 직접 고른다. 출처·사용 근거와 연구 의견의 한계를 보존하고 원장·주문 상태를 쓰지 않는다. [계약과 로컬 검증 범위](gates/g3am-mimir-public-research.md).
 - G4Z는 기존 Keychain 항목을 사용하는 명시적 모의 계좌 읽기를 기존 Go client·snapshot journal·대조 GET으로 연결한다. 단일 모의 계좌 바인딩과 저장 시점 재검증을 유지하며 실제 Keychain·외부 제공자 인증 관찰은 미수행이다. [계약과 로컬 검증](gates/g4z-kiwoom-mock-sync.md).
 - G3AL은 저장된 연구 결과를 등록하고 기존 Go 모의 비교로 넘긴다. unknown-command RED·독립 리뷰 후 Core 전체 CI와 고정 Go1.24.5의 집중 race·native smoke·cleanup을 통과해 main에 병합했다. Client는 검증 입력의 Git 객체 일치로 통과 근거를 재사용했다. 등록과 claim의 별도 저장 및 claim 이후의 ID 구속을 유지한다. [인계 계약과 최종 근거](gates/g3al-paper-improvement-handoff.md).
 - G3AK는 최신 모의 비교 요청의 결정·재계산 지표·현재 선택 이벤트 상태를 공개한다. 실제 HTTP404 RED·독립 리뷰 후 Core/Client 전체 CI·web/ARM64 release를 통과하고 main에 병합했다. 기존 실행 권한과 저장 계약을 유지한다. [읽기 계약과 최종 근거](gates/g3ak-paper-promotion-report.md).

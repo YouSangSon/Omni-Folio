@@ -226,6 +226,9 @@ void main() {
     );
     expect(api.calls, 0);
     await tester.scrollUntilVisible(find.text('백테스트 보고서 보기'), 200);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('백테스트 보고서 보기'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('백테스트 보고서 보기'));
     await tester.pumpAndSettle();
     expect(api.calls, 1);

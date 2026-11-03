@@ -419,6 +419,10 @@ curl -fsS http://127.0.0.1:8080/v1/orders
 
 빈 로그는 `orders=[]`이며, hash·metadata·transition replay·기록시각이 하나라도 손상되면 일반화된 500으로 fail-closed합니다. 새로고침 실패 시 마지막 정상 화면을 유지하되 현재 broker 상태라고 표시하지 않습니다.
 
+### Mimir 공시·뉴스·분석
+
+별도 Mimir에서 `python -m mimir.export_research --data-root /local/mimir/data --config-dir /local/mimir/config --since 2026-11-01 --until 2026-11-03 --out /local/research/mimir.json`으로 저장 자료만 내보낸 뒤 `make run-core RESEARCH_FEED=/local/research/mimir.json`으로 연결합니다. 합성 입력에는 `--sample`을 붙입니다. 앱의 **연결 → 시장·종목 선택해 읽기**, 관심종목, 보유 상세에서 native 읽기 화면을 엽니다. 보유 상세는 시장을 직접 골라야 합니다. 출처 근거는 사용권 승인이 아니며 Mimir 분석은 주문 신호가 아닙니다. 새로고침 실패 시 마지막 정상 관측을 유지하고 정상 빈 응답은 화면을 비웁니다. [한도·오류·검증 계약](gates/g3am-mimir-public-research.md).
+
 ### Research와 자동 개선
 
 등록 후 앱의 **연결 → 백테스트 보고서 보기**에서 마지막 등록 결과를 조회합니다. `GET /v1/research/report`는 등록 순서로 하나를 고르며 승격 실패 결과도 포함합니다. 현재 선택된 전략과는 무관합니다. 자료가 없으면 빈 상태를 표시하고, 최신 자료가 손상되었거나 지원 형식을 벗어나면 이전 자료로 대체하지 않습니다. 수동 새로고침 실패 시 화면의 기존 결과·관측 시각은 유지합니다.

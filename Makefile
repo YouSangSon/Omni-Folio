@@ -17,6 +17,7 @@ FLUTTER_WEB_PORT ?= 8081
 WEB_ORIGIN ?= http://$(FLUTTER_WEB_HOST):$(FLUTTER_WEB_PORT)
 RESEARCH_PYTHONPATH ?= $(ROOT)/services/research
 MARKET_FIXTURE ?= $(ROOT)/contracts/fixtures/market-bars.csv
+RESEARCH_FEED ?=
 SEED_DEMO_CSV ?= $(ROOT)/contracts/fixtures/golden-import.csv
 
 # Observe before creating or reclaiming resources. Capture ps status before
@@ -332,7 +333,7 @@ clean: clean-test-resources
 run-core:
 	mkdir -p "$(dir $(DB_PATH))"
 	cd services/core && "$(GO)" run . migrate -db "$(DB_PATH)"
-	cd services/core && "$(GO)" run . serve -db "$(DB_PATH)" -addr "$(CORE_ADDR)" -allow-origin "$(WEB_ORIGIN)" -market-fixture "$(MARKET_FIXTURE)"
+	cd services/core && "$(GO)" run . serve -db "$(DB_PATH)" -addr "$(CORE_ADDR)" -allow-origin "$(WEB_ORIGIN)" -market-fixture "$(MARKET_FIXTURE)" -research-feed "$(RESEARCH_FEED)"
 
 run-client:
 	cd apps/client && "$(FLUTTER)" run -d "$(FLUTTER_DEVICE)" --web-hostname "$(FLUTTER_WEB_HOST)" --web-port "$(FLUTTER_WEB_PORT)" --dart-define=OMNI_API_URL="$(API_URL)"
