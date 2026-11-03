@@ -98,6 +98,7 @@ G4 Kiwoom read-only -> charts/realtime -> Kiwoom mock order
 ├─ G4T Kiwoom credential-free one-shot latest-trade capture
 ├─ G4U owner-declared instrument listing ownership and Kiwoom enforcement
 ├─ G4V/K2B3 provider-bound credential-free LIMIT dispatch capability port
+├─ G4Z explicit Keychain-backed mock/KRX snapshot sync to the existing reconciliation view
 ├─ K2B Kiwoom mock-order broker transport and lookup recovery
 └─ then Toss Securities read-only as the second adapter
    |
@@ -108,6 +109,7 @@ G6 PostgreSQL and Kubernetes promotion
 
 ## Root completion evidence
 
+- G4Z는 기존 Keychain 항목을 사용하는 명시적 모의 계좌 읽기를 기존 Go client·snapshot journal·대조 GET으로 연결한다. 단일 모의 계좌 바인딩과 저장 시점 재검증을 유지하며 실제 Keychain·외부 제공자 인증 관찰은 미수행이다. [계약과 로컬 검증](gates/g4z-kiwoom-mock-sync.md).
 - G3AL은 저장된 연구 결과를 등록하고 기존 Go 모의 비교로 넘긴다. unknown-command RED·독립 리뷰 후 Core 전체 CI와 고정 Go1.24.5의 집중 race·native smoke·cleanup을 통과해 main에 병합했다. Client는 검증 입력의 Git 객체 일치로 통과 근거를 재사용했다. 등록과 claim의 별도 저장 및 claim 이후의 ID 구속을 유지한다. [인계 계약과 최종 근거](gates/g3al-paper-improvement-handoff.md).
 - G3AK는 최신 모의 비교 요청의 결정·재계산 지표·현재 선택 이벤트 상태를 공개한다. 실제 HTTP404 RED·독립 리뷰 후 Core/Client 전체 CI·web/ARM64 release를 통과하고 main에 병합했다. 기존 실행 권한과 저장 계약을 유지한다. [읽기 계약과 최종 근거](gates/g3ak-paper-promotion-report.md).
 - G3AJ는 Go가 고정 후보와 현재 전략을 새 구간에서 비교해 paper 선택을 바꾼다. claim 선기록·시간 cutoff·현재 상태 CAS·복구 재계산을 집중33·Core/Client 전체 CI와 독립 리뷰로 검증하고 main에 병합했다. 기존 계좌의 현금·실행 권한과 수동 선택 계약을 유지한다. [계약과 최종 근거](gates/g3aj-automatic-paper-promotion.md).

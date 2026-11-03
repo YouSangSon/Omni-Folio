@@ -80,16 +80,27 @@ func (s *Service) recordKiwoomSnapshot(ctx context.Context, ledgerAccountID stri
 	if err := validateKiwoomSnapshot(snapshot); err != nil {
 		return nil, err
 	}
-	snapshotJSON, snapshotSHA, err := orderJSONHash(snapshot)
-	if err != nil {
-		return nil, err
-	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
 
+	stored, err := s.appendKiwoomSnapshot(ctx, tx, ledgerAccountID, snapshot)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return stored, nil
+}
+
+func (s *Service) appendKiwoomSnapshot(ctx context.Context, tx *sql.Tx, ledgerAccountID string, snapshot *KiwoomSnapshot) (*BrokerKnownGoodSnapshot, error) {
+	snapshotJSON, snapshotSHA, err := orderJSONHash(snapshot)
+	if err != nil {
+		return nil, err
+	}
 	snapshotID, storedSnapshot, err := s.ensureBrokerSnapshot(ctx, tx, snapshot, string(snapshotJSON), snapshotSHA)
 	if err != nil {
 		return nil, err
@@ -116,9 +127,6 @@ func (s *Service) recordKiwoomSnapshot(ctx context.Context, ledgerAccountID stri
 		}
 		if record.AllPositionsMatch != allMatch || !reflect.DeepEqual(record.PositionDifferences, differences) {
 			return nil, errors.New("cached broker reconciliation differs from current ledger replay")
-		}
-		if err := tx.Commit(); err != nil {
-			return nil, err
 		}
 		return knownGoodSnapshot(record, storedSnapshot, snapshotSHA), nil
 	}
@@ -160,9 +168,6 @@ func (s *Service) recordKiwoomSnapshot(ctx context.Context, ledgerAccountID stri
 		if err := requireReconciliationIdentity(record, snapshotID, ledgerAccountID, ledgerRevision, recordRecordedAt); err != nil {
 			return nil, err
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
 	}
 	return knownGoodSnapshot(record, storedSnapshot, snapshotSHA), nil
 }

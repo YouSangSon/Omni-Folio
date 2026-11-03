@@ -9,7 +9,7 @@ A local-first platform for personal portfolios across multiple brokerages and sa
 The Korean README is the source of truth for keeping the structure, commands, and supported scope consistent across all four languages. Linked design and verification documents are available in Korean or English. README translations do not imply that the app supports those display languages.
 
 > [!IMPORTANT]
-> Live trading and broker connections are currently disabled. Backtest and strategy results in this repository do not guarantee returns and are not investment advice.
+> Live trading is currently disabled. The explicit command below can read a Kiwoom mock account; actual credentialed observation has not been performed. Backtest and strategy results in this repository do not guarantee returns and are not investment advice.
 
 <a id="status"></a>
 
@@ -531,6 +531,21 @@ G3.8F2 adds `omni-core paper-run-loop -db <path> -account <kiwoom_account_...>`.
 This evidence consists of local ex-post fixture results. A daemon process has been added, but no public API/UI, broker-backed valuation, credentialed/live execution, deployment, alerting, CronJob packaging, shadow/live promotion, or profitability claims are added.
 
 <a id="commands"></a>
+
+### Read a Kiwoom mock account
+
+Prepare a generic password in macOS Keychain Access yourself. The fixed service is `com.omni-folio.kiwoom.mock.readonly.v1` and the account is `credentials`. Its password is a JSON object containing only `schema_version`, `app_key`, `secret_key`, `alias_key_base64`, and `account_number`. Use version `kiwoom-mock-read.v1`, a canonical standard Base64 encoding of a 32-byte alias key, and a 10-digit account number. App and secret keys must be nonblank strings of at most 1,024 bytes without control characters; the complete JSON is limited to 8 KiB. Keep secrets out of shell arguments, environment variables, and repository files.
+
+```sh
+(cd services/core && go run . kiwoom-mock-sync \
+  -db ../../data/omni-folio.db -ledger-account account-main)
+```
+
+Both arguments are required, and the database must already exist and be migrated. Go reads the fixed Keychain entry and only the mock/KRX account, evaluation, and open-order pages. The first successful sync binds the existing journal to one mock account for `account-main`; a changed account or alias key, mixed accounts, or production KRX history is rejected. Recovery and binding are checked again inside the write transaction, which reconciles the current ledger revision. Refresh the existing app connection view to see the stored comparison.
+
+The receipt contains only provider, mode, times, ledger revision, counts, and quantity-match status. A failed stdout write may follow a durable commit. Inspect `GET /v1/broker-reconciliation/latest` before retrying a fresh read. Provider failures retain the previous snapshot. OAuth, 401 refresh, and pagination are paced at least one second apart within this process; separate processes do not share that limit. The invocation is capped at two minutes and each call at ten seconds.
+
+`complete` means all required reads and pages succeeded. It does not establish a provider-wide atomic snapshot, cash/trade reconciliation, current account safety, or successful real authentication. Public freshness remains `unverified`. The command grants no execution authority and does not change ledger events or verification time. [Input, recovery, and verification contract](gates/g4z-kiwoom-mock-sync.md)
 
 ## Main commands
 
